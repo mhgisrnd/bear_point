@@ -1,0 +1,218 @@
+/* 패널: 왼쪽 하단 */
+.panel{
+  position: fixed;
+  z-index: 9999;
+  background: rgba(255,255,255,0.92);
+  border-radius: 12px;
+  padding: 10px;
+  box-shadow: 0 6px 16px rgba(0,0,0,0.15);
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+
+  --panel-w: min(350px, calc(100vw - 20px));
+  width: var(--panel-w);
+
+  max-height: 50vh;
+  overflow: hidden;
+
+  transition: max-height 0.18s ease, padding 0.18s ease, transform 0.18s ease;
+  transform-origin: left bottom;
+  
+}
+
+.panel-bottom-left{
+  left: 10px;
+  bottom: 10px;
+}
+
+/* 헤더(상태 + 토글) */
+.panel-header{
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.panel-toggle{
+  position: relative;
+  z-index: 10001;
+  border: 0;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: rgba(255,255,255,0.92);
+  box-shadow: 0 6px 16px rgba(0,0,0,0.12);
+  cursor: pointer;
+  font-size: 16px;
+}
+
+.panel-body{
+  /* 펼쳐진 상태에서 내부 스크롤 */
+  max-height: calc(50vh - 54px);
+  overflow: auto;
+
+  /* 애니메이션 */
+  transition: max-height 0.18s ease, opacity 0.18s ease, margin-top 0.18s ease;
+  opacity: 1;
+  margin-top: 10px;
+}
+
+/* 바디 접기 */
+.panel.collapsed .panel-body{
+  max-height: 0 !important;
+  overflow: hidden !important;
+  opacity: 0;
+  margin-top: 0;
+  padding: 0;
+  pointer-events: none; /* 접힌 상태에서 클릭 방지 */
+}
+
+/* 접힘 상태에서 패널 자체 크기/패딩을 헤더만 남게 줄이기 */
+/* ===== 접힘 상태 ===== */
+.panel.collapsed{
+  max-height: 56px;
+  padding: 8px;
+  overflow: hidden;
+}
+
+
+/* 헤더만 남게(상태 + 토글) */
+.panel.collapsed .panel-header{
+  margin: 0;
+}
+
+/* 버튼 영역 */
+.controls{
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-top: 10px;
+}
+
+.controls button{
+  border: 0;
+  padding: 10px 16px;
+  border-radius: 10px;
+  background: rgba(255,255,255,0.92);
+  box-shadow: 0 6px 16px rgba(0,0,0,0.12);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  justify-content: center;
+  white-space: nowrap;
+  transition: transform 0.1s ease;
+}
+.controls button:active{ 
+  transform: translateY(1px); 
+}
+
+.controls button .btn-icon {
+  height: 16px;
+  width: 16px;
+  display: inline-block;
+  vertical-align: middle;
+}
+
+/* 곰 목록 박스 */
+.bears-box{
+  margin-top: 10px;
+  border-radius: 12px;
+  padding: 10px;
+  background: rgba(255,255,255,0.75);
+  box-shadow: inset 0 0 0 1px rgba(0,0,0,0.06);
+}
+
+.bears-title{
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 13px;
+  margin-bottom: 8px;
+}
+
+.bears-hint{
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-weight: 500;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+.bears-hint.off {
+  background: #ef4444;
+  color: #ffffff;
+}
+
+.bears-hint.on {
+  background: #3b82f6;
+  color: #ffffff;
+}
+
+.bears-list{
+  max-height: 180px;
+  overflow-y: scroll;
+  overflow-x: hidden;
+  font-size: 13px;
+  padding-right: 4px;
+}
+
+.bears-item{
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px;
+  border-radius: 10px;
+  background: rgba(255,255,255,0.9);
+  box-shadow: 0 6px 16px rgba(0,0,0,0.06);
+  margin-bottom: 8px;
+  cursor: pointer;
+}
+
+.bears-empty{
+  color: rgba(0,0,0,0.55);
+  padding: 6px 2px;
+}
+
+@media (max-width: 480px){
+  .panel-bottom-left{
+    left: 8px;
+    right: 70px; /* ✅ 오른쪽 지도 버튼(줌/나침반) 공간 확보. 필요시 60~90 조절 */
+    bottom: 8px;
+  }
+
+  .panel{
+    width: auto;       /* left+right로 폭 결정 */
+    max-width: none;
+    --panel-w: auto;   /* 기존 변수 무력화 */
+  }
+
+  #status{
+    max-width: none;   /* 모바일에서 상태 텍스트 더 자연스럽게 */
+  }
+
+  .controls{
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+  }
+  .controls button{
+    flex: 0 1 auto;
+    min-width: fit-content;
+    padding: 10px 14px;
+  }
+}
+
+.bears-item > *{
+  min-width: 0; /* flex에서 말줄임 가능하게 */
+}
+
+.bears-item .left,
+.bears-item .name{
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

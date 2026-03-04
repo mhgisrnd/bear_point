@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>지리산 곰 찾기</title>
+
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="/css/styles.css" />
+  <link rel="stylesheet" href="/css/panel.css" />
+  <script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script defer src="/js/client.js"></script>
+</head>
+<body>
+  <div class="panel panel-bottom-left" id="panel">
+    <div class="panel-header">
+      <div id="status">연결됨</div>
+      <button class="panel-toggle" id="btn-panel-toggle" aria-expanded="true">▼</button>
+    </div>
+
+    <div class="panel-body" id="panel-body">
+      <div class="controls">
+        <button id="btn-server">
+          곰 위치 확인
+          <img src="/assets/icon_refresh.png" alt="새로고침" class="btn-icon" />
+        </button>
+        <span class="bears-hint" id="bears-hint">OFF</span>
+      </div>
+
+      <div class="bears-box">
+        <div class="bears-title">
+          <span>곰 목록</span>
+        </div>
+        <div class="bears-list" id="bears-list">
+          <div class="bears-empty">아직 목록이 없습니다.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div id="map"></div>
+  <div id="compass">
+  <div id="compass-needle">
+    <span class="needle red"></span>
+    <span class="needle blue"></span>
+  </div>
+</div>
+  </div>
+</body>
+</html>
