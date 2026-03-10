@@ -30,6 +30,10 @@ const JIRISAN_BOUNDS = L.latLngBounds(
   [35.50, 127.85]  // NE
 );
 
+// 테스트용: true면 실제 GPS 대신 지리산 고정 좌표를 사용
+const TEST_USE_JIRISAN_LOCATION = true;
+const TEST_JIRISAN_LOCATION = [35.315, 127.655];
+
 const map = L.map("map", { minZoom: 3, maxZoom: 18, zoomControl: false });
 L.control.zoom({ position: "bottomright" }).addTo(map);
 
@@ -415,6 +419,30 @@ async function toggleMyLocation() {
   }
 
   await startCompass();
+
+  if (TEST_USE_JIRISAN_LOCATION) {
+    const latlng = TEST_JIRISAN_LOCATION;
+
+    myMarker.setLatLng(latlng);
+    if (!isMyVisible) {
+      myMarker.addTo(map);
+      isMyVisible = true;
+      locateBtnEl?.classList.add("is-active");
+    }
+
+    if (!didMoveToMe) {
+      didMoveToMe = true;
+      flyToLatLng(latlng, 16);
+    }
+
+    if (lastHeadingDeg !== null) setHeading(lastHeadingDeg);
+    statusEl.textContent = "🧪 테스트 위치 ON (지리산 기준)";
+
+    // 실제 GPS는 테스트 중 비활성화
+    // navigator.geolocation.getCurrentPosition(...)
+    // watchId = navigator.geolocation.watchPosition(...)
+    return;
+  }
 
 statusEl.textContent = "📍 내 위치 잡는 중…(최초는 10~30초 소요 가능)";
 didMoveToMe = false;
