@@ -24,6 +24,14 @@ app.use((req, res, next) => {
 
 app.use(express.static(path.join(__dirname, "public")));
 
+app.get("/login", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "pages", "login.html"));
+});
+
+app.get("/admin/login", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "pages", "admin-login.html"));
+});
+
 // ✅ 곰 위치는 요청할 때만 가져가게 API로만 제공
 app.get("/api/latest", (req, res) => res.json(latest ?? {}));
 app.get("/api/serverpos", (req, res) => res.json(serverPos));

@@ -2,16 +2,25 @@
 
 // ---------- DOM ----------
 const statusEl = document.getElementById("status");
-const btnBear = document.getElementById("btn-server"); // 버튼 텍스트: "곰 위치 확인"
+const btnBear = document.getElementById("btn-obs-list"); // 관측점 목록 버튼
+const btnObsAdd = document.getElementById("btn-obs-add"); // 관측점 등록 버튼
+const btnAnalysis = document.getElementById("btn-analysis");
 const btnMe = document.getElementById("btn-me");       // (있다면) 내 위치 토글 버튼
 const btnJiri = document.getElementById("btn-jiri");   // (있다면) 지리산 버튼
 
 const compassNeedleFixedEl = document.getElementById("compass-needle");
 
 //panel
+const obsSheetEl = document.getElementById("obs-sheet");
 const panelEl = document.getElementById("panel");
 const panelBodyEl = document.getElementById("panel-body");
 const btnPanelToggle = document.getElementById("btn-panel-toggle");
+const registerBoxEl = document.getElementById("register-box");
+const obsListPanelEl = document.getElementById("obs-list-panel");
+const obsListBodyEl = document.getElementById("obs-list-body");
+const currentCoordEl = document.getElementById("obs-current-coord");
+const currentHeadingEl = document.getElementById("obs-current-heading");
+const currentXyEl = document.getElementById("obs-current-xy");
 
 const btnBearsToggle = document.getElementById("btn-bears-toggle");
 const bearsListEl = document.getElementById("bears-list");
@@ -34,12 +43,60 @@ const JIRISAN_BOUNDS = L.latLngBounds(
 const TEST_USE_JIRISAN_LOCATION = true;
 const TEST_JIRISAN_LOCATION = [35.315, 127.655];
 
+const DATA_CRS = "WGS84";
+
 const map = L.map("map", { minZoom: 3, maxZoom: 18, zoomControl: false });
 L.control.zoom({ position: "bottomright" }).addTo(map);
 
-L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+const osmBase = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
   attribution: "&copy; OpenStreetMap"
-}).addTo(map);
+});
+
+const topoBase = L.tileLayer("https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png", {
+  maxZoom: 18,
+  maxNativeZoom: 17,
+  attribution: "Map data: &copy; OpenStreetMap contributors, SRTM | Style: &copy; OpenTopoMap"
+});
+
+const hillshadeOverlay = L.tileLayer("https://services.arcgisonline.com/ArcGIS/rest/services/Elevation/World_Hillshade/MapServer/tile/{z}/{y}/{x}", {
+  maxZoom: 18,
+  maxNativeZoom: 14,
+  opacity: 0.32,
+  attribution: "Hillshade &copy; Esri"
+});
+
+// 기본값: 지형도 + 음영 레이어
+topoBase.addTo(map);
+hillshadeOverlay.addTo(map);
+
+L.control.layers(
+  {
+    "일반지도": osmBase,
+    "지형도(OpenTopoMap)": topoBase
+  },
+  {
+    "음영(Hillshade)": hillshadeOverlay
+  },
+  { collapsed: true }
+).addTo(map);
+
+const HILLSHADE_SAFE_MAX_ZOOM = 18;
+const HILLSHADE_BASE_OPACITY = 0.32;
+
+function syncHillshadeByZoom() {
+  const zoom = map.getZoom();
+  if (!map.hasLayer(hillshadeOverlay)) return;
+
+  // 레이어 체크 상태는 유지하고, 고줌에서만 시각적으로 숨긴다.
+  hillshadeOverlay.setOpacity(zoom > HILLSHADE_SAFE_MAX_ZOOM ? 0 : HILLSHADE_BASE_OPACITY);
+}
+
+map.on("zoomend", syncHillshadeByZoom);
+map.on("overlayadd", (e) => {
+  if (e.layer === hillshadeOverlay) {
+    syncHillshadeByZoom();
+  }
+});
 
 // ✅ 첫 화면은 지리산
 map.fitBounds(JIRISAN_BOUNDS, { padding: [20, 20], maxZoom: 14 });
@@ -530,13 +587,23 @@ btnJiri?.addEventListener("click", () => {
 
 // ---------- 곰 위치(더미) : 버튼 클릭 시 목록/마커 갱신 ----------
 const bearIcon = L.icon({
-  iconUrl: "/assets/icon_bear.png",
+  iconUrl: "/assets/icons/icon_bear.png",
   iconSize: [34, 34],
   iconAnchor: [17, 30],
   popupAnchor: [0, -26]
 });
 
 const bearMarkersLayer = L.layerGroup().addTo(map);
+const observationMarkersLayer = L.layerGroup().addTo(map);
+const observationMarkers = [];
+
+const observationSamples = [
+  { id: "p1", bearCode: "001", owner: "1팀", lat: 35.3112, lng: 127.6551, x: "312451.22", y: "248913.88", heading: "124°" },
+  { id: "p2", bearCode: "001", owner: "2팀", lat: 35.3131, lng: 127.6624, x: "313126.70", y: "249085.20", heading: "82°" },
+  { id: "p3", bearCode: "002", owner: "3팀", lat: 35.3157, lng: 127.6493, x: "311878.54", y: "249362.14", heading: "301°" }
+];
+
+let currentTab = "none";
 
 let bearsDataCache = [];
 
@@ -619,6 +686,141 @@ function renderBears(items) {
   }
 }
 
+function createObservationIcon(item, zoom = map.getZoom()) {
+  // 줌 14를 기준으로 아이콘 배율을 계산하고, 과도한 확대/축소는 clamp로 제한한다.
+  const baseZoom = 14;
+  const rawScale = Math.pow(2, (zoom - baseZoom) * 0.16);
+  const scale = Math.min(1.05, Math.max(0.65, rawScale));
+
+  // 배율(scale)을 아이콘 구성요소 크기(원, 꼬리, 텍스트, 앵커)로 분해한다.
+  const wrapperSize = Math.round(52 * scale);
+  const circleSize = Math.round(30 * scale);
+  const fontSize = Math.max(9, Math.round(12 * scale));
+  const pointerLeft = Math.round(6 * scale);
+  const pointerSide = Math.max(6, Math.round(12 * scale));
+  const pointerHeight = Math.max(10, Math.round(18 * scale));
+  const iconAnchorX = Math.round(wrapperSize / 2);
+  const iconAnchorY = Math.round(wrapperSize * 0.77);
+
+  return L.divIcon({
+    className: "observation-pin-icon",
+    html: `
+      <div style="position:relative;width:${wrapperSize}px;height:${wrapperSize}px;display:flex;align-items:flex-end;justify-content:center;">
+        <div style="position:absolute;top:0;left:${pointerLeft}px;width:0;height:0;border-left:${pointerSide}px solid transparent;border-right:${pointerSide}px solid transparent;border-bottom:${pointerHeight}px solid #3b82f6;transform:rotate(-18deg);"></div>
+        <div style="width:${circleSize}px;height:${circleSize}px;border-radius:50%;background:#4c6fd3;color:#fff;font-weight:800;font-size:${fontSize}px;display:flex;align-items:center;justify-content:center;box-shadow:0 8px 18px rgba(37,99,235,0.32);">${item.id}</div>
+      </div>
+    `,
+    iconSize: [wrapperSize, wrapperSize],
+    iconAnchor: [iconAnchorX, iconAnchorY]
+  });
+}
+
+function renderObservationMarkers(items) {
+  observationMarkersLayer.clearLayers();
+  observationMarkers.length = 0;
+  const zoom = map.getZoom();
+
+  for (const item of items) {
+    const marker = L.marker([item.lat, item.lng], { icon: createObservationIcon(item, zoom) });
+    marker.obsData = item;
+    marker.bindPopup(`관측점 ${item.id}<br/>곰 코드 ${item.bearCode}<br/>등록자 ${item.owner}`);
+    observationMarkersLayer.addLayer(marker);
+    observationMarkers.push(marker);
+  }
+}
+
+function updateObservationMarkerScale() {
+  const zoom = map.getZoom();
+
+  for (const marker of observationMarkers) {
+    if (!marker?.obsData) continue;
+    marker.setIcon(createObservationIcon(marker.obsData, zoom));
+  }
+}
+
+map.on("zoomend", () => {
+  if (currentTab === "list") {
+    updateObservationMarkerScale();
+  }
+});
+
+function renderObservationList(items) {
+  if (!obsListBodyEl) return;
+
+  obsListBodyEl.innerHTML = "";
+
+  for (const item of items) {
+    const row = document.createElement("tr");
+    row.innerHTML = `
+      <td>${item.id}</td>
+      <td>${item.x}, ${item.y}</td>
+      <td>${item.bearCode}</td>
+      <td>${item.owner}</td>
+      <td>
+        <div class="obs-actions">
+          <button class="obs-action-btn edit" type="button" data-action="edit">수정</button>
+          <button class="obs-action-btn delete" type="button" data-action="delete">삭제</button>
+        </div>
+      </td>
+    `;
+
+    // 행 클릭은 위치 이동 용도이고, 버튼 클릭은 별도 액션으로 분리한다.
+    const editBtn = row.querySelector('[data-action="edit"]');
+    const deleteBtn = row.querySelector('[data-action="delete"]');
+
+    editBtn?.addEventListener("click", (e) => {
+      e.stopPropagation();
+      statusEl.textContent = `✏️ ${item.id} 수정 UI 준비 중`;
+    });
+
+    deleteBtn?.addEventListener("click", (e) => {
+      e.stopPropagation();
+      statusEl.textContent = `🗑️ ${item.id} 삭제 UI 준비 중`;
+    });
+
+    row.addEventListener("click", () => {
+      flyToLatLng([item.lat, item.lng], 17);
+    });
+
+    obsListBodyEl.appendChild(row);
+  }
+}
+
+function updateRegistrationPreview() {
+  const baseLatLng = TEST_USE_JIRISAN_LOCATION ? TEST_JIRISAN_LOCATION : [35.315, 127.655];
+  const previewHeading = lastHeadingDeg !== null ? `${Math.round(lastHeadingDeg)}°` : "124°";
+
+  if (currentCoordEl) {
+    currentCoordEl.textContent = `${baseLatLng[0].toFixed(6)}, ${baseLatLng[1].toFixed(6)}`;
+  }
+  if (currentHeadingEl) {
+    currentHeadingEl.textContent = previewHeading;
+  }
+  if (currentXyEl) {
+    currentXyEl.textContent = "312451.22, 248913.88";
+  }
+}
+
+function setTabLayout(tab) {
+  currentTab = tab;
+  const isList = tab === "list";
+
+  // 목록 탭을 해제하면 열려 있던 팝업을 닫아 화면을 정리한다.
+  if (!isList) {
+    map.closePopup();
+  }
+
+  obsSheetEl?.classList.toggle("hidden", !isList);
+  registerBoxEl?.classList.toggle("hidden", isList);
+  obsListPanelEl?.classList.toggle("hidden", !isList);
+  observationMarkersLayer.clearLayers();
+
+  if (isList) {
+    renderObservationList(observationSamples);
+    renderObservationMarkers(observationSamples);
+  }
+}
+
 async function refreshDummyBearsAndFocus() {
   statusEl.textContent = "🐻 곰 더미 위치 생성중…";
 
@@ -629,22 +831,43 @@ async function refreshDummyBearsAndFocus() {
 
   if (!items.length) {
     statusEl.textContent = "🟠 표시할 곰 더미 데이터가 없습니다";
-    bearsHintEl.textContent = "OFF";
-    bearsHintEl.classList.remove("on");
-    bearsHintEl.classList.add("off");
     return;
   }
 
-  bearsHintEl.textContent = "ON";
-  bearsHintEl.classList.remove("off");
-  bearsHintEl.classList.add("on");
-
   const bounds = L.latLngBounds(items.map((it) => [it.lat, it.lng]));
   map.fitBounds(bounds.pad(0.1), { padding: [20, 20], maxZoom: 14 });
-  statusEl.innerHTML = `<img src="/assets/icon_bear.png" style="height:18px;vertical-align:middle;margin-right:4px;" alt="곰"/> ${items.length}마리 표시됨`;
+  statusEl.innerHTML = `<img src="/assets/icons/icon_bear.png" style="height:18px;vertical-align:middle;margin-right:4px;" alt="곰"/> ${items.length}마리 표시됨`;
 }
 
-btnBear?.addEventListener("click", refreshDummyBearsAndFocus);
+// ---------- 탭 전환 ----------
+function setActiveTab(activeBtn) {
+  [btnBear, btnObsAdd].forEach(b => b?.classList.remove("tab-active"));
+  activeBtn?.classList.add("tab-active");
+}
+
+btnBear?.addEventListener("click", () => {
+  const willClose = currentTab === "list";
+
+  if (willClose) {
+    setActiveTab(null);
+    setTabLayout("none");
+    return;
+  }
+
+  setActiveTab(btnBear);
+  setTabLayout("list");
+});
+
+btnObsAdd?.addEventListener("click", () => {
+  setActiveTab(btnObsAdd);
+  setTabLayout("add");
+  updateRegistrationPreview();
+  statusEl.textContent = "🧭 현재 위치와 방향각으로 관측점 등록 준비";
+});
+
+btnAnalysis?.addEventListener("click", () => {
+  statusEl.textContent = "📐 위치분석 UI 준비 중";
+});
 
 
 btnPanelToggle?.addEventListener("click", (e) => {
@@ -663,9 +886,7 @@ panelEl?.addEventListener("wheel", (e) => e.stopPropagation(), { passive: true }
 
 // ---------- 초기화 ----------
 (function initializeUI() {
-  if (bearsHintEl) {
-    bearsHintEl.textContent = "OFF";
-    bearsHintEl.classList.add("off");
-    bearsHintEl.classList.remove("on");
-  }
+  updateRegistrationPreview();
+  setTabLayout(currentTab);
+  setActiveTab(currentTab === "list" ? btnBear : null);
 })();

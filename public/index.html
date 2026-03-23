@@ -12,27 +12,48 @@
   <script defer src="/js/client.js"></script>
 </head>
 <body>
-  <div class="panel panel-bottom-left" id="panel">
-    <div class="panel-header">
-      <div id="status">연결됨</div>
-      <button class="panel-toggle" id="btn-panel-toggle" aria-expanded="true">▼</button>
+  <section class="obs-sheet hidden" id="obs-sheet" aria-label="관측점 목록 패널">
+    <div class="obs-sheet-header">
+      <h2>관측점 목록</h2>
+      <button class="analysis-btn" id="btn-analysis" type="button">위치분석</button>
     </div>
 
-    <div class="panel-body" id="panel-body">
-      <div class="controls">
-        <button id="btn-server">
-          곰 위치 확인
-          <img src="/assets/icon_refresh.png" alt="새로고침" class="btn-icon" />
-        </button>
-        <span class="bears-hint" id="bears-hint">OFF</span>
+    <div class="obs-table-wrap">
+      <table class="obs-table">
+        <thead>
+          <tr>
+            <th>관측점</th>
+            <th>좌표</th>
+            <th>곰 코드</th>
+            <th>등록자</th>
+            <th>관리</th>
+          </tr>
+        </thead>
+        <tbody id="obs-list-body"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <div class="panel-stack panel-bottom-left">
+    <div class="panel-tabs panel-tabs-floating">
+        <button class="tab-btn" id="btn-obs-add" disabled>관측점 등록</button>
+        <button class="tab-btn" id="btn-obs-list">관측점 목록</button>
+    </div>
+
+    <div class="panel" id="panel">
+      <div class="panel-header">
+        <div id="status">연결됨</div>
+        <button class="panel-toggle" id="btn-panel-toggle" aria-expanded="true">▼</button>
       </div>
 
-      <div class="bears-box">
-        <div class="bears-title">
-          <span>곰 목록</span>
-        </div>
-        <div class="bears-list" id="bears-list">
-          <div class="bears-empty">아직 목록이 없습니다.</div>
+      <div class="panel-body" id="panel-body">
+        <div class="bears-box" id="bears-box">
+          <div class="bears-title">
+            <span>곰 목록</span>
+          </div>
+          <div class="bears-list" id="bears-list">
+            <div class="bears-empty">아직 목록이 없습니다.</div>
+          </div>
         </div>
       </div>
     </div>

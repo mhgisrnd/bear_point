@@ -1,15 +1,173 @@
-/* 패널: 왼쪽 하단 */
-.panel{
+.hidden {
+  display: none !important;
+}
+
+/* 상단 관측점 목록 패널 */
+.obs-sheet {
+  position: fixed;
+  top: 12px;
+  left: 12px;
+  z-index: 9998;
+  width: min(680px, calc(100vw - 24px));
+  background: rgba(255,255,255,0.9);
+  border: 1px solid rgba(148, 163, 184, 0.32);
+  border-radius: 18px;
+  box-shadow: 0 18px 36px rgba(15, 23, 42, 0.18);
+  backdrop-filter: blur(8px);
+  overflow: hidden;
+}
+
+.obs-sheet-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  background: linear-gradient(135deg, rgba(30, 41, 59, 0.92), rgba(51, 65, 85, 0.88));
+  color: #f8fafc;
+}
+
+.obs-sheet-header h2 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+
+.analysis-btn {
+  border: 1px solid rgba(191, 219, 254, 0.45);
+  border-radius: 999px;
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
+  color: #ffffff;
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 8px 18px rgba(37, 99, 235, 0.28);
+  transition: transform 0.12s ease, box-shadow 0.16s ease, filter 0.16s ease;
+}
+
+.analysis-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 20px rgba(37, 99, 235, 0.34);
+  filter: saturate(1.05);
+}
+
+.obs-table-wrap {
+  max-height: 210px;
+  overflow: auto;
+  background: rgba(255,255,255,0.88);
+  padding: 8px 10px 12px;
+}
+
+.obs-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 12px;
+}
+
+.obs-table th,
+.obs-table td {
+  border-right: 1px solid rgba(148, 163, 184, 0.24);
+  border-bottom: 1px solid rgba(148, 163, 184, 0.24);
+  padding: 9px 8px;
+  text-align: center;
+  white-space: nowrap;
+  background: rgba(255,255,255,0.72);
+}
+
+.obs-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: rgba(241, 245, 249, 0.96);
+  font-weight: 800;
+  color: #334155;
+}
+
+.obs-table th:first-child {
+  border-top-left-radius: 12px;
+}
+
+.obs-table th:last-child {
+  border-top-right-radius: 12px;
+  border-right: 0;
+}
+
+.obs-table td:last-child {
+  border-right: 0;
+}
+
+.obs-table tbody tr:last-child td:first-child {
+  border-bottom-left-radius: 12px;
+}
+
+.obs-table tbody tr:last-child td:last-child {
+  border-bottom-right-radius: 12px;
+}
+
+.obs-table tbody tr {
+  transition: transform 0.12s ease, box-shadow 0.16s ease, background-color 0.16s ease;
+}
+
+.obs-table tbody tr:hover td {
+  background: rgba(239, 246, 255, 0.88);
+}
+
+.obs-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+}
+
+.obs-action-btn {
+  border: 0;
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 700;
+  border-radius: 8px;
+  padding: 8px 15px;
+  min-width: 42px;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 0 4px 10px rgba(15, 23, 42, 0.12);
+}
+
+.obs-table td:last-child {
+  min-width: 110px;
+}
+
+.obs-action-btn.edit {
+  background: linear-gradient(135deg, #22c55e, #16a34a);
+}
+
+.obs-action-btn.delete {
+  background: linear-gradient(135deg, #ef4444, #dc2626);
+}
+
+/* 패널 스택: 버튼 + 패널 */
+.panel-stack {
   position: fixed;
   z-index: 9999;
+  --panel-w: min(350px, calc(100vw - 20px));
+  width: var(--panel-w);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* 패널 본체 */
+.panel{
+  position: relative;
   background: rgba(255,255,255,0.92);
   border-radius: 12px;
   padding: 10px;
   box-shadow: 0 6px 16px rgba(0,0,0,0.15);
   font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
-
-  --panel-w: min(350px, calc(100vw - 20px));
-  width: var(--panel-w);
+  width: 100%;
 
   max-height: 50vh;
   overflow: hidden;
@@ -117,6 +275,93 @@
 }
 
 /* 곰 목록 박스 */
+/* 탭 버튼 */
+.panel-tabs {
+  display: flex;
+  gap: 6px;
+  margin-top: 0;
+}
+
+.panel-tabs-floating {
+  width: 78%;
+}
+
+.tab-btn {
+  flex: 1;
+  border: 0;
+  padding: 11px 10px;
+  border-radius: 10px;
+  background: rgba(255,255,255,0.96);
+  color: #1f2937;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 6px 16px rgba(0,0,0,0.16);
+  transition: background 0.15s ease, color 0.15s ease, box-shadow 0.15s ease, transform 0.1s ease;
+  white-space: nowrap;
+}
+
+.tab-btn:active {
+  transform: translateY(1px);
+}
+
+.tab-btn:hover {
+  background: #ffffff;
+  box-shadow: 0 8px 18px rgba(0,0,0,0.2);
+}
+
+.tab-btn.tab-active {
+  background: linear-gradient(135deg, #1d4ed8, #2563eb);
+  color: #ffffff;
+  box-shadow: 0 6px 14px rgba(37,99,235,0.28);
+}
+
+.register-box {
+  margin-top: 6px;
+}
+
+.register-title {
+  font-size: 14px;
+  font-weight: 800;
+  color: #0f172a;
+  margin-bottom: 10px;
+}
+
+.register-card {
+  border-radius: 12px;
+  padding: 12px;
+  background: rgba(255,255,255,0.84);
+  box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.08);
+}
+
+.register-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 13px;
+  padding: 8px 0;
+  border-bottom: 1px dashed rgba(15, 23, 42, 0.12);
+}
+
+.register-row:last-child {
+  border-bottom: 0;
+}
+
+.register-row span {
+  color: #475569;
+}
+
+.register-row strong {
+  color: #0f172a;
+}
+
+.register-help {
+  margin: 10px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #64748b;
+}
+
 .bears-box{
   margin-top: 10px;
   border-radius: 12px;
@@ -177,12 +422,33 @@
 }
 
 @media (max-width: 480px){
+  .obs-sheet {
+    top: 8px;
+    left: 8px;
+    width: calc(100vw - 16px);
+  }
+
+  .obs-sheet-header {
+    padding: 6px 8px;
+  }
+
+  .analysis-btn {
+    padding: 6px 10px;
+    font-size: 12px;
+  }
+
+  .obs-table-wrap {
+    max-height: 180px;
+    padding: 6px 6px 10px;
+  }
+
   .panel-bottom-left{
     left: 8px;
     right: 70px; /* ✅ 오른쪽 지도 버튼(줌/나침반) 공간 확보. 필요시 60~90 조절 */
     bottom: 8px;
   }
 
+  .panel-stack,
   .panel{
     width: auto;       /* left+right로 폭 결정 */
     max-width: none;
