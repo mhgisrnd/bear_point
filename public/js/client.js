@@ -32,6 +32,33 @@ const HEADING_OFFSET = {
   other: 0
 };
 
+function syncAppViewportVars() {
+  const vv = window.visualViewport;
+  const isCoarsePointer = window.matchMedia?.("(pointer: coarse)")?.matches;
+  const isMobileUA = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent || "");
+  const isMobileLike = Boolean(isCoarsePointer || isMobileUA);
+
+  // visualViewport 높이는 확대/축소(scale) 시에도 변하므로,
+  // 실제 브라우저 UI 가림 보정은 모바일 + scale≈1 일 때만 적용한다.
+  const canUseVisualViewport = Boolean(
+    vv && isMobileLike && (typeof vv.scale !== "number" || Math.abs(vv.scale - 1) < 0.05)
+  );
+
+  const viewportHeight = canUseVisualViewport ? vv.height : window.innerHeight;
+  const bottomInset = canUseVisualViewport
+    ? Math.max(0, window.innerHeight - (vv.height + (vv.offsetTop || 0)))
+    : 0;
+
+  document.documentElement.style.setProperty("--app-vh", `${Math.round(viewportHeight)}px`);
+  document.documentElement.style.setProperty("--app-bottom-inset", `${Math.round(bottomInset)}px`);
+}
+
+syncAppViewportVars();
+window.addEventListener("resize", syncAppViewportVars, { passive: true });
+window.addEventListener("orientationchange", syncAppViewportVars, { passive: true });
+window.visualViewport?.addEventListener("resize", syncAppViewportVars, { passive: true });
+window.visualViewport?.addEventListener("scroll", syncAppViewportVars, { passive: true });
+
 
 // ---------- 지도 기본 ----------
 const JIRISAN_BOUNDS = L.latLngBounds(
@@ -889,6 +916,13 @@ panelEl?.addEventListener("wheel", (e) => e.stopPropagation(), { passive: true }
   updateRegistrationPreview();
   setTabLayout(currentTab);
   setActiveTab(currentTab === "list" ? btnBear : null);
+
+  syncAppViewportVars();
+  map.invalidateSize();
+  setTimeout(() => {
+    syncAppViewportVars();
+    map.invalidateSize();
+  }, 250);
 
   // 임시: bears.json 데이터를 로드해서 곰 추정위치 목록에 표시
   await refreshDummyBearsAndFocus();

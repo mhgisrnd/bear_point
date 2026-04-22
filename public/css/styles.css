@@ -1,4 +1,22 @@
-html, body, #map { height: 100%; margin: 0; }
+:root {
+  --app-vh: 100dvh;
+  --app-bottom-inset: 0px;
+  --safe-bottom: max(env(safe-area-inset-bottom, 0px), var(--app-bottom-inset));
+}
+
+html, body {
+  height: 100%;
+  min-height: var(--app-vh);
+  margin: 0;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  overflow: hidden;
+}
+
+#map {
+  height: 100%;
+  min-height: var(--app-vh);
+}
 
 #status{
   display: flex;
@@ -69,7 +87,7 @@ a.leaflet-control-locate-btn.is-active svg{
 #compass{
   position: fixed;
   right: 5px;
-  bottom: 205px;
+  bottom: calc(var(--safe-bottom) + 205px);
   width: 46px;
   height: 46px;
   border-radius: 999px;
@@ -79,6 +97,10 @@ a.leaflet-control-locate-btn.is-active svg{
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+.leaflet-bottom {
+  bottom: calc(var(--safe-bottom) + 8px);
 }
 
 #compass-needle{

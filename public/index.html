@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>지리산 반달곰 위치 분석</title>
 
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
@@ -58,17 +58,14 @@
     </div>
   </div>
   <div id="map"></div>
-  <div id="compass">
-  <div id="compass-needle">
-    <span class="needle red"></span>
-    <span class="needle blue"></span>
+  <div id="compass" aria-hidden="true">
+    <div id="compass-needle">
+      <span class="needle red"></span>
+      <span class="needle blue"></span>
+    </div>
   </div>
-</div>
-  </div>
-</body>
-</div>
+
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="/js/mapBase.js"></script>
   <script src="/js/client.js"></script>
 </body>
 </html>

@@ -179,7 +179,7 @@
 
 .panel-bottom-left{
   left: 10px;
-  bottom: 10px;
+  bottom: calc(var(--safe-bottom, env(safe-area-inset-bottom, 0px)) + 10px);
 }
 
 /* 헤더(상태 + 토글) */
@@ -445,7 +445,7 @@
   .panel-bottom-left{
     left: 8px;
     right: 70px; /* ✅ 오른쪽 지도 버튼(줌/나침반) 공간 확보. 필요시 60~90 조절 */
-    bottom: 8px;
+    bottom: calc(var(--safe-bottom, env(safe-area-inset-bottom, 0px)) + 8px);
   }
 
   .panel-stack,
