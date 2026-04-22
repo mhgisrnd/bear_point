@@ -1,5 +1,3 @@
-// public/js/client.js
-
 // ---------- DOM ----------
 const statusEl = document.getElementById("status");
 const btnBear = document.getElementById("btn-obs-list"); // 관측점 목록 버튼
