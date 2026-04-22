@@ -885,8 +885,11 @@ panelEl?.addEventListener("touchstart", (e) => e.stopPropagation(), { passive: t
 panelEl?.addEventListener("wheel", (e) => e.stopPropagation(), { passive: true });
 
 // ---------- 초기화 ----------
-(function initializeUI() {
+(async function initializeUI() {
   updateRegistrationPreview();
   setTabLayout(currentTab);
   setActiveTab(currentTab === "list" ? btnBear : null);
+
+  // 임시: bears.json 데이터를 로드해서 곰 추정위치 목록에 표시
+  await refreshDummyBearsAndFocus();
 })();
