@@ -4,7 +4,6 @@ function createAppSocket({
   onRxUpdate,
   onServerPos,
   pollLatestUrl = "/api/latest",
-  pollServerPosUrl = "/api/serverpos",
   pollMs = 5000
 }) {
   const socket = io({
@@ -24,13 +23,6 @@ function createAppSocket({
       const latest = await r1.json();
       if (latest && typeof latest.lat === "number" && typeof latest.lng === "number") {
         onRxUpdate?.(latest, { via: "poll" });
-      }
-
-      // 서버 위치
-      const r2 = await fetch(pollServerPosUrl, { cache: "no-store" });
-      const sp = await r2.json();
-      if (sp && typeof sp.lat === "number" && typeof sp.lng === "number") {
-        onServerPos?.(sp, { via: "poll" });
       }
     } catch (e) {
       // 완전 단절이면 조용히 무시
