@@ -65,8 +65,9 @@ const hillshadeOverlay = L.tileLayer("https://services.arcgisonline.com/ArcGIS/r
   attribution: "Hillshade &copy; Esri"
 });
 
-// 기본값: 지형도 + 음영 레이어
-topoBase.addTo(map);
+// 기본값: 일반지도
+osmBase.addTo(map);
+//topoBase.addTo(map);
 hillshadeOverlay.addTo(map);
 
 L.control.layers(
