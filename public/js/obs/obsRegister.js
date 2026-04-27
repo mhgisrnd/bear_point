@@ -65,6 +65,7 @@ window.createObsRegisterModule = function createObsRegisterModule({
       '</td>' +
     '</tr>';
 
+  // 등록 폼을 기본 상태로 초기화하고 감지기 행을 1개로 되돌린다.
   function resetFormState() {
     if (obsRegFormEl) obsRegFormEl.reset();
     if (detListEl) detListEl.innerHTML = DET_ROW_TEMPLATE;
@@ -75,17 +76,20 @@ window.createObsRegisterModule = function createObsRegisterModule({
     renderLiveFields();
   }
 
+  // 현재 감지기 행 개수를 반환한다.
   function getDetCount() {
     if (!detListEl) return 0;
     return detListEl.querySelectorAll(".det-row").length;
   }
 
+  // 감지기 추가/삭제 버튼 활성화를 현재 행 개수에 맞춰 갱신한다.
   function syncDetBtns() {
     var count = getDetCount();
     if (btnDetAdd) btnDetAdd.disabled = count >= MAX_DET;
     if (btnDetRemove) btnDetRemove.disabled = count <= 1;
   }
 
+  // 감지기 행을 최대 개수(MAX_DET)까지 추가한다.
   function addDetRow() {
     if (!detListEl || getDetCount() >= MAX_DET) return;
     var temp = document.createElement("tbody");
@@ -95,6 +99,7 @@ window.createObsRegisterModule = function createObsRegisterModule({
     syncDetBtns();
   }
 
+  // 마지막 감지기 행을 삭제한다(최소 1개 유지).
   function removeDetRow() {
     if (!detListEl || getDetCount() <= 1) return;
     var rows = detListEl.querySelectorAll(".det-row");
@@ -102,6 +107,7 @@ window.createObsRegisterModule = function createObsRegisterModule({
     syncDetBtns();
   }
 
+  // 십진 좌표를 도분초 문자열로 변환한다.
   function toDmsString(value, positiveLabel, negativeLabel) {
     if (!Number.isFinite(value)) return "-";
     var abs = Math.abs(value);
@@ -113,6 +119,7 @@ window.createObsRegisterModule = function createObsRegisterModule({
     return deg + "°" + min + "'" + sec.toFixed(2) + '" ' + dir;
   }
 
+  // 좌표 표시 타입(TM/도분초) 라디오의 현재 값을 읽어온다.
   function getSelectedCoordType() {
     if (!coordTypeEls || coordTypeEls.length === 0) return "tm";
     for (var i = 0; i < coordTypeEls.length; i += 1) {
@@ -121,6 +128,7 @@ window.createObsRegisterModule = function createObsRegisterModule({
     return "tm";
   }
 
+  // 실시간 좌표/방향각 데이터를 입력 필드에 반영한다.
   function renderLiveFields() {
     var hasCoord = Number.isFinite(latestLive.lat) && Number.isFinite(latestLive.lng);
     var hasHeading = Number.isFinite(latestLive.heading);
@@ -145,6 +153,7 @@ window.createObsRegisterModule = function createObsRegisterModule({
     }
   }
 
+  // 방향각 고정 체크 상태를 반영하고 고정 기준 각도를 관리한다.
   function setHeadingLock(nextState) {
     isHeadingLocked = !!nextState;
     if (isHeadingLocked) {
@@ -157,6 +166,7 @@ window.createObsRegisterModule = function createObsRegisterModule({
     renderLiveFields();
   }
 
+  // 등록 팝업 최소화/복원 상태를 토글하고 아이콘 상태를 동기화한다.
   function setPeekMode(nextState) {
     isPeekMode = !!nextState;
     if (registerBoxEl) registerBoxEl.classList.toggle("obs-register-popup--peek", isPeekMode);
@@ -167,6 +177,7 @@ window.createObsRegisterModule = function createObsRegisterModule({
     }
   }
 
+  // 드래그 시작 좌표와 팝업 오프셋을 기록한다.
   function startDrag(clientX, clientY) {
     if (!registerBoxEl) return;
     var rect = registerBoxEl.getBoundingClientRect();
@@ -175,6 +186,7 @@ window.createObsRegisterModule = function createObsRegisterModule({
     dragOffsetY = clientY - rect.top;
   }
 
+  // 포인터 이동에 따라 팝업을 화면 경계 안에서 이동시킨다.
   function moveDrag(clientX, clientY) {
     if (!registerBoxEl || !isDragging) return;
 
@@ -194,10 +206,12 @@ window.createObsRegisterModule = function createObsRegisterModule({
     registerBoxEl.style.top = nextTop + "px";
   }
 
+  // 드래그 상태를 종료한다.
   function endDrag() {
     isDragging = false;
   }
 
+  // 드래그로 생긴 inline 좌표를 제거해 CSS 기본 위치로 복귀한다.
   function clearInlinePosition() {
     if (!registerBoxEl) return;
     registerBoxEl.style.left = "";
@@ -205,6 +219,7 @@ window.createObsRegisterModule = function createObsRegisterModule({
     registerBoxEl.style.right = "";
   }
 
+  // 팝업이 화면 밖으로 나가지 않도록 위치를 보정한다.
   function keepPopupInViewport(resetOnMobile) {
     if (!registerBoxEl) return;
 
@@ -234,6 +249,7 @@ window.createObsRegisterModule = function createObsRegisterModule({
     registerBoxEl.style.top = Math.round(nextTop) + "px";
   }
 
+  // 외부(client)에서 전달된 실시간 데이터를 내부 상태로 갱신한다.
   function updateLiveData(payload) {
     if (!payload) return;
     if (Object.prototype.hasOwnProperty.call(payload, "lat")) latestLive.lat = payload.lat;
@@ -244,14 +260,17 @@ window.createObsRegisterModule = function createObsRegisterModule({
     renderLiveFields();
   }
 
+  // 현재 고정된 방향각 값을 반환한다.
   function getLockedHeading() {
     return lockedHeadingDeg;
   }
 
+  // 방향각 고정 여부를 반환한다.
   function getHeadingLockState() {
     return isHeadingLocked;
   }
 
+  // 등록 팝업을 열고 위치/UI 상태를 초기 표시로 맞춘다.
   function open() {
     if (registerBoxEl) registerBoxEl.classList.remove("hidden");
     setPeekMode(false);
@@ -262,16 +281,19 @@ window.createObsRegisterModule = function createObsRegisterModule({
     statusEl.textContent = "🧭 현재 위치와 방향각으로 관측점 등록 준비";
   }
 
+  // 등록 팝업을 숨기고 필요 시 폼 상태를 초기화한다.
   function hide(shouldReset) {
     if (registerBoxEl) registerBoxEl.classList.add("hidden");
     if (shouldReset) resetFormState();
   }
 
+  // 등록 팝업을 닫고 onClose 콜백을 실행한다.
   function close() {
     hide(true);
     if (onClose) onClose();
   }
 
+  // 등록 팝업 관련 DOM 이벤트를 한 번에 바인딩한다.
   function bindEvents() {
     if (btnRegisterClose) btnRegisterClose.addEventListener("click", function() {
       close();
@@ -344,6 +366,7 @@ window.createObsRegisterModule = function createObsRegisterModule({
     });
   }
 
+  // 모듈 초기 진입 시 이벤트/초기 UI를 세팅한다.
   function initialize() {
     bindEvents();
     syncDetBtns();

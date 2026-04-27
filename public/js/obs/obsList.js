@@ -50,6 +50,7 @@ window.createObsListModule = function createObsListModule({
   let currentTab = "none";
   let isPeekMode = false;
 
+  // 목록 패널 최소화/복원 상태를 토글하고 아이콘 상태를 동기화한다.
   function setPeekMode(nextState) {
     isPeekMode = !!nextState;
     if (obsSheetEl) obsSheetEl.classList.toggle("obs-sheet--peek", isPeekMode);
@@ -60,6 +61,7 @@ window.createObsListModule = function createObsListModule({
     }
   }
 
+  // 줌 레벨에 따라 크기가 변하는 관측점 아이콘을 생성한다.
   function createObservationIcon(item, zoom = map.getZoom()) {
     const baseZoom = 14;
     const rawScale = Math.pow(2, (zoom - baseZoom) * 0.16);
@@ -87,6 +89,7 @@ window.createObsListModule = function createObsListModule({
     });
   }
 
+  // 현재 필터링된 관측점 목록을 지도 마커 레이어에 렌더링한다.
   function renderObservationMarkers(items) {
     observationMarkersLayer.clearLayers();
     observationMarkers.length = 0;
@@ -106,11 +109,13 @@ window.createObsListModule = function createObsListModule({
     }
   }
 
+  // 관측점 행 클릭 시 해당 좌표로 지도를 이동한다.
   function moveToObservation(item) {
     if (!item) return;
     flyToLatLng([item.lat, item.lng], 17);
   }
 
+  // 지도 줌 변경 시 기존 마커 아이콘 스케일을 재계산해 갱신한다.
   function updateObservationMarkerScale() {
     const zoom = map.getZoom();
 
@@ -120,6 +125,7 @@ window.createObsListModule = function createObsListModule({
     }
   }
 
+  // 관측점 테이블 행을 다시 만들고 각 행 이벤트를 연결한다.
   function renderObservationList(items) {
     if (!obsListBodyEl) return;
 
@@ -172,6 +178,7 @@ window.createObsListModule = function createObsListModule({
     syncChkAll(items);
   }
 
+  // 개별 관측점 체크박스 선택 상태를 관리한다.
   function handleObsCheck(id, checked, row) {
     if (checked) {
       selectedObsIds.add(id);
@@ -183,6 +190,7 @@ window.createObsListModule = function createObsListModule({
     updateSelectionUI();
   }
 
+  // 선택 개수/버튼 활성화/전체선택 상태를 한 번에 갱신한다.
   function updateSelectionUI() {
     const count = selectedObsIds.size;
 
@@ -214,6 +222,7 @@ window.createObsListModule = function createObsListModule({
     syncChkAll(getFilteredItems());
   }
 
+  // 현재 필터 대상 기준으로 전체선택 체크박스 상태를 동기화한다.
   function syncChkAll(items) {
     if (!chkAllEl) return;
     const allChecked = items.length > 0 && items.every((it) => selectedObsIds.has(it.id));
@@ -222,6 +231,7 @@ window.createObsListModule = function createObsListModule({
     chkAllEl.indeterminate = !allChecked && someChecked;
   }
 
+  // 검색 조건(관측점/곰 코드)에 맞는 데이터만 반환한다.
   function getFilteredItems() {
     const field = searchFieldEl ? searchFieldEl.value : "obs";
     const query = (searchQueryEl ? searchQueryEl.value : "").trim().toLowerCase();
@@ -232,16 +242,19 @@ window.createObsListModule = function createObsListModule({
     });
   }
 
+  // 검색 결과를 테이블에 반영한다.
   function applySearch() {
     const filtered = getFilteredItems();
     renderObservationList(filtered);
   }
 
+  // 상단 탭 버튼의 active 클래스를 갱신한다.
   function setActiveTab(activeBtn) {
     [btnBear, btnObsAdd].forEach((button) => { if (button) button.classList.remove("tab-active"); });
     if (activeBtn) activeBtn.classList.add("tab-active");
   }
 
+  // 목록의 검색/선택/렌더 상태를 초기값으로 되돌린다.
   function resetList() {
     if (searchQueryEl) searchQueryEl.value = "";
     if (searchFieldEl) searchFieldEl.value = "obs";
@@ -252,6 +265,7 @@ window.createObsListModule = function createObsListModule({
     updateSelectionUI();
   }
 
+  // 목록 패널을 닫으면서 내부 상태를 초기화한다.
   function closeListPanel() {
     resetList();
     setPeekMode(false);
@@ -259,6 +273,7 @@ window.createObsListModule = function createObsListModule({
     setTabLayout("none");
   }
 
+  // 현재 탭 상태(list/add/none)에 맞게 레이아웃과 마커를 제어한다.
   function setTabLayout(tab) {
     currentTab = tab;
     const isList = tab === "list";
@@ -278,6 +293,7 @@ window.createObsListModule = function createObsListModule({
     }
   }
 
+  // UI 이벤트(탭/검색/선택/삭제/스크롤 차단)를 바인딩한다.
   function bindEvents() {
     map.on("zoomend", () => {
       if (currentTab === "list") {
@@ -391,6 +407,7 @@ window.createObsListModule = function createObsListModule({
     });
   }
 
+  // 모듈 초기 진입 시 이벤트와 기본 UI 상태를 세팅한다.
   function initialize() {
     bindEvents();
     setPeekMode(false);

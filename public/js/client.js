@@ -76,6 +76,7 @@ L.control.layers(
 const HILLSHADE_SAFE_MAX_ZOOM = 18;
 const HILLSHADE_BASE_OPACITY = 0.32;
 
+// 현재 줌 레벨에 맞춰 hillshade 레이어의 표시 강도를 동기화한다.
 function syncHillshadeByZoom() {
   const zoom = map.getZoom();
   if (!map.hasLayer(hillshadeOverlay)) return;
@@ -96,11 +97,13 @@ map.fitBounds(JIRISAN_BOUNDS, { padding: [20, 20], maxZoom: 14 });
 //map.setView(JIRISAN_BOUNDS.getCenter(), 11); //처음 시작 시 확대
 
 // ---------- 유틸 ----------
+// 지정 좌표로 부드럽게 이동한다.
 function flyToLatLng(latlng, zoom = 16) {
   map.flyTo(latlng, zoom, { duration: 0.7 });
 }
 
 // ---------- 내 위치 마커(방향 화살표) ----------
+// 현재 방향각을 표현하는 사용자 마커 아이콘을 만든다.
 function createHeadingIcon(wrapSize = 64, svgSize = 48) {
   const c = svgSize / 2;
 
@@ -158,17 +161,20 @@ let lastAbsoluteSampleTs = 0;
 let unstableHits = []; // timestamp list
 let lastStableDeg = null;
 
+// 각도를 0~359 범위로 정규화한다.
 function norm360(deg) {
   return (deg % 360 + 360) % 360;
 }
 
 // a-b를 -180~180 범위로
+// 두 각도의 차이를 최단 회전값(-180~180)으로 계산한다.
 function angleDelta(a, b) {
   let d = norm360(a - b);
   if (d > 180) d -= 360;
   return d;
 }
 
+// 화면 회전 각도(0/90/180/270)를 반환한다.
 function getScreenAngle() {
   const a = (screen && screen.orientation) ? screen.orientation.angle : undefined;
   if (typeof a === "number") return a; // 0/90/180/270
@@ -177,6 +183,7 @@ function getScreenAngle() {
   return 0;
 }
 
+// 여러 후보 heading 중 기준값과 가장 가까운 값을 고른다.
 function pickClosestHeading(candidates, referenceDeg) {
   if (!Array.isArray(candidates) || candidates.length === 0) return null;
   if (!Number.isFinite(referenceDeg)) return candidates[0];
@@ -195,6 +202,7 @@ function pickClosestHeading(candidates, referenceDeg) {
   return best;
 }
 
+// 사용자 에이전트로 플랫폼(iOS/Android/기타)을 추정한다.
 function getPlatform() {
   const ua = navigator.userAgent || "";
   const isIOS = /iPad|iPhone|iPod/.test(ua) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
@@ -205,12 +213,14 @@ function getPlatform() {
 }
 
 // 플랫폼별 미세 보정(필요할 때만 숫자 조금)
+// 플랫폼별 오프셋을 적용해 heading을 보정한다.
 function applyHeadingOffset(deg, platform = getPlatform()) {
   const off = HEADING_OFFSET[platform] ?? HEADING_OFFSET.other ?? 0;
   return norm360(deg + off);
 }
 
 // --- 핵심: 이벤트 -> 북 기준 heading(best effort) ---
+// 디바이스 방향 이벤트를 북 기준 heading으로 변환한다.
 function computeHeadingFromEvent(e) {
   const screenAngle = getScreenAngle(); // 0/90/180/270
 
@@ -249,6 +259,7 @@ function computeHeadingFromEvent(e) {
 }
 
 // --- 스무딩 + 점프 완화 ---
+// 방향각 노이즈를 줄이기 위해 스무딩/점프 완화를 적용한다.
 function filterHeading(nextDeg) {
   // 첫 값
   if (headingSmoothed === null) {
@@ -291,6 +302,7 @@ function filterHeading(nextDeg) {
 }
 
 
+// 지도 나침반/내 위치 마커/등록 모듈에 방향각을 반영한다.
 function setHeading(deg) {
   if (!Number.isFinite(deg)) return;
 
@@ -327,6 +339,7 @@ function setHeading(deg) {
   dot.style.transform = `rotate(${effectiveDeg}deg)`;
 }
 
+// 방향 센서 권한/이벤트를 활성화해 나침반 추적을 시작한다.
 async function startCompass() {
   if (compassEnabled) return;
 
@@ -376,6 +389,7 @@ async function startCompass() {
   compassEnabled = true;
 }
 
+// 방향 센서 추적을 중단하고 상태를 초기화한다.
 function stopCompass() {
   if (!compassEnabled) return;
   if (compassEventName) {
@@ -460,11 +474,13 @@ const JirisanButtonControl = L.Control.extend({
 map.addControl(new JirisanButtonControl());
 map.addControl(new LocateButtonControl());
 
+// 등록 팝업이 현재 열려 있는지 확인한다.
 function isRegisterPopupOpen() {
   const popupEl = document.getElementById("register-box");
   return !!popupEl && !popupEl.classList.contains("hidden");
 }
 
+// 등록 팝업이 내 위치 마커를 가릴 때 지도를 살짝 이동해 시야를 확보한다.
 function keepMyMarkerVisibleFromRegisterPopup() {
   if (!isRegisterPopupOpen()) return;
   if (!isMyVisible || !map.hasLayer(myMarker)) return;
@@ -534,6 +550,7 @@ function keepMyMarkerVisibleFromRegisterPopup() {
 }
 
 // ---------- 내 위치 토글(ON/OFF) + GPS/나침반 연동 ----------
+// 내 위치 추적을 ON/OFF 토글하고 GPS/나침반 상태를 동기화한다.
 async function toggleMyLocation() {
   // ON -> OFF
   if (isMyVisible || watchId !== null) {
@@ -744,6 +761,7 @@ const observationMarkersLayer = L.layerGroup().addTo(map);
 
 let bearsDataCache = [];
 
+// 곰 더미 데이터 원본(json)을 로드한다.
 async function loadBearsData() {
   try {
     const res = await fetch("/json/bears.json", { cache: "no-store" });
@@ -754,6 +772,7 @@ async function loadBearsData() {
   }
 }
 
+// 지리산 근처 좌표로 곰 더미 위치를 생성한다.
 function makeDummyBearsNearJirisan() {
   if (!bearsDataCache.length) return [];
 
@@ -776,6 +795,7 @@ function makeDummyBearsNearJirisan() {
   });
 }
 
+// 곰 위치 마커와 라벨을 지도에 렌더링한다.
 function renderBearMarkers(items) {
   bearMarkersLayer.clearLayers();
 
@@ -794,6 +814,7 @@ function renderBearMarkers(items) {
   }
 }
 
+// 하단 패널에 곰 목록을 렌더링하고 클릭 이동을 연결한다.
 function renderBears(items) {
   bearsListEl.innerHTML = "";
 
@@ -823,6 +844,7 @@ function renderBears(items) {
   }
 }
 
+// 등록 미리보기(현재 좌표/방향각) 표시 값을 갱신한다.
 function updateRegistrationPreview() {
   const baseLatLng = lastLatLng || (TEST_USE_JIRISAN_LOCATION ? TEST_JIRISAN_LOCATION : [35.315, 127.655]);
   const previewHeading = lastHeadingDeg !== null ? `${Math.round(lastHeadingDeg)}°` : "대기중";
@@ -835,6 +857,7 @@ function updateRegistrationPreview() {
   }
 }
 
+// 더미 곰 데이터를 새로 만들고 목록/마커/지도 포커스를 갱신한다.
 async function refreshDummyBearsAndFocus() {
   statusEl.textContent = "🐻 곰 더미 위치 생성중…";
 
@@ -862,6 +885,7 @@ if (btnPanelToggle) btnPanelToggle.addEventListener("click", (e) => {
   btnPanelToggle.setAttribute("aria-expanded", collapsed ? "false" : "true");
 });
 
+// 하단 곰 추정위치 패널을 접힌 상태로 만든다.
 function collapseBearEstimatePanel() {
   if (!panelEl || !btnPanelToggle) return;
   if (panelEl.classList.contains("collapsed")) return;
