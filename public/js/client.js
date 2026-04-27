@@ -136,6 +136,21 @@ const COMPASS_CFG = {
   // heading 스무딩 정도(0~1). 낮을수록 부드럽지만 늦게 따라옴
   smoothAlpha: 0.25,
 
+  // 이동 중에는 GPS heading을 센서 heading과 합성해 방향 안정성을 높임
+  useGpsHeadingWhenMoving: true,
+  // GPS heading 사용 최소 속도(m/s). 정지/저속에서는 GPS 방향값이 흔들려 제외.
+  // 0.8m/s ≈ 2.9km/h (느린 보행 시작 구간)
+  gpsMinSpeedMps: 0.8,
+  // GPS heading 신선도 허용 시간(ms). 이 시간보다 오래된 heading은 사용하지 않음.
+  // 값이 클수록 끊김은 줄지만, 오래된 방향을 따라갈 수 있음.
+  gpsHeadingMaxAgeMs: 2500,
+  // 센서->GPS 합성 비율(0~1) 표준값(속도 기반 자동 조절)
+  // 도보 저속에서는 min(센서 반응성 유지), 차량 고속에서는 max(GPS 안정성 강화)
+  gpsBlendAlphaMin: 0.58,
+  gpsBlendAlphaMax: 0.88,
+  // 이 속도(m/s)에 도달하면 max 비율로 포화됨. 8m/s ≈ 28.8km/h
+  gpsBlendSpeedMaxMps: 8,
+
   // 갑자기 이 각도 이상 튀면(outlier) 강하게 완화
   jumpThresholdDeg: 70,
 
@@ -157,6 +172,9 @@ let compassEventName = null;
 let headingSmoothed = null;
 let lastHeadingDeg = null;
 let lastAbsoluteSampleTs = 0;
+let lastGpsHeadingDeg = null;
+let lastGpsSpeedMps = null;
+let lastGpsHeadingTs = 0;
 
 let unstableHits = []; // timestamp list
 let lastStableDeg = null;
@@ -217,6 +235,70 @@ function getPlatform() {
 function applyHeadingOffset(deg, platform = getPlatform()) {
   const off = HEADING_OFFSET[platform] ?? HEADING_OFFSET.other ?? 0;
   return norm360(deg + off);
+}
+
+// GPS 샘플에서 heading/speed를 추출해 최신 상태로 저장한다.
+function updateGpsHeadingSample(coords) {
+  if (!coords) return;
+
+  const speed = coords.speed;
+  if (typeof speed === "number" && Number.isFinite(speed) && speed >= 0) {
+    lastGpsSpeedMps = speed;
+  } else {
+    lastGpsSpeedMps = null;
+  }
+
+  const heading = coords.heading;
+  if (typeof heading === "number" && Number.isFinite(heading) && heading >= 0) {
+    lastGpsHeadingDeg = norm360(heading);
+    lastGpsHeadingTs = Date.now();
+  }
+
+  if (
+    Number.isFinite(lastGpsSpeedMps) &&
+    lastGpsSpeedMps < COMPASS_CFG.gpsMinSpeedMps
+  ) {
+    // 정지/저속 구간에서는 GPS heading 신뢰도가 급락하므로 비활성화
+    lastGpsHeadingDeg = null;
+    lastGpsHeadingTs = 0;
+  }
+}
+
+// 현재 조건에서 GPS heading을 사용 가능한지 판단한다.
+function canUseGpsHeading() {
+  if (!COMPASS_CFG.useGpsHeadingWhenMoving) return false;
+  if (!Number.isFinite(lastGpsHeadingDeg)) return false;
+  if (!Number.isFinite(lastGpsSpeedMps)) return false;
+  if (lastGpsSpeedMps < COMPASS_CFG.gpsMinSpeedMps) return false;
+  if (!lastGpsHeadingTs) return false;
+  if (Date.now() - lastGpsHeadingTs > COMPASS_CFG.gpsHeadingMaxAgeMs) return false;
+  return true;
+}
+
+// 현재 속도 기준으로 GPS 합성 비율을 자동 계산한다.
+function getAdaptiveGpsBlendAlpha() {
+  const minA = COMPASS_CFG.gpsBlendAlphaMin;
+  const maxA = COMPASS_CFG.gpsBlendAlphaMax;
+  const maxSpeed = COMPASS_CFG.gpsBlendSpeedMaxMps;
+
+  if (!Number.isFinite(lastGpsSpeedMps) || !Number.isFinite(maxSpeed) || maxSpeed <= 0) {
+    return minA;
+  }
+
+  const clampedSpeed = Math.max(0, Math.min(lastGpsSpeedMps, maxSpeed));
+  const t = clampedSpeed / maxSpeed;
+  return minA + (maxA - minA) * t;
+}
+
+// 센서 heading과 GPS heading을 합성해 이동 중 방향 안정성을 높인다.
+function fuseHeadingWithGps(sensorDeg) {
+  if (!Number.isFinite(sensorDeg)) return sensorDeg;
+  if (!canUseGpsHeading()) return sensorDeg;
+
+  const gpsDeg = norm360(lastGpsHeadingDeg);
+  const d = angleDelta(gpsDeg, sensorDeg);
+  const blendAlpha = getAdaptiveGpsBlendAlpha();
+  return norm360(sensorDeg + d * blendAlpha);
 }
 
 // --- 핵심: 이벤트 -> 북 기준 heading(best effort) ---
@@ -374,7 +456,8 @@ async function startCompass() {
 
     const corrected = applyHeadingOffset(heading);
     const smoothed = filterHeading(corrected);
-    setHeading(smoothed);
+    const fused = fuseHeadingWithGps(smoothed);
+    setHeading(fused);
   };
 
   const hasAbsoluteEvent = "ondeviceorientationabsolute" in window;
@@ -567,6 +650,9 @@ async function toggleMyLocation() {
     didMoveToMe = false;
     lastLatLng = null;
     lastGpsTimestamp = null;
+    lastGpsHeadingDeg = null;
+    lastGpsSpeedMps = null;
+    lastGpsHeadingTs = 0;
 
     if (obsRegisterModule) {
       obsRegisterModule.updateLiveData({
@@ -638,6 +724,7 @@ navigator.geolocation.getCurrentPosition(
     (pos) => {
       const lat = pos.coords.latitude;
       const lng = pos.coords.longitude;
+  updateGpsHeadingSample(pos.coords);
       const latlng = [lat, lng];
       lastLatLng = latlng;
       lastGpsTimestamp = Date.now();
@@ -652,7 +739,11 @@ navigator.geolocation.getCurrentPosition(
         didMoveToMe = true;
         flyToLatLng(latlng, 16);
       }
-      if (lastHeadingDeg !== null) setHeading(lastHeadingDeg);
+      if (lastHeadingDeg !== null) {
+        setHeading(lastHeadingDeg);
+      } else if (canUseGpsHeading()) {
+        setHeading(lastGpsHeadingDeg);
+      }
       if (obsRegisterModule) {
         obsRegisterModule.updateLiveData({
           lat,
@@ -679,6 +770,7 @@ navigator.geolocation.getCurrentPosition(
     (pos) => {
       const lat = pos.coords.latitude;
       const lng = pos.coords.longitude;
+      updateGpsHeadingSample(pos.coords);
       const latlng = [lat, lng];
       lastLatLng = latlng;
       lastGpsTimestamp = Date.now();
@@ -690,7 +782,11 @@ navigator.geolocation.getCurrentPosition(
         isMyVisible = true;
         if (locateBtnEl) locateBtnEl.classList.add("is-active");
       }
-      if (lastHeadingDeg !== null) setHeading(lastHeadingDeg);
+      if (lastHeadingDeg !== null) {
+        setHeading(lastHeadingDeg);
+      } else if (canUseGpsHeading()) {
+        setHeading(lastGpsHeadingDeg);
+      }
 
       if (obsRegisterModule) {
         obsRegisterModule.updateLiveData({
@@ -720,6 +816,9 @@ navigator.geolocation.getCurrentPosition(
       didMoveToMe = false;
       lastLatLng = null;
       lastGpsTimestamp = null;
+      lastGpsHeadingDeg = null;
+      lastGpsSpeedMps = null;
+      lastGpsHeadingTs = 0;
       if (locateBtnEl) locateBtnEl.classList.remove("is-active");
 
       if (obsRegisterModule) {
