@@ -5,6 +5,7 @@ const statusEl = document.getElementById("status");
 const btnBear = document.getElementById("btn-obs-list"); // 관측점 목록 버튼
 const btnObsAdd = document.getElementById("btn-obs-add"); // 관측점 등록 버튼
 const btnAnalysis = document.getElementById("btn-analysis");
+const btnDeleteSelected = document.getElementById("btn-delete-selected");
 const btnMe = document.getElementById("btn-me");       // (있다면) 내 위치 토글 버튼
 const btnJiri = document.getElementById("btn-jiri");   // (있다면) 지리산 버튼
 
@@ -18,9 +19,17 @@ const btnPanelToggle = document.getElementById("btn-panel-toggle");
 const registerBoxEl = document.getElementById("register-box");
 const obsListPanelEl = document.getElementById("obs-list-panel");
 const obsListBodyEl = document.getElementById("obs-list-body");
+const obsTableWrapEl = document.querySelector(".obs-table-wrap");
+const obsTableBodyScrollableEl = document.querySelector(".obs-table tbody");
+const searchFieldEl = document.getElementById("search-field");
+const searchQueryEl = document.getElementById("search-query");
+const btnSearchClearEl = document.getElementById("btn-search-clear");
+const chkAllEl = document.getElementById("chk-all");
+
+// 선택된 관측점 ID 목록
+const selectedObsIds = new Set();
 const currentCoordEl = document.getElementById("obs-current-coord");
 const currentHeadingEl = document.getElementById("obs-current-heading");
-const currentXyEl = document.getElementById("obs-current-xy");
 
 const btnBearsToggle = document.getElementById("btn-bears-toggle");
 const bearsListEl = document.getElementById("bears-list");
@@ -599,9 +608,21 @@ const observationMarkersLayer = L.layerGroup().addTo(map);
 const observationMarkers = [];
 
 const observationSamples = [
-  { id: "p1", bearCode: "001", owner: "1팀", lat: 35.3112, lng: 127.6551, x: "312451.22", y: "248913.88", heading: "124°" },
-  { id: "p2", bearCode: "001", owner: "2팀", lat: 35.3131, lng: 127.6624, x: "313126.70", y: "249085.20", heading: "82°" },
-  { id: "p3", bearCode: "002", owner: "3팀", lat: 35.3157, lng: 127.6493, x: "311878.54", y: "249362.14", heading: "301°" }
+  { id: "p1", bearCode: "001", owner: "1팀", lat: 35.3112, lng: 127.6551, heading: "124°" },
+  { id: "p2", bearCode: "001", owner: "2팀", lat: 35.3131, lng: 127.6624, heading: "82°" },
+  { id: "p3", bearCode: "002", owner: "3팀", lat: 35.3157, lng: 127.6493, heading: "301°" },
+  { id: "p4", bearCode: "001", owner: "1팀", lat: 35.3112, lng: 127.6551, heading: "124°" },
+  { id: "p5", bearCode: "001", owner: "2팀", lat: 35.3131, lng: 127.6624, heading: "82°" },
+  { id: "p6", bearCode: "002", owner: "3팀", lat: 35.3157, lng: 127.6493, heading: "301°" },
+  { id: "p7", bearCode: "001", owner: "1팀", lat: 35.3112, lng: 127.6551, heading: "124°" },
+  { id: "p8", bearCode: "001", owner: "2팀", lat: 35.3131, lng: 127.6624, heading: "82°" },
+  { id: "p9", bearCode: "002", owner: "3팀", lat: 35.3157, lng: 127.6493, heading: "301°" },
+  { id: "p10", bearCode: "001", owner: "1팀", lat: 35.3112, lng: 127.6551, heading: "124°" },
+  { id: "p11", bearCode: "001", owner: "2팀", lat: 35.3131, lng: 127.6624, heading: "82°" },
+  { id: "p12", bearCode: "002", owner: "3팀", lat: 35.3157, lng: 127.6493, heading: "301°" },
+  { id: "p13", bearCode: "001", owner: "1팀", lat: 35.3112, lng: 127.6551, heading: "124°" },
+  { id: "p14", bearCode: "001", owner: "2팀", lat: 35.3131, lng: 127.6624, heading: "82°" },
+  { id: "p15", bearCode: "002", owner: "3팀", lat: 35.3157, lng: 127.6493, heading: "301°" }
 ];
 
 let currentTab = "none";
@@ -724,10 +745,21 @@ function renderObservationMarkers(items) {
   for (const item of items) {
     const marker = L.marker([item.lat, item.lng], { icon: createObservationIcon(item, zoom) });
     marker.obsData = item;
-    marker.bindPopup(`관측점 ${item.id}<br/>곰 코드 ${item.bearCode}<br/>등록자 ${item.owner}`);
+    marker.bindPopup(
+      `관측점 ${item.id}<br/>` +
+      `곰 코드 ${item.bearCode}<br/>` +
+      `등록자 ${item.owner}<br/>` +
+      `위경도 ${item.lat.toFixed(6)}, ${item.lng.toFixed(6)}`
+    );
     observationMarkersLayer.addLayer(marker);
     observationMarkers.push(marker);
   }
+}
+
+function moveToObservation(item) {
+  if (!item) return;
+
+  flyToLatLng([item.lat, item.lng], 17);
 }
 
 function updateObservationMarkerScale() {
@@ -752,9 +784,12 @@ function renderObservationList(items) {
 
   for (const item of items) {
     const row = document.createElement("tr");
+    const isChecked = selectedObsIds.has(item.id);
+    if (isChecked) row.classList.add("selected");
+
     row.innerHTML = `
+      <td class="col-chk"><input type="checkbox" class="obs-row-chk" data-id="${item.id}" ${isChecked ? "checked" : ""} /></td>
       <td>${item.id}</td>
-      <td>${item.x}, ${item.y}</td>
       <td>${item.bearCode}</td>
       <td>${item.owner}</td>
       <td>
@@ -765,7 +800,12 @@ function renderObservationList(items) {
       </td>
     `;
 
-    // 행 클릭은 위치 이동 용도이고, 버튼 클릭은 별도 액션으로 분리한다.
+    const chk = row.querySelector(".obs-row-chk");
+    chk?.addEventListener("click", (e) => {
+      e.stopPropagation();
+      handleObsCheck(item.id, chk.checked, row);
+    });
+
     const editBtn = row.querySelector('[data-action="edit"]');
     const deleteBtn = row.querySelector('[data-action="delete"]');
 
@@ -780,11 +820,83 @@ function renderObservationList(items) {
     });
 
     row.addEventListener("click", () => {
-      flyToLatLng([item.lat, item.lng], 17);
+      moveToObservation(item);
     });
 
     obsListBodyEl.appendChild(row);
   }
+
+  // 전체 선택 체크박스 상태 동기화
+  syncChkAll(items);
+}
+
+function handleObsCheck(id, checked, row) {
+  if (checked) {
+    selectedObsIds.add(id);
+    row.classList.add("selected");
+  } else {
+    selectedObsIds.delete(id);
+    row.classList.remove("selected");
+  }
+  updateSelectionUI();
+}
+
+function updateSelectionUI() {
+  const count = selectedObsIds.size;
+
+  // 배지 업데이트
+  let badge = document.querySelector(".sel-count-badge");
+  const header = document.querySelector(".obs-sheet-header h2");
+  if (!badge && header) {
+    badge = document.createElement("span");
+    badge.className = "sel-count-badge";
+    header.appendChild(badge);
+  }
+  if (badge) {
+    badge.textContent = count > 0 ? `${count}개 선택` : "";
+    badge.style.opacity = count > 0 ? "1" : "0";
+  }
+
+  // 위치분석 버튼 활성/비활성
+  if (btnAnalysis) {
+    const canAnalyze = count === 2;
+    btnAnalysis.disabled = !canAnalyze;
+    btnAnalysis.style.opacity = canAnalyze ? "1" : "0.45";
+    btnAnalysis.style.cursor = canAnalyze ? "pointer" : "not-allowed";
+  }
+
+  // 선택 삭제 버튼 활성/비활성
+  if (btnDeleteSelected) {
+    btnDeleteSelected.disabled = count < 1;
+    btnDeleteSelected.style.opacity = count < 1 ? "0.45" : "1";
+    btnDeleteSelected.style.cursor = count < 1 ? "not-allowed" : "pointer";
+  }
+
+  // 전체선택 체크박스 동기화 (현재 필터된 목록 기준)
+  syncChkAll(getFilteredItems());
+}
+
+function syncChkAll(items) {
+  if (!chkAllEl) return;
+  const allChecked = items.length > 0 && items.every(it => selectedObsIds.has(it.id));
+  const someChecked = items.some(it => selectedObsIds.has(it.id));
+  chkAllEl.checked = allChecked;
+  chkAllEl.indeterminate = !allChecked && someChecked;
+}
+
+function getFilteredItems() {
+  const field = searchFieldEl?.value ?? "obs";
+  const query = (searchQueryEl?.value ?? "").trim().toLowerCase();
+  if (!query) return observationSamples;
+  return observationSamples.filter(item => {
+    if (field === "bear") return item.bearCode.toLowerCase().includes(query);
+    return item.id.toLowerCase().includes(query);
+  });
+}
+
+function applySearch() {
+  const filtered = getFilteredItems();
+  renderObservationList(filtered);
 }
 
 function updateRegistrationPreview() {
@@ -796,9 +908,6 @@ function updateRegistrationPreview() {
   }
   if (currentHeadingEl) {
     currentHeadingEl.textContent = previewHeading;
-  }
-  if (currentXyEl) {
-    currentXyEl.textContent = "312451.22, 248913.88";
   }
 }
 
@@ -817,7 +926,7 @@ function setTabLayout(tab) {
   observationMarkersLayer.clearLayers();
 
   if (isList) {
-    renderObservationList(observationSamples);
+    applySearch();
     renderObservationMarkers(observationSamples);
   }
 }
@@ -867,7 +976,37 @@ btnObsAdd?.addEventListener("click", () => {
 });
 
 btnAnalysis?.addEventListener("click", () => {
-  statusEl.textContent = "📐 위치분석 UI 준비 중";
+  if (selectedObsIds.size !== 2) {
+    statusEl.textContent = "⚠️ 위치분석은 관측점 2개를 선택해야 합니다.";
+    return;
+  }
+  const ids = [...selectedObsIds];
+  statusEl.textContent = `📐 위치분석: [${ids.join(", ")}] 분석 준비 중`;
+});
+
+btnDeleteSelected?.addEventListener("click", () => {
+  if (selectedObsIds.size < 1) return;
+
+  const selectedIds = new Set(selectedObsIds);
+  let deletedCount = 0;
+
+  for (let i = observationSamples.length - 1; i >= 0; i--) {
+    if (selectedIds.has(observationSamples[i].id)) {
+      observationSamples.splice(i, 1);
+      deletedCount += 1;
+    }
+  }
+
+  selectedObsIds.clear();
+  applySearch();
+  if (currentTab === "list") {
+    renderObservationMarkers(observationSamples);
+  }
+  updateSelectionUI();
+
+  statusEl.textContent = deletedCount > 0
+    ? `🗑️ ${deletedCount}개 관측점을 선택 삭제했습니다.`
+    : "🟠 삭제할 관측점이 없습니다.";
 });
 
 
@@ -885,8 +1024,42 @@ panelEl?.addEventListener("pointerdown", (e) => e.stopPropagation());
 panelEl?.addEventListener("touchstart", (e) => e.stopPropagation(), { passive: true });
 panelEl?.addEventListener("wheel", (e) => e.stopPropagation(), { passive: true });
 
+// 관측점 목록 패널/테이블 스크롤이 지도로 전파되지 않도록 차단
+obsSheetEl?.addEventListener("pointerdown", (e) => e.stopPropagation());
+obsSheetEl?.addEventListener("touchstart", (e) => e.stopPropagation(), { passive: true });
+obsSheetEl?.addEventListener("wheel", (e) => e.stopPropagation(), { passive: true });
+
+obsTableWrapEl?.addEventListener("touchmove", (e) => e.stopPropagation(), { passive: true });
+obsTableWrapEl?.addEventListener("wheel", (e) => e.stopPropagation(), { passive: true });
+obsTableBodyScrollableEl?.addEventListener("touchmove", (e) => e.stopPropagation(), { passive: true });
+obsTableBodyScrollableEl?.addEventListener("wheel", (e) => e.stopPropagation(), { passive: true });
+
+// 검색 필터 이벤트
+searchQueryEl?.addEventListener("input", applySearch);
+searchFieldEl?.addEventListener("change", applySearch);
+btnSearchClearEl?.addEventListener("click", () => {
+  if (searchQueryEl) searchQueryEl.value = "";
+  applySearch();
+});
+
+// 전체 선택/해제 체크박스
+chkAllEl?.addEventListener("change", () => {
+  const filtered = getFilteredItems();
+  if (chkAllEl.checked) {
+    // 현재 필터된 항목 모두 선택
+    filtered.forEach(it => selectedObsIds.add(it.id));
+  } else {
+    filtered.forEach(it => selectedObsIds.delete(it.id));
+  }
+  applySearch();
+  updateSelectionUI();
+});
+
 // ---------- 초기화 ----------
 (async function initializeUI() {
+  // 위치분석 버튼 초기 비활성화
+  updateSelectionUI();
+
   updateRegistrationPreview();
   setTabLayout(currentTab);
   setActiveTab(currentTab === "list" ? btnBear : null);

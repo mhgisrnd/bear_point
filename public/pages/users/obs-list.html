@@ -1,0 +1,33 @@
+<section class="obs-sheet hidden" id="obs-sheet" aria-label="관측점 목록 패널">
+  <div class="obs-sheet-header">
+    <h2>관측점 목록</h2>
+    <div class="obs-header-actions">
+      <button class="analysis-btn" id="btn-analysis" type="button">위치분석</button>
+      <button class="bulk-delete-btn" id="btn-delete-selected" type="button">선택 삭제</button>
+    </div>
+  </div>
+
+  <div class="obs-search-bar">
+    <select class="obs-search-select" id="search-field">
+      <option value="obs">관측점</option>
+      <option value="bear">곰 코드</option>
+    </select>
+    <input class="obs-search-input" id="search-query" type="text" placeholder="검색..." autocomplete="off" />
+    <button class="obs-search-clear" id="btn-search-clear" type="button">초기화</button>
+  </div>
+
+  <div class="obs-table-wrap">
+    <table class="obs-table">
+      <thead>
+        <tr>
+          <th class="col-chk"><input type="checkbox" id="chk-all" title="전체선택" /></th>
+          <th>관측점</th>
+          <th>곰 코드</th>
+          <th>등록자</th>
+          <th>관리</th>
+        </tr>
+      </thead>
+      <tbody id="obs-list-body"></tbody>
+    </table>
+  </div>
+</section>

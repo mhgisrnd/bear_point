@@ -11,27 +11,7 @@
 
 </head>
 <body>
-  <section class="obs-sheet hidden" id="obs-sheet" aria-label="관측점 목록 패널">
-    <div class="obs-sheet-header">
-      <h2>관측점 목록</h2>
-      <button class="analysis-btn" id="btn-analysis" type="button">위치분석</button>
-    </div>
-
-    <div class="obs-table-wrap">
-      <table class="obs-table">
-        <thead>
-          <tr>
-            <th>관측점</th>
-            <th>좌표</th>
-            <th>곰 코드</th>
-            <th>등록자</th>
-            <th>관리</th>
-          </tr>
-        </thead>
-        <tbody id="obs-list-body"></tbody>
-      </table>
-    </div>
-  </section>
+  <div id="obs-list-slot" include="/pages/users/obs-list.html"></div>
 
   <div class="panel-stack panel-bottom-left">
     <div class="panel-tabs panel-tabs-floating">
@@ -64,11 +44,9 @@
     <span class="needle blue"></span>
   </div>
 </div>
-  </div>
 </body>
-</div>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="/js/mapBase.js"></script>
-  <script src="/js/client.js"></script>
+  <script src="/js/bootstrap.js"></script>
 </body>
 </html>
