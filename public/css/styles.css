@@ -29,7 +29,7 @@ html, body, #map { height: 100%; margin: 0; }
 }
 .controls button:active{ transform: translateY(1px); }
 
-.leaflet-control-locate-btn{
+/* .leaflet-control-locate-btn{
   width: 30px;
   height: 30px;
   display: flex !important;
@@ -64,7 +64,7 @@ a.leaflet-control-locate-btn.is-active{
 }
 a.leaflet-control-locate-btn.is-active svg{
   color:#fff !important;
-}
+} */
 
 #compass{
   position: fixed;
@@ -115,7 +115,7 @@ a.leaflet-control-locate-btn.is-active svg{
 
 
 /* 나침반을 Leaflet 컨트롤처럼 */
-.leaflet-control-compass{
+/* .leaflet-control-compass{
   width: 46px;
   height: 46px;
   border-radius: 999px;
@@ -148,7 +148,7 @@ a.leaflet-control-locate-btn.is-active svg{
   border-radius: 8px;
   box-shadow: 0 6px 16px rgba(0,0,0,0.12);
   white-space: nowrap;
-}
+} */
 
 .my-heading-icon .arrow-wrap{
   width: 26px;
@@ -157,13 +157,13 @@ a.leaflet-control-locate-btn.is-active svg{
 }
 
     /* 내 위치(조준) 버튼 활성화(파란색) */
-a.leaflet-control-locate-btn.is-active{
+/* a.leaflet-control-locate-btn.is-active{
   background:#2b7cff !important;
   color:#fff !important;
 }
 a.leaflet-control-locate-btn.is-active svg{
   color:#fff !important;
-}
+} */
 
 /* 내 위치 원형 마커 */
 .my-heading-icon .dot{

@@ -65,7 +65,7 @@ hillshadeOverlay.addTo(map);
 L.control.layers(
   {
     "일반지도": osmBase,
-    "지형도(OpenTopoMap)": topoBase
+    "지형도": topoBase
   },
   {
     "음영(Hillshade)": hillshadeOverlay
