@@ -1,19 +1,23 @@
 // public/js/obs/obsList.js
+//관측점 목록
 
 window.createObsListModule = function createObsListModule({
   map,
   statusEl,
   flyToLatLng,
   observationMarkersLayer,
-  updateRegistrationPreview
+  onOpenList,
+  onOpenRegister,
+  onCloseRegister
 }) {
   const btnBear = document.getElementById("btn-obs-list");
   const btnObsAdd = document.getElementById("btn-obs-add");
   const btnAnalysis = document.getElementById("btn-analysis");
   const btnDeleteSelected = document.getElementById("btn-delete-selected");
+  const btnObsListPeek = document.getElementById("btn-obs-list-peek");
+  const btnObsListClose = document.getElementById("btn-obs-list-close");
 
   const obsSheetEl = document.getElementById("obs-sheet");
-  const registerBoxEl = document.getElementById("register-box");
   const obsListPanelEl = document.getElementById("obs-list-panel");
   const obsListBodyEl = document.getElementById("obs-list-body");
   const obsTableWrapEl = document.querySelector(".obs-table-wrap");
@@ -44,6 +48,17 @@ window.createObsListModule = function createObsListModule({
   ];
 
   let currentTab = "none";
+  let isPeekMode = false;
+
+  function setPeekMode(nextState) {
+    isPeekMode = !!nextState;
+    if (obsSheetEl) obsSheetEl.classList.toggle("obs-sheet--peek", isPeekMode);
+    if (btnObsListPeek) {
+      btnObsListPeek.textContent = isPeekMode ? "□" : "―";
+      btnObsListPeek.setAttribute("aria-label", isPeekMode ? "확장" : "최소화");
+      btnObsListPeek.setAttribute("title", isPeekMode ? "확장" : "최소화");
+    }
+  }
 
   function createObservationIcon(item, zoom = map.getZoom()) {
     const baseZoom = 14;
@@ -100,7 +115,7 @@ window.createObsListModule = function createObsListModule({
     const zoom = map.getZoom();
 
     for (const marker of observationMarkers) {
-      if (!marker?.obsData) continue;
+      if (!marker || !marker.obsData) continue;
       marker.setIcon(createObservationIcon(marker.obsData, zoom));
     }
   }
@@ -129,7 +144,7 @@ window.createObsListModule = function createObsListModule({
       `;
 
       const chk = row.querySelector(".obs-row-chk");
-      chk?.addEventListener("click", (e) => {
+      if (chk) chk.addEventListener("click", (e) => {
         e.stopPropagation();
         handleObsCheck(item.id, chk.checked, row);
       });
@@ -137,12 +152,12 @@ window.createObsListModule = function createObsListModule({
       const editBtn = row.querySelector('[data-action="edit"]');
       const deleteBtn = row.querySelector('[data-action="delete"]');
 
-      editBtn?.addEventListener("click", (e) => {
+      if (editBtn) editBtn.addEventListener("click", (e) => {
         e.stopPropagation();
         statusEl.textContent = `✏️ ${item.id} 수정 UI 준비 중`;
       });
 
-      deleteBtn?.addEventListener("click", (e) => {
+      if (deleteBtn) deleteBtn.addEventListener("click", (e) => {
         e.stopPropagation();
         statusEl.textContent = `🗑️ ${item.id} 삭제 UI 준비 중`;
       });
@@ -208,8 +223,8 @@ window.createObsListModule = function createObsListModule({
   }
 
   function getFilteredItems() {
-    const field = searchFieldEl?.value ?? "obs";
-    const query = (searchQueryEl?.value ?? "").trim().toLowerCase();
+    const field = searchFieldEl ? searchFieldEl.value : "obs";
+    const query = (searchQueryEl ? searchQueryEl.value : "").trim().toLowerCase();
     if (!query) return observationSamples;
     return observationSamples.filter((item) => {
       if (field === "bear") return item.bearCode.toLowerCase().includes(query);
@@ -223,8 +238,25 @@ window.createObsListModule = function createObsListModule({
   }
 
   function setActiveTab(activeBtn) {
-    [btnBear, btnObsAdd].forEach((button) => button?.classList.remove("tab-active"));
-    activeBtn?.classList.add("tab-active");
+    [btnBear, btnObsAdd].forEach((button) => { if (button) button.classList.remove("tab-active"); });
+    if (activeBtn) activeBtn.classList.add("tab-active");
+  }
+
+  function resetList() {
+    if (searchQueryEl) searchQueryEl.value = "";
+    if (searchFieldEl) searchFieldEl.value = "obs";
+    selectedObsIds.clear();
+    observationMarkersLayer.clearLayers();
+    observationMarkers.length = 0;
+    if (obsListBodyEl) obsListBodyEl.innerHTML = "";
+    updateSelectionUI();
+  }
+
+  function closeListPanel() {
+    resetList();
+    setPeekMode(false);
+    setActiveTab(null);
+    setTabLayout("none");
   }
 
   function setTabLayout(tab) {
@@ -233,14 +265,14 @@ window.createObsListModule = function createObsListModule({
 
     if (!isList) {
       map.closePopup();
+      observationMarkersLayer.clearLayers();
     }
 
-    obsSheetEl?.classList.toggle("hidden", !isList);
-    registerBoxEl?.classList.toggle("hidden", isList);
-    obsListPanelEl?.classList.toggle("hidden", !isList);
-    observationMarkersLayer.clearLayers();
+    if (obsSheetEl) obsSheetEl.classList.toggle("hidden", !isList);
+    if (obsListPanelEl) obsListPanelEl.classList.toggle("hidden", !isList);
 
     if (isList) {
+      setPeekMode(false);
       applySearch();
       renderObservationMarkers(observationSamples);
     }
@@ -253,27 +285,37 @@ window.createObsListModule = function createObsListModule({
       }
     });
 
-    btnBear?.addEventListener("click", () => {
+    if (btnBear) btnBear.addEventListener("click", () => {
       const willClose = currentTab === "list";
 
       if (willClose) {
-        setActiveTab(null);
-        setTabLayout("none");
+        closeListPanel();
         return;
       }
 
       setActiveTab(btnBear);
       setTabLayout("list");
+      if (onOpenList) onOpenList();
+      if (onCloseRegister) onCloseRegister();
     });
 
-    btnObsAdd?.addEventListener("click", () => {
+    if (btnObsAdd) btnObsAdd.addEventListener("click", () => {
+      const willClose = currentTab === "add";
+
+      if (willClose) {
+        setActiveTab(null);
+        setTabLayout("none");
+        if (onCloseRegister) onCloseRegister();
+        return;
+      }
+
+      resetList();
       setActiveTab(btnObsAdd);
       setTabLayout("add");
-      updateRegistrationPreview?.();
-      statusEl.textContent = "🧭 현재 위치와 방향각으로 관측점 등록 준비";
+      if (onOpenRegister) onOpenRegister();
     });
 
-    btnAnalysis?.addEventListener("click", () => {
+    if (btnAnalysis) btnAnalysis.addEventListener("click", () => {
       if (selectedObsIds.size !== 2) {
         statusEl.textContent = "⚠️ 위치분석은 관측점 2개를 선택해야 합니다.";
         return;
@@ -282,7 +324,7 @@ window.createObsListModule = function createObsListModule({
       statusEl.textContent = `📐 위치분석: [${ids.join(", ")}] 분석 준비 중`;
     });
 
-    btnDeleteSelected?.addEventListener("click", () => {
+    if (btnDeleteSelected) btnDeleteSelected.addEventListener("click", () => {
       if (selectedObsIds.size < 1) return;
 
       const selectedIds = new Set(selectedObsIds);
@@ -307,23 +349,37 @@ window.createObsListModule = function createObsListModule({
         : "🟠 삭제할 관측점이 없습니다.";
     });
 
-    obsSheetEl?.addEventListener("pointerdown", (e) => e.stopPropagation());
-    obsSheetEl?.addEventListener("touchstart", (e) => e.stopPropagation(), { passive: true });
-    obsSheetEl?.addEventListener("wheel", (e) => e.stopPropagation(), { passive: true });
+    if (btnObsListPeek) btnObsListPeek.addEventListener("click", () => {
+      setPeekMode(!isPeekMode);
+    });
 
-    obsTableWrapEl?.addEventListener("touchmove", (e) => e.stopPropagation(), { passive: true });
-    obsTableWrapEl?.addEventListener("wheel", (e) => e.stopPropagation(), { passive: true });
-    obsTableBodyScrollableEl?.addEventListener("touchmove", (e) => e.stopPropagation(), { passive: true });
-    obsTableBodyScrollableEl?.addEventListener("wheel", (e) => e.stopPropagation(), { passive: true });
+    if (btnObsListClose) btnObsListClose.addEventListener("click", () => {
+      closeListPanel();
+    });
 
-    searchQueryEl?.addEventListener("input", applySearch);
-    searchFieldEl?.addEventListener("change", applySearch);
-    btnSearchClearEl?.addEventListener("click", () => {
+    if (obsSheetEl) {
+      obsSheetEl.addEventListener("pointerdown", (e) => e.stopPropagation());
+      obsSheetEl.addEventListener("touchstart", (e) => e.stopPropagation(), { passive: true });
+      obsSheetEl.addEventListener("wheel", (e) => e.stopPropagation(), { passive: true });
+    }
+
+    if (obsTableWrapEl) {
+      obsTableWrapEl.addEventListener("touchmove", (e) => e.stopPropagation(), { passive: true });
+      obsTableWrapEl.addEventListener("wheel", (e) => e.stopPropagation(), { passive: true });
+    }
+    if (obsTableBodyScrollableEl) {
+      obsTableBodyScrollableEl.addEventListener("touchmove", (e) => e.stopPropagation(), { passive: true });
+      obsTableBodyScrollableEl.addEventListener("wheel", (e) => e.stopPropagation(), { passive: true });
+    }
+
+    if (searchQueryEl) searchQueryEl.addEventListener("input", applySearch);
+    if (searchFieldEl) searchFieldEl.addEventListener("change", applySearch);
+    if (btnSearchClearEl) btnSearchClearEl.addEventListener("click", () => {
       if (searchQueryEl) searchQueryEl.value = "";
       applySearch();
     });
 
-    chkAllEl?.addEventListener("change", () => {
+    if (chkAllEl) chkAllEl.addEventListener("change", () => {
       const filtered = getFilteredItems();
       if (chkAllEl.checked) {
         filtered.forEach((it) => selectedObsIds.add(it.id));
@@ -337,6 +393,7 @@ window.createObsListModule = function createObsListModule({
 
   function initialize() {
     bindEvents();
+    setPeekMode(false);
     updateSelectionUI();
     setTabLayout(currentTab);
     setActiveTab(currentTab === "list" ? btnBear : null);
@@ -345,6 +402,7 @@ window.createObsListModule = function createObsListModule({
   return {
     initialize,
     setTabLayout,
+    deactivate: closeListPanel,
     getCurrentTab: () => currentTab,
     renderObservationMarkers,
     refreshObservationList: applySearch

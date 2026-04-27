@@ -5,7 +5,7 @@
 /* 상단 관측점 목록 패널 */
 .obs-sheet {
   position: fixed;
-  top: 12px;
+  top: 5px;
   left: 16px;
   right: auto;
   z-index: 9998;
@@ -50,6 +50,26 @@
   gap: 6px;
 }
 
+.obs-panel-icon-btn,
+.obs-sheet-close,
+.obs-register-close {
+  background: none;
+  border: none;
+  color: #f8fafc;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 8px;
+  transition: background 0.12s;
+}
+
+.obs-panel-icon-btn:hover,
+.obs-sheet-close:hover,
+.obs-register-close:hover {
+  background: rgba(255, 255, 255, 0.18);
+}
+
 .analysis-btn {
   border: 1px solid rgba(191, 219, 254, 0.45);
   border-radius: 999px;
@@ -86,6 +106,18 @@
   transform: translateY(-1px);
   box-shadow: 0 10px 18px rgba(220, 38, 38, 0.3);
   filter: saturate(1.04);
+}
+
+.obs-sheet--peek {
+  width: min(220px, calc(100vw - 24px));
+  backdrop-filter: none;
+}
+
+.obs-sheet--peek .analysis-btn,
+.obs-sheet--peek .bulk-delete-btn,
+.obs-sheet--peek .obs-search-bar,
+.obs-sheet--peek .obs-table-wrap {
+  display: none;
 }
 
 /* 검색바 */
@@ -582,30 +614,58 @@
 
 @media (max-width: 820px){
   .obs-sheet {
-    top: 10px;
+    top: max(5px, env(safe-area-inset-top));
     left: 12px;
-    right: auto;
-    width: clamp(280px, 80vw, 560px);
-    max-width: calc(100vw - 130px);
+    right: 12px;
+    width: auto;
+    max-width: none;
     border-radius: 14px;
   }
 
   .obs-sheet-header {
-    padding: 6px 8px;
+    padding: 10px 12px;
+    flex-wrap: nowrap;
+    align-items: center;
   }
 
-  .analysis-btn {
-    padding: 6px 10px;
-    font-size: 12px;
-  }
-
-  .bulk-delete-btn {
-    padding: 6px 9px;
-    font-size: 12px;
+  .obs-sheet-header h2 {
+    flex: 1;
+    min-width: 0;
+    font-size: 14px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .obs-header-actions {
-    gap: 5px;
+    width: auto;
+    flex: 0 0 auto;
+    justify-content: flex-end;
+    gap: 4px;
+  }
+
+  .analysis-btn {
+    padding: 5px 8px;
+    font-size: 11px;
+  }
+
+  .bulk-delete-btn {
+    padding: 5px 7px;
+    font-size: 11px;
+  }
+
+  .obs-sheet-close {
+    font-size: 17px;
+    padding: 3px 7px;
+  }
+
+  .obs-panel-icon-btn {
+    font-size: 17px;
+    padding: 3px 7px;
+  }
+
+  .obs-header-actions {
+    gap: 4px;
   }
 
   .obs-table-wrap {
@@ -645,6 +705,354 @@
     flex: 0 1 auto;
     min-width: fit-content;
     padding: 10px 14px;
+  }
+}
+
+/* ===== 관측점 등록 팝업 ===== */
+.obs-register-popup {
+  position: fixed;
+  top: 5px;
+  left: 16px;
+  z-index: 10020;
+  width: clamp(320px, 80vw, 480px);
+  max-width: calc(100vw - 32px);
+  box-sizing: border-box;
+  background: rgba(255, 255, 255, 0.95);
+  border: 1px solid rgba(148, 163, 184, 0.32);
+  border-radius: 18px;
+  box-shadow: 0 18px 36px rgba(15, 23, 42, 0.18);
+  backdrop-filter: blur(8px);
+  overflow: hidden;
+}
+
+.obs-register-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  background: linear-gradient(135deg, rgba(30, 41, 59, 0.92), rgba(51, 65, 85, 0.88));
+  color: #f8fafc;
+  cursor: grab;
+  user-select: none;
+}
+
+.obs-register-header:active {
+  cursor: grabbing;
+}
+
+.obs-register-header h2 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+
+.obs-register-header-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.obs-register-peek {
+  border: 1px solid rgba(203, 213, 225, 0.55);
+  background: rgba(255, 255, 255, 0.14);
+  color: #f8fafc;
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 6px 10px;
+  border-radius: 8px;
+  transition: background 0.12s;
+}
+
+.obs-register-peek:hover {
+  background: rgba(255, 255, 255, 0.24);
+}
+
+.obs-register-close {
+  background: none;
+  border: none;
+  color: #f8fafc;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 8px;
+  transition: background 0.12s;
+}
+
+.obs-register-close:hover {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.obs-register-popup--peek {
+  width: min(220px, calc(100vw - 24px));
+  backdrop-filter: none;
+}
+
+.obs-register-popup--peek .obs-register-body {
+  display: none;
+}
+
+.obs-register-body {
+  padding: 14px 14px 10px;
+  max-height: calc(100vh - 120px);
+  overflow-y: auto;
+}
+
+.obs-register-placeholder {
+  margin: 0;
+  color: #64748b;
+  font-size: 14px;
+  text-align: center;
+}
+
+/* 관측점 등록 폼 */
+.obs-reg-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.obs-reg-section {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.obs-reg-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+}
+
+.obs-reg-label {
+  flex: 0 0 52px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #334155;
+  text-align: right;
+}
+
+.obs-reg-input {
+  flex: 1;
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  font-size: 13px;
+  color: #1e293b;
+  background: #fff;
+  box-sizing: border-box;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.obs-reg-input:focus {
+  border-color: #4c6fd3;
+}
+
+.obs-reg-input--gps {
+  background: #f1f5f9;
+  color: #64748b;
+  cursor: default;
+}
+
+.obs-reg-coord-wrap {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.obs-reg-coord-wrap .obs-reg-input {
+  flex: 1;
+}
+
+.obs-reg-coord-type {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.obs-reg-radio-label {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 12px;
+  color: #475569;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.obs-reg-select {
+  flex: 1;
+  height: 30px;
+  padding: 0 6px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  font-size: 13px;
+  color: #1e293b;
+  background: #fff;
+  box-sizing: border-box;
+  outline: none;
+  cursor: pointer;
+}
+
+.obs-reg-select:focus {
+  border-color: #4c6fd3;
+}
+
+/* 감지기 섹션 */
+.obs-reg-section--detector {
+  gap: 6px;
+}
+
+.obs-reg-detector-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.obs-reg-section-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #334155;
+}
+
+.obs-reg-detector-btns {
+  display: flex;
+  gap: 4px;
+}
+
+.obs-reg-det-btn {
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: 6px;
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: opacity 0.15s;
+}
+
+.obs-reg-det-btn--add {
+  background: #22c55e;
+  color: #fff;
+}
+
+.obs-reg-det-btn--remove {
+  background: #ef4444;
+  color: #fff;
+}
+
+.obs-reg-det-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.obs-reg-det-table-wrap {
+  overflow-x: auto;
+}
+
+.obs-reg-det-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.obs-reg-det-table thead th {
+  padding: 5px 6px;
+  background: #e2e8f0;
+  color: #475569;
+  font-weight: 700;
+  text-align: center;
+  border-radius: 4px;
+}
+
+.obs-reg-det-table tbody td {
+  padding: 4px 4px;
+}
+
+.obs-reg-select--det {
+  width: 100%;
+  height: 28px;
+  font-size: 12px;
+}
+
+/* 등록 / 취소 버튼 */
+.obs-reg-footer {
+  display: flex;
+  gap: 8px;
+  padding-top: 2px;
+}
+
+.obs-reg-btn {
+  flex: 1;
+  height: 36px;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.obs-reg-btn:hover {
+  opacity: 0.85;
+}
+
+.obs-reg-btn--submit {
+  background: #4c6fd3;
+  color: #fff;
+}
+
+.obs-reg-btn--cancel {
+  background: #ef4444;
+  color: #fff;
+}
+
+@media (max-width: 820px) {
+  .obs-register-popup {
+    top: max(5px, env(safe-area-inset-top));
+    left: 12px;
+    right: 12px;
+    width: auto;
+    max-width: none;
+    border-radius: 14px;
+  }
+
+  .obs-register-header {
+    padding: 10px 12px;
+  }
+
+  .obs-register-header h2 {
+    font-size: 14px;
+  }
+
+  .obs-register-body {
+    max-height: calc(100dvh - 110px);
+  }
+
+  .obs-register-popup--peek {
+    right: auto;
+    width: min(220px, calc(100vw - 24px));
+  }
+
+  .obs-sheet--peek {
+    right: auto;
+    width: min(220px, calc(100vw - 24px));
   }
 }
 

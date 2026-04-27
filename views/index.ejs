@@ -11,10 +11,11 @@
 </head>
 <body>
   <%- include("partials/users/obs-list") %>
+  <%- include("partials/users/obs-register") %>
 
   <div class="panel-stack panel-bottom-left">
     <div class="panel-tabs panel-tabs-floating">
-        <button class="tab-btn" id="btn-obs-add" disabled>관측점 등록</button>
+        <button class="tab-btn" id="btn-obs-add">관측점 등록</button>
         <button class="tab-btn" id="btn-obs-list">관측점 목록</button>
     </div>
 
@@ -45,8 +46,8 @@
   </div>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="/js/mapBase.js"></script>
   <script src="/js/obs/obsList.js"></script>
+  <script src="/js/obs/obsRegister.js"></script>
   <script src="/js/client.js"></script>
 </body>
 </html>

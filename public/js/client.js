@@ -1,4 +1,4 @@
-// public/js/client.js
+﻿// public/js/client.js
 
 // ---------- DOM ----------
 const statusEl = document.getElementById("status");
@@ -124,6 +124,8 @@ const myMarker = L.marker([0, 0], { icon: createHeadingIcon(48) });
 let isMyVisible = false;
 let watchId = null;
 let didMoveToMe = false;
+let lastLatLng = null;
+let lastGpsTimestamp = null;
 
 // ---------- 방향 센서(나침반) ----------
 
@@ -168,7 +170,7 @@ function angleDelta(a, b) {
 }
 
 function getScreenAngle() {
-  const a = screen?.orientation?.angle;
+  const a = (screen && screen.orientation) ? screen.orientation.angle : undefined;
   if (typeof a === "number") return a; // 0/90/180/270
   const o = window.orientation;
   if (typeof o === "number") return o;
@@ -293,13 +295,21 @@ function setHeading(deg) {
   if (!Number.isFinite(deg)) return;
   lastHeadingDeg = deg;
 
+  if (obsRegisterModule) {
+    obsRegisterModule.updateLiveData({
+      heading: deg,
+      timestamp: lastGpsTimestamp || Date.now(),
+      isGpsActive: isMyVisible || watchId !== null
+    });
+  }
+
   // ✅ (1) 나침반 바늘은 반대로 (진짜 나침반 느낌)
   if (compassNeedleFixedEl) {
     compassNeedleFixedEl.style.transform = `rotate(${-deg}deg)`;
   }
 
   // ✅ (2) 내 위치 마커(화살표)는 그대로 deg
-  const el = myMarker.getElement?.();
+  const el = myMarker.getElement ? myMarker.getElement() : undefined;
   if (!el) return;
 
   const dot = el.querySelector(".dot");
@@ -441,12 +451,85 @@ const JirisanButtonControl = L.Control.extend({
 map.addControl(new JirisanButtonControl());
 map.addControl(new LocateButtonControl());
 
+function isRegisterPopupOpen() {
+  const popupEl = document.getElementById("register-box");
+  return !!popupEl && !popupEl.classList.contains("hidden");
+}
+
+function keepMyMarkerVisibleFromRegisterPopup() {
+  if (!isRegisterPopupOpen()) return;
+  if (!isMyVisible || !map.hasLayer(myMarker)) return;
+
+  const popupEl = document.getElementById("register-box");
+  const mapEl = map.getContainer ? map.getContainer() : null;
+  if (!popupEl || !mapEl) return;
+
+  const popupRect = popupEl.getBoundingClientRect();
+  const mapRect = mapEl.getBoundingClientRect();
+
+  // 지도 밖에 있으면 보정하지 않음
+  if (
+    popupRect.right <= mapRect.left ||
+    popupRect.left >= mapRect.right ||
+    popupRect.bottom <= mapRect.top ||
+    popupRect.top >= mapRect.bottom
+  ) {
+    return;
+  }
+
+  const markerLatLng = myMarker.getLatLng();
+  const markerPt = map.latLngToContainerPoint(markerLatLng);
+  const markerX = mapRect.left + markerPt.x;
+  const markerY = mapRect.top + markerPt.y;
+  const hitPadding = 22;
+
+  const covered =
+    markerX >= popupRect.left - hitPadding &&
+    markerX <= popupRect.right + hitPadding &&
+    markerY >= popupRect.top - hitPadding &&
+    markerY <= popupRect.bottom + hitPadding;
+
+  if (!covered) return;
+
+  const mapSize = map.getSize();
+  const popupLeftInMap = popupRect.left - mapRect.left;
+  const popupRightInMap = popupRect.right - mapRect.left;
+  const popupTopInMap = popupRect.top - mapRect.top;
+  const popupBottomInMap = popupRect.bottom - mapRect.top;
+  const safeGap = 46;
+
+  let targetX = markerPt.x;
+  let targetY = markerPt.y;
+
+  if (popupRightInMap + safeGap < mapSize.x) {
+    targetX = popupRightInMap + safeGap;
+  } else if (popupLeftInMap - safeGap > 0) {
+    targetX = popupLeftInMap - safeGap;
+  }
+
+  if (popupBottomInMap + safeGap < mapSize.y) {
+    targetY = popupBottomInMap + safeGap;
+  } else if (popupTopInMap - safeGap > 0) {
+    targetY = popupTopInMap - safeGap;
+  }
+
+  const margin = 24;
+  targetX = Math.max(margin, Math.min(mapSize.x - margin, targetX));
+  targetY = Math.max(margin, Math.min(mapSize.y - margin, targetY));
+
+  const dx = Math.round(targetX - markerPt.x);
+  const dy = Math.round(targetY - markerPt.y);
+  if (Math.abs(dx) < 4 && Math.abs(dy) < 4) return;
+
+  map.panBy([dx, dy], { animate: true, duration: 0.35 });
+}
+
 // ---------- 내 위치 토글(ON/OFF) + GPS/나침반 연동 ----------
 async function toggleMyLocation() {
   // ON -> OFF
   if (isMyVisible || watchId !== null) {
     stopCompass();
-    locateBtnEl?.classList.remove("is-active");
+    if (locateBtnEl) locateBtnEl.classList.remove("is-active");
 
     if (watchId !== null) {
       navigator.geolocation.clearWatch(watchId);
@@ -456,6 +539,18 @@ async function toggleMyLocation() {
 
     isMyVisible = false;
     didMoveToMe = false;
+    lastLatLng = null;
+    lastGpsTimestamp = null;
+
+    if (obsRegisterModule) {
+      obsRegisterModule.updateLiveData({
+        lat: null,
+        lng: null,
+        heading: null,
+        timestamp: null,
+        isGpsActive: false
+      });
+    }
 
     statusEl.textContent = "⚪ 내 위치 OFF";
     return;
@@ -463,7 +558,7 @@ async function toggleMyLocation() {
 
   // OFF -> ON
   if (!navigator.geolocation) {
-    locateBtnEl?.classList.remove("is-active");
+    if (locateBtnEl) locateBtnEl.classList.remove("is-active");
     statusEl.textContent = "🔴 이 브라우저는 위치 기능을 지원하지 않음";
     return;
   }
@@ -472,12 +567,14 @@ async function toggleMyLocation() {
 
   if (TEST_USE_JIRISAN_LOCATION) {
     const latlng = TEST_JIRISAN_LOCATION;
+    lastLatLng = latlng;
+    lastGpsTimestamp = Date.now();
 
     myMarker.setLatLng(latlng);
     if (!isMyVisible) {
       myMarker.addTo(map);
       isMyVisible = true;
-      locateBtnEl?.classList.add("is-active");
+      if (locateBtnEl) locateBtnEl.classList.add("is-active");
     }
 
     if (!didMoveToMe) {
@@ -486,6 +583,16 @@ async function toggleMyLocation() {
     }
 
     if (lastHeadingDeg !== null) setHeading(lastHeadingDeg);
+    if (obsRegisterModule) {
+      obsRegisterModule.updateLiveData({
+        lat: latlng[0],
+        lng: latlng[1],
+        heading: lastHeadingDeg,
+        timestamp: lastGpsTimestamp,
+        isGpsActive: true
+      });
+    }
+    keepMyMarkerVisibleFromRegisterPopup();
     statusEl.textContent = "🧪 테스트 위치 ON (지리산 기준)";
 
     // 실제 GPS는 테스트 중 비활성화
@@ -506,18 +613,30 @@ navigator.geolocation.getCurrentPosition(
       const lat = pos.coords.latitude;
       const lng = pos.coords.longitude;
       const latlng = [lat, lng];
+      lastLatLng = latlng;
+      lastGpsTimestamp = Date.now();
 
       myMarker.setLatLng(latlng);
       if (!isMyVisible) {
         myMarker.addTo(map);
         isMyVisible = true;
-        locateBtnEl?.classList.add("is-active");
+        if (locateBtnEl) locateBtnEl.classList.add("is-active");
       }
       if (!didMoveToMe) {
         didMoveToMe = true;
         flyToLatLng(latlng, 16);
       }
       if (lastHeadingDeg !== null) setHeading(lastHeadingDeg);
+      if (obsRegisterModule) {
+        obsRegisterModule.updateLiveData({
+          lat,
+          lng,
+          heading: lastHeadingDeg,
+          timestamp: lastGpsTimestamp,
+          isGpsActive: true
+        });
+      }
+      keepMyMarkerVisibleFromRegisterPopup();
 
       //statusEl.textContent = `✅ 내 위치 ON: ${lat.toFixed(6)}, ${lng.toFixed(6)}`;
       statusEl.textContent = `✅ 내 위치 ON`;
@@ -535,15 +654,28 @@ navigator.geolocation.getCurrentPosition(
       const lat = pos.coords.latitude;
       const lng = pos.coords.longitude;
       const latlng = [lat, lng];
+      lastLatLng = latlng;
+      lastGpsTimestamp = Date.now();
 
       myMarker.setLatLng(latlng);
 
       if (!isMyVisible) {
         myMarker.addTo(map);
         isMyVisible = true;
-        locateBtnEl?.classList.add("is-active");
+        if (locateBtnEl) locateBtnEl.classList.add("is-active");
       }
       if (lastHeadingDeg !== null) setHeading(lastHeadingDeg);
+
+      if (obsRegisterModule) {
+        obsRegisterModule.updateLiveData({
+          lat,
+          lng,
+          heading: lastHeadingDeg,
+          timestamp: lastGpsTimestamp,
+          isGpsActive: true
+        });
+      }
+      keepMyMarkerVisibleFromRegisterPopup();
 
       statusEl.textContent = `✅ 내 위치 ON: ${lat.toFixed(6)}, ${lng.toFixed(6)}`;
     },
@@ -560,7 +692,19 @@ navigator.geolocation.getCurrentPosition(
       if (map.hasLayer(myMarker)) map.removeLayer(myMarker);
       isMyVisible = false;
       didMoveToMe = false;
-      locateBtnEl?.classList.remove("is-active");
+      lastLatLng = null;
+      lastGpsTimestamp = null;
+      if (locateBtnEl) locateBtnEl.classList.remove("is-active");
+
+      if (obsRegisterModule) {
+        obsRegisterModule.updateLiveData({
+          lat: null,
+          lng: null,
+          heading: null,
+          timestamp: null,
+          isGpsActive: false
+        });
+      }
 
       statusEl.textContent = `🔴 위치 오류: ${err.message}`;
     },
@@ -569,12 +713,12 @@ navigator.geolocation.getCurrentPosition(
 }
 
 // 좌측 내 위치 버튼이 있다면 동일 토글로 연결
-btnMe?.addEventListener("click", async () => {
+if (btnMe) btnMe.addEventListener("click", async () => {
   await toggleMyLocation();
 });
 
 // 좌측 지리산 버튼이 있다면 연결
-btnJiri?.addEventListener("click", () => {
+if (btnJiri) btnJiri.addEventListener("click", () => {
   map.fitBounds(JIRISAN_BOUNDS, { padding: [20, 20] });
 });
 
@@ -671,8 +815,8 @@ function renderBears(items) {
 }
 
 function updateRegistrationPreview() {
-  const baseLatLng = TEST_USE_JIRISAN_LOCATION ? TEST_JIRISAN_LOCATION : [35.315, 127.655];
-  const previewHeading = lastHeadingDeg !== null ? `${Math.round(lastHeadingDeg)}°` : "124°";
+  const baseLatLng = lastLatLng || (TEST_USE_JIRISAN_LOCATION ? TEST_JIRISAN_LOCATION : [35.315, 127.655]);
+  const previewHeading = lastHeadingDeg !== null ? `${Math.round(lastHeadingDeg)}°` : "대기중";
 
   if (currentCoordEl) {
     currentCoordEl.textContent = `${baseLatLng[0].toFixed(6)}, ${baseLatLng[1].toFixed(6)}`;
@@ -700,7 +844,7 @@ async function refreshDummyBearsAndFocus() {
   statusEl.innerHTML = `<img src="/assets/icons/icon_bear.png" style="height:18px;vertical-align:middle;margin-right:4px;" alt="곰"/> ${items.length}마리 표시됨`;
 }
 
-btnPanelToggle?.addEventListener("click", (e) => {
+if (btnPanelToggle) btnPanelToggle.addEventListener("click", (e) => {
   e.preventDefault();
   e.stopPropagation();
 
@@ -709,23 +853,60 @@ btnPanelToggle?.addEventListener("click", (e) => {
   btnPanelToggle.setAttribute("aria-expanded", collapsed ? "false" : "true");
 });
 
-// 패널 위에서 지도 드래그/클릭 방지(모바일에서 특히 유용)
-panelEl?.addEventListener("pointerdown", (e) => e.stopPropagation());
-panelEl?.addEventListener("touchstart", (e) => e.stopPropagation(), { passive: true });
-panelEl?.addEventListener("wheel", (e) => e.stopPropagation(), { passive: true });
+function collapseBearEstimatePanel() {
+  if (!panelEl || !btnPanelToggle) return;
+  if (panelEl.classList.contains("collapsed")) return;
 
-const obsListModule = window.createObsListModule?.({
+  panelEl.classList.add("collapsed");
+  btnPanelToggle.textContent = "▲";
+  btnPanelToggle.setAttribute("aria-expanded", "false");
+}
+
+// 패널 위에서 지도 드래그/클릭 방지(모바일에서 특히 유용)
+if (panelEl) panelEl.addEventListener("pointerdown", (e) => e.stopPropagation());
+if (panelEl) panelEl.addEventListener("touchstart", (e) => e.stopPropagation(), { passive: true });
+if (panelEl) panelEl.addEventListener("wheel", (e) => e.stopPropagation(), { passive: true });
+
+const obsRegisterModule = window.createObsRegisterModule ? window.createObsRegisterModule({
+  statusEl,
+  updateRegistrationPreview,
+  onClose: () => {
+    if (obsListModule) obsListModule.deactivate();
+  }
+}) : null;
+
+const obsListModule = window.createObsListModule ? window.createObsListModule({
   map,
   statusEl,
   flyToLatLng,
   observationMarkersLayer,
-  updateRegistrationPreview
-});
+  onOpenList: () => {
+    collapseBearEstimatePanel();
+  },
+  onOpenRegister: () => {
+    collapseBearEstimatePanel();
+    if (obsRegisterModule) obsRegisterModule.open();
+    setTimeout(() => {
+      keepMyMarkerVisibleFromRegisterPopup();
+    }, 30);
+  },
+  onCloseRegister: () => { if (obsRegisterModule) obsRegisterModule.hide(true); }
+}) : null;
 
 // ---------- 초기화 ----------
 (async function initializeUI() {
   updateRegistrationPreview();
-  obsListModule?.initialize();
+  if (obsRegisterModule) obsRegisterModule.initialize();
+  if (obsRegisterModule) {
+    obsRegisterModule.updateLiveData({
+      lat: null,
+      lng: null,
+      heading: null,
+      timestamp: null,
+      isGpsActive: false
+    });
+  }
+  if (obsListModule) obsListModule.initialize();
 
   // 임시: bears.json 데이터를 로드해서 곰 추정위치 목록에 표시
   await refreshDummyBearsAndFocus();
