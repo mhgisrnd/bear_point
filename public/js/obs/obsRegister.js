@@ -15,7 +15,6 @@ window.createObsRegisterModule = function createObsRegisterModule({
   var obsRegFormEl = document.getElementById("obs-reg-form");
   var regCoordEl = document.getElementById("reg-coord");
   var regHeadingEl = document.getElementById("reg-heading");
-  var regTimeEl = document.getElementById("reg-time");
   var coordTypeEls = document.querySelectorAll('input[name="coord-type"]');
   var registerHeaderEl = registerBoxEl ? registerBoxEl.querySelector(".obs-register-header") : null;
 
@@ -119,7 +118,6 @@ window.createObsRegisterModule = function createObsRegisterModule({
   function renderLiveFields() {
     var hasCoord = Number.isFinite(latestLive.lat) && Number.isFinite(latestLive.lng);
     var hasHeading = Number.isFinite(latestLive.heading);
-    var hasTime = Number.isFinite(latestLive.timestamp);
 
     if (regCoordEl) {
       if (!latestLive.isGpsActive || !hasCoord) {
@@ -137,12 +135,6 @@ window.createObsRegisterModule = function createObsRegisterModule({
       regHeadingEl.value = latestLive.isGpsActive && hasHeading
         ? Math.round(latestLive.heading) + "°"
         : "방향각 대기중";
-    }
-
-    if (regTimeEl) {
-      regTimeEl.value = latestLive.isGpsActive && hasTime
-        ? new Date(latestLive.timestamp).toLocaleTimeString("ko-KR")
-        : "시간 대기중";
     }
   }
 
