@@ -875,6 +875,32 @@
   flex: 1;
 }
 
+.obs-reg-heading-wrap {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.obs-reg-input--heading {
+  flex: 0 0 62%;
+  min-width: 110px;
+}
+
+.obs-reg-lock-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: #475569;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.obs-reg-lock-label input {
+  margin: 0;
+}
+
 .obs-reg-coord-type {
   display: flex;
   align-items: center;
@@ -1043,6 +1069,25 @@
 
   .obs-register-body {
     max-height: calc(100dvh - 110px);
+  }
+
+  .obs-reg-coord-wrap {
+    min-width: 0;
+    gap: 6px;
+  }
+
+  .obs-reg-coord-wrap .obs-reg-input {
+    flex: 0 1 56%;
+    min-width: 0;
+  }
+
+  .obs-reg-coord-type {
+    gap: 4px;
+  }
+
+  .obs-reg-radio-label {
+    font-size: 11px;
+    gap: 2px;
   }
 
   .obs-register-popup--peek {

@@ -15,6 +15,7 @@ window.createObsRegisterModule = function createObsRegisterModule({
   var obsRegFormEl = document.getElementById("obs-reg-form");
   var regCoordEl = document.getElementById("reg-coord");
   var regHeadingEl = document.getElementById("reg-heading");
+  var chkRegHeadingLock = document.getElementById("chk-reg-heading-lock");
   var coordTypeEls = document.querySelectorAll('input[name="coord-type"]');
   var registerHeaderEl = registerBoxEl ? registerBoxEl.querySelector(".obs-register-header") : null;
 
@@ -23,6 +24,8 @@ window.createObsRegisterModule = function createObsRegisterModule({
   var isDragging = false;
   var dragOffsetX = 0;
   var dragOffsetY = 0;
+  var isHeadingLocked = false;
+  var lockedHeadingDeg = null;
   var latestLive = {
     lat: null,
     lng: null,
@@ -65,6 +68,9 @@ window.createObsRegisterModule = function createObsRegisterModule({
   function resetFormState() {
     if (obsRegFormEl) obsRegFormEl.reset();
     if (detListEl) detListEl.innerHTML = DET_ROW_TEMPLATE;
+    isHeadingLocked = false;
+    lockedHeadingDeg = null;
+    if (chkRegHeadingLock) chkRegHeadingLock.checked = false;
     syncDetBtns();
     renderLiveFields();
   }
@@ -118,6 +124,7 @@ window.createObsRegisterModule = function createObsRegisterModule({
   function renderLiveFields() {
     var hasCoord = Number.isFinite(latestLive.lat) && Number.isFinite(latestLive.lng);
     var hasHeading = Number.isFinite(latestLive.heading);
+    var headingToShow = isHeadingLocked ? lockedHeadingDeg : latestLive.heading;
 
     if (regCoordEl) {
       if (!latestLive.isGpsActive || !hasCoord) {
@@ -132,10 +139,22 @@ window.createObsRegisterModule = function createObsRegisterModule({
     }
 
     if (regHeadingEl) {
-      regHeadingEl.value = latestLive.isGpsActive && hasHeading
-        ? Math.round(latestLive.heading) + "°"
+      regHeadingEl.value = latestLive.isGpsActive && Number.isFinite(headingToShow)
+        ? Math.round(headingToShow) + "°"
         : "방향각 대기중";
     }
+  }
+
+  function setHeadingLock(nextState) {
+    isHeadingLocked = !!nextState;
+    if (isHeadingLocked) {
+      if (Number.isFinite(latestLive.heading)) {
+        lockedHeadingDeg = latestLive.heading;
+      }
+    } else {
+      lockedHeadingDeg = null;
+    }
+    renderLiveFields();
   }
 
   function setPeekMode(nextState) {
@@ -225,6 +244,14 @@ window.createObsRegisterModule = function createObsRegisterModule({
     renderLiveFields();
   }
 
+  function getLockedHeading() {
+    return lockedHeadingDeg;
+  }
+
+  function getHeadingLockState() {
+    return isHeadingLocked;
+  }
+
   function open() {
     if (registerBoxEl) registerBoxEl.classList.remove("hidden");
     setPeekMode(false);
@@ -277,6 +304,10 @@ window.createObsRegisterModule = function createObsRegisterModule({
       }
     }
 
+    if (chkRegHeadingLock) chkRegHeadingLock.addEventListener("change", function() {
+      setHeadingLock(chkRegHeadingLock.checked);
+    });
+
     if (registerHeaderEl) {
       registerHeaderEl.addEventListener("mousedown", function(e) {
         if (e.target && e.target.closest("button")) return;
@@ -325,6 +356,8 @@ window.createObsRegisterModule = function createObsRegisterModule({
     hide,
     close,
     reset: resetFormState,
+    isHeadingLocked: getHeadingLockState,
+    getLockedHeading,
     updateLiveData
   };
 };

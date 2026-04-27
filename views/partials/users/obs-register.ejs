@@ -37,7 +37,12 @@
         <!-- 방향각 -->
         <div class="obs-reg-row">
           <label class="obs-reg-label" for="reg-heading">방향각</label>
-          <input class="obs-reg-input obs-reg-input--gps" id="reg-heading" type="text" placeholder="현재 GPS 값" readonly />
+          <div class="obs-reg-heading-wrap">
+            <input class="obs-reg-input obs-reg-input--gps obs-reg-input--heading" id="reg-heading" type="text" placeholder="현재 GPS 값" readonly />
+            <label class="obs-reg-lock-label" for="chk-reg-heading-lock">
+              <input id="chk-reg-heading-lock" type="checkbox" /> 방향각 고정
+            </label>
+          </div>
         </div>
 
         <!-- 곰 목록 -->

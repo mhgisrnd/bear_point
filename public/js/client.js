@@ -293,7 +293,16 @@ function filterHeading(nextDeg) {
 
 function setHeading(deg) {
   if (!Number.isFinite(deg)) return;
-  lastHeadingDeg = deg;
+
+  let effectiveDeg = deg;
+  if (obsRegisterModule && obsRegisterModule.isHeadingLocked && obsRegisterModule.isHeadingLocked()) {
+    const lockedHeading = obsRegisterModule.getLockedHeading ? obsRegisterModule.getLockedHeading() : null;
+    if (Number.isFinite(lockedHeading)) {
+      effectiveDeg = lockedHeading;
+    }
+  }
+
+  lastHeadingDeg = effectiveDeg;
 
   if (obsRegisterModule) {
     obsRegisterModule.updateLiveData({
@@ -305,7 +314,7 @@ function setHeading(deg) {
 
   // ✅ (1) 나침반 바늘은 반대로 (진짜 나침반 느낌)
   if (compassNeedleFixedEl) {
-    compassNeedleFixedEl.style.transform = `rotate(${-deg}deg)`;
+    compassNeedleFixedEl.style.transform = `rotate(${-effectiveDeg}deg)`;
   }
 
   // ✅ (2) 내 위치 마커(화살표)는 그대로 deg
@@ -315,7 +324,7 @@ function setHeading(deg) {
   const dot = el.querySelector(".dot");
   if (!dot) return;
 
-  dot.style.transform = `rotate(${deg}deg)`;
+  dot.style.transform = `rotate(${effectiveDeg}deg)`;
 }
 
 async function startCompass() {
