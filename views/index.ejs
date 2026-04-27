@@ -8,10 +8,9 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <link rel="stylesheet" href="/css/styles.css" />
   <link rel="stylesheet" href="/css/panel.css" />
-
 </head>
 <body>
-  <div id="obs-list-slot" include="/pages/users/obs-list.html"></div>
+  <%- include("partials/users/obs-list") %>
 
   <div class="panel-stack panel-bottom-left">
     <div class="panel-tabs panel-tabs-floating">
@@ -39,14 +38,15 @@
   </div>
   <div id="map"></div>
   <div id="compass">
-  <div id="compass-needle">
-    <span class="needle red"></span>
-    <span class="needle blue"></span>
+    <div id="compass-needle">
+      <span class="needle red"></span>
+      <span class="needle blue"></span>
+    </div>
   </div>
-</div>
-</body>
+
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="/js/mapBase.js"></script>
-  <script src="/js/bootstrap.js"></script>
+  <script src="/js/obs/obsList.js"></script>
+  <script src="/js/client.js"></script>
 </body>
 </html>
