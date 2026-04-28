@@ -12,6 +12,8 @@
   const currentHeadingEl = document.getElementById("obs-current-heading");
   const searchParams = new URLSearchParams(window.location.search);
 
+  try {
+
   if (!window.ol || !mapEl) {
     if (statusEl) statusEl.textContent = "OpenLayers 로딩 실패";
     return;
@@ -45,7 +47,7 @@
     gpsMinSpeedMps: 0.8,
     gpsHeadingMaxAgeMs: 2500,
     gpsBlendAlphaMin: 0.58,
-    gpsBlendAlphaMax: 0.88,
+    gpsBlendAlphaMax: 0.88,  
     gpsBlendSpeedMaxMps: 8,
     jumpThresholdDeg: 70,
     unstableWindowMs: 2500,
@@ -97,6 +99,27 @@
     opacity: HILLSHADE_BASE_OPACITY,
     visible: true
   });
+
+  let tileLoadSuccessCount = 0;
+  let tileLoadErrorCount = 0;
+
+  function bindTileErrorStatus(source, layerName) {
+    if (!source || typeof source.on !== "function") return;
+    source.on("tileloadend", function () {
+      tileLoadSuccessCount += 1;
+    });
+    source.on("tileloaderror", function () {
+      tileLoadErrorCount += 1;
+      console.error("Tile load failed:", layerName);
+      if (statusEl) {
+        statusEl.textContent = "🟠 " + layerName + " 타일 로드 실패 (네트워크 또는 URL 확인)";
+      }
+    });
+  }
+
+  bindTileErrorStatus(osmBase.getSource(), "OSM");
+  bindTileErrorStatus(topoBase.getSource(), "OpenTopoMap");
+  bindTileErrorStatus(hillshadeOverlay.getSource(), "Hillshade");
 
   function createHeadingIconDataUri(svgSize) {
     const center = svgSize / 2;
@@ -261,7 +284,14 @@
   }
 
   function applyHeadingOffset(deg, platform) {
-    const offset = HEADING_OFFSET[platform || getPlatform()] ?? HEADING_OFFSET.other ?? 0;
+    const key = platform || getPlatform();
+    let offset = HEADING_OFFSET[key];
+    if (offset === null || offset === undefined) {
+      offset = HEADING_OFFSET.other;
+    }
+    if (offset === null || offset === undefined) {
+      offset = 0;
+    }
     return norm360(deg + offset);
   }
 
@@ -1011,7 +1041,7 @@
 
   async function loadBearsData() {
     try {
-      const res = await fetch("/json/bears.json", { cache: "no-store" });
+      const res = await fetch("json/bears.json", { cache: "no-store" });
       bearsDataCache = await res.json();
     } catch (e) {
       console.error("bears.json 로드 실패:", e);
@@ -1048,7 +1078,7 @@
 
       feature.setStyle(new ol.style.Style({
         image: new ol.style.Icon({
-          src: "/assets/icons/icon_bear.png",
+          src: "assets/icons/icon_bear.png",
           anchor: [0.5, 1],
           width: 34,
           height: 34
@@ -1120,7 +1150,7 @@
     }
 
     if (statusEl) {
-      statusEl.innerHTML = '<img src="/assets/icons/icon_bear.png" style="height:18px;vertical-align:middle;margin-right:4px;" alt="곰"/> ' + items.length + '마리 표시됨';
+      statusEl.innerHTML = '<img src="assets/icons/icon_bear.png" style="height:18px;vertical-align:middle;margin-right:4px;" alt="곰"/> ' + items.length + '마리 표시됨';
     }
   }
 
@@ -1172,6 +1202,25 @@
   updateRegistrationPreview();
   if (obsListModule) obsListModule.initialize();
 
-  collapseBearEstimatePanel();
+  if (statusEl && statusEl.textContent === "연결됨") {
+    statusEl.textContent = "✅ 지도 초기화 완료";
+  }
   refreshDummyBearsAndFocus();
+
+  setTimeout(function () {
+    if (!statusEl) return;
+    if (tileLoadSuccessCount === 0 && tileLoadErrorCount === 0) {
+      statusEl.textContent = "🟠 타일 요청 없음 (지도 초기화/레이어 설정 확인)";
+      return;
+    }
+    if (tileLoadSuccessCount === 0 && tileLoadErrorCount > 0) {
+      statusEl.textContent = "🟠 타일 요청 실패 " + tileLoadErrorCount + "건";
+    }
+  }, 5000);
+  } catch (error) {
+    console.error("client-ol.js 초기화 오류:", error);
+    if (statusEl) {
+      statusEl.textContent = "🔴 JS 오류: " + (error && error.message ? error.message : String(error));
+    }
+  }
 })();
