@@ -803,8 +803,8 @@
   function mountRightBottomControls() {
     const root = document.createElement("div");
     root.style.position = "absolute";
-    root.style.right = "8px";
-    root.style.bottom = "14px";
+    root.style.right = "calc(8px + var(--safe-right))";
+    root.style.bottom = "calc(14px + var(--safe-bottom))";
     root.style.zIndex = "1400";
     root.style.display = "flex";
     root.style.flexDirection = "column";
@@ -883,8 +883,8 @@
   function mountLayerSwitcher() {
     const root = document.createElement("div");
     root.style.position = "absolute";
-    root.style.top = "12px";
-    root.style.right = "12px";
+    root.style.top = "calc(12px + var(--safe-top))";
+    root.style.right = "calc(12px + var(--safe-right))";
     root.style.zIndex = "1500";
 
     const toggleBtn = document.createElement("button");

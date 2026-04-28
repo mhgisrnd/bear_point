@@ -1,4 +1,45 @@
-html, body, #map { height: 100%; margin: 0; }
+:root {
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+}
+
+html, body {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+}
+
+/* 안드로이드 상단 상태바 영역 블랙바 */
+body::before {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: var(--safe-top);
+  background: #000;
+  z-index: 100000;
+  pointer-events: none;
+}
+
+/* 안드로이드 하단 제스처/버튼바 영역 블랙바 */
+body::after {
+  content: '';
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: var(--safe-bottom);
+  background: #000;
+  z-index: 100000;
+  pointer-events: none;
+}
+
+#map {
+  height: 100%;
+}
 
 #status{
   display: flex;
@@ -68,8 +109,8 @@ a.leaflet-control-locate-btn.is-active svg{
 
 #compass{
   position: fixed;
-  right: 5px;
-  bottom: 205px;
+  right: calc(5px + var(--safe-right));
+  bottom: calc(205px + var(--safe-bottom));
   width: 46px;
   height: 46px;
   border-radius: 999px;
@@ -264,4 +305,9 @@ a.leaflet-control-locate-btn.is-active svg{
 
 .leaflet-popup.bear-popup .leaflet-popup-close-button:hover {
   color: rgba(0, 0, 0, 0.7);
+}
+
+#map .ol-attribution {
+  right: calc(8px + var(--safe-right));
+  bottom: calc(8px + var(--safe-bottom));
 }

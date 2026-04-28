@@ -5,7 +5,7 @@
 /* 상단 관측점 목록 패널 */
 .obs-sheet {
   position: fixed;
-  top: 5px;
+  top: calc(8px + var(--safe-top));
   left: 16px;
   right: auto;
   z-index: 9998;
@@ -369,8 +369,8 @@
 }
 
 .panel-bottom-left{
-  left: 10px;
-  bottom: 10px;
+  left: calc(10px + var(--safe-left));
+  bottom: calc(10px + var(--safe-bottom));
 }
 
 /* 헤더(상태 + 토글) */
@@ -614,7 +614,7 @@
 
 @media (max-width: 820px){
   .obs-sheet {
-    top: max(5px, env(safe-area-inset-top));
+    top: calc(8px + var(--safe-top));
     left: 12px;
     right: 12px;
     width: auto;
@@ -679,9 +679,9 @@
   }
 
   .panel-bottom-left{
-    left: 8px;
-    right: 70px; /* ✅ 오른쪽 지도 버튼(줌/나침반) 공간 확보. 필요시 60~90 조절 */
-    bottom: 8px;
+    left: calc(8px + var(--safe-left));
+    right: calc(70px + var(--safe-right)); /* 오른쪽 지도 버튼(줌/나침반) 공간 확보 */
+    bottom: calc(8px + var(--safe-bottom));
   }
 
   .panel-stack,
@@ -711,7 +711,7 @@
 /* ===== 관측점 등록 팝업 ===== */
 .obs-register-popup {
   position: fixed;
-  top: 5px;
+  top: calc(8px + var(--safe-top));
   left: 16px;
   z-index: 10020;
   width: clamp(320px, 80vw, 480px);
@@ -1051,7 +1051,7 @@
 
 @media (max-width: 820px) {
   .obs-register-popup {
-    top: max(5px, env(safe-area-inset-top));
+    top: calc(8px + var(--safe-top));
     left: 12px;
     right: 12px;
     width: auto;
