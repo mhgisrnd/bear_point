@@ -21,6 +21,14 @@ android {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
+        debug {
+            applicationVariants.all { variant ->
+                variant.outputs.all {
+                    //outputFileName = "BearMap-v${defaultConfig.versionName}.apk"
+                    outputFileName ="BearMap.apk"
+                }
+            }
+        }
     }
 }
 
