@@ -14,8 +14,15 @@ npm run dev
 npx cap sync android
 npx cap open android
 
-디버그 APK 빌드 android 폴더로 이동
+배포
 .\gradlew.bat assembleDebug
 
 생성된 APK 위치
 android/app/build/outputs/apk/debug/app-debug.apk
+
+안드로이드 AndroidManifest.xml 재빌드 필요 시
+.\gradlew.bat assembleDebug --no-daemon
+
+
+아이콘 추가/수정 시
+npx capacitor-assets generate
