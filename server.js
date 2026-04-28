@@ -16,14 +16,7 @@ app.use((req, res, next) => {
   next();
 });
 
-app.set("views", path.join(__dirname, "views"));
-app.set("view engine", "ejs");
-
-app.get("/", (req, res) => {
-  res.render("index");
-});
-
-app.use(express.static(path.join(__dirname, "public"), { index: false }));
+app.use(express.static(path.join(__dirname, "public")));
 
 app.get("/login", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "pages", "login.html"));
