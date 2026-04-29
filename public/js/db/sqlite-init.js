@@ -13,6 +13,10 @@
     ? config.migrations
     : { 1: [] };
 
+  // 마이그레이션 이력과 실제 스키마가 어긋난 경우를 대비한 보정 규칙.
+  // 규칙은 sqlite-migrations.js에서 선언만 추가하면 된다.
+  const SCHEMA_GUARDS = Array.isArray(config.schemaGuards) ? config.schemaGuards : [];
+
   const state = {
     initialized: false,
     ready: false,
@@ -71,16 +75,14 @@
         throw new Error(`[SQLite] Missing migration definition for version ${nextVersion}`);
       }
 
-      if (statements.length === 0) {
-        continue;
+      if (statements.length > 0) {
+        await sqlite.execute({
+          database: DB_NAME,
+          statements: statements.join(";\n"),
+          transaction: true,
+          readonly: false
+        });
       }
-
-      await sqlite.execute({
-        database: DB_NAME,
-        statements: statements.join(";\n"),
-        transaction: true,
-        readonly: false
-      });
 
       await sqlite.execute({
         database: DB_NAME,
@@ -93,11 +95,52 @@
     return await getCurrentDbVersion(sqlite);
   }
 
+  // 선언형 schema guard를 적용해 스키마 누락을 자동 보정한다.
+  async function applySchemaGuards(sqlite) {
+    if (SCHEMA_GUARDS.length === 0) return;
+
+    for (let i = 0; i < SCHEMA_GUARDS.length; i += 1) {
+      const guard = SCHEMA_GUARDS[i] || {};
+      const type = String(guard.type || "").trim();
+      const apply = String(guard.apply || "").trim();
+
+      if (!apply) {
+        continue;
+      }
+
+      const supported =
+        type === "column-exists" ||
+        type === "table-exists" ||
+        type === "index-exists";
+      if (!supported) continue;
+
+      try {
+        await sqlite.execute({
+          database: DB_NAME,
+          statements: apply,
+          transaction: false,
+          readonly: false
+        });
+        console.info("[SQLite] schema guard applied:", apply);
+      } catch (guardError) {
+        const message = String(guardError && guardError.message ? guardError.message : guardError);
+        // 이미 컬럼이 존재하는 경우는 정상으로 간주한다.
+        if (/duplicate column name|already exists|duplicate/i.test(message)) {
+          console.info("[SQLite] schema guard skipped (already applied):", apply);
+          continue;
+        }
+        throw guardError;
+      }
+    }
+  }
+
   async function initialize() {
-    // 앱 생명주기 동안 1회만 초기화하고 이후에는 캐시된 상태를 반환한다.
-    if (state.initialized) return { ...state };
+    // 성공 상태는 캐시하지만, 실패 상태(init-failed 등)는 재시도를 허용한다.
+    if (state.initialized && state.ready) return { ...state };
+    if (state.initialized && state.reason === "non-native-platform") return { ...state };
 
     state.platform = getPlatform();
+    state.error = null;
 
     if (!isNativePlatform()) {
       // 웹 개발 서버에서는 native sqlite를 사용할 수 없으므로 조용히 종료한다.
@@ -125,8 +168,21 @@
     }
 
     try {
-      const dbExistsResult = await sqlite.isDBExists({ database: DB_NAME, readonly: false });
-      const dbExists = !!(dbExistsResult && dbExistsResult.result);
+      let dbExists = true;
+      try {
+        const dbExistsResult = await sqlite.isDBExists({ database: DB_NAME, readonly: false });
+        dbExists = !!(dbExistsResult && dbExistsResult.result);
+      } catch (existsError) {
+        const existsMessage = String(existsError && existsError.message ? existsError.message : existsError);
+        if (/No available connection for database/i.test(existsMessage)) {
+          // 일부 단말/버전 조합에서는 isDBExists가 연결 생성 전 호출 시 예외를 던진다.
+          // 이 경우 createConnection/open 단계로 진행해 실제 연결 가능 여부를 판단한다.
+          console.warn("[SQLite] isDBExists pre-check skipped:", existsMessage);
+          dbExists = true;
+        } else {
+          throw existsError;
+        }
+      }
 
       if (!dbExists) {
         // 자산 DB를 아직 배치하지 않은 단계에서는 연결을 열지 않고 대기 상태로 둔다.
@@ -153,13 +209,22 @@
       }
 
       // 내부 저장소 DB를 실제 읽기/쓰기 모드로 연다.
-      await sqlite.open({ database: DB_NAME, readonly: false });
+      try {
+        await sqlite.open({ database: DB_NAME, readonly: false });
+      } catch (openError) {
+        const openMessage = String(openError && openError.message ? openError.message : openError);
+        if (!/already open|already opened|database .* is already open/i.test(openMessage)) {
+          throw openError;
+        }
+      }
 
       const currentVersion = await getCurrentDbVersion(sqlite);
       const migratedVersion = await runMigrations(sqlite, currentVersion);
       if (migratedVersion !== currentVersion) {
         console.info(`[SQLite] migration applied: v${currentVersion} -> v${migratedVersion}`);
       }
+
+      await applySchemaGuards(sqlite);
 
       state.initialized = true;
       state.ready = true;

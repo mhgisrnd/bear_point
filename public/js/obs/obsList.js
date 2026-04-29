@@ -26,13 +26,29 @@ window.createObsListModule = function createObsListModule({
   const searchQueryEl = document.getElementById("search-query");
   const btnSearchClearEl = document.getElementById("btn-search-clear");
   const chkAllEl = document.getElementById("chk-all");
+  const OBSERVATION_DEMO_URL = "json/observations.json";
 
   const selectedObsIds = new Set();
   const observationMarkers = [];
   let observationSamples = [];
-
   let currentTab = "none";
   let isPeekMode = false;
+
+  function useLocalObservationStore() {
+    const cfg = window.BearSQLiteConfig || {};
+    return cfg.useLocalObservationStore === true;
+  }
+
+  function getObservationLabel(item) {
+    if (!item) return "";
+    return item.place ? String(item.place).trim() : item.id;
+  }
+
+  function getObservationMarkerText(item) {
+    const label = getObservationLabel(item);
+    if (!label) return "관측점";
+    return label.length > 10 ? `${label.slice(0, 10)}...` : label;
+  }
 
   function isNativePlatform() {
     return !!(
@@ -48,44 +64,123 @@ window.createObsListModule = function createObsListModule({
     return `${numeric}°`;
   }
 
+  function formatCoordinate(value) {
+    const numeric = Number(value);
+    return Number.isFinite(numeric) ? numeric.toFixed(6) : "-";
+  }
+
+  function escapeHtml(value) {
+    return String(value == null ? "" : value)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/\"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  }
+
+  function buildObservationPopupHtml(item, detectorText) {
+    const title = escapeHtml(getObservationLabel(item) || "관측점");
+    const bearCode = escapeHtml(item && item.bearCode ? item.bearCode : "-");
+    const owner = escapeHtml(item && item.owner ? item.owner : "-");
+    const coordinates = `${formatCoordinate(item && item.lat)}, ${formatCoordinate(item && item.lng)}`;
+    const heading = escapeHtml(item && item.heading ? item.heading : "-");
+    const detectors = escapeHtml(detectorText || "없음");
+
+    return `
+      <div class="obs-popup-card">
+        <div class="obs-popup-card__eyebrow">${title}</div>
+        <div class="obs-popup-card__grid">
+          <div class="obs-popup-card__row">
+            <span class="obs-popup-card__label">곰 코드</span>
+            <span class="obs-popup-card__value">${bearCode}</span>
+          </div>
+          <div class="obs-popup-card__row">
+            <span class="obs-popup-card__label">등록자</span>
+            <span class="obs-popup-card__value">${owner}</span>
+          </div>
+          <div class="obs-popup-card__row obs-popup-card__row--wide">
+            <span class="obs-popup-card__label">위경도</span>
+            <span class="obs-popup-card__value obs-popup-card__value--mono">${escapeHtml(coordinates)}</span>
+          </div>
+          <div class="obs-popup-card__row">
+            <span class="obs-popup-card__label">방향각</span>
+            <span class="obs-popup-card__value">${heading}</span>
+          </div>
+          <div class="obs-popup-card__row">
+            <span class="obs-popup-card__label">감지기</span>
+            <span class="obs-popup-card__value">${detectors}</span>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
   function mapObservationRow(row) {
     if (!row) return null;
 
     const id = String(row.id || "").trim();
     const bearCode = String(row.bear_code || row.bearCode || "").trim();
     const owner = String(row.owner || "").trim();
+    const place = String(row.place || row.name || "").trim();
     const lat = Number(row.lat);
     const lng = Number(row.lng);
     const heading = toHeadingText(row.heading);
+    let detectors = [];
+
+    if (Array.isArray(row.detectors)) {
+      detectors = row.detectors;
+    } else if (typeof row.detectors_json === "string" && row.detectors_json.trim()) {
+      try {
+        const parsed = JSON.parse(row.detectors_json);
+        detectors = Array.isArray(parsed) ? parsed : [];
+      } catch (error) {
+        detectors = [];
+      }
+    }
 
     if (!id || !bearCode || !Number.isFinite(lat) || !Number.isFinite(lng)) {
       return null;
     }
 
-    return { id, bearCode, owner, lat, lng, heading };
+    return { id, place, bearCode, owner, lat, lng, heading, detectors };
   }
 
-  async function loadObservationSamplesFromJson() {
+  async function loadObservationSamplesFromDemoJson() {
     try {
-      const response = await fetch("json/observations.json", { cache: "no-store" });
+      const response = await fetch(OBSERVATION_DEMO_URL, { cache: "no-store" });
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}`);
       }
 
       const rows = await response.json();
-      const mappedRows = Array.isArray(rows) ? rows.map(mapObservationRow).filter((item) => item !== null) : [];
-      observationSamples = mappedRows;
-      return { source: "json" };
+      const items = Array.isArray(rows) ? rows : [];
+      observationSamples = items
+        .map(mapObservationRow)
+        .filter((item) => item !== null)
+        .map((item, index) => {
+          if (item.place) return item;
+          return {
+            ...item,
+            place: `관측점 ${index + 1}`
+          };
+        });
+
+      return { source: "demo" };
     } catch (error) {
-      console.warn("[OBS] failed to load observations from json:", error);
+      console.warn("[OBS] failed to load demo observations:", error);
       observationSamples = [];
       return { source: "empty" };
     }
   }
 
   async function loadObservationSamples() {
+    if (useLocalObservationStore()) {
+      observationSamples = [];
+      return { source: "empty" };
+    }
+
     if (!isNativePlatform()) {
-      return await loadObservationSamplesFromJson();
+      return loadObservationSamplesFromDemoJson();
     }
 
     const sqliteModule = window.BearSQLite;
@@ -116,7 +211,7 @@ window.createObsListModule = function createObsListModule({
       const queryResult = await sqlite.query({
         database: dbName,
         statement: `
-          SELECT id, bear_code, owner, lat, lng, heading
+          SELECT id, place, bear_code, owner, lat, lng, heading, detectors_json
           FROM observations
           ORDER BY created_at DESC, id ASC
         `,
@@ -145,9 +240,11 @@ window.createObsListModule = function createObsListModule({
 
     if (statusEl) {
       if (result.source === "sqlite") {
-        statusEl.textContent = `✅ SQLite 관측점 ${observationSamples.length}건 로드`;
-      } else if (result.source === "json") {
-        statusEl.textContent = `✅ JSON 관측점 ${observationSamples.length}건 로드`;
+        statusEl.textContent = `✅ 관측점 ${observationSamples.length}건 로드`;
+      } else if (result.source === "demo") {
+        statusEl.textContent = `🧪 웹 더미 관측점 ${observationSamples.length}건 로드`;
+      } else if (result.source === "local") {
+        statusEl.textContent = `✅ 로컬 관측점 ${observationSamples.length}건 로드`;
       } else {
         statusEl.textContent = "ℹ️ 관측점 데이터가 없습니다.";
       }
@@ -169,26 +266,34 @@ window.createObsListModule = function createObsListModule({
   function createObservationIcon(item, zoom = map.getZoom()) {
     const baseZoom = 14;
     const rawScale = Math.pow(2, (zoom - baseZoom) * 0.16);
-    const scale = Math.min(1.05, Math.max(0.65, rawScale));
+    const isSelected = !!(item && item.isSelected);
+    const scale = Math.min(isSelected ? 1.12 : 1.05, Math.max(0.65, rawScale));
 
-    const wrapperSize = Math.round(52 * scale);
-    const circleSize = Math.round(30 * scale);
-    const fontSize = Math.max(9, Math.round(12 * scale));
-    const pointerLeft = Math.round(6 * scale);
-    const pointerSide = Math.max(6, Math.round(12 * scale));
-    const pointerHeight = Math.max(10, Math.round(18 * scale));
-    const iconAnchorX = Math.round(wrapperSize / 2);
-    const iconAnchorY = Math.round(wrapperSize * 0.77);
+    const labelText = getObservationMarkerText(item);
+    const wrapperWidth = Math.round(72 * scale);
+    const wrapperHeight = Math.round(42 * scale);
+    const pillHeight = Math.round(22 * scale);
+    const pillMinWidth = Math.round(38 * scale);
+    const horizontalPadding = Math.round(8 * scale);
+    const fontSize = Math.max(8, Math.round(10 * scale));
+    const pointerSide = Math.max(5, Math.round(8 * scale));
+    const pointerHeight = Math.max(8, Math.round(10 * scale));
+    const iconAnchorX = Math.round(wrapperWidth / 2);
+    const iconAnchorY = Math.round(wrapperHeight * 0.9);
+    const badgeBorder = isSelected ? "3px solid rgba(255,255,255,0.98)" : "2px solid rgba(255,255,255,0.92)";
+    const badgeShadow = isSelected
+      ? "0 0 0 4px rgba(59,130,246,0.26), 0 10px 24px rgba(194,65,12,0.38)"
+      : "0 10px 24px rgba(194,65,12,0.32)";
 
     return L.divIcon({
       className: "observation-pin-icon",
       html: `
-        <div style="position:relative;width:${wrapperSize}px;height:${wrapperSize}px;display:flex;align-items:flex-end;justify-content:center;">
-          <div style="position:absolute;top:0;left:${pointerLeft}px;width:0;height:0;border-left:${pointerSide}px solid transparent;border-right:${pointerSide}px solid transparent;border-bottom:${pointerHeight}px solid #3b82f6;transform:rotate(-18deg);"></div>
-          <div style="width:${circleSize}px;height:${circleSize}px;border-radius:50%;background:#4c6fd3;color:#fff;font-weight:800;font-size:${fontSize}px;display:flex;align-items:center;justify-content:center;box-shadow:0 8px 18px rgba(37,99,235,0.32);">${item.id}</div>
+        <div style="position:relative;width:${wrapperWidth}px;height:${wrapperHeight}px;display:flex;align-items:flex-start;justify-content:center;">
+          <div style="position:absolute;left:50%;bottom:0;transform:translateX(-50%);width:0;height:0;border-left:${pointerSide}px solid transparent;border-right:${pointerSide}px solid transparent;border-top:${pointerHeight}px solid #c2410c;"></div>
+          <div style="min-width:${pillMinWidth}px;max-width:${wrapperWidth}px;height:${pillHeight}px;padding:0 ${horizontalPadding}px;border-radius:${Math.round(999 * scale)}px;background:linear-gradient(180deg,#f97316 0%,#dc2626 100%);border:${badgeBorder};color:#fff;font-weight:800;font-size:${fontSize}px;line-height:${pillHeight - 4}px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;box-shadow:${badgeShadow};">${labelText}</div>
         </div>
       `,
-      iconSize: [wrapperSize, wrapperSize],
+      iconSize: [wrapperWidth, wrapperHeight],
       iconAnchor: [iconAnchorX, iconAnchorY]
     });
   }
@@ -200,16 +305,34 @@ window.createObsListModule = function createObsListModule({
     const zoom = map.getZoom();
 
     for (const item of items) {
+      item.isSelected = selectedObsIds.has(item.id);
+      const detectorText = Array.isArray(item.detectors) && item.detectors.length > 0
+        ? item.detectors
+          .map((det) => {
+            const name = String(det && det.detectorName ? det.detectorName : "").trim();
+            const strength = String(det && det.signalStrength ? det.signalStrength : "").trim();
+            if (name && strength) return `${name}(${strength})`;
+            return name || strength || "";
+          })
+          .filter((v) => !!v)
+          .join(", ")
+        : "없음";
+
       const marker = L.marker([item.lat, item.lng], { icon: createObservationIcon(item, zoom) });
       marker.obsData = item;
-      marker.bindPopup(
-        `관측점 ${item.id}<br/>` +
-        `곰 코드 ${item.bearCode}<br/>` +
-        `등록자 ${item.owner}<br/>` +
-        `위경도 ${item.lat.toFixed(6)}, ${item.lng.toFixed(6)}`
-      );
+      marker.bindPopup(buildObservationPopupHtml(item, detectorText));
       observationMarkersLayer.addLayer(marker);
       observationMarkers.push(marker);
+    }
+  }
+
+  function syncObservationMarkerSelection() {
+    const zoom = map.getZoom();
+
+    for (const marker of observationMarkers) {
+      if (!marker || !marker.obsData) continue;
+      marker.obsData.isSelected = selectedObsIds.has(marker.obsData.id);
+      marker.setIcon(createObservationIcon(marker.obsData, zoom));
     }
   }
 
@@ -251,7 +374,7 @@ window.createObsListModule = function createObsListModule({
 
       row.innerHTML = `
         <td class="col-chk"><input type="checkbox" class="obs-row-chk" data-id="${item.id}" ${isChecked ? "checked" : ""} /></td>
-        <td>${item.id}</td>
+        <td>${getObservationLabel(item)}</td>
         <td>${item.bearCode}</td>
         <td>${item.owner}</td>
         <td>
@@ -300,6 +423,7 @@ window.createObsListModule = function createObsListModule({
       selectedObsIds.delete(id);
       row.classList.remove("selected");
     }
+    syncObservationMarkerSelection();
     updateSelectionUI();
   }
 
@@ -333,6 +457,7 @@ window.createObsListModule = function createObsListModule({
     }
 
     syncChkAll(getFilteredItems());
+    syncObservationMarkerSelection();
   }
 
   // 현재 필터 대상 기준으로 전체선택 체크박스 상태를 동기화한다.
@@ -351,7 +476,7 @@ window.createObsListModule = function createObsListModule({
     if (!query) return observationSamples;
     return observationSamples.filter((item) => {
       if (field === "bear") return item.bearCode.toLowerCase().includes(query);
-      return item.id.toLowerCase().includes(query);
+      return item.id.toLowerCase().includes(query) || getObservationLabel(item).toLowerCase().includes(query);
     });
   }
 
@@ -475,6 +600,7 @@ window.createObsListModule = function createObsListModule({
       statusEl.textContent = deletedCount > 0
         ? `🗑️ ${deletedCount}개 관측점을 선택 삭제했습니다.`
         : "🟠 삭제할 관측점이 없습니다.";
+
     });
 
     if (btnObsListPeek) btnObsListPeek.addEventListener("click", () => {
@@ -528,12 +654,33 @@ window.createObsListModule = function createObsListModule({
     setActiveTab(currentTab === "list" ? btnBear : null);
   }
 
+  function addObservation(item) {
+    const mapped = mapObservationRow(item);
+    if (!mapped) return;
+
+    observationSamples = [mapped].concat(observationSamples.filter((existing) => existing.id !== mapped.id));
+    applySearch();
+    if (currentTab === "list") {
+      renderObservationMarkers(getFilteredItems());
+    }
+    updateSelectionUI();
+  }
+
+  function openList() {
+    setActiveTab(btnBear);
+    setTabLayout("list");
+    if (onOpenList) onOpenList();
+    if (onCloseRegister) onCloseRegister();
+  }
+
   return {
     initialize,
+    openList,
     setTabLayout,
     deactivate: closeListPanel,
     getCurrentTab: () => currentTab,
+    addObservation,
     renderObservationMarkers,
-    refreshObservationList: applySearch
+    refreshObservationList: refreshObservationData
   };
 };

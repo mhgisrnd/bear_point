@@ -4,7 +4,8 @@
 window.createObsRegisterModule = function createObsRegisterModule({
   statusEl,
   updateRegistrationPreview,
-  onClose
+  onClose,
+  onObservationSaved
 }) {
   var registerBoxEl = document.getElementById("register-box");
   var btnRegisterClose = document.getElementById("btn-register-close");
@@ -13,11 +14,15 @@ window.createObsRegisterModule = function createObsRegisterModule({
   var btnDetRemove = document.getElementById("btn-det-remove");
   var detListEl = document.getElementById("det-list");
   var obsRegFormEl = document.getElementById("obs-reg-form");
+  var regPlaceEl = document.getElementById("reg-place");
   var regCoordEl = document.getElementById("reg-coord");
   var regHeadingEl = document.getElementById("reg-heading");
+  var regBearEl = document.getElementById("reg-bear");
+  var detectorNameOptionsEl = document.getElementById("detector-name-options");
   var chkRegHeadingLock = document.getElementById("chk-reg-heading-lock");
   var coordTypeEls = document.querySelectorAll('input[name="coord-type"]');
   var registerHeaderEl = registerBoxEl ? registerBoxEl.querySelector(".obs-register-header") : null;
+  var registerBodyEl = registerBoxEl ? registerBoxEl.querySelector(".obs-register-body") : null;
 
   var MAX_DET = 3;
   var isPeekMode = false;
@@ -34,36 +39,240 @@ window.createObsRegisterModule = function createObsRegisterModule({
     isGpsActive: false
   };
 
+  var DEFAULT_OWNER = "미지정";
+  var BEAR_LIST_URL = "json/bear-list.json";
+
   var DET_ROW_TEMPLATE =
     '<tr class="det-row">' +
       '<td>' +
-        '<select class="obs-reg-select obs-reg-select--det">' +
-          '<option value="">-- 선택 --</option>' +
-          '<option value="A">A발신기</option>' +
-          '<option value="B">B발신기</option>' +
-          '<option value="C">C발신기</option>' +
-        '</select>' +
+        '<input class="obs-reg-input obs-reg-input--det" list="detector-name-options" placeholder="발신기명 입력" />' +
       '</td>' +
       '<td>' +
-        '<select class="obs-reg-select obs-reg-select--det">' +
-          '<option value="">-- 선택 --</option>' +
-          '<option value="weak">미약</option>' +
-          '<option value="s1">감1</option>' +
-          '<option value="s2">감2</option>' +
-          '<option value="s3">감3</option>' +
-          '<option value="p1">P1</option>' +
-          '<option value="p2">P2</option>' +
-          '<option value="p3">P3</option>' +
-          '<option value="p4">P4</option>' +
-          '<option value="p5">P5</option>' +
-          '<option value="p6">P6</option>' +
-          '<option value="p7">P7</option>' +
-          '<option value="p8">P8</option>' +
-          '<option value="p9">P9</option>' +
-          '<option value="p10">P10</option>' +
-        '</select>' +
+        '<input class="obs-reg-input obs-reg-input--det" list="detector-strength-options" placeholder="감도세기 입력" />' +
       '</td>' +
     '</tr>';
+
+  function generateObservationId() {
+    return "obs-" + Date.now();
+  }
+
+  async function loadBearListOptions() {
+    if (!regBearEl) return;
+
+    try {
+      var response = await fetch(BEAR_LIST_URL, { cache: "no-store" });
+      if (!response.ok) {
+        throw new Error("HTTP " + response.status);
+      }
+
+      var rows = await response.json();
+      var items = Array.isArray(rows) ? rows : [];
+      regBearEl.innerHTML = '<option value="">-- 선택 --</option>';
+
+      for (var i = 0; i < items.length; i += 1) {
+        var item = items[i] || {};
+        var code = String(item.bear_code || item.id || item.code || "").trim();
+        var name = String(item.name || "").trim();
+        if (!code) continue;
+
+        var option = document.createElement("option");
+        option.value = code;
+        option.textContent = name ? code + "-" + name : code;
+        regBearEl.appendChild(option);
+      }
+    } catch (error) {
+      console.warn("[OBS] bear-list.json 로드 실패:", error);
+    }
+  }
+
+  function getSQLitePlugin() {
+    return window.Capacitor && window.Capacitor.Plugins
+      ? window.Capacitor.Plugins.CapacitorSQLite
+      : null;
+  }
+
+  function getDbName() {
+    return window.BearSQLiteConfig && window.BearSQLiteConfig.dbName
+      ? String(window.BearSQLiteConfig.dbName)
+      : "BearPointData";
+  }
+
+  function renderDetectorCatalogOptions(names) {
+    if (!detectorNameOptionsEl) return;
+
+    detectorNameOptionsEl.innerHTML = "";
+    for (var i = 0; i < names.length; i += 1) {
+      var name = String(names[i] || "").trim();
+      if (!name) continue;
+      var option = document.createElement("option");
+      option.value = name;
+      detectorNameOptionsEl.appendChild(option);
+    }
+  }
+
+  async function loadDetectorCatalogOptions() {
+    var sqliteModule = window.BearSQLite;
+    if (!sqliteModule || typeof sqliteModule.initialize !== "function") {
+      return;
+    }
+
+    var initState = await sqliteModule.initialize();
+    if (!initState || !initState.ready) {
+      return;
+    }
+
+    var sqlite = getSQLitePlugin();
+    if (!sqlite || typeof sqlite.query !== "function") {
+      return;
+    }
+
+    try {
+      var queryResult = await sqlite.query({
+        database: getDbName(),
+        statement: "SELECT detector_name FROM detector_catalog ORDER BY last_used_at DESC, detector_name ASC LIMIT 100",
+        values: [],
+        readonly: false
+      });
+
+      var rows = Array.isArray(queryResult && queryResult.values) ? queryResult.values : [];
+      var names = [];
+      for (var i = 0; i < rows.length; i += 1) {
+        var row = rows[i] || {};
+        var name = String(row.detector_name || "").trim();
+        if (!name) continue;
+        names.push(name);
+      }
+
+      renderDetectorCatalogOptions(names);
+    } catch (error) {
+      console.warn("[OBS] detector catalog 로드 실패:", error);
+    }
+  }
+
+  async function saveObservationToSQLite(observation, detectors) {
+    var sqliteModule = window.BearSQLite;
+    if (!sqliteModule || typeof sqliteModule.initialize !== "function") {
+      throw new Error("SQLite 모듈이 로드되지 않았습니다.");
+    }
+
+    var initState = await sqliteModule.initialize();
+    if (!initState || !initState.ready) {
+      throw new Error("SQLite 연결이 준비되지 않았습니다.");
+    }
+
+    var sqlite = getSQLitePlugin();
+    if (!sqlite || typeof sqlite.run !== "function") {
+      throw new Error("SQLite run API를 사용할 수 없습니다.");
+    }
+
+    var dbName = getDbName();
+
+    var normalizedDetectors = Array.isArray(detectors)
+      ? detectors.slice(0, MAX_DET).map(function(item) {
+          return {
+            detectorName: String(item && item.detectorName ? item.detectorName : "").trim(),
+            signalStrength: String(item && item.signalStrength ? item.signalStrength : "").trim()
+          };
+        }).filter(function(item) {
+          return !!(item.detectorName || item.signalStrength);
+        })
+      : [];
+
+    await sqlite.run({
+      database: dbName,
+      statement: [
+        "INSERT INTO observations (id, bear_code, owner, lat, lng, heading, place, detectors_json)",
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+      ].join(" "),
+      values: [
+        observation.id,
+        observation.bearCode,
+        observation.owner,
+        observation.lat,
+        observation.lng,
+        observation.heading,
+        observation.place,
+        JSON.stringify(normalizedDetectors)
+      ],
+      transaction: true,
+      readonly: false
+    });
+  }
+
+  function collectDetectorRows() {
+    if (!detListEl) return [];
+
+    var rows = detListEl.querySelectorAll(".det-row");
+    var detectors = [];
+    for (var i = 0; i < rows.length; i += 1) {
+      var cells = rows[i].querySelectorAll("input");
+      var detectorName = cells[0] ? cells[0].value.trim() : "";
+      var signalStrength = cells[1] ? cells[1].value.trim() : "";
+
+      if (!detectorName && !signalStrength) continue;
+      detectors.push({ detectorName: detectorName, signalStrength: signalStrength });
+    }
+
+    return detectors;
+  }
+
+  function buildObservationPayload() {
+    var place = regPlaceEl ? regPlaceEl.value.trim() : "";
+    var bearCode = regBearEl ? regBearEl.value.trim() : "";
+    var lat = Number(latestLive.lat);
+    var lng = Number(latestLive.lng);
+    var heading = Number(isHeadingLocked ? lockedHeadingDeg : latestLive.heading);
+
+    if (!latestLive.isGpsActive) {
+      throw new Error("GPS를 활성화 해주세요.");
+    }
+    if (!place) {
+      throw new Error("지명을 입력해야 합니다.");
+    }
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+      throw new Error("GPS 좌표를 확인할 수 없어 등록할 수 없습니다.");
+    }
+    if (!Number.isFinite(heading)) {
+      throw new Error("GPS 방향각을 확인할 수 없어 등록할 수 없습니다.");
+    }
+    if (!bearCode) {
+      throw new Error("곰 목록을 선택해주세요.");
+    }
+
+    return {
+      id: generateObservationId(),
+      place: place,
+      bearCode: bearCode,
+      owner: DEFAULT_OWNER,
+      lat: lat,
+      lng: lng,
+      heading: Math.round(heading)
+    };
+  }
+
+  async function saveObservation(observation, detectors) {
+    await saveObservationToSQLite(observation, detectors);
+    return "sqlite";
+  }
+
+  async function submitObservation() {
+    try {
+      var observation = buildObservationPayload();
+      var detectors = collectDetectorRows();
+      var source = await saveObservation(observation, detectors);
+
+      if (onObservationSaved) {
+        await onObservationSaved({ observation: observation, detectors: detectors, source: source });
+      }
+
+      statusEl.textContent = source === "sqlite"
+        ? "✅ 관측점이 SQLite에 등록되었습니다."
+        : "✅ 관측점이 로컬 저장소에 등록되었습니다.";
+      hide(true);
+    } catch (error) {
+      statusEl.textContent = "⚠️ " + (error && error.message ? error.message : String(error));
+    }
+  }
 
   // 등록 폼을 기본 상태로 초기화하고 감지기 행을 1개로 되돌린다.
   function resetFormState() {
@@ -219,15 +428,46 @@ window.createObsRegisterModule = function createObsRegisterModule({
     registerBoxEl.style.right = "";
   }
 
+  // 모바일에서 키보드 표시 시 visualViewport 기준으로 팝업/본문 높이를 보정한다.
+  function applyMobileViewportSizing() {
+    if (!registerBoxEl) return;
+    var isMobile = window.matchMedia && window.matchMedia("(max-width: 820px)").matches;
+
+    if (!isMobile) {
+      registerBoxEl.style.maxHeight = "";
+      if (registerBodyEl) registerBodyEl.style.maxHeight = "";
+      return;
+    }
+
+    var viewportHeight = window.innerHeight;
+    if (window.visualViewport && Number.isFinite(window.visualViewport.height)) {
+      viewportHeight = Math.round(window.visualViewport.height);
+    }
+
+    var popupMaxHeight = Math.max(260, viewportHeight - 16);
+    registerBoxEl.style.maxHeight = popupMaxHeight + "px";
+
+    if (registerBodyEl) {
+      var headerHeight = registerHeaderEl ? registerHeaderEl.offsetHeight : 0;
+      var bodyMaxHeight = Math.max(120, popupMaxHeight - headerHeight - 12);
+      registerBodyEl.style.maxHeight = bodyMaxHeight + "px";
+    }
+  }
+
   // 팝업이 화면 밖으로 나가지 않도록 위치를 보정한다.
   function keepPopupInViewport(resetOnMobile) {
     if (!registerBoxEl) return;
 
     var isMobile = window.matchMedia && window.matchMedia("(max-width: 820px)").matches;
-    if (isMobile && resetOnMobile) {
+    if (isMobile) {
       // 모바일 기본 위치는 CSS를 따르도록 inline 좌표 제거
       clearInlinePosition();
+      applyMobileViewportSizing();
       return;
+    }
+
+    if (resetOnMobile) {
+      clearInlinePosition();
     }
 
     var rect = registerBoxEl.getBoundingClientRect();
@@ -275,6 +515,8 @@ window.createObsRegisterModule = function createObsRegisterModule({
     if (registerBoxEl) registerBoxEl.classList.remove("hidden");
     setPeekMode(false);
     clearInlinePosition();
+    void loadDetectorCatalogOptions();
+    applyMobileViewportSizing();
     keepPopupInViewport(true);
     if (updateRegistrationPreview) updateRegistrationPreview();
     renderLiveFields();
@@ -312,7 +554,7 @@ window.createObsRegisterModule = function createObsRegisterModule({
     var btnRegCancel = document.getElementById("btn-reg-cancel");
 
     if (btnRegSubmit) btnRegSubmit.addEventListener("click", function() {
-      statusEl.textContent = "✅ 관측점 등록 처리 준비 중 (미구현)";
+      void submitObservation();
     });
     if (btnRegCancel) btnRegCancel.addEventListener("click", function() {
       close();
@@ -362,13 +604,27 @@ window.createObsRegisterModule = function createObsRegisterModule({
     });
 
     window.addEventListener("resize", function() {
+      applyMobileViewportSizing();
       keepPopupInViewport(false);
     });
+
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener("resize", function() {
+        applyMobileViewportSizing();
+        keepPopupInViewport(false);
+      });
+
+      window.visualViewport.addEventListener("scroll", function() {
+        applyMobileViewportSizing();
+        keepPopupInViewport(false);
+      });
+    }
   }
 
   // 모듈 초기 진입 시 이벤트/초기 UI를 세팅한다.
   function initialize() {
     bindEvents();
+    void loadBearListOptions();
     syncDetBtns();
     renderLiveFields();
   }

@@ -101,9 +101,6 @@
             <label class="obs-reg-label" for="reg-bear">곰 목록</label>
             <select class="obs-reg-select" id="reg-bear">
               <option value="">-- 선택 --</option>
-              <option value="001">001-곰돌이</option>
-              <option value="002">002-곰아빠</option>
-              <option value="003">003-곰엄마</option>
             </select>
           </div>
 
@@ -133,35 +130,35 @@
               <tbody id="det-list">
                 <tr class="det-row">
                   <td>
-                    <select class="obs-reg-select obs-reg-select--det">
-                      <option value="">-- 선택 --</option>
-                      <option value="A">A발신기</option>
-                      <option value="B">B발신기</option>
-                      <option value="C">C발신기</option>
-                    </select>
+                    <input class="obs-reg-input obs-reg-input--det" list="detector-name-options" placeholder="발신기명 입력" />
                   </td>
                   <td>
-                    <select class="obs-reg-select obs-reg-select--det">
-                      <option value="">-- 선택 --</option>
-                      <option value="weak">미약</option>
-                      <option value="s1">감1</option>
-                      <option value="s2">감2</option>
-                      <option value="s3">감3</option>
-                      <option value="p1">P1</option>
-                      <option value="p2">P2</option>
-                      <option value="p3">P3</option>
-                      <option value="p4">P4</option>
-                      <option value="p5">P5</option>
-                      <option value="p6">P6</option>
-                      <option value="p7">P7</option>
-                      <option value="p8">P8</option>
-                      <option value="p9">P9</option>
-                      <option value="p10">P10</option>
-                    </select>
+                    <input class="obs-reg-input obs-reg-input--det" list="detector-strength-options" placeholder="감도세기 입력" />
                   </td>
                 </tr>
               </tbody>
             </table>
+            <datalist id="detector-name-options">
+              <option value="A발신기"></option>
+              <option value="B발신기"></option>
+              <option value="C발신기"></option>
+            </datalist>
+            <datalist id="detector-strength-options">
+              <option value="미약"></option>
+              <option value="감1"></option>
+              <option value="감2"></option>
+              <option value="감3"></option>
+              <option value="P1"></option>
+              <option value="P2"></option>
+              <option value="P3"></option>
+              <option value="P4"></option>
+              <option value="P5"></option>
+              <option value="P6"></option>
+              <option value="P7"></option>
+              <option value="P8"></option>
+              <option value="P9"></option>
+              <option value="P10"></option>
+            </datalist>
           </div>
         </div>
 

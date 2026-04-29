@@ -1029,6 +1029,12 @@
   font-size: 12px;
 }
 
+.obs-reg-input--det {
+  width: 100%;
+  height: 28px;
+  font-size: 12px;
+}
+
 /* 등록 / 취소 버튼 */
 .obs-reg-footer {
   display: flex;
@@ -1081,6 +1087,14 @@
 
   .obs-register-body {
     max-height: calc(100dvh - 110px);
+  }
+
+  /* Android 입력 포커스 자동 확대 방지(16px 미만 폰트 시 확대됨) */
+  .obs-reg-input,
+  .obs-reg-select,
+  .obs-reg-input--det,
+  .obs-reg-select--det {
+    font-size: 16px;
   }
 
   .obs-reg-coord-wrap {

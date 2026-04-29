@@ -32,6 +32,14 @@ npm view @capacitor-community/sqlite version; npm view @capacitor-community/sqli
 npm view @capacitor-community/sqlite@7 version; npm view @capacitor-community/sqlite@7.0.0 peerDependencies --json
 npm install @capacitor-community/sqlite@7.0.3
 
+SQLite 자산 DB 파일명 규칙
+public/assets/databases/BearPointData.db (반드시 .db 확장자)
+파일명과 dbName(BearPointData)은 확장자를 제외하고 일치해야 함
+파일명 변경 후에는 반드시 아래 순서 실행
+npx cap sync android
+npx cap open android
+Android Studio에서 Rebuild/재설치
+
 
 배포본은 항상 overwrite false (sqllite-init.js) 유지 >> ASSET_DB_OVERWRITE : false
 기존 사용자 DB는 덮어쓰지 않고 마이그레이션으로 올림

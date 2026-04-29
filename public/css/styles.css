@@ -42,15 +42,15 @@ body::after {
 }
 
 #status{
-  display: flex;
-  align-items: center;
+  display: block;
   gap: 5px;
   font-size: 13px;
+  line-height: 1.35;
   margin-bottom: 8px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 220px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  max-width: 280px;
 }
 
 .controls{
@@ -305,6 +305,65 @@ a.leaflet-control-locate-btn.is-active svg{
 
 .leaflet-popup.bear-popup .leaflet-popup-close-button:hover {
   color: rgba(0, 0, 0, 0.7);
+}
+
+.obs-popup-card {
+  min-width: 182px;
+  max-width: 232px;
+  color: #1f2937;
+}
+
+.obs-popup-card__eyebrow {
+  display: block;
+  margin: 0 0 8px;
+  padding: 4px 8px;
+  /* border-radius: 10px;
+  background: rgba(234, 88, 12, 0.14); */
+  color: #9a3412;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.25;
+}
+
+.obs-popup-card__grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 6px;
+}
+
+.obs-popup-card__row {
+  min-width: 0;
+  padding: 7px 8px;
+  border-radius: 10px;
+  background: linear-gradient(180deg, rgba(249, 250, 251, 0.98) 0%, rgba(243, 244, 246, 0.94) 100%);
+}
+
+.obs-popup-card__row--wide {
+  grid-column: 1 / -1;
+}
+
+.obs-popup-card__label {
+  display: block;
+  margin-bottom: 3px;
+  color: #9a3412;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.obs-popup-card__value {
+  display: block;
+  color: #111827;
+  font-size: 12px;
+  font-weight: 700;
+  word-break: break-word;
+}
+
+.obs-popup-card__value--mono {
+  font-family: Consolas, "SFMono-Regular", Menlo, monospace;
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 #map .ol-attribution {

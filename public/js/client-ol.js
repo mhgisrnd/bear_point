@@ -123,12 +123,14 @@
   bindTileErrorStatus(topoBase.getSource(), "OpenTopoMap");
   bindTileErrorStatus(hillshadeOverlay.getSource(), "Hillshade");
 
-  function createHeadingIconDataUri(svgSize) {
+  function createHeadingIconDataUri(svgSize, color, circleRadius) {
     const center = svgSize / 2;
+    const fillColor = color || "#2b7cff";
+    const dotRadius = Number.isFinite(circleRadius) ? circleRadius : 6;
     const svg =
       '<svg xmlns="http://www.w3.org/2000/svg" width="' + svgSize + '" height="' + svgSize + '" viewBox="0 0 ' + svgSize + ' ' + svgSize + '">' +
-        '<path d="M ' + center + ' 4 L ' + (center + 9) + ' ' + (center - 2) + ' L ' + center + ' ' + (center - 6) + ' L ' + (center - 9) + ' ' + (center - 2) + ' Z" fill="#2b7cff"/>' +
-        '<circle cx="' + center + '" cy="' + (center + 3) + '" r="6" fill="#2b7cff"/>' +
+        '<path d="M ' + center + ' 4 L ' + (center + 9) + ' ' + (center - 2) + ' L ' + center + ' ' + (center - 6) + ' L ' + (center - 9) + ' ' + (center - 2) + ' Z" fill="' + fillColor + '"/>' +
+        '<circle cx="' + center + '" cy="' + (center + 3) + '" r="' + dotRadius + '" fill="' + fillColor + '"/>' +
       '</svg>';
 
     return "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
@@ -137,7 +139,9 @@
   const myLocationSource = new ol.source.Vector();
   let myLocationFeature = null;
   const MY_HEADING_ICON_SIZE = 48;
-  const myHeadingIconSrc = createHeadingIconDataUri(MY_HEADING_ICON_SIZE);
+  const myHeadingIconSrc = createHeadingIconDataUri(MY_HEADING_ICON_SIZE, "#2b7cff", 6);
+  const OBSERVATION_HEADING_ICON_SIZE = 40;
+  const observationHeadingIconSrc = createHeadingIconDataUri(OBSERVATION_HEADING_ICON_SIZE, "#ea580c", 5.5);
   const myLocationLayer = new ol.layer.Vector({
     source: myLocationSource,
     style: function (feature) {
@@ -646,23 +650,176 @@
     }
   }
 
+  function getObservationLabelFromData(obsData) {
+    if (!obsData) return "관측점";
+    const place = String(obsData.place || "").trim();
+    const id = String(obsData.id || "").trim();
+    return place || id || "관측점";
+  }
+
+  function getObservationMarkerText(obsData) {
+    const label = getObservationLabelFromData(obsData);
+    return label.length > 10 ? label.slice(0, 10) + "..." : label;
+  }
+
+  function getObservationHeadingDeg(obsData) {
+    if (!obsData) return null;
+
+    const rawHeading = typeof obsData.heading === "string"
+      ? obsData.heading.replace(/[^0-9.-]/g, "")
+      : obsData.heading;
+    const headingDeg = Number(rawHeading);
+    return Number.isFinite(headingDeg) ? headingDeg : null;
+  }
+
   function createObservationStyleFromMarker(marker) {
     const obsData = marker && marker.obsData ? marker.obsData : null;
-    const idText = obsData ? String(obsData.id || "-") : "-";
+    const labelText = getObservationMarkerText(obsData);
 
-    return new ol.style.Style({
-      image: new ol.style.Circle({
-        radius: 13,
-        fill: new ol.style.Fill({ color: "#4c6fd3" }),
-        stroke: new ol.style.Stroke({ color: "#ffffff", width: 2 })
-      }),
-      text: new ol.style.Text({
-        text: idText,
-        font: "700 11px sans-serif",
-        fill: new ol.style.Fill({ color: "#ffffff" })
-      })
-    });
+    return function() {
+      const headingDeg = getObservationHeadingDeg(obsData);
+      const isSelected = !!(obsData && obsData.isSelected);
+      const rotation = Number.isFinite(headingDeg) ? (headingDeg * Math.PI) / 180 : 0;
+
+      const styles = [];
+
+      if (isSelected) {
+        styles.push(new ol.style.Style({
+          image: new ol.style.Circle({
+            radius: 16,
+            fill: new ol.style.Fill({ color: "rgba(59,130,246,0.10)" }),
+            stroke: new ol.style.Stroke({ color: "rgba(59,130,246,0.86)", width: 3 })
+          })
+        }));
+      }
+
+      styles.push(new ol.style.Style({
+          image: new ol.style.Icon({
+            src: observationHeadingIconSrc,
+            width: OBSERVATION_HEADING_ICON_SIZE,
+            height: OBSERVATION_HEADING_ICON_SIZE,
+            anchor: [0.5, 0.5],
+            anchorXUnits: "fraction",
+            anchorYUnits: "fraction",
+            rotateWithView: true,
+            rotation: rotation
+          }),
+          text: new ol.style.Text({
+            text: labelText,
+            offsetY: -18,
+            padding: [4, 8, 4, 8],
+            font: "700 11px sans-serif",
+            fill: new ol.style.Fill({ color: "rgba(255,255,255,0.95)" }),
+            backgroundFill: new ol.style.Fill({ color: isSelected ? "rgba(194,65,12,0.84)" : "rgba(194,65,12,0.58)" }),
+            backgroundStroke: new ol.style.Stroke({ color: isSelected ? "rgba(255,255,255,0.92)" : "rgba(255,255,255,0.55)", width: isSelected ? 1.6 : 1.25 })
+          })
+        }));
+
+      return styles;
+    };
   }
+
+  const observationPopupEl = document.createElement("div");
+  observationPopupEl.style.position = "relative";
+  observationPopupEl.style.minWidth = "180px";
+  observationPopupEl.style.maxWidth = "240px";
+  observationPopupEl.style.padding = "12px 14px";
+  observationPopupEl.style.borderRadius = "14px";
+  observationPopupEl.style.background = "rgba(255,255,255,0.97)";
+  observationPopupEl.style.boxShadow = "0 12px 28px rgba(15,23,42,0.22)";
+  observationPopupEl.style.border = "1px solid rgba(194,65,12,0.18)";
+  observationPopupEl.style.color = "#1f2937";
+  observationPopupEl.style.fontSize = "13px";
+  observationPopupEl.style.lineHeight = "1.5";
+  observationPopupEl.style.pointerEvents = "auto";
+  observationPopupEl.style.display = "none";
+  observationPopupEl.style.zIndex = "10030";
+
+  const observationPopupCloseEl = document.createElement("button");
+  observationPopupCloseEl.type = "button";
+  observationPopupCloseEl.textContent = "X";
+  observationPopupCloseEl.setAttribute("aria-label", "관측점 정보 닫기");
+  observationPopupCloseEl.style.position = "absolute";
+  observationPopupCloseEl.style.top = "6px";
+  observationPopupCloseEl.style.right = "8px";
+  observationPopupCloseEl.style.border = "0";
+  observationPopupCloseEl.style.background = "transparent";
+  observationPopupCloseEl.style.color = "#9a3412";
+  observationPopupCloseEl.style.fontSize = "18px";
+  observationPopupCloseEl.style.lineHeight = "1";
+  observationPopupCloseEl.style.cursor = "pointer";
+
+  const observationPopupContentEl = document.createElement("div");
+  //observationPopupContentEl.style.paddingRight = "16px";
+
+  observationPopupEl.appendChild(observationPopupCloseEl);
+  observationPopupEl.appendChild(observationPopupContentEl);
+
+  const observationPopupOverlay = new ol.Overlay({
+    element: observationPopupEl,
+    positioning: "bottom-center",
+    offset: [0, -18],
+    stopEvent: true
+  });
+  map.addOverlay(observationPopupOverlay);
+
+  function syncObservationPopupPlacement() {
+    const obsSheet = document.getElementById("obs-sheet");
+    const isMobile = window.matchMedia && window.matchMedia("(max-width: 820px)").matches;
+    const isListVisible = !!(obsSheet && !obsSheet.classList.contains("hidden"));
+
+    if (isMobile && isListVisible) {
+      observationPopupOverlay.setPositioning("top-center");
+      observationPopupOverlay.setOffset([0, 18]);
+      observationPopupEl.style.maxWidth = "220px";
+      return;
+    }
+
+    observationPopupOverlay.setPositioning("bottom-center");
+    observationPopupOverlay.setOffset([0, -18]);
+    observationPopupEl.style.maxWidth = "240px";
+  }
+
+  function openObservationPopup(feature) {
+    const popupHtml = feature && feature.get("popupHtml");
+    const coordinate = feature && feature.getGeometry() ? feature.getGeometry().getCoordinates() : null;
+    if (!popupHtml || !coordinate) return;
+
+    syncObservationPopupPlacement();
+    observationPopupContentEl.innerHTML = popupHtml;
+    observationPopupEl.style.display = "block";
+    observationPopupOverlay.setPosition(coordinate);
+  }
+
+  function closeObservationPopup() {
+    observationPopupEl.style.display = "none";
+    observationPopupOverlay.setPosition(undefined);
+  }
+
+  observationPopupCloseEl.addEventListener("click", function () {
+    closeObservationPopup();
+  });
+
+  window.addEventListener("resize", function () {
+    syncObservationPopupPlacement();
+  });
+
+  map.on("singleclick", function (event) {
+    let clickedObservation = false;
+
+    map.forEachFeatureAtPixel(event.pixel, function (feature, layer) {
+      if (layer !== observationMarkerLayer) return undefined;
+      clickedObservation = true;
+      openObservationPopup(feature);
+      return feature;
+    }, {
+      hitTolerance: 8
+    });
+
+    if (!clickedObservation) {
+      closeObservationPopup();
+    }
+  });
 
   // obsList.js 재사용을 위한 최소 Leaflet 호환 어댑터
   if (!window.L) window.L = {};
@@ -677,8 +834,10 @@
         _latlng: latlng,
         _icon: options && options.icon ? options.icon : null,
         _feature: null,
+        _popupHtml: "",
         obsData: null,
-        bindPopup: function () {
+        bindPopup: function (html) {
+          this._popupHtml = typeof html === "string" ? html : "";
           return this;
         },
         setIcon: function (icon) {
@@ -703,7 +862,7 @@
       }
     },
     closePopup: function () {
-      // OpenLayers 모드에서는 팝업 미사용
+      closeObservationPopup();
     }
   };
 
@@ -717,6 +876,7 @@
       const coord = ol.proj.fromLonLat([marker._latlng[1], marker._latlng[0]]);
       const feature = new ol.Feature({ geometry: new ol.geom.Point(coord) });
       marker._feature = feature;
+      feature.set("popupHtml", marker._popupHtml || "");
       feature.setStyle(createObservationStyleFromMarker(marker));
       observationMarkerSource.addFeature(feature);
     }
@@ -751,6 +911,16 @@
   const obsRegisterModule = window.createObsRegisterModule ? window.createObsRegisterModule({
     statusEl: statusEl,
     updateRegistrationPreview: updateRegistrationPreview,
+    onObservationSaved: async function (payload) {
+      if (!obsListModule || !payload || !payload.observation) return;
+
+      obsListModule.openList();
+      if (payload.source === "sqlite") {
+        await obsListModule.refreshObservationList();
+      } else {
+        obsListModule.addObservation(payload.observation);
+      }
+    },
     onClose: function () {
       if (obsListModule) obsListModule.deactivate();
     }
@@ -1114,7 +1284,7 @@
     }
   }
 
-  function makeDummyBearsNearJirisan() {
+  function makeBearEstimateSamples() {
     if (!bearsDataCache.length) return [];
     const picked = bearsDataCache.slice().sort(function () {
       return Math.random() - 0.5;
@@ -1122,8 +1292,9 @@
 
     return picked.map(function (bearRecord) {
       const basePoint = bearRecord.basePoints[Math.floor(Math.random() * bearRecord.basePoints.length)];
+      const bearCode = bearRecord.bear_code || bearRecord.id || "-";
       return {
-        id: bearRecord.id,
+        bearCode: bearCode,
         name: bearRecord.name,
         lat: +(basePoint.lat + (Math.random() - 0.5) * 0.008).toFixed(6),
         lng: +(basePoint.lng + (Math.random() - 0.5) * 0.008).toFixed(6),
@@ -1149,7 +1320,7 @@
           height: 34
         }),
         text: new ol.style.Text({
-          text: String(it.id || "-"),
+          text: String(it.bearCode || it.id || "-"),
           offsetY: 22,
           font: "600 11px sans-serif",
           fill: new ol.style.Fill({ color: "#ffffff" }),
@@ -1176,7 +1347,7 @@
       el.className = "bears-item";
       el.innerHTML =
         '<div>' +
-          '<div><b>' + (it.id || "-") + '</b></div>' +
+          '<div><b>' + (it.bearCode || it.id || "-") + '</b></div>' +
           '<div style="font-size:12px;opacity:.7">' + it.lat.toFixed(6) + ", " + it.lng.toFixed(6) + '</div>' +
         '</div>' +
         '<div style="font-size:12px;opacity:.7;align-self:center">' +
@@ -1191,16 +1362,16 @@
     });
   }
 
-  async function refreshDummyBearsAndFocus() {
-    if (statusEl) statusEl.textContent = "🐻 곰 더미 위치 생성중…";
+  async function refreshBearEstimatePanel() {
+    if (statusEl) statusEl.textContent = "🐻 곰 추정위치 계산중…";
 
     await loadBearsData();
-    const items = makeDummyBearsNearJirisan();
+    const items = makeBearEstimateSamples();
     renderBears(items);
     renderBearMarkers(items);
 
     if (!items.length) {
-      if (statusEl) statusEl.textContent = "🟠 표시할 곰 더미 데이터가 없습니다";
+      if (statusEl) statusEl.textContent = "🟠 표시할 곰 추정위치가 없습니다";
       return;
     }
 
@@ -1277,7 +1448,7 @@
   if (statusEl && statusEl.textContent === "연결됨") {
     statusEl.textContent = "✅ 지도 초기화 완료";
   }
-  refreshDummyBearsAndFocus();
+  refreshBearEstimatePanel();
 
   setTimeout(function () {
     if (!statusEl) return;

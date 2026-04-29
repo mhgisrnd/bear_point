@@ -1,41 +1,41 @@
 [
   {
-    "id": "곰-001",
+    "bear_code": "곰-001",
     "name": "산중이",
     "basePoints": [
       { "lat": 35.3202, "lng": 127.7301 }
     ]
   },
   {
-    "id": "곰-002",
+    "bear_code": "곰-002",
     "name": "숲돌이",
     "basePoints": [
       { "lat": 35.2038, "lng": 127.5774 }
     ]
   },
   {
-    "id": "곰-003",
+    "bear_code": "곰-003",
     "name": "계곡이",
     "basePoints": [
       { "lat": 35.4274, "lng": 127.7959 }
     ]
   },
   {
-    "id": "곰-004",
+    "bear_code": "곰-004",
     "name": "물냇가",
     "basePoints": [
       { "lat": 35.2600, "lng": 127.6150 }
     ]
   },
   {
-    "id": "곰-005",
+    "bear_code": "곰-005",
     "name": "능선이",
     "basePoints": [
       { "lat": 35.4500, "lng": 127.8200 }
     ]
   },
   {
-    "id": "곰-006",
+    "bear_code": "곰-006",
     "name": "바위틈",
     "basePoints": [
       { "lat": 35.1950, "lng": 127.4900 }
