@@ -330,7 +330,7 @@
   font-size: 11px;
   font-weight: 700;
   border-radius: 7px;
-  padding: 5px 6px;
+  padding: 6px 10px;
   min-width: 32px;
   line-height: 1;
   cursor: pointer;
@@ -853,7 +853,8 @@
 }
 
 .obs-reg-input {
-  flex: 1;
+  /* flex: 1; */
+  flex: 0 0 60%;  
   height: 30px;
   padding: 0 8px;
   border: 1px solid #cbd5e1;
@@ -913,25 +914,69 @@
   margin: 0;
 }
 
-.obs-reg-coord-type {
-  display: flex;
+/* GPS ON/OFF 슬라이더 토글 */
+.obs-reg-gps-toggle {
+  display: inline-flex;
   align-items: center;
-  gap: 3px;
+  gap: 5px;
+  flex-shrink: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* 트랙 (슬라이더 배경) */
+.obs-reg-gps-toggle__knob {
+  position: relative;
+  display: inline-block;
+  width: 36px;
+  height: 20px;
+  background: #94a3b8;
+  border-radius: 10px;
+  transition: background 0.22s;
   flex-shrink: 0;
 }
 
-.obs-reg-radio-label {
-  display: flex;
-  align-items: center;
-  gap: 3px;
+/* 원형 손잡이 */
+.obs-reg-gps-toggle__knob::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 14px;
+  height: 14px;
+  background: #fff;
+  border-radius: 50%;
+  box-shadow: 0 1px 3px rgba(0,0,0,.25);
+  transition: transform 0.22s;
+}
+
+/* ON 상태 */
+.obs-reg-gps-toggle[aria-pressed="true"] .obs-reg-gps-toggle__knob {
+  background: #22c55e;
+}
+.obs-reg-gps-toggle[aria-pressed="true"] .obs-reg-gps-toggle__knob::after {
+  transform: translateX(16px);
+}
+
+/* 라벨 텍스트 */
+.obs-reg-gps-toggle__label {
   font-size: 12px;
   color: #475569;
-  cursor: pointer;
   white-space: nowrap;
+  min-width: 46px;
+}
+.obs-reg-gps-toggle[aria-pressed="true"] .obs-reg-gps-toggle__label {
+  color: #16a34a;
+  font-weight: 600;
 }
 
 .obs-reg-select {
-  flex: 1;
+  /* flex: 1; */
+  flex: 0 0 60%;
   height: 30px;
   padding: 0 6px;
   border: 1px solid #cbd5e1;
@@ -1107,13 +1152,20 @@
     min-width: 0;
   }
 
-  .obs-reg-coord-type {
-    gap: 4px;
+  .obs-reg-gps-toggle__knob {
+    width: 32px;
+    height: 18px;
   }
-
-  .obs-reg-radio-label {
+  .obs-reg-gps-toggle__knob::after {
+    width: 12px;
+    height: 12px;
+  }
+  .obs-reg-gps-toggle[aria-pressed="true"] .obs-reg-gps-toggle__knob::after {
+    transform: translateX(14px);
+  }
+  .obs-reg-gps-toggle__label {
     font-size: 11px;
-    gap: 2px;
+    min-width: 42px;
   }
 
   .obs-register-popup--peek {

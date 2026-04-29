@@ -5,7 +5,8 @@ window.createObsRegisterModule = function createObsRegisterModule({
   statusEl,
   updateRegistrationPreview,
   onClose,
-  onObservationSaved
+  onObservationSaved,
+  onGpsToggle   // GPS ON/OFF 토글 클릭 시 실제 GPS를 켜고 끄는 콜백
 }) {
   var registerBoxEl = document.getElementById("register-box");
   var btnRegisterClose = document.getElementById("btn-register-close");
@@ -15,12 +16,13 @@ window.createObsRegisterModule = function createObsRegisterModule({
   var detListEl = document.getElementById("det-list");
   var obsRegFormEl = document.getElementById("obs-reg-form");
   var regPlaceEl = document.getElementById("reg-place");
+  var regOwnerEl = document.getElementById("reg-owner");
   var regCoordEl = document.getElementById("reg-coord");
   var regHeadingEl = document.getElementById("reg-heading");
   var regBearEl = document.getElementById("reg-bear");
   var detectorNameOptionsEl = document.getElementById("detector-name-options");
   var chkRegHeadingLock = document.getElementById("chk-reg-heading-lock");
-  var coordTypeEls = document.querySelectorAll('input[name="coord-type"]');
+  var btnGpsToggle = document.getElementById("btn-gps-toggle");
   var registerHeaderEl = registerBoxEl ? registerBoxEl.querySelector(".obs-register-header") : null;
   var registerBodyEl = registerBoxEl ? registerBoxEl.querySelector(".obs-register-body") : null;
 
@@ -35,27 +37,27 @@ window.createObsRegisterModule = function createObsRegisterModule({
     lat: null,
     lng: null,
     heading: null,
-    timestamp: null,
     isGpsActive: false
   };
 
-  var DEFAULT_OWNER = "미지정";
   var BEAR_LIST_URL = "json/bear-list.json";
 
   var DET_ROW_TEMPLATE =
     '<tr class="det-row">' +
       '<td>' +
-        '<input class="obs-reg-input obs-reg-input--det" list="detector-name-options" placeholder="발신기명 입력" />' +
+        '<input class="obs-reg-input obs-reg-input--det" list="detector-name-options" placeholder="직접 입력" />' +
       '</td>' +
       '<td>' +
-        '<input class="obs-reg-input obs-reg-input--det" list="detector-strength-options" placeholder="감도세기 입력" />' +
+        '<input class="obs-reg-input obs-reg-input--det" list="detector-strength-options" placeholder="직접 입력" />' +
       '</td>' +
     '</tr>';
 
+  // SQLite PK로 쓸 관측점 식별자를 클라이언트에서 먼저 생성한다.
   function generateObservationId() {
     return "obs-" + Date.now();
   }
 
+  // 등록 폼의 곰 선택 목록을 더미 JSON에서 읽어 select option으로 채운다.
   async function loadBearListOptions() {
     if (!regBearEl) return;
 
@@ -85,18 +87,21 @@ window.createObsRegisterModule = function createObsRegisterModule({
     }
   }
 
+  // Capacitor SQLite 플러그인 참조를 안전하게 꺼낸다.
   function getSQLitePlugin() {
     return window.Capacitor && window.Capacitor.Plugins
       ? window.Capacitor.Plugins.CapacitorSQLite
       : null;
   }
 
+  // 설정이 없을 때도 동일한 DB 이름을 쓰도록 기본값을 고정한다.
   function getDbName() {
     return window.BearSQLiteConfig && window.BearSQLiteConfig.dbName
       ? String(window.BearSQLiteConfig.dbName)
       : "BearPointData";
   }
 
+  // detector_catalog에서 읽은 발신기명을 datalist option으로 렌더링한다.
   function renderDetectorCatalogOptions(names) {
     if (!detectorNameOptionsEl) return;
 
@@ -110,6 +115,7 @@ window.createObsRegisterModule = function createObsRegisterModule({
     }
   }
 
+  // 최근 사용 발신기명을 SQLite에서 읽어 자동완성 목록으로 노출한다.
   async function loadDetectorCatalogOptions() {
     var sqliteModule = window.BearSQLite;
     if (!sqliteModule || typeof sqliteModule.initialize !== "function") {
@@ -149,6 +155,7 @@ window.createObsRegisterModule = function createObsRegisterModule({
     }
   }
 
+  // 관측점 본문과 감지기 배열을 한 row로 직렬화해 observations 테이블에 저장한다.
   async function saveObservationToSQLite(observation, detectors) {
     var sqliteModule = window.BearSQLite;
     if (!sqliteModule || typeof sqliteModule.initialize !== "function") {
@@ -199,6 +206,7 @@ window.createObsRegisterModule = function createObsRegisterModule({
     });
   }
 
+  // 현재 입력된 감지기 행을 비어 있지 않은 값만 추려 배열로 반환한다.
   function collectDetectorRows() {
     if (!detListEl) return [];
 
@@ -216,8 +224,10 @@ window.createObsRegisterModule = function createObsRegisterModule({
     return detectors;
   }
 
+  // 실시간 위치 상태와 폼 입력값을 검증해 저장용 payload를 만든다.
   function buildObservationPayload() {
     var place = regPlaceEl ? regPlaceEl.value.trim() : "";
+    var owner = regOwnerEl ? regOwnerEl.value.trim() : "";
     var bearCode = regBearEl ? regBearEl.value.trim() : "";
     var lat = Number(latestLive.lat);
     var lng = Number(latestLive.lng);
@@ -243,31 +253,25 @@ window.createObsRegisterModule = function createObsRegisterModule({
       id: generateObservationId(),
       place: place,
       bearCode: bearCode,
-      owner: DEFAULT_OWNER,
+      owner: owner || "미지정",
       lat: lat,
       lng: lng,
       heading: Math.round(heading)
     };
   }
 
-  async function saveObservation(observation, detectors) {
-    await saveObservationToSQLite(observation, detectors);
-    return "sqlite";
-  }
-
+  // 제출 버튼 진입점으로, payload 생성부터 저장 후 콜백 호출까지 처리한다.
   async function submitObservation() {
     try {
       var observation = buildObservationPayload();
       var detectors = collectDetectorRows();
-      var source = await saveObservation(observation, detectors);
+      await saveObservationToSQLite(observation, detectors);
 
       if (onObservationSaved) {
-        await onObservationSaved({ observation: observation, detectors: detectors, source: source });
+        await onObservationSaved({ observation: observation, detectors: detectors, source: "sqlite" });
       }
 
-      statusEl.textContent = source === "sqlite"
-        ? "✅ 관측점이 SQLite에 등록되었습니다."
-        : "✅ 관측점이 로컬 저장소에 등록되었습니다.";
+      statusEl.textContent = "✅ 관측점이 SQLite에 등록되었습니다.";
       hide(true);
     } catch (error) {
       statusEl.textContent = "⚠️ " + (error && error.message ? error.message : String(error));
@@ -328,29 +332,17 @@ window.createObsRegisterModule = function createObsRegisterModule({
     return deg + "°" + min + "'" + sec.toFixed(2) + '" ' + dir;
   }
 
-  // 좌표 표시 타입(TM/도분초) 라디오의 현재 값을 읽어온다.
-  function getSelectedCoordType() {
-    if (!coordTypeEls || coordTypeEls.length === 0) return "tm";
-    for (var i = 0; i < coordTypeEls.length; i += 1) {
-      if (coordTypeEls[i].checked) return coordTypeEls[i].value;
-    }
-    return "tm";
-  }
-
-  // 실시간 좌표/방향각 데이터를 입력 필드에 반영한다.
+  // 실시간 좌표/방향각 데이터를 입력 필드에 반영한다. (TM 고정 표시)
   function renderLiveFields() {
     var hasCoord = Number.isFinite(latestLive.lat) && Number.isFinite(latestLive.lng);
-    var hasHeading = Number.isFinite(latestLive.heading);
     var headingToShow = isHeadingLocked ? lockedHeadingDeg : latestLive.heading;
 
     if (regCoordEl) {
       if (!latestLive.isGpsActive || !hasCoord) {
+        // GPS 비활성 또는 좌표 없음
         regCoordEl.value = "GPS 대기중";
-      } else if (getSelectedCoordType() === "dms") {
-        regCoordEl.value =
-          toDmsString(latestLive.lat, "N", "S") + ", " +
-          toDmsString(latestLive.lng, "E", "W");
       } else {
+        // TM 좌표 표시 고정 (위도, 경도)
         regCoordEl.value = latestLive.lat.toFixed(6) + ", " + latestLive.lng.toFixed(6);
       }
     }
@@ -495,9 +487,20 @@ window.createObsRegisterModule = function createObsRegisterModule({
     if (Object.prototype.hasOwnProperty.call(payload, "lat")) latestLive.lat = payload.lat;
     if (Object.prototype.hasOwnProperty.call(payload, "lng")) latestLive.lng = payload.lng;
     if (Object.prototype.hasOwnProperty.call(payload, "heading")) latestLive.heading = payload.heading;
-    if (Object.prototype.hasOwnProperty.call(payload, "timestamp")) latestLive.timestamp = payload.timestamp;
-    if (Object.prototype.hasOwnProperty.call(payload, "isGpsActive")) latestLive.isGpsActive = payload.isGpsActive;
+    if (Object.prototype.hasOwnProperty.call(payload, "isGpsActive")) {
+      latestLive.isGpsActive = payload.isGpsActive;
+      // 외부 GPS 상태 변화를 토글 버튼 UI에 즉시 반영
+      syncGpsToggleUi(latestLive.isGpsActive);
+    }
     renderLiveFields();
+  }
+
+  // 토글 버튼의 시각적 상태(aria-pressed, 라벨)를 isOn 값에 맞게 동기화한다.
+  function syncGpsToggleUi(isOn) {
+    if (!btnGpsToggle) return;
+    btnGpsToggle.setAttribute("aria-pressed", String(!!isOn));
+    var labelEl = btnGpsToggle.querySelector(".obs-reg-gps-toggle__label");
+    if (labelEl) labelEl.textContent = isOn ? "GPS ON" : "GPS OFF";
   }
 
   // 현재 고정된 방향각 값을 반환한다.
@@ -520,7 +523,7 @@ window.createObsRegisterModule = function createObsRegisterModule({
     keepPopupInViewport(true);
     if (updateRegistrationPreview) updateRegistrationPreview();
     renderLiveFields();
-    statusEl.textContent = "🧭 현재 위치와 방향각으로 관측점 등록 준비";
+    statusEl.textContent = "🧭 관측점 등록(실시간 GPS를 켜주세요.)";
   }
 
   // 등록 팝업을 숨기고 필요 시 폼 상태를 초기화한다.
@@ -560,12 +563,15 @@ window.createObsRegisterModule = function createObsRegisterModule({
       close();
     });
 
-    if (coordTypeEls && coordTypeEls.length > 0) {
-      for (var i = 0; i < coordTypeEls.length; i += 1) {
-        coordTypeEls[i].addEventListener("change", function() {
-          renderLiveFields();
-        });
-      }
+    // GPS ON/OFF 토글 버튼 클릭 이벤트
+    // 클릭 시 client-ol의 toggleMyLocation()을 호출하여 실제 GPS를 켜고/끈다.
+    // 상태 반영은 updateLiveData({ isGpsActive }) 콜백을 통해 수동으로 처리한다.
+    if (btnGpsToggle) {
+      btnGpsToggle.addEventListener("click", function() {
+        if (typeof onGpsToggle === "function") {
+          onGpsToggle();
+        }
+      });
     }
 
     if (chkRegHeadingLock) chkRegHeadingLock.addEventListener("change", function() {
@@ -633,8 +639,6 @@ window.createObsRegisterModule = function createObsRegisterModule({
     initialize,
     open,
     hide,
-    close,
-    reset: resetFormState,
     isHeadingLocked: getHeadingLockState,
     getLockedHeading,
     updateLiveData

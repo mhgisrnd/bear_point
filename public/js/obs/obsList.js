@@ -34,11 +34,6 @@ window.createObsListModule = function createObsListModule({
   let currentTab = "none";
   let isPeekMode = false;
 
-  function useLocalObservationStore() {
-    const cfg = window.BearSQLiteConfig || {};
-    return cfg.useLocalObservationStore === true;
-  }
-
   function getObservationLabel(item) {
     if (!item) return "";
     return item.place ? String(item.place).trim() : item.id;
@@ -69,6 +64,7 @@ window.createObsListModule = function createObsListModule({
     return Number.isFinite(numeric) ? numeric.toFixed(6) : "-";
   }
 
+  // 팝업 HTML에 들어갈 문자열을 기본적인 엔티티로 이스케이프한다.
   function escapeHtml(value) {
     return String(value == null ? "" : value)
       .replace(/&/g, "&amp;")
@@ -78,13 +74,51 @@ window.createObsListModule = function createObsListModule({
       .replace(/'/g, "&#39;");
   }
 
-  function buildObservationPopupHtml(item, detectorText) {
+  // 감지기 목록을 2열 표(감지기명/감도세기) HTML로 만든다.
+  function buildDetectorRowsHtml(detectors) {
+    const rows = (Array.isArray(detectors) ? detectors : [])
+      .map((det) => {
+        const name = String(det && det.detectorName ? det.detectorName : "").trim();
+        const strength = String(det && det.signalStrength ? det.signalStrength : "").trim();
+        return { name, strength };
+      })
+      .filter((row) => row.name || row.strength)
+      .slice(0, 3);
+
+    const bodyRows = rows.length > 0
+      ? rows
+        .map((row) => `
+          <div class="obs-popup-det-table__row">
+            <span class="obs-popup-det-table__cell">${escapeHtml(row.name || "-")}</span>
+            <span class="obs-popup-det-table__cell">${escapeHtml(row.strength || "-")}</span>
+          </div>
+        `)
+        .join("")
+      : `
+        <div class="obs-popup-det-table__row">
+          <span class="obs-popup-det-table__cell">-</span>
+          <span class="obs-popup-det-table__cell">-</span>
+        </div>
+      `;
+
+    return `
+      <div class="obs-popup-det-table__head">
+        <span class="obs-popup-det-table__head-cell">감지기명</span>
+        <span class="obs-popup-det-table__head-cell">감도세기</span>
+      </div>
+      ${bodyRows}
+    `;
+  }
+
+  // Leaflet/OpenLayers 양쪽에서 재사용하는 관측점 정보 카드 마크업을 만든다.
+  function buildObservationPopupHtml(item) {
     const title = escapeHtml(getObservationLabel(item) || "관측점");
     const bearCode = escapeHtml(item && item.bearCode ? item.bearCode : "-");
     const owner = escapeHtml(item && item.owner ? item.owner : "-");
-    const coordinates = `${formatCoordinate(item && item.lat)}, ${formatCoordinate(item && item.lng)}`;
+    const xCoord = formatCoordinate(item && item.lat);
+    const yCoord = formatCoordinate(item && item.lng);
     const heading = escapeHtml(item && item.heading ? item.heading : "-");
-    const detectors = escapeHtml(detectorText || "없음");
+    const detectorRowsHtml = buildDetectorRowsHtml(item && item.detectors);
 
     return `
       <div class="obs-popup-card">
@@ -98,23 +132,27 @@ window.createObsListModule = function createObsListModule({
             <span class="obs-popup-card__label">등록자</span>
             <span class="obs-popup-card__value">${owner}</span>
           </div>
-          <div class="obs-popup-card__row obs-popup-card__row--wide">
+          <div class="obs-popup-card__row">
             <span class="obs-popup-card__label">위경도</span>
-            <span class="obs-popup-card__value obs-popup-card__value--mono">${escapeHtml(coordinates)}</span>
+            <div class="obs-popup-card__value obs-popup-card__value--coord">
+              <span>X: ${escapeHtml(xCoord)}</span>
+              <span>Y: ${escapeHtml(yCoord)}</span>
+            </div>
           </div>
           <div class="obs-popup-card__row">
             <span class="obs-popup-card__label">방향각</span>
             <span class="obs-popup-card__value">${heading}</span>
           </div>
-          <div class="obs-popup-card__row">
+          <div class="obs-popup-card__row obs-popup-card__row--wide">
             <span class="obs-popup-card__label">감지기</span>
-            <span class="obs-popup-card__value">${detectors}</span>
+            <div class="obs-popup-det-table">${detectorRowsHtml}</div>
           </div>
         </div>
       </div>
     `;
   }
 
+  // SQLite row/더미 JSON row를 공통 관측점 모델 형태로 정규화한다.
   function mapObservationRow(row) {
     if (!row) return null;
 
@@ -145,6 +183,7 @@ window.createObsListModule = function createObsListModule({
     return { id, place, bearCode, owner, lat, lng, heading, detectors };
   }
 
+  // 웹 미리보기에서는 observations.json을 관측점 소스로 사용한다.
   async function loadObservationSamplesFromDemoJson() {
     try {
       const response = await fetch(OBSERVATION_DEMO_URL, { cache: "no-store" });
@@ -173,12 +212,8 @@ window.createObsListModule = function createObsListModule({
     }
   }
 
+  // 실행 환경에 따라 웹 더미 JSON 또는 SQLite에서 관측점 목록을 읽어온다.
   async function loadObservationSamples() {
-    if (useLocalObservationStore()) {
-      observationSamples = [];
-      return { source: "empty" };
-    }
-
     if (!isNativePlatform()) {
       return loadObservationSamplesFromDemoJson();
     }
@@ -231,6 +266,7 @@ window.createObsListModule = function createObsListModule({
     }
   }
 
+  // 관측점 데이터 로드 이후 목록/마커/상태 문구를 한 번에 갱신한다.
   async function refreshObservationData() {
     const result = await loadObservationSamples();
     selectedObsIds.clear();
@@ -243,8 +279,6 @@ window.createObsListModule = function createObsListModule({
         statusEl.textContent = `✅ 관측점 ${observationSamples.length}건 로드`;
       } else if (result.source === "demo") {
         statusEl.textContent = `🧪 웹 더미 관측점 ${observationSamples.length}건 로드`;
-      } else if (result.source === "local") {
-        statusEl.textContent = `✅ 로컬 관측점 ${observationSamples.length}건 로드`;
       } else {
         statusEl.textContent = "ℹ️ 관측점 데이터가 없습니다.";
       }
@@ -306,26 +340,15 @@ window.createObsListModule = function createObsListModule({
 
     for (const item of items) {
       item.isSelected = selectedObsIds.has(item.id);
-      const detectorText = Array.isArray(item.detectors) && item.detectors.length > 0
-        ? item.detectors
-          .map((det) => {
-            const name = String(det && det.detectorName ? det.detectorName : "").trim();
-            const strength = String(det && det.signalStrength ? det.signalStrength : "").trim();
-            if (name && strength) return `${name}(${strength})`;
-            return name || strength || "";
-          })
-          .filter((v) => !!v)
-          .join(", ")
-        : "없음";
-
       const marker = L.marker([item.lat, item.lng], { icon: createObservationIcon(item, zoom) });
       marker.obsData = item;
-      marker.bindPopup(buildObservationPopupHtml(item, detectorText));
+      marker.bindPopup(buildObservationPopupHtml(item));
       observationMarkersLayer.addLayer(marker);
       observationMarkers.push(marker);
     }
   }
 
+  // 체크박스 선택 상태를 기존 마커 아이콘에도 즉시 반영한다.
   function syncObservationMarkerSelection() {
     const zoom = map.getZoom();
 
@@ -380,7 +403,6 @@ window.createObsListModule = function createObsListModule({
         <td>
           <div class="obs-actions">
             <button class="obs-action-btn edit" type="button" data-action="edit">수정</button>
-            <button class="obs-action-btn delete" type="button" data-action="delete">삭제</button>
           </div>
         </td>
       `;
@@ -392,16 +414,10 @@ window.createObsListModule = function createObsListModule({
       });
 
       const editBtn = row.querySelector('[data-action="edit"]');
-      const deleteBtn = row.querySelector('[data-action="delete"]');
-
       if (editBtn) editBtn.addEventListener("click", (e) => {
         e.stopPropagation();
-        statusEl.textContent = `✏️ ${item.id} 수정 UI 준비 중`;
-      });
-
-      if (deleteBtn) deleteBtn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        statusEl.textContent = `🗑️ ${item.id} 삭제 UI 준비 중`;
+        // TODO: 수정 기능 미구현
+        // statusEl.textContent = `✏️ ${item.id} 수정 UI 준비 중`;
       });
 
       row.addEventListener("click", () => {
@@ -573,23 +589,70 @@ window.createObsListModule = function createObsListModule({
         statusEl.textContent = "⚠️ 위치분석은 관측점 2개를 선택해야 합니다.";
         return;
       }
-      const ids = [...selectedObsIds];
-      statusEl.textContent = `📐 위치분석: [${ids.join(", ")}] 분석 준비 중`;
+      // TODO: 위치분석 기능 미구현
+      // const ids = [...selectedObsIds];
+      // statusEl.textContent = `📐 위치분석: [${ids.join(", ")}] 분석 준비 중`;
     });
 
-    if (btnDeleteSelected) btnDeleteSelected.addEventListener("click", () => {
+    // 선택된 관측점 삭제 버튼 핸들러
+    if (btnDeleteSelected) btnDeleteSelected.addEventListener("click", async () => {
       if (selectedObsIds.size < 1) return;
 
-      const selectedIds = new Set(selectedObsIds);
-      let deletedCount = 0;
+      // Step 1: 사용자 확인 대화
+      // 사용자가 실수로 삭제하지 않도록 재확인 요청
+      const count = selectedObsIds.size;
+      const confirmed = window.confirm(`${count}개 관측점을 정말 삭제하시겠습니까?\n\n이 작업은 되돌릴 수 없습니다.`);
+      if (!confirmed) {
+        statusEl.textContent = "⚠️ 삭제 취소됨";
+        return;
+      }
 
-      for (let i = observationSamples.length - 1; i >= 0; i -= 1) {
-        if (selectedIds.has(observationSamples[i].id)) {
-          observationSamples.splice(i, 1);
-          deletedCount += 1;
+      // Step 2: SQLite 데이터베이스에서 삭제
+      // 네이티브 환경(모바일 앱)에서만 SQLite 삭제 수행
+      const selectedIds = Array.from(selectedObsIds);
+      let sqliteDeletedCount = 0;
+
+      if (isNativePlatform()) {
+        try {
+          const sqlite = window.Capacitor && window.Capacitor.Plugins
+            ? window.Capacitor.Plugins.CapacitorSQLite
+            : null;
+          if (sqlite && typeof sqlite.execute === "function") {
+            const dbName = window.BearSQLiteConfig && window.BearSQLiteConfig.dbName
+              ? String(window.BearSQLiteConfig.dbName)
+              : "BearPointData";
+
+            // 각 선택된 ID마다 DELETE 쿼리 실행
+            // SQL 인젝션 방지: 싱글 쿼트를 이중 쿼트로 이스케이프
+            for (const id of selectedIds) {
+              try {
+                await sqlite.execute({
+                  database: dbName,
+                  statements: `DELETE FROM observations WHERE id = '${id.replace(/'/g, "''")}'`,
+                  readonly: false
+                });
+                sqliteDeletedCount += 1;
+              } catch (err) {
+                console.warn(`[OBS] failed to delete observation ${id}:`, err);
+              }
+            }
+          }
+        } catch (error) {
+          console.warn("[OBS] SQLite deletion failed:", error);
         }
       }
 
+      // Step 3: 메모리 배열에서 삭제
+      // UI 상태를 최신으로 유지하기 위해 observationSamples 배열에서도 제거
+      const initialLength = observationSamples.length;
+      for (let i = observationSamples.length - 1; i >= 0; i -= 1) {
+        if (selectedIds.includes(observationSamples[i].id)) {
+          observationSamples.splice(i, 1);
+        }
+      }
+
+      // Step 4: UI 상태 초기화
+      // 선택된 ID 집합 초기화, 검색 재적용, 마커/테이블 갱신
       selectedObsIds.clear();
       applySearch();
       if (currentTab === "list") {
@@ -597,8 +660,10 @@ window.createObsListModule = function createObsListModule({
       }
       updateSelectionUI();
 
-      statusEl.textContent = deletedCount > 0
-        ? `🗑️ ${deletedCount}개 관측점을 선택 삭제했습니다.`
+      // Step 5: 사용자에게 결과 메시지 표시
+      const memoryDeletedCount = initialLength - observationSamples.length;
+      statusEl.textContent = memoryDeletedCount > 0
+        ? `🗑️ ${memoryDeletedCount}개 관측점을 삭제했습니다.`
         : "🟠 삭제할 관측점이 없습니다.";
 
     });

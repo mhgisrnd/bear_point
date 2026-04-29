@@ -308,8 +308,8 @@ a.leaflet-control-locate-btn.is-active svg{
 }
 
 .obs-popup-card {
-  min-width: 182px;
-  max-width: 232px;
+  min-width: 198px;
+  max-width: 254px;
   color: #1f2937;
 }
 
@@ -364,6 +364,56 @@ a.leaflet-control-locate-btn.is-active svg{
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.obs-popup-card__value--coord {
+  font-family: Consolas, "SFMono-Regular", Menlo, monospace;
+  font-size: 10px;
+  line-height: 1.35;
+}
+
+.obs-popup-card__value--coord span {
+  display: block;
+}
+
+.obs-popup-det-table {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  max-height: 90px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.obs-popup-det-table__head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 72px;
+  gap: 6px;
+  padding: 0 1px;
+}
+
+.obs-popup-det-table__head-cell {
+  color: #6b7280;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.obs-popup-det-table__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 72px;
+  align-items: start;
+  gap: 6px;
+  padding: 3px 0;
+  border-top: 1px solid rgba(15, 23, 42, 0.06);
+}
+
+.obs-popup-det-table__cell {
+  color: #111827;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.3;
+  word-break: break-word;
 }
 
 #map .ol-attribution {

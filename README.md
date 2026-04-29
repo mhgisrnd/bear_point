@@ -62,3 +62,8 @@ window.BearSQLiteConfig = {
 
 앱 실행 시 마이그레이션이 돌고, 성공하면 user_version은 코드에서 갱신
 npx cap sync android 후 빌드/배포
+
+
+앱 sqlLite DB 확인 시
+Android Studio에서 Device Explorer 열기
+data/data/com.bearpoint.app/databases

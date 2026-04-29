@@ -911,6 +911,7 @@
   const obsRegisterModule = window.createObsRegisterModule ? window.createObsRegisterModule({
     statusEl: statusEl,
     updateRegistrationPreview: updateRegistrationPreview,
+    onGpsToggle: function() { toggleMyLocation(); }, // 등록 폼 GPS 토글 ↔ 하단 내위치 버튼 동기화
     onObservationSaved: async function (payload) {
       if (!obsListModule || !payload || !payload.observation) return;
 

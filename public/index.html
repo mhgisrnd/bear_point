@@ -69,19 +69,21 @@
             <input class="obs-reg-input" id="reg-place" type="text" placeholder="지명을 입력하세요" />
           </div>
 
+          <!-- 등록자 -->
+          <div class="obs-reg-row">
+            <label class="obs-reg-label" for="reg-owner">등록자</label>
+            <input class="obs-reg-input" id="reg-owner" type="text" placeholder="등록자를 입력하세요" />
+          </div>
+
           <!-- 좌표 -->
           <div class="obs-reg-row">
             <label class="obs-reg-label">좌표</label>
             <div class="obs-reg-coord-wrap">
-              <input class="obs-reg-input obs-reg-input--gps" id="reg-coord" type="text" placeholder="현재 GPS 값" readonly />
-              <div class="obs-reg-coord-type">
-                <label class="obs-reg-radio-label">
-                  <input type="radio" name="coord-type" value="tm" checked /> TM
-                </label>
-                <label class="obs-reg-radio-label">
-                  <input type="radio" name="coord-type" value="dms" /> 도분초
-                </label>
-              </div>
+              <input class="obs-reg-input obs-reg-input--gps" id="reg-coord" type="text" placeholder="GPS 대기중" readonly />
+              <button class="obs-reg-gps-toggle" id="btn-gps-toggle" type="button" aria-pressed="false">
+                <span class="obs-reg-gps-toggle__knob"></span>
+                <span class="obs-reg-gps-toggle__label">GPS OFF</span>
+              </button>
             </div>
           </div>
 
@@ -130,10 +132,10 @@
               <tbody id="det-list">
                 <tr class="det-row">
                   <td>
-                    <input class="obs-reg-input obs-reg-input--det" list="detector-name-options" placeholder="발신기명 입력" />
+                    <input class="obs-reg-input obs-reg-input--det" list="detector-name-options" placeholder="직접 입력" />
                   </td>
                   <td>
-                    <input class="obs-reg-input obs-reg-input--det" list="detector-strength-options" placeholder="감도세기 입력" />
+                    <input class="obs-reg-input obs-reg-input--det" list="detector-strength-options" placeholder="직접 입력" />
                   </td>
                 </tr>
               </tbody>
