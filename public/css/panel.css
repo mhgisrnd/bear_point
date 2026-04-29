@@ -250,8 +250,9 @@
 .obs-table tbody {
   display: block;
   max-height: clamp(180px, 42dvh, 320px);
-  overflow-y: auto;
+  overflow-y: scroll;
   overflow-x: visible;
+  scrollbar-gutter: stable both-edges;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
 }
@@ -302,6 +303,17 @@
 
 .obs-table tbody tr:hover td {
   background: rgba(239, 246, 255, 0.88);
+}
+
+.obs-table tbody tr.obs-empty-row:hover td {
+  background: rgba(255,255,255,0.72);
+}
+
+.obs-empty-cell {
+  padding: 18px 12px;
+  color: #64748b;
+  font-weight: 700;
+  text-align: center;
 }
 
 .obs-actions {

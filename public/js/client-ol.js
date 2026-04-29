@@ -208,6 +208,25 @@
     topoBase.setVisible(type === "topo");
   }
 
+  async function initializeEmbeddedDatabase() {
+    // sqlite-init.js가 로드되지 않았더라도 지도 기능은 계속 동작하도록 한다.
+    if (!window.BearSQLite || typeof window.BearSQLite.initialize !== "function") {
+      return { ready: false, reason: "sqlite-module-not-loaded" };
+    }
+
+    const result = await window.BearSQLite.initialize();
+
+    if (result && result.reason === "db-not-found") {
+      console.info("[SQLite] DB file not found. Place BearPointData.db under public/assets/databases.");
+    }
+
+    if (result && result.ready) {
+      console.info("[SQLite] internal database connection is ready.");
+    }
+
+    return result;
+  }
+
   function flyToLatLng(latlng, zoom) {
     if (!Array.isArray(latlng) || latlng.length < 2) return;
     const target = ol.proj.fromLonLat([latlng[1], latlng[0]]);
@@ -1247,6 +1266,10 @@
   }
   updateRegistrationPreview();
   if (obsListModule) obsListModule.initialize();
+  // 앱 시작 시 자산 DB 복사/연결 열기를 선행해 이후 CRUD 연결 준비를 끝낸다.
+  initializeEmbeddedDatabase().catch(function (error) {
+    console.error("SQLite 초기화 오류:", error);
+  });
   setupAndroidBackButtonExit().catch(function (error) {
     console.error("안드로이드 뒤로가기 초기화 오류:", error);
   });

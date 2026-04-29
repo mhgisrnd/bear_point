@@ -29,26 +29,130 @@ window.createObsListModule = function createObsListModule({
 
   const selectedObsIds = new Set();
   const observationMarkers = [];
-  const observationSamples = [
-    { id: "p1", bearCode: "001", owner: "1팀", lat: 35.3112, lng: 127.6551, heading: "124°" },
-    { id: "p2", bearCode: "001", owner: "2팀", lat: 35.3131, lng: 127.6624, heading: "82°" },
-    { id: "p3", bearCode: "002", owner: "3팀", lat: 35.3157, lng: 127.6493, heading: "301°" },
-    { id: "p4", bearCode: "001", owner: "1팀", lat: 35.3112, lng: 127.6551, heading: "124°" },
-    { id: "p5", bearCode: "001", owner: "2팀", lat: 35.3131, lng: 127.6624, heading: "82°" },
-    { id: "p6", bearCode: "002", owner: "3팀", lat: 35.3157, lng: 127.6493, heading: "301°" },
-    { id: "p7", bearCode: "001", owner: "1팀", lat: 35.3112, lng: 127.6551, heading: "124°" },
-    { id: "p8", bearCode: "001", owner: "2팀", lat: 35.3131, lng: 127.6624, heading: "82°" },
-    { id: "p9", bearCode: "002", owner: "3팀", lat: 35.3157, lng: 127.6493, heading: "301°" },
-    { id: "p10", bearCode: "001", owner: "1팀", lat: 35.3112, lng: 127.6551, heading: "124°" },
-    { id: "p11", bearCode: "001", owner: "2팀", lat: 35.3131, lng: 127.6624, heading: "82°" },
-    { id: "p12", bearCode: "002", owner: "3팀", lat: 35.3157, lng: 127.6493, heading: "301°" },
-    { id: "p13", bearCode: "001", owner: "1팀", lat: 35.3112, lng: 127.6551, heading: "124°" },
-    { id: "p14", bearCode: "001", owner: "2팀", lat: 35.3131, lng: 127.6624, heading: "82°" },
-    { id: "p15", bearCode: "002", owner: "3팀", lat: 35.3157, lng: 127.6493, heading: "301°" }
-  ];
+  let observationSamples = [];
 
   let currentTab = "none";
   let isPeekMode = false;
+
+  function isNativePlatform() {
+    return !!(
+      window.Capacitor &&
+      typeof window.Capacitor.isNativePlatform === "function" &&
+      window.Capacitor.isNativePlatform()
+    );
+  }
+
+  function toHeadingText(value) {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) return "";
+    return `${numeric}°`;
+  }
+
+  function mapObservationRow(row) {
+    if (!row) return null;
+
+    const id = String(row.id || "").trim();
+    const bearCode = String(row.bear_code || row.bearCode || "").trim();
+    const owner = String(row.owner || "").trim();
+    const lat = Number(row.lat);
+    const lng = Number(row.lng);
+    const heading = toHeadingText(row.heading);
+
+    if (!id || !bearCode || !Number.isFinite(lat) || !Number.isFinite(lng)) {
+      return null;
+    }
+
+    return { id, bearCode, owner, lat, lng, heading };
+  }
+
+  async function loadObservationSamplesFromJson() {
+    try {
+      const response = await fetch("json/observations.json", { cache: "no-store" });
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      const rows = await response.json();
+      const mappedRows = Array.isArray(rows) ? rows.map(mapObservationRow).filter((item) => item !== null) : [];
+      observationSamples = mappedRows;
+      return { source: "json" };
+    } catch (error) {
+      console.warn("[OBS] failed to load observations from json:", error);
+      observationSamples = [];
+      return { source: "empty" };
+    }
+  }
+
+  async function loadObservationSamples() {
+    if (!isNativePlatform()) {
+      return await loadObservationSamplesFromJson();
+    }
+
+    const sqliteModule = window.BearSQLite;
+    if (!sqliteModule || typeof sqliteModule.initialize !== "function") {
+      observationSamples = [];
+      return { source: "empty" };
+    }
+
+    try {
+      const initState = await sqliteModule.initialize();
+      if (!initState || !initState.ready) {
+        observationSamples = [];
+        return { source: "empty" };
+      }
+
+      const sqlite = window.Capacitor && window.Capacitor.Plugins
+        ? window.Capacitor.Plugins.CapacitorSQLite
+        : null;
+      if (!sqlite || typeof sqlite.query !== "function") {
+        observationSamples = [];
+        return { source: "empty" };
+      }
+
+      const dbName = window.BearSQLiteConfig && window.BearSQLiteConfig.dbName
+        ? String(window.BearSQLiteConfig.dbName)
+        : "BearPointData";
+
+      const queryResult = await sqlite.query({
+        database: dbName,
+        statement: `
+          SELECT id, bear_code, owner, lat, lng, heading
+          FROM observations
+          ORDER BY created_at DESC, id ASC
+        `,
+        values: [],
+        readonly: false
+      });
+
+      const rows = Array.isArray(queryResult && queryResult.values) ? queryResult.values : [];
+      const mappedRows = rows.map(mapObservationRow).filter((item) => item !== null);
+
+      observationSamples = mappedRows;
+      return { source: "sqlite" };
+    } catch (error) {
+      console.warn("[OBS] failed to load observations from sqlite:", error);
+      observationSamples = [];
+      return { source: "empty" };
+    }
+  }
+
+  async function refreshObservationData() {
+    const result = await loadObservationSamples();
+    selectedObsIds.clear();
+    applySearch();
+    renderObservationMarkers(observationSamples);
+    updateSelectionUI();
+
+    if (statusEl) {
+      if (result.source === "sqlite") {
+        statusEl.textContent = `✅ SQLite 관측점 ${observationSamples.length}건 로드`;
+      } else if (result.source === "json") {
+        statusEl.textContent = `✅ JSON 관측점 ${observationSamples.length}건 로드`;
+      } else {
+        statusEl.textContent = "ℹ️ 관측점 데이터가 없습니다.";
+      }
+    }
+  }
 
   // 목록 패널 최소화/복원 상태를 토글하고 아이콘 상태를 동기화한다.
   function setPeekMode(nextState) {
@@ -130,6 +234,15 @@ window.createObsListModule = function createObsListModule({
     if (!obsListBodyEl) return;
 
     obsListBodyEl.innerHTML = "";
+
+    if (items.length === 0) {
+      const emptyRow = document.createElement("tr");
+      emptyRow.className = "obs-empty-row";
+      emptyRow.innerHTML = '<td colspan="5" class="obs-empty-cell">데이터가 없습니다.</td>';
+      obsListBodyEl.appendChild(emptyRow);
+      syncChkAll(items);
+      return;
+    }
 
     for (const item of items) {
       const row = document.createElement("tr");
@@ -288,8 +401,7 @@ window.createObsListModule = function createObsListModule({
 
     if (isList) {
       setPeekMode(false);
-      applySearch();
-      renderObservationMarkers(observationSamples);
+      void refreshObservationData();
     }
   }
 
