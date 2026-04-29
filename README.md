@@ -26,3 +26,8 @@ android/app/build/outputs/apk/debug/app-debug.apk
 
 아이콘 추가/수정 시
 npx capacitor-assets generate
+
+sqllite 설치
+npm view @capacitor-community/sqlite version; npm view @capacitor-community/sqlite peerDependencies --json
+npm view @capacitor-community/sqlite@7 version; npm view @capacitor-community/sqlite@7.0.0 peerDependencies --json
+npm install @capacitor-community/sqlite@7.0.3

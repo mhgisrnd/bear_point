@@ -11,6 +11,8 @@
   const currentCoordEl = document.getElementById("obs-current-coord");
   const currentHeadingEl = document.getElementById("obs-current-heading");
   const searchParams = new URLSearchParams(window.location.search);
+  let removeBackButtonListener = null;
+  let exitConfirmOpen = false;
 
   try {
 
@@ -281,6 +283,50 @@
     if (isIOS) return "ios";
     if (isAndroid) return "android";
     return "other";
+  }
+
+  function getCapacitorAppPlugin() {
+    const capacitor = window.Capacitor;
+    if (!capacitor || !capacitor.Plugins) return null;
+
+    const appPlugin = capacitor.Plugins.App;
+    if (!appPlugin) return null;
+    if (typeof appPlugin.addListener !== "function") return null;
+    if (typeof appPlugin.exitApp !== "function") return null;
+
+    return appPlugin;
+  }
+
+  async function setupAndroidBackButtonExit() {
+    if (getPlatform() !== "android") return;
+
+    const appPlugin = getCapacitorAppPlugin();
+    if (!appPlugin || removeBackButtonListener) return;
+
+    const listener = await appPlugin.addListener("backButton", function () {
+      if (exitConfirmOpen) return;
+
+      exitConfirmOpen = true;
+      const shouldExit = window.confirm("앱을 종료하시겠습니까?");
+      exitConfirmOpen = false;
+
+      if (shouldExit) {
+        appPlugin.exitApp();
+      }
+    });
+
+    if (listener && typeof listener.remove === "function") {
+      removeBackButtonListener = function () {
+        listener.remove();
+        removeBackButtonListener = null;
+      };
+
+      window.addEventListener("beforeunload", function cleanupBackButtonListener() {
+        if (removeBackButtonListener) {
+          removeBackButtonListener();
+        }
+      }, { once: true });
+    }
   }
 
   function applyHeadingOffset(deg, platform) {
@@ -1201,6 +1247,9 @@
   }
   updateRegistrationPreview();
   if (obsListModule) obsListModule.initialize();
+  setupAndroidBackButtonExit().catch(function (error) {
+    console.error("안드로이드 뒤로가기 초기화 오류:", error);
+  });
 
   if (statusEl && statusEl.textContent === "연결됨") {
     statusEl.textContent = "✅ 지도 초기화 완료";
