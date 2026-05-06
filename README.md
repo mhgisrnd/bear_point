@@ -67,3 +67,9 @@ npx cap sync android 후 빌드/배포
 앱 sqlLite DB 확인 시
 Android Studio에서 Device Explorer 열기
 data/data/com.bearpoint.app/databases
+
+26년 5월 06일
+mbtiles는 용량이 크기 때문에 별도로 올릴 것!
+
+경로 예시
+mbtiles\korea-selection2-z7-z17-webp.mbtiles
