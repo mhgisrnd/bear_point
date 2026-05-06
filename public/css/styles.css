@@ -110,7 +110,7 @@ a.leaflet-control-locate-btn.is-active svg{
 #compass{
   position: fixed;
   right: calc(5px + var(--safe-right));
-  bottom: calc(205px + var(--safe-bottom));
+  bottom: calc(220px + var(--safe-bottom));
   width: 46px;
   height: 46px;
   border-radius: 999px;

@@ -41,6 +41,12 @@
   const MBTILES_MAX_ZOOM = 17;
   const MBTILES_DB_NAME = "korea-selection2-z7-z17-webp";
   const MBTILES_MIME_TYPE = "image/webp";
+  // NGII 키 우선순위: URL 파라미터 > 전역 변수(window.NGII_API_KEY) > 기본 키.
+  const NGII_DEFAULT_API_KEY = "956C9092B0E5DEDA2C6E61D92348A1FB53B88399E1";
+  const NGII_API_KEY = String(searchParams.get("ngiiApiKey") || window.NGII_API_KEY || NGII_DEFAULT_API_KEY || "").trim();
+  const NGII_BASE_LAYER_ID = "korean_map"; //기본 국문 타일
+  const DEFAULT_BASE_LAYER_TYPE = NGII_API_KEY ? "osm" : "mbtiles";
+  const OFFLINE_INITIAL_ZOOM = 9.92;
   const NATIVE_MBTILES_TILE_CACHE_LIMIT = 180;
   const LOCK_EMPTY_AREA_PAN = true;
   const PAN_LIMIT_EXTENT = [931819,1594792,1074823,1803720];//제한 extent (5179 좌표계, 지리산 주변)
@@ -422,11 +428,97 @@
 
   const mbtilesLayer = new ol.layer.Tile({
     source: mbtilesSource,
-    visible: true
+    visible: DEFAULT_BASE_LAYER_TYPE === "mbtiles"
   });
 
+  // 내부 TileGrid 줌(0..N)을 NGII WMTS 타일매트릭스 코드(L07..L17)로 맞춘다.
+  function toNgiiTileMatrix(rawZoom) {
+    const level = Number(rawZoom) + MBTILES_MIN_ZOOM;
+    return "L" + String(level).padStart(2, "0");
+  }
+
+  // NGII GetTile URL 생성: layerId를 파라미터로 받아 공통으로 사용한다.
+  function ngiiTileUrlFnFor(layerId) {
+    return function (tileCoord) {
+      if (!tileCoord || !NGII_API_KEY) return TRANSPARENT_PIXEL;
+      const rawZoom = tileCoord[0];
+      const x = tileCoord[1];
+      const y = normalizeXyzY(tileCoord[2]);
+      return "https://map.ngii.go.kr/openapi/Gettile.do?apikey=" + encodeURIComponent(NGII_API_KEY) +
+        "&service=WMTS&request=GetTile&version=1.0.0" +
+        "&layer=" + layerId +
+        "&style=korean&format=image/png&tilematrixset=korean" +
+        "&tilematrix=" + toNgiiTileMatrix(rawZoom) +
+        "&tilerow=" + y + "&tilecol=" + x;
+    };
+  }
+
+  // 기존 NGII 기본도 URL 함수 (korean_map)
+  const ngiiBaseTileUrlFn = ngiiTileUrlFnFor(NGII_BASE_LAYER_ID);
+  // NGII 야간지도 URL 함수 (night_map)
+  const ngiiNightTileUrlFn = ngiiTileUrlFnFor("night_map");
+
+  // '인터넷 기본도' 라디오에 연결되는 실제 온라인 베이스레이어(NGII).
   const osmBase = new ol.layer.Tile({
-    source: new ol.source.OSM(),
+    source: new ol.source.XYZ({
+      projection: MAP_PROJECTION_CODE,
+      tileGrid: mbtilesTileGrid,
+      minZoom: 0,
+      maxZoom: MBTILES_MAX_ZOOM,
+      wrapX: false,
+      transition: 0,
+      tilePixelRatio: 1,
+      tileUrlFunction: ngiiBaseTileUrlFn,
+      attributions: "국토정보플랫폼 인터넷 기본도"
+    }),
+    visible: DEFAULT_BASE_LAYER_TYPE === "osm"
+  });
+
+  // 영문지도 레이어(NGII english_map).
+  const englishBase = new ol.layer.Tile({
+    source: new ol.source.XYZ({
+      projection: MAP_PROJECTION_CODE,
+      tileGrid: mbtilesTileGrid,
+      minZoom: 0,
+      maxZoom: MBTILES_MAX_ZOOM,
+      wrapX: false,
+      transition: 0,
+      tilePixelRatio: 1,
+      tileUrlFunction: ngiiTileUrlFnFor("english_map"),
+      attributions: "국토정보플랫폼 영문지도"
+    }),
+    visible: false
+  });
+
+  // 큰글씨지도 레이어(NGII lowV_map).
+  const largeBase = new ol.layer.Tile({
+    source: new ol.source.XYZ({
+      projection: MAP_PROJECTION_CODE,
+      tileGrid: mbtilesTileGrid,
+      minZoom: 0,
+      maxZoom: MBTILES_MAX_ZOOM,
+      wrapX: false,
+      transition: 0,
+      tilePixelRatio: 1,
+      tileUrlFunction: ngiiTileUrlFnFor("lowV_map"),
+      attributions: "국토정보플랫폼 큰글씨지도"
+    }),
+    visible: false
+  });
+
+  // 야간지도 레이어(NGII night_map).
+  const nightBase = new ol.layer.Tile({
+    source: new ol.source.XYZ({
+      projection: MAP_PROJECTION_CODE,
+      tileGrid: mbtilesTileGrid,
+      minZoom: 0,
+      maxZoom: MBTILES_MAX_ZOOM,
+      wrapX: false,
+      transition: 0,
+      tilePixelRatio: 1,
+      tileUrlFunction: ngiiNightTileUrlFn,
+      attributions: "국토정보플랫폼 야간지도"
+    }),
     visible: false
   });
 
@@ -451,7 +543,7 @@
 
   let tileLoadSuccessCount = 0;
   let tileLoadErrorCount = 0;
-  let currentBaseLayerType = "mbtiles";
+  let currentBaseLayerType = DEFAULT_BASE_LAYER_TYPE;
   let lastOnlineViewState = null;
 
   function bindTileErrorStatus(source, layerName) {
@@ -468,7 +560,7 @@
     });
   }
 
-  bindTileErrorStatus(osmBase.getSource(), "OSM");
+  bindTileErrorStatus(osmBase.getSource(), "NGII 인터넷 기본도");
   bindTileErrorStatus(topoBase.getSource(), "OpenTopoMap");
   bindTileErrorStatus(hillshadeOverlay.getSource(), "Hillshade");
 
@@ -534,13 +626,17 @@
     minZoom: MBTILES_MIN_ZOOM,
     maxZoom: MBTILES_MAX_ZOOM,
     resolutions: viewResolutions,
-    extent: LOCK_EMPTY_AREA_PAN ? PAN_LIMIT_EXTENT : undefined // 이 한 줄을 주석 처리하면 빈공간 이동 제한 해제
+    //extent: LOCK_EMPTY_AREA_PAN ? PAN_LIMIT_EXTENT : undefined // 이 한 줄을 주석 처리하면 빈공간 이동 제한 해제
   });
 
+  //맵 기능
   const map = new ol.Map({
     target: "map",
-    layers: [osmBase, topoBase, mbtilesLayer, hillshadeOverlay, bearMarkerLayer, myLocationLayer],
+    layers: [osmBase, englishBase, largeBase, nightBase, topoBase, mbtilesLayer, hillshadeOverlay, bearMarkerLayer, myLocationLayer],
     view: view,
+    interactions: ol.interaction.defaults.defaults({
+      pinchRotate: false // 이 한 줄을 주석 처리하면 손가락 회전(핀치 회전) 활성
+    }),
     controls: ol.control.defaults.defaults({
       zoom: false,
       rotate: false,
@@ -556,12 +652,7 @@
   }
 
   // 초기 위치: fit() 호출 (한 번만 실행)
-  view.fit(extentMap, {
-    padding: [20, 20, 20, 20],
-    maxZoom: 14,
-    duration: 500
-  });
-  view.setZoom(9.92);
+  moveToOfflineInitialView();
   window.__initialFitDone = true;
 
   // 고줌에서 음영이 지저분해지는 것을 막기 위해 확대 시 음영 투명도를 낮춘다.
@@ -631,29 +722,60 @@
     return true;
   }
 
-  // 현재는 오프라인 MBTiles만 허용하고, 필요 시 커버리지 범위로 재정렬한다.
-  function setBaseLayer(type) {
-    if (type !== "mbtiles") {
-      if (statusEl) statusEl.textContent = "ℹ️ 현재는 오프라인 지도만 사용합니다";
-      type = "mbtiles";
-    }
-    if (type === currentBaseLayerType) return;
+  // 오프라인 기본도를 선택하면 초기 오프라인 화면으로 되돌린다.
+  function moveToOfflineInitialView() {
+    if (!Array.isArray(extentMap) || extentMap.length !== 4) return false;
+    view.fit(extentMap, {
+      padding: [20, 20, 20, 20],
+      maxZoom: 14,
+      duration: 0
+    });
+    view.setZoom(OFFLINE_INITIAL_ZOOM);
+    return true;
+  }
 
-    if (type === "mbtiles") {
+  // 베이스 레이어 전환: 온라인 전환 시 현재 중심/줌을 유지하고, 오프라인 복귀 시만 커버리지를 보정한다.
+  function setBaseLayer(type) {
+    let nextType = type;
+    const ONLINE_TYPES = ["osm", "english", "large", "night", "topo"];
+    if (nextType !== "mbtiles" && !ONLINE_TYPES.includes(nextType)) {
+      nextType = "mbtiles";
+    }
+
+    if (nextType !== "mbtiles" && nextType !== "topo" && !NGII_API_KEY) {
+      if (statusEl) statusEl.textContent = "🟠 NGII API 키가 없어 오프라인 지도로 전환합니다";
+      nextType = "mbtiles";
+    }
+
+    if (nextType === currentBaseLayerType) return;
+
+    if (nextType === "mbtiles") {
       lastOnlineViewState = captureCurrentViewState();
     }
 
-    osmBase.setVisible(false);
-    topoBase.setVisible(false);
-    hillshadeOverlay.setVisible(false);
-    mbtilesLayer.setVisible(true);
-
-    const moved = fitMbtilesCoverage();
-    if (!moved && statusEl) {
-      statusEl.textContent = "🟡 오프라인 범위 확인 실패, 기존 위치를 유지합니다";
+    osmBase.setVisible(nextType === "osm");
+    englishBase.setVisible(nextType === "english");
+    largeBase.setVisible(nextType === "large");
+    nightBase.setVisible(nextType === "night");
+    topoBase.setVisible(nextType === "topo");
+    mbtilesLayer.setVisible(nextType === "mbtiles");
+    if (nextType !== "topo") {
+      hillshadeOverlay.setVisible(false);
     }
 
-    currentBaseLayerType = type;
+    if (nextType === "mbtiles") {
+      const moved = moveToOfflineInitialView() || fitMbtilesCoverage();
+      if (!moved && statusEl) {
+        statusEl.textContent = "🟡 오프라인 범위 확인 실패, 기존 위치를 유지합니다";
+      } else if (statusEl) {
+        statusEl.textContent = "📦 오프라인 기본도 사용 중";
+      }
+    } else if (statusEl) {
+      const labels = { osm: "🌐 국문지도", english: "🌐 영문지도", large: "🌐 NGII 큰문자지도", night: "🌙 야간지도", topo: "🌐 OpenTopoMap" };
+      statusEl.textContent = labels[nextType] || "🌐 온라인 지도 사용 중";
+    }
+
+    currentBaseLayerType = nextType;
   }
 
   // 내부 SQLite 초기화. 실패해도 지도 기능은 계속 동작하도록 설계한다.
@@ -1503,7 +1625,7 @@
     const root = document.createElement("div");
     root.style.position = "absolute";
     root.style.right = "calc(8px + var(--safe-right))";
-    root.style.bottom = "calc(14px + var(--safe-bottom))";
+    root.style.bottom = "calc(55px + var(--safe-bottom))";
     root.style.zIndex = "1400";
     root.style.display = "flex";
     root.style.flexDirection = "column";
@@ -1587,7 +1709,8 @@
     root.style.position = "absolute";
     root.style.top = "calc(12px + var(--safe-top))";
     root.style.right = "calc(12px + var(--safe-right))";
-    root.style.zIndex = "1500";
+    // 상단 패널보다 위에 보이도록 z-index를 높게 유지한다.
+    root.style.zIndex = "10020";
 
     const toggleBtn = document.createElement("button");
     toggleBtn.type = "button";
@@ -1617,7 +1740,24 @@
     panel.style.padding = "8px 10px";
     panel.style.fontSize = "13px";
     panel.style.lineHeight = "1.5";
-    panel.style.minWidth = "210px";
+    panel.style.minWidth = "120px";
+
+    function createSectionTitle(text, marginTop) {
+      const title = document.createElement("div");
+      title.textContent = text;
+      title.style.fontSize = "11px";
+      title.style.fontWeight = "700";
+      title.style.letterSpacing = "0.02em";
+      title.style.color = "#666";
+      title.style.marginTop = marginTop;
+      title.style.marginBottom = "4px";
+      return title;
+    }
+
+    const onlineTitle = createSectionTitle("온라인", "0");
+    const offlineTitle = createSectionTitle("오프라인", "6px");
+    offlineTitle.style.paddingTop = "6px";
+    offlineTitle.style.borderTop = "1px solid #c8c8c8";
 
     const row1 = document.createElement("div");
     row1.style.display = "flex";
@@ -1629,31 +1769,89 @@
     radioOsm.type = "radio";
     radioOsm.name = "ol-base-layer";
     radioOsm.value = "osm";
-    radioOsm.disabled = true;
+    // 인터넷 기본도(NGII) 선택 허용.
+    radioOsm.disabled = false;
 
     const labelOsm = document.createElement("label");
     labelOsm.style.cursor = "pointer";
-    labelOsm.textContent = "인터넷 기본도(준비중)";
+    labelOsm.textContent = "국문";
     row1.appendChild(radioOsm);
     row1.appendChild(labelOsm);
 
-    const rowTopo = document.createElement("div");
-    rowTopo.style.display = "flex";
-    rowTopo.style.alignItems = "center";
-    rowTopo.style.gap = "8px";
-    rowTopo.style.marginBottom = "2px";
+    const rowEnglish = document.createElement("div");
+    rowEnglish.style.display = "flex";
+    rowEnglish.style.alignItems = "center";
+    rowEnglish.style.gap = "8px";
+    rowEnglish.style.marginBottom = "2px";
 
-    const radioTopo = document.createElement("input");
-    radioTopo.type = "radio";
-    radioTopo.name = "ol-base-layer";
-    radioTopo.value = "topo";
-    radioTopo.disabled = true;
+    const radioEnglish = document.createElement("input");
+    radioEnglish.type = "radio";
+    radioEnglish.name = "ol-base-layer";
+    radioEnglish.value = "english";
+    radioEnglish.disabled = !NGII_API_KEY;
+    radioEnglish.checked = currentBaseLayerType === "english";
 
-    const labelTopo = document.createElement("label");
-    //labelTopo.style.cursor = "pointer";
-    //labelTopo.textContent = "지형도(준비중)";
-    //rowTopo.appendChild(radioTopo);
-    //rowTopo.appendChild(labelTopo);
+    const labelEnglish = document.createElement("label");
+    labelEnglish.style.cursor = NGII_API_KEY ? "pointer" : "default";
+    labelEnglish.textContent = "영문";
+    rowEnglish.appendChild(radioEnglish);
+    rowEnglish.appendChild(labelEnglish);
+
+    const rowLarge = document.createElement("div");
+    rowLarge.style.display = "flex";
+    rowLarge.style.alignItems = "center";
+    rowLarge.style.gap = "8px";
+    rowLarge.style.marginBottom = "2px";
+
+    const radioLarge = document.createElement("input");
+    radioLarge.type = "radio";
+    radioLarge.name = "ol-base-layer";
+    radioLarge.value = "large";
+    radioLarge.disabled = !NGII_API_KEY;
+    radioLarge.checked = currentBaseLayerType === "large";
+
+    const labelLarge = document.createElement("label");
+    labelLarge.style.cursor = NGII_API_KEY ? "pointer" : "default";
+    labelLarge.textContent = "큰 문자";
+    rowLarge.appendChild(radioLarge);
+    rowLarge.appendChild(labelLarge);
+
+    const rowNight = document.createElement("div");
+    rowNight.style.display = "flex";
+    rowNight.style.alignItems = "center";
+    rowNight.style.gap = "8px";
+    rowNight.style.marginBottom = "2px";
+
+    const radioNight = document.createElement("input");
+    radioNight.type = "radio";
+    radioNight.name = "ol-base-layer";
+    radioNight.value = "night";
+    radioNight.disabled = !NGII_API_KEY;
+    radioNight.checked = currentBaseLayerType === "night";
+
+    const labelNight = document.createElement("label");
+    labelNight.style.cursor = NGII_API_KEY ? "pointer" : "default";
+    labelNight.textContent = "야간";
+    rowNight.appendChild(radioNight);
+    rowNight.appendChild(labelNight);
+
+    // const rowTopo = document.createElement("div");
+    // rowTopo.style.display = "flex";
+    // rowTopo.style.alignItems = "center";
+    // rowTopo.style.gap = "8px";
+    // rowTopo.style.marginBottom = "2px";
+
+    // const radioTopo = document.createElement("input");
+    // radioTopo.type = "radio";
+    // radioTopo.name = "ol-base-layer";
+    // radioTopo.value = "topo";
+    // radioTopo.disabled = true;
+
+    // const labelTopo = document.createElement("label");
+    // labelTopo.style.cursor = "pointer";
+    // labelTopo.textContent = "지형도(준비중)";
+    // rowTopo.appendChild(radioTopo);
+    // rowTopo.appendChild(labelTopo);
 
     const rowMbtiles = document.createElement("div");
     rowMbtiles.style.display = "flex";
@@ -1665,25 +1863,36 @@
     radioMbtiles.type = "radio";
     radioMbtiles.name = "ol-base-layer";
     radioMbtiles.value = "mbtiles";
-    radioMbtiles.checked = true;
+    radioMbtiles.checked = currentBaseLayerType === "mbtiles";
 
     const labelMbtiles = document.createElement("label");
     labelMbtiles.style.cursor = "pointer";
-    labelMbtiles.textContent = "오프라인 기본도(5179)";
+    labelMbtiles.textContent = "오프라인(국문)";
     rowMbtiles.appendChild(radioMbtiles);
     rowMbtiles.appendChild(labelMbtiles);
 
+    radioOsm.checked = currentBaseLayerType === "osm";
+
     function syncBaseByRadio() {
-      if (radioTopo.checked) return setBaseLayer("topo");
+      // if (radioTopo.checked) return setBaseLayer("topo");
       if (radioMbtiles.checked) return setBaseLayer("mbtiles");
+      if (radioNight.checked) return setBaseLayer("night");
+      if (radioEnglish.checked) return setBaseLayer("english");
+      if (radioLarge.checked) return setBaseLayer("large");
       setBaseLayer("osm");
     }
 
     radioOsm.addEventListener("change", syncBaseByRadio);
-    radioTopo.addEventListener("change", syncBaseByRadio);
+    radioEnglish.addEventListener("change", syncBaseByRadio);
+    radioLarge.addEventListener("change", syncBaseByRadio);
+    // radioTopo.addEventListener("change", syncBaseByRadio);
+    radioNight.addEventListener("change", syncBaseByRadio);
     radioMbtiles.addEventListener("change", syncBaseByRadio);
     labelOsm.addEventListener("click", function () { radioOsm.checked = true; syncBaseByRadio(); });
-    labelTopo.addEventListener("click", function () { radioTopo.checked = true; syncBaseByRadio(); });
+    labelEnglish.addEventListener("click", function () { if (!radioEnglish.disabled) { radioEnglish.checked = true; syncBaseByRadio(); } });
+    labelLarge.addEventListener("click", function () { if (!radioLarge.disabled) { radioLarge.checked = true; syncBaseByRadio(); } });
+    labelNight.addEventListener("click", function () { if (!radioNight.disabled) { radioNight.checked = true; syncBaseByRadio(); } });
+    // labelTopo.addEventListener("click", function () { radioTopo.checked = true; syncBaseByRadio(); });
     labelMbtiles.addEventListener("click", function () { radioMbtiles.checked = true; syncBaseByRadio(); });
 
     const row2 = document.createElement("label");
@@ -1756,12 +1965,17 @@
       }
     });
 
-    //토글 버튼 활성/비활성 시 주석처리
-    //root.appendChild(toggleBtn);
+    //타일선택 토글 버튼 활성/비활성 시 주석처리
+    root.appendChild(toggleBtn);
 
-    panel.appendChild(rowMbtiles);
+    panel.appendChild(onlineTitle);
     panel.appendChild(row1);
-    panel.appendChild(rowTopo);
+    panel.appendChild(rowEnglish);
+    panel.appendChild(rowLarge);
+    panel.appendChild(rowNight);
+    panel.appendChild(offlineTitle);
+    panel.appendChild(rowMbtiles);
+    // panel.appendChild(rowTopo);
     panel.appendChild(row2);
     root.appendChild(panel);
     mapEl.appendChild(root);
