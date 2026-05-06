@@ -1497,6 +1497,15 @@
     onObservationSaved: async function (payload) {
       if (!obsListModule || !payload || !payload.observation) return;
 
+      if (payload.mode === "edit") {
+        if (payload.source === "sqlite") {
+          await obsListModule.refreshObservationList();
+        } else {
+          obsListModule.updateObservation(payload.observation);
+        }
+        return;
+      }
+
       obsListModule.openList();
       if (payload.source === "sqlite") {
         await obsListModule.refreshObservationList();
@@ -1709,8 +1718,8 @@
     root.style.position = "absolute";
     root.style.top = "calc(12px + var(--safe-top))";
     root.style.right = "calc(12px + var(--safe-right))";
-    // 상단 패널보다 위에 보이도록 z-index를 높게 유지한다.
-    root.style.zIndex = "10020";
+    // 목록/등록 팝업을 가리지 않도록 z-index를 패널보다 낮춘다.
+    root.style.zIndex = "9990";
 
     const toggleBtn = document.createElement("button");
     toggleBtn.type = "button";
@@ -2122,6 +2131,12 @@
     onOpenRegister: function () {
       collapseBearEstimatePanel();
       if (obsRegisterModule) obsRegisterModule.open();
+    },
+    onEditObservation: function (item) {
+      collapseBearEstimatePanel();
+      if (obsRegisterModule && typeof obsRegisterModule.openForEdit === "function") {
+        obsRegisterModule.openForEdit(item);
+      }
     },
     onCloseRegister: function () {
       if (obsRegisterModule) obsRegisterModule.hide(true);

@@ -1074,6 +1074,18 @@
   font-size: 12px;
 }
 
+.obs-reg-select--error {
+  border-color: #ef4444 !important;
+  background: #fef2f2 !important;
+  box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.18);
+}
+
+.obs-reg-input--error {
+  border-color: #ef4444 !important;
+  background: #fef2f2 !important;
+  box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.18);
+}
+
 .obs-reg-input--det {
   width: 100%;
   height: 28px;

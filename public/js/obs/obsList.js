@@ -8,7 +8,8 @@ window.createObsListModule = function createObsListModule({
   observationMarkersLayer,
   onOpenList,
   onOpenRegister,
-  onCloseRegister
+  onCloseRegister,
+  onEditObservation
 }) {
   const btnBear = document.getElementById("btn-obs-list");
   const btnObsAdd = document.getElementById("btn-obs-add");
@@ -26,7 +27,7 @@ window.createObsListModule = function createObsListModule({
   const searchQueryEl = document.getElementById("search-query");
   const btnSearchClearEl = document.getElementById("btn-search-clear");
   const chkAllEl = document.getElementById("chk-all");
-  const OBSERVATION_DEMO_URL = "json/observations.json";
+  const OBSERVATION_DEMO_URL = "json/observations.json"; //웹 더미 데이터 URL
 
   const selectedObsIds = new Set();
   const observationMarkers = [];
@@ -175,6 +176,22 @@ window.createObsListModule = function createObsListModule({
         detectors = [];
       }
     }
+
+    detectors = (Array.isArray(detectors) ? detectors : [])
+      .map((det) => {
+        const detectorName = String(
+          det && (det.detectorName || det.detector_name || det.name)
+            ? (det.detectorName || det.detector_name || det.name)
+            : ""
+        ).trim();
+        const signalStrength = String(
+          det && (det.signalStrength || det.signal_strength || det.strength)
+            ? (det.signalStrength || det.signal_strength || det.strength)
+            : ""
+        ).trim();
+        return { detectorName, signalStrength };
+      })
+      .filter((det) => det.detectorName || det.signalStrength);
 
     if (!id || !bearCode || !Number.isFinite(lat) || !Number.isFinite(lng)) {
       return null;
@@ -416,8 +433,11 @@ window.createObsListModule = function createObsListModule({
       const editBtn = row.querySelector('[data-action="edit"]');
       if (editBtn) editBtn.addEventListener("click", (e) => {
         e.stopPropagation();
-        // TODO: 수정 기능 미구현
-        // statusEl.textContent = `✏️ ${item.id} 수정 UI 준비 중`;
+        if (typeof onEditObservation === "function") {
+          onEditObservation(item);
+        } else if (statusEl) {
+          statusEl.textContent = "⚠️ 수정 UI를 열 수 없습니다.";
+        }
       });
 
       row.addEventListener("click", () => {
@@ -731,6 +751,25 @@ window.createObsListModule = function createObsListModule({
     updateSelectionUI();
   }
 
+  function updateObservation(item) {
+    const mapped = mapObservationRow(item);
+    if (!mapped) return;
+
+    observationSamples = observationSamples.map((existing) => {
+      if (existing.id !== mapped.id) return existing;
+      return {
+        ...existing,
+        ...mapped
+      };
+    });
+
+    applySearch();
+    if (currentTab === "list") {
+      renderObservationMarkers(getFilteredItems());
+    }
+    updateSelectionUI();
+  }
+
   function openList() {
     setActiveTab(btnBear);
     setTabLayout("list");
@@ -745,6 +784,7 @@ window.createObsListModule = function createObsListModule({
     deactivate: closeListPanel,
     getCurrentTab: () => currentTab,
     addObservation,
+    updateObservation,
     renderObservationMarkers,
     refreshObservationList: refreshObservationData
   };

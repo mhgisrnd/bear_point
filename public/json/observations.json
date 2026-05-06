@@ -21,7 +21,7 @@
     "owner": "3팀",
     "lat": 35.3157,
     "lng": 127.6493,
-    "heading": 301,
+    "heading": 240,
     "detectors": [
       {
         "detectorName": "테스트1",
@@ -36,5 +36,27 @@
         "signalStrength": "감2"
       }
     ]
-  }
+  },
+    {
+    "id": "p3",
+    "bearCode": "003",
+    "owner": "3팀",
+    "lat": 35.3150 ,
+    "lng": 127.6501,
+    "heading": 280,
+    "detectors": [
+      {
+        "detectorName": "테스트1",
+        "signalStrength": "P1"
+      },
+      {
+        "detectorName": "테스트2",
+        "signalStrength": "P3"
+      },
+      {
+        "detectorName": "테스트3",
+        "signalStrength": "감2"
+      }
+    ]
+  }  
 ]

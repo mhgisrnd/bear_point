@@ -20,11 +20,13 @@ window.createObsRegisterModule = function createObsRegisterModule({
   var regCoordEl = document.getElementById("reg-coord");
   var regHeadingEl = document.getElementById("reg-heading");
   var regBearEl = document.getElementById("reg-bear");
-  var detectorNameOptionsEl = document.getElementById("detector-name-options");
   var chkRegHeadingLock = document.getElementById("chk-reg-heading-lock");
   var btnGpsToggle = document.getElementById("btn-gps-toggle");
   var registerHeaderEl = registerBoxEl ? registerBoxEl.querySelector(".obs-register-header") : null;
   var registerBodyEl = registerBoxEl ? registerBoxEl.querySelector(".obs-register-body") : null;
+  var registerTitleEl = registerHeaderEl ? registerHeaderEl.querySelector("h2") : null;
+  var btnRegSubmit = document.getElementById("btn-reg-submit");
+  var btnRegCancel = document.getElementById("btn-reg-cancel");
 
   var MAX_DET = 3;
   var isPeekMode = false;
@@ -39,18 +41,129 @@ window.createObsRegisterModule = function createObsRegisterModule({
     heading: null,
     isGpsActive: false
   };
+  var formMode = "create";
+  var editingObservationId = null;
+  var suppressCloseCallback = false;
+  var DETECTOR_STRENGTH_OPTIONS = ["미약", "감1", "감2", "감3", "P1", "P2", "P3", "P4", "P5", "P6", "P7", "P8", "P9", "P10"];
 
   var BEAR_LIST_URL = "json/bear-list.json";
 
   var DET_ROW_TEMPLATE =
     '<tr class="det-row">' +
       '<td>' +
-        '<input class="obs-reg-input obs-reg-input--det" list="detector-name-options" placeholder="직접 입력" />' +
+        '<input class="obs-reg-input obs-reg-input--det det-name-input" type="text" placeholder="직접 입력" />' +
       '</td>' +
       '<td>' +
-        '<input class="obs-reg-input obs-reg-input--det" list="detector-strength-options" placeholder="직접 입력" />' +
+        '<select class="obs-reg-select obs-reg-select--det det-strength-select">' +
+          '<option value="">-- 선택 --</option>' +
+        '</select>' +
       '</td>' +
     '</tr>';
+
+  // 감지기 select 옵션을 렌더링하고 기존 선택값을 유지한다.
+  function fillSelectOptions(selectEl, options, preferredValue) {
+    if (!selectEl) return;
+
+    var selectedValue = String(
+      preferredValue != null ? preferredValue : (selectEl.value || "")
+    ).trim();
+
+    var optionValues = Array.isArray(options) ? options : [];
+    var seen = Object.create(null);
+    var uniqueValues = [];
+
+    for (var i = 0; i < optionValues.length; i += 1) {
+      var value = String(optionValues[i] || "").trim();
+      if (!value || seen[value]) continue;
+      seen[value] = true;
+      uniqueValues.push(value);
+    }
+
+    selectEl.innerHTML = '<option value="">-- 선택 --</option>';
+    for (var j = 0; j < uniqueValues.length; j += 1) {
+      var option = document.createElement("option");
+      option.value = uniqueValues[j];
+      option.textContent = uniqueValues[j];
+      selectEl.appendChild(option);
+    }
+
+    if (selectedValue && !seen[selectedValue]) {
+      var legacyOption = document.createElement("option");
+      legacyOption.value = selectedValue;
+      legacyOption.textContent = selectedValue;
+      selectEl.appendChild(legacyOption);
+    }
+
+    selectEl.value = selectedValue;
+  }
+
+  // 감지기 입력행의 select 옵션 연결을 항상 유지한다.
+  function ensureDetectorRowAutocomplete() {
+    if (!detListEl) return;
+    var rows = detListEl.querySelectorAll(".det-row");
+    for (var i = 0; i < rows.length; i += 1) {
+      var strengthSelect = rows[i].querySelector(".det-strength-select");
+      var presetStrength = strengthSelect ? strengthSelect.getAttribute("data-value") : "";
+
+      fillSelectOptions(strengthSelect, DETECTOR_STRENGTH_OPTIONS, presetStrength);
+
+      if (strengthSelect) strengthSelect.removeAttribute("data-value");
+    }
+  }
+
+  function clearDetectorFieldError(fieldEl) {
+    if (!fieldEl) return;
+    fieldEl.classList.remove("obs-reg-select--error");
+    fieldEl.classList.remove("obs-reg-input--error");
+    fieldEl.removeAttribute("aria-invalid");
+    fieldEl.removeAttribute("title");
+  }
+
+  function markDetectorFieldError(fieldEl) {
+    if (!fieldEl) return;
+    var tag = String(fieldEl.tagName || "").toLowerCase();
+    if (tag === "select") {
+      fieldEl.classList.add("obs-reg-select--error");
+    } else {
+      fieldEl.classList.add("obs-reg-input--error");
+    }
+    fieldEl.setAttribute("aria-invalid", "true");
+    fieldEl.setAttribute("title", "필수 입력 항목입니다.");
+  }
+
+  function clearDetectorRowErrors() {
+    if (!detListEl) return;
+    var fields = detListEl.querySelectorAll(".det-name-input, .det-strength-select");
+    for (var i = 0; i < fields.length; i += 1) {
+      clearDetectorFieldError(fields[i]);
+    }
+  }
+
+  function syncDetectorRowErrorState(rowEl) {
+    if (!rowEl) return;
+    var nameInput = rowEl.querySelector(".det-name-input");
+    var strengthSelect = rowEl.querySelector(".det-strength-select");
+    var hasName = !!(nameInput && String(nameInput.value || "").trim());
+    var hasStrength = !!(strengthSelect && String(strengthSelect.value || "").trim());
+
+    if ((hasName && hasStrength) || (!hasName && !hasStrength)) {
+      clearDetectorFieldError(nameInput);
+      clearDetectorFieldError(strengthSelect);
+      return;
+    }
+
+    if (!hasName) {
+      markDetectorFieldError(nameInput);
+    } else {
+      clearDetectorFieldError(nameInput);
+    }
+
+    if (!hasStrength) {
+      markDetectorFieldError(strengthSelect);
+    } else {
+      clearDetectorFieldError(strengthSelect);
+    }
+  }
 
   // SQLite PK로 쓸 관측점 식별자를 클라이언트에서 먼저 생성한다.
   function generateObservationId() {
@@ -101,18 +214,9 @@ window.createObsRegisterModule = function createObsRegisterModule({
       : "BearPointData";
   }
 
-  // detector_catalog에서 읽은 발신기명을 datalist option으로 렌더링한다.
+  // detector_catalog 로딩은 유지하되, 감지기명은 직접 입력 정책이므로 현재는 사용하지 않는다.
   function renderDetectorCatalogOptions(names) {
-    if (!detectorNameOptionsEl) return;
-
-    detectorNameOptionsEl.innerHTML = "";
-    for (var i = 0; i < names.length; i += 1) {
-      var name = String(names[i] || "").trim();
-      if (!name) continue;
-      var option = document.createElement("option");
-      option.value = name;
-      detectorNameOptionsEl.appendChild(option);
-    }
+    ensureDetectorRowAutocomplete();
   }
 
   // 최근 사용 발신기명을 SQLite에서 읽어 자동완성 목록으로 노출한다.
@@ -206,22 +310,129 @@ window.createObsRegisterModule = function createObsRegisterModule({
     });
   }
 
-  // 현재 입력된 감지기 행을 비어 있지 않은 값만 추려 배열로 반환한다.
+  // 관측점 수정 시 허용된 필드(지명/등록자/곰코드/감지기)만 SQLite에 반영한다.
+  async function updateObservationInSQLite(observationId, payload, detectors) {
+    var sqliteModule = window.BearSQLite;
+    if (!sqliteModule || typeof sqliteModule.initialize !== "function") {
+      throw new Error("SQLite 모듈이 로드되지 않았습니다.");
+    }
+
+    var initState = await sqliteModule.initialize();
+    if (!initState || !initState.ready) {
+      throw new Error("SQLite 연결이 준비되지 않았습니다.");
+    }
+
+    var sqlite = getSQLitePlugin();
+    if (!sqlite || typeof sqlite.run !== "function") {
+      throw new Error("SQLite run API를 사용할 수 없습니다.");
+    }
+
+    var normalizedDetectors = Array.isArray(detectors)
+      ? detectors.slice(0, MAX_DET).map(function(item) {
+          return {
+            detectorName: String(item && item.detectorName ? item.detectorName : "").trim(),
+            signalStrength: String(item && item.signalStrength ? item.signalStrength : "").trim()
+          };
+        }).filter(function(item) {
+          return !!(item.detectorName || item.signalStrength);
+        })
+      : [];
+
+    await sqlite.run({
+      database: getDbName(),
+      statement: [
+        "UPDATE observations",
+        "SET bear_code = ?, owner = ?, place = ?, detectors_json = ?, updated_at = datetime('now')",
+        "WHERE id = ?"
+      ].join(" "),
+      values: [
+        payload.bearCode,
+        payload.owner,
+        payload.place,
+        JSON.stringify(normalizedDetectors),
+        observationId
+      ],
+      transaction: true,
+      readonly: false
+    });
+  }
+
+  // 감지기 행을 수집한다. 한쪽만 선택된 행이 있으면 저장을 막고 빈 칸을 표시한다.
   function collectDetectorRows() {
     if (!detListEl) return [];
 
+    clearDetectorRowErrors();
+
     var rows = detListEl.querySelectorAll(".det-row");
     var detectors = [];
-    for (var i = 0; i < rows.length; i += 1) {
-      var cells = rows[i].querySelectorAll("input");
-      var detectorName = cells[0] ? cells[0].value.trim() : "";
-      var signalStrength = cells[1] ? cells[1].value.trim() : "";
+    var invalidRows = [];
 
-      if (!detectorName && !signalStrength) continue;
+    for (var i = 0; i < rows.length; i += 1) {
+      var nameInput = rows[i].querySelector(".det-name-input");
+      var strengthSelect = rows[i].querySelector(".det-strength-select");
+      var detectorName = nameInput ? nameInput.value.trim() : "";
+      var signalStrength = strengthSelect ? strengthSelect.value.trim() : "";
+      var hasName = !!detectorName;
+      var hasStrength = !!signalStrength;
+
+      if (!hasName && !hasStrength) {
+        syncDetectorRowErrorState(rows[i]);
+        continue;
+      }
+
+      if (hasName !== hasStrength) {
+        syncDetectorRowErrorState(rows[i]);
+        invalidRows.push(i + 1);
+        continue;
+      }
+
       detectors.push({ detectorName: detectorName, signalStrength: signalStrength });
     }
 
+    if (invalidRows.length > 0) {
+      throw new Error("감지기 " + invalidRows.join(", ") + "행은 발신기명과 감도세기를 모두 선택해야 합니다.");
+    }
+
     return detectors;
+  }
+
+  // heading 값(예: 123 또는 "123°")을 숫자 각도로 정규화한다.
+  function parseHeadingNumber(value) {
+    var numeric = Number(value);
+    if (Number.isFinite(numeric)) return numeric;
+
+    var text = String(value == null ? "" : value).trim();
+    var match = text.match(/-?\d+(?:\.\d+)?/);
+    if (!match) return NaN;
+    var parsed = Number(match[0]);
+    return Number.isFinite(parsed) ? parsed : NaN;
+  }
+
+  // 수정 모드에서 사용할 payload를 만든다. (좌표/방향각은 기존값 유지)
+  function buildObservationEditPayload(baseObservation) {
+    var place = regPlaceEl ? regPlaceEl.value.trim() : "";
+    var owner = regOwnerEl ? regOwnerEl.value.trim() : "";
+    var bearCode = regBearEl ? regBearEl.value.trim() : "";
+
+    if (!baseObservation || !String(baseObservation.id || "").trim()) {
+      throw new Error("수정 대상 관측점을 찾을 수 없습니다.");
+    }
+    if (!place) {
+      throw new Error("지명을 입력해야 합니다.");
+    }
+    if (!bearCode) {
+      throw new Error("곰 목록을 선택해주세요.");
+    }
+
+    return {
+      id: String(baseObservation.id).trim(),
+      place: place,
+      bearCode: bearCode,
+      owner: owner || "미지정",
+      lat: Number(baseObservation.lat),
+      lng: Number(baseObservation.lng),
+      heading: parseHeadingNumber(baseObservation.heading)
+    };
   }
 
   // 실시간 위치 상태와 폼 입력값을 검증해 저장용 payload를 만든다.
@@ -278,15 +489,118 @@ window.createObsRegisterModule = function createObsRegisterModule({
     }
   }
 
+  // 수정 모드 제출: 확인 후 앱(SQLite) 업데이트 또는 웹 더미 메모리 업데이트를 수행한다.
+  async function submitObservationEdit() {
+    try {
+      if (!editingObservationId) {
+        throw new Error("수정 대상 관측점이 없습니다.");
+      }
+
+      var confirmed = window.confirm("수정 내용을 저장하시겠습니까?");
+      if (!confirmed) {
+        statusEl.textContent = "⚠️ 수정 저장이 취소되었습니다.";
+        return;
+      }
+
+      var baseObservation = {
+        id: editingObservationId,
+        lat: latestLive.lat,
+        lng: latestLive.lng,
+        heading: latestLive.heading
+      };
+      var editedObservation = buildObservationEditPayload(baseObservation);
+      var detectors = collectDetectorRows();
+      var source = "demo";
+
+      if (window.Capacitor && typeof window.Capacitor.isNativePlatform === "function" && window.Capacitor.isNativePlatform()) {
+        await updateObservationInSQLite(editingObservationId, editedObservation, detectors);
+        source = "sqlite";
+      }
+
+      if (onObservationSaved) {
+        await onObservationSaved({
+          observation: editedObservation,
+          detectors: detectors,
+          source: source,
+          mode: "edit"
+        });
+      }
+
+      statusEl.textContent = source === "sqlite"
+        ? "✅ 관측점이 수정되었습니다."
+        : "✅ 웹 더미 관측점이 수정되었습니다.";
+      hide(true);
+    } catch (error) {
+      statusEl.textContent = "⚠️ " + (error && error.message ? error.message : String(error));
+    }
+  }
+
   // 등록 폼을 기본 상태로 초기화하고 감지기 행을 1개로 되돌린다.
   function resetFormState() {
     if (obsRegFormEl) obsRegFormEl.reset();
     if (detListEl) detListEl.innerHTML = DET_ROW_TEMPLATE;
+    ensureDetectorRowAutocomplete();
     isHeadingLocked = false;
     lockedHeadingDeg = null;
+    formMode = "create";
+    editingObservationId = null;
+    suppressCloseCallback = false;
     if (chkRegHeadingLock) chkRegHeadingLock.checked = false;
+    if (registerTitleEl) registerTitleEl.textContent = "관측점 등록";
+    if (btnRegSubmit) btnRegSubmit.textContent = "등록";
+    if (btnRegCancel) btnRegCancel.textContent = "취소";
+    if (btnGpsToggle) btnGpsToggle.disabled = false;
+    if (chkRegHeadingLock) chkRegHeadingLock.disabled = false;
+    clearDetectorRowErrors();
     syncDetBtns();
     renderLiveFields();
+  }
+
+  // 주어진 감지기 배열로 감지기 입력 행을 재구성한다.
+  function setDetectorRows(detectors) {
+    if (!detListEl) return;
+
+    var normalized = Array.isArray(detectors)
+      ? detectors.slice(0, MAX_DET).map(function(item) {
+          return {
+            detectorName: String(
+              item && (item.detectorName || item.detector_name || item.name)
+                ? (item.detectorName || item.detector_name || item.name)
+                : ""
+            ).trim(),
+            signalStrength: String(
+              item && (item.signalStrength || item.signal_strength || item.strength)
+                ? (item.signalStrength || item.signal_strength || item.strength)
+                : ""
+            ).trim()
+          };
+        }).filter(function(item) {
+          return !!(item.detectorName || item.signalStrength);
+        })
+      : [];
+
+    if (normalized.length === 0) {
+      detListEl.innerHTML = DET_ROW_TEMPLATE;
+      ensureDetectorRowAutocomplete();
+      syncDetBtns();
+      return;
+    }
+
+    detListEl.innerHTML = "";
+    for (var i = 0; i < normalized.length; i += 1) {
+      var temp = document.createElement("tbody");
+      temp.innerHTML = DET_ROW_TEMPLATE;
+      var newRow = temp.querySelector(".det-row");
+      if (!newRow) continue;
+
+      var nameInput = newRow.querySelector(".det-name-input");
+      var strengthSelect = newRow.querySelector(".det-strength-select");
+      if (nameInput) nameInput.value = normalized[i].detectorName;
+      if (strengthSelect) strengthSelect.setAttribute("data-value", normalized[i].signalStrength);
+      detListEl.appendChild(newRow);
+    }
+    ensureDetectorRowAutocomplete();
+    syncDetBtns();
   }
 
   // 현재 감지기 행 개수를 반환한다.
@@ -309,6 +623,7 @@ window.createObsRegisterModule = function createObsRegisterModule({
     temp.innerHTML = DET_ROW_TEMPLATE;
     var newRow = temp.querySelector(".det-row");
     detListEl.appendChild(newRow);
+    ensureDetectorRowAutocomplete();
     syncDetBtns();
   }
 
@@ -519,11 +834,73 @@ window.createObsRegisterModule = function createObsRegisterModule({
     setPeekMode(false);
     clearInlinePosition();
     void loadDetectorCatalogOptions();
+    ensureDetectorRowAutocomplete();
     applyMobileViewportSizing();
     keepPopupInViewport(true);
     if (updateRegistrationPreview) updateRegistrationPreview();
     renderLiveFields();
     statusEl.textContent = "🧭 관측점 등록(실시간 GPS를 켜주세요.)";
+  }
+
+  // 관측점 수정 모드로 팝업을 열고 기존 데이터를 폼에 채운다.
+  function openForEdit(observation) {
+    var target = observation || {};
+    var targetId = String(target.id || "").trim();
+    if (!targetId) {
+      statusEl.textContent = "⚠️ 수정할 관측점 정보가 올바르지 않습니다.";
+      return;
+    }
+
+    if (registerBoxEl) registerBoxEl.classList.remove("hidden");
+    setPeekMode(false);
+    clearInlinePosition();
+    void loadDetectorCatalogOptions();
+    applyMobileViewportSizing();
+    keepPopupInViewport(true);
+
+    formMode = "edit";
+    editingObservationId = targetId;
+    suppressCloseCallback = true;
+    if (registerTitleEl) registerTitleEl.textContent = "관측점 수정";
+    if (btnRegSubmit) btnRegSubmit.textContent = "수정";
+    if (btnRegCancel) btnRegCancel.textContent = "취소";
+
+    if (regPlaceEl) regPlaceEl.value = String(target.place || target.name || "").trim();
+    if (regOwnerEl) regOwnerEl.value = String(target.owner || "").trim();
+    if (regBearEl) regBearEl.value = String(target.bearCode || target.bear_code || "").trim();
+
+    latestLive.lat = Number(target.lat);
+    latestLive.lng = Number(target.lng);
+    latestLive.heading = parseHeadingNumber(target.heading);
+    latestLive.isGpsActive = false;
+
+    if (chkRegHeadingLock) {
+      chkRegHeadingLock.checked = false;
+      chkRegHeadingLock.disabled = true;
+    }
+    isHeadingLocked = false;
+    lockedHeadingDeg = null;
+
+    if (btnGpsToggle) {
+      btnGpsToggle.disabled = true;
+      syncGpsToggleUi(false);
+    }
+
+    if (regCoordEl) {
+      var lat = Number(target.lat);
+      var lng = Number(target.lng);
+      regCoordEl.value = Number.isFinite(lat) && Number.isFinite(lng)
+        ? lat.toFixed(6) + ", " + lng.toFixed(6)
+        : "-";
+    }
+    if (regHeadingEl) {
+      var heading = parseHeadingNumber(target.heading);
+      regHeadingEl.value = Number.isFinite(heading) ? Math.round(heading) + "°" : "-";
+    }
+
+    setDetectorRows(target.detectors);
+    ensureDetectorRowAutocomplete();
+    statusEl.textContent = "✏️ 관측점 정보를 수정하세요.";
   }
 
   // 등록 팝업을 숨기고 필요 시 폼 상태를 초기화한다.
@@ -534,8 +911,9 @@ window.createObsRegisterModule = function createObsRegisterModule({
 
   // 등록 팝업을 닫고 onClose 콜백을 실행한다.
   function close() {
+    var shouldSuppressClose = suppressCloseCallback;
     hide(true);
-    if (onClose) onClose();
+    if (!shouldSuppressClose && onClose) onClose();
   }
 
   // 등록 팝업 관련 DOM 이벤트를 한 번에 바인딩한다.
@@ -553,14 +931,29 @@ window.createObsRegisterModule = function createObsRegisterModule({
       removeDetRow();
     });
 
-    var btnRegSubmit = document.getElementById("btn-reg-submit");
-    var btnRegCancel = document.getElementById("btn-reg-cancel");
-
     if (btnRegSubmit) btnRegSubmit.addEventListener("click", function() {
+      if (formMode === "edit") {
+        void submitObservationEdit();
+        return;
+      }
       void submitObservation();
     });
     if (btnRegCancel) btnRegCancel.addEventListener("click", function() {
       close();
+    });
+
+    if (detListEl) detListEl.addEventListener("change", function(e) {
+      var target = e.target;
+      if (!target) return;
+      var row = target.closest(".det-row");
+      syncDetectorRowErrorState(row);
+    });
+
+    if (detListEl) detListEl.addEventListener("input", function(e) {
+      var target = e.target;
+      if (!target) return;
+      var row = target.closest(".det-row");
+      syncDetectorRowErrorState(row);
     });
 
     // GPS ON/OFF 토글 버튼 클릭 이벤트
@@ -631,6 +1024,7 @@ window.createObsRegisterModule = function createObsRegisterModule({
   function initialize() {
     bindEvents();
     void loadBearListOptions();
+    ensureDetectorRowAutocomplete();
     syncDetBtns();
     renderLiveFields();
   }
@@ -638,6 +1032,7 @@ window.createObsRegisterModule = function createObsRegisterModule({
   return {
     initialize,
     open,
+    openForEdit,
     hide,
     isHeadingLocked: getHeadingLockState,
     getLockedHeading,
