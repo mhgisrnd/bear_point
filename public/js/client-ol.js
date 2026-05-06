@@ -21,6 +21,7 @@
     return;
   }
 
+  // URL 쿼리 파라미터를 숫자로 읽고 범위를 벗어나면 기본값으로 되돌린다.
   function getNumericParam(name, fallback, min, max) {
     const raw = searchParams.get(name);
     if (raw === null) return fallback;
@@ -32,6 +33,34 @@
   }
 
   const JIRISAN_BOUNDS_WGS84 = [127.4, 35.15, 127.85, 35.5];
+  const MAP_PROJECTION_CODE = "EPSG:5179";
+  const WGS84_CODE = "EPSG:4326";
+  const TILE_SIZE = 256;
+  const NGII_RESOLUTION_BASE_ZOOM = 5;
+  const MBTILES_MIN_ZOOM = 7;
+  const MBTILES_MAX_ZOOM = 17;
+  const MBTILES_DB_NAME = "korea-selection2-z7-z17-webp";
+  const MBTILES_MIME_TYPE = "image/webp";
+  const NATIVE_MBTILES_TILE_CACHE_LIMIT = 180;
+  const LOCK_EMPTY_AREA_PAN = true;
+  const PAN_LIMIT_EXTENT = [931819,1594792,1074823,1803720];//제한 extent (5179 좌표계, 지리산 주변)
+  const GRID_ORIGIN = [-200000, 4000000];
+  const GRID_RESOLUTIONS = [
+    2088.96,
+    1044.48,
+    522.24,
+    261.12,
+    130.56,
+    65.28,
+    32.64,
+    16.32,
+    8.16,
+    4.08,
+    2.04,
+    1.02,
+    0.51,
+    0.255
+  ];
   const HILLSHADE_BASE_OPACITY = 0.32;
   const PARAM_MAX_ZOOM_LIMIT = 30;
   const VIEW_MAX_ZOOM = getNumericParam("olMaxZoom", 18, 3, PARAM_MAX_ZOOM_LIMIT);
@@ -57,6 +86,53 @@
     freezeOnUnstable: true
   };
 
+  if (!window.proj4 || !ol.proj || !ol.proj.proj4 || typeof ol.proj.proj4.register !== "function") {
+    if (statusEl) statusEl.textContent = "proj4 로딩 실패";
+    return;
+  }
+
+  window.proj4.defs(
+    MAP_PROJECTION_CODE,
+    "+proj=tmerc +lat_0=38 +lon_0=127.5 +k=0.9996 +x_0=1000000 +y_0=2000000 +ellps=GRS80 +units=m +no_defs +type=crs"
+  );
+  ol.proj.proj4.register(window.proj4);
+
+  // WGS84(위경도) -> EPSG:5179(미터 좌표) 변환.
+  function mapCoordFromWgs84(lat, lng) {
+    return ol.proj.transform([lng, lat], WGS84_CODE, MAP_PROJECTION_CODE);
+  }
+
+  // EPSG:5179(미터 좌표) -> WGS84(위경도) 변환.
+  function wgs84FromMapCoord(coord) {
+    if (!Array.isArray(coord) || coord.length < 2) return null;
+    const lonLat = ol.proj.transform(coord, MAP_PROJECTION_CODE, WGS84_CODE);
+    return { lat: lonLat[1], lng: lonLat[0] };
+  }
+
+  // MBTiles 줌 범위에 맞는 5179 해상도 배열을 잘라서 만든다.
+  function buildNgiiResolutions(minZoom, maxZoom) {
+    const start = minZoom - NGII_RESOLUTION_BASE_ZOOM;
+    const end = maxZoom - NGII_RESOLUTION_BASE_ZOOM + 1;
+    if (start < 0 || end > GRID_RESOLUTIONS.length) {
+      return null;
+    }
+    return GRID_RESOLUTIONS.slice(start, end);
+  }
+
+  function build5179ViewResolutions(minZoom, maxZoom, minZoomResolution) {
+    const result = [];
+    for (let z = 0; z <= maxZoom; z += 1) {
+      result.push(minZoomResolution * Math.pow(2, minZoom - z));
+    }
+    return result;
+  }
+
+  const mbtilesResolutions = buildNgiiResolutions(MBTILES_MIN_ZOOM, MBTILES_MAX_ZOOM);
+  if (!mbtilesResolutions) {
+    if (statusEl) statusEl.textContent = "MBTiles 해상도 범위 오류";
+    return;
+  }
+
   let locateBtnEl = null;
   let watchId = null;
   let isMyVisible = false;
@@ -78,9 +154,280 @@
   let unstableHits = [];
   let lastStableDeg = null;
 
+  const TRANSPARENT_PIXEL = "data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=";
+  let mbtilesSelection = null;
+  let mbtilesExtentMap = null;
+  let mbtilesNativeReady = false;
+  let mbtilesNativeInitPromise = null;
+  let mbtilesNativeFailureReason = null;
+  const mbtilesNativeTileCache = new Map();
+
+  // OpenLayers 내부 y(-1, -2...)를 XYZ 타일 y(0+)로 정규화한다.
+  function normalizeXyzY(rawY) {
+    return rawY < 0 ? -rawY - 1 : rawY;
+  }
+
+  // TileGrid 내부 줌(0..N)을 실제 MBTiles 줌(7..17)으로 매핑한다.
+  function resolveManifestZoom(rawZoom) {
+    if (!Number.isFinite(rawZoom)) return rawZoom;
+    // TileGrid zoom(0..N)은 MBTiles 실제 zoom(MBTILES_MIN_ZOOM..MBTILES_MAX_ZOOM)에 오프셋을 더해 매핑한다.
+    return rawZoom + MBTILES_MIN_ZOOM;
+  }
+
+  function buildExtentFromLevel5179(level, zoom) {
+    const resolutionIndex = zoom - NGII_RESOLUTION_BASE_ZOOM;
+    if (resolutionIndex < 0 || resolutionIndex >= GRID_RESOLUTIONS.length) return null;
+    const resolution = GRID_RESOLUTIONS[resolutionIndex];
+    const tileSpan = TILE_SIZE * resolution;
+    return [
+      GRID_ORIGIN[0] + level.minX * tileSpan,
+      GRID_ORIGIN[1] - (level.maxY + 1) * tileSpan,
+      GRID_ORIGIN[0] + (level.maxX + 1) * tileSpan,
+      GRID_ORIGIN[1] - level.minY * tileSpan
+    ];
+  }
+
+  // selection 레벨 정보에서 최대 줌 범위를 뽑아 지도의 실제 커버리지를 계산한다.
+  function buildMbtilesExtent(selection) {
+    if (!selection || !selection.levels) return null;
+    const highest = selection.levels[String(MBTILES_MAX_ZOOM)] || selection.levels[String(Number(selection.maxZoom || MBTILES_MAX_ZOOM))];
+    if (!highest) return null;
+    return buildExtentFromLevel5179(highest, MBTILES_MAX_ZOOM);
+  }
+  // “타일 경계 가드 + 커버리지 기준 화면 맞춤”
+  fetch("json/selection.json", { cache: "no-store" })
+    .then(function (r) { return r.json(); })
+    .then(function (sel) {
+      mbtilesSelection = sel;
+      mbtilesExtentMap = buildMbtilesExtent(sel);
+      // fitMbtilesCoverage() 자동 호출 제거 (초기 fit과 충돌)
+    })
+    .catch(function () { console.warn("[MBTiles] selection.json 로드 실패"); });
+
+  function isNativeCapacitorPlatform() {
+    const capacitor = window.Capacitor;
+    if (!capacitor) return false;
+    if (typeof capacitor.isNativePlatform === "function") {
+      return capacitor.isNativePlatform();
+    }
+    return typeof capacitor.getPlatform === "function" && capacitor.getPlatform() !== "web";
+  }
+
+  function getCapacitorSQLitePlugin() {
+    const capacitor = window.Capacitor;
+    if (!capacitor || !capacitor.Plugins) return null;
+    return capacitor.Plugins.CapacitorSQLite || null;
+  }
+
+  function rememberNativeTileUrl(cacheKey, dataUrl) {
+    if (mbtilesNativeTileCache.has(cacheKey)) {
+      mbtilesNativeTileCache.delete(cacheKey);
+    }
+    mbtilesNativeTileCache.set(cacheKey, dataUrl);
+    if (mbtilesNativeTileCache.size > NATIVE_MBTILES_TILE_CACHE_LIMIT) {
+      const oldestKey = mbtilesNativeTileCache.keys().next().value;
+      if (oldestKey !== undefined) {
+        mbtilesNativeTileCache.delete(oldestKey);
+      }
+    }
+    return dataUrl;
+  }
+
+  function hexToBase64(hexText) {
+    if (typeof hexText !== "string" || hexText.length === 0 || hexText.length % 2 !== 0) {
+      return null;
+    }
+
+    const bytes = new Uint8Array(hexText.length / 2);
+    for (let index = 0; index < hexText.length; index += 2) {
+      const byteValue = parseInt(hexText.slice(index, index + 2), 16);
+      if (!Number.isFinite(byteValue)) return null;
+      bytes[index / 2] = byteValue;
+    }
+
+    let binary = "";
+    const chunkSize = 0x8000;
+    for (let index = 0; index < bytes.length; index += chunkSize) {
+      const chunk = bytes.subarray(index, index + chunkSize);
+      binary += String.fromCharCode.apply(null, chunk);
+    }
+    return window.btoa(binary);
+  }
+
+  async function ensureNativeMbtilesDatabase() {
+    if (!isNativeCapacitorPlatform()) return false;
+    if (mbtilesNativeReady) return true;
+    if (mbtilesNativeInitPromise) return mbtilesNativeInitPromise;
+
+    mbtilesNativeInitPromise = (async function () {
+      const sqlite = getCapacitorSQLitePlugin();
+      if (!sqlite) {
+        mbtilesNativeFailureReason = "sqlite-plugin-not-found";
+        return false;
+      }
+
+      try {
+        await sqlite.copyFromAssets({ overwrite: false });
+      } catch (copyError) {
+        console.info("[MBTiles][native] copyFromAssets skipped:", copyError);
+      }
+
+      let dbExists = true;
+      try {
+        const existsResult = await sqlite.isDBExists({ database: MBTILES_DB_NAME, readonly: true });
+        dbExists = !!(existsResult && existsResult.result);
+      } catch (existsError) {
+        console.warn("[MBTiles][native] isDBExists check skipped:", existsError);
+      }
+
+      if (!dbExists) {
+        mbtilesNativeFailureReason = "mbtiles-db-not-found";
+        if (statusEl) statusEl.textContent = "🟠 MBTiles 앱 자산이 없습니다";
+        console.warn("[MBTiles][native] asset DB not found:", MBTILES_DB_NAME);
+        return false;
+      }
+
+      try {
+        await sqlite.createConnection({
+          database: MBTILES_DB_NAME,
+          version: 1,
+          encrypted: false,
+          mode: "no-encryption",
+          readonly: true
+        });
+      } catch (connectionError) {
+        const message = String(connectionError && connectionError.message ? connectionError.message : connectionError);
+        if (!/already exists|Connection .* already exists/i.test(message)) {
+          throw connectionError;
+        }
+      }
+
+      try {
+        await sqlite.open({ database: MBTILES_DB_NAME, readonly: true });
+      } catch (openError) {
+        const message = String(openError && openError.message ? openError.message : openError);
+        if (!/already open|already opened|database .* is already open/i.test(message)) {
+          throw openError;
+        }
+      }
+
+      mbtilesNativeReady = true;
+      mbtilesNativeFailureReason = null;
+      return true;
+    })().catch(function (error) {
+      mbtilesNativeFailureReason = error && error.message ? error.message : String(error);
+      console.error("[MBTiles][native] initialization failed:", error);
+      if (statusEl) statusEl.textContent = "🟠 MBTiles 앱 로드 실패";
+      return false;
+    }).finally(function () {
+      mbtilesNativeInitPromise = null;
+    });
+
+    return mbtilesNativeInitPromise;
+  }
+
+  async function getNativeMbtilesTileDataUrl(z, x, y) {
+    const cacheKey = z + "/" + x + "/" + y;
+    if (mbtilesNativeTileCache.has(cacheKey)) {
+      return rememberNativeTileUrl(cacheKey, mbtilesNativeTileCache.get(cacheKey));
+    }
+
+    const ready = await ensureNativeMbtilesDatabase();
+    if (!ready) return null;
+
+    const sqlite = getCapacitorSQLitePlugin();
+    if (!sqlite) return null;
+
+    const tmsRow = (Math.pow(2, z) - 1) - y;
+    const queryResult = await sqlite.query({
+      database: MBTILES_DB_NAME,
+      statement: "SELECT hex(tile_data) AS tile_hex FROM tiles WHERE zoom_level=? AND tile_column=? AND tile_row=? LIMIT 1",
+      values: [z, x, tmsRow],
+      readonly: true
+    });
+
+    const firstRow = queryResult && Array.isArray(queryResult.values) ? queryResult.values[0] : null;
+    const tileHex = firstRow && typeof firstRow === "object"
+      ? (firstRow.tile_hex || firstRow.TILE_HEX || null)
+      : (Array.isArray(firstRow) ? firstRow[0] : firstRow);
+    if (!tileHex) return null;
+
+    const tileBase64 = hexToBase64(tileHex);
+    if (!tileBase64) return null;
+    return rememberNativeTileUrl(cacheKey, "data:" + MBTILES_MIME_TYPE + ";base64," + tileBase64);
+  }
+
+  function mbtilesTileLoadFn(tile, src) {
+    const image = tile.getImage();
+    if (!image) return;
+
+    const nativeMatch = /^native-mbtiles:\/\/(\d+)\/(\d+)\/(\d+)$/.exec(src || "");
+    if (!nativeMatch) {
+      image.src = src;
+      return;
+    }
+
+    getNativeMbtilesTileDataUrl(
+      Number(nativeMatch[1]),
+      Number(nativeMatch[2]),
+      Number(nativeMatch[3])
+    ).then(function (dataUrl) {
+      image.src = dataUrl || TRANSPARENT_PIXEL;
+    }).catch(function (error) {
+      console.error("[MBTiles][native] tile load failed:", error, src, mbtilesNativeFailureReason);
+      image.src = TRANSPARENT_PIXEL;
+    });
+  }
+
+  // 요청 타일이 selection 경계 안에 있을 때만 MBTiles URL을 반환한다.
+  function mbtilesUrlFn(tileCoord) {
+    if (!tileCoord) return TRANSPARENT_PIXEL;
+    const rawZoom = tileCoord[0];
+    const z = resolveManifestZoom(rawZoom);
+    const x = tileCoord[1];
+    const y = normalizeXyzY(tileCoord[2]);
+    if (mbtilesSelection) {
+      const level = mbtilesSelection.levels[String(z)];
+      if (!level) return TRANSPARENT_PIXEL;
+      if (x < level.minX || x > level.maxX || y < level.minY || y > level.maxY) return TRANSPARENT_PIXEL;
+    }
+    if (isNativeCapacitorPlatform()) {
+      return "native-mbtiles://" + z + "/" + x + "/" + y;
+    }
+    return "/mbtiles/" + z + "/" + x + "/" + y + ".tile";
+  }
+
+  const mbtilesTileGrid = new ol.tilegrid.TileGrid({
+    origin: GRID_ORIGIN,
+    resolutions: mbtilesResolutions,
+    tileSize: TILE_SIZE,
+    minZoom: 0
+  });
+
+  const mbtilesSource = new ol.source.XYZ({
+    projection: MAP_PROJECTION_CODE,
+    tileGrid: mbtilesTileGrid,
+    minZoom: 0,
+    maxZoom: MBTILES_MAX_ZOOM,
+    wrapX: false,
+    transition: 0,
+    tilePixelRatio: 1,
+    tileUrlFunction: mbtilesUrlFn,
+    tileLoadFunction: mbtilesTileLoadFn,
+    attributions: "지리산 오프라인 타일"
+  });
+  mbtilesSource.on("tileloaderror", function (event) {
+    event.tile.getImage().src = TRANSPARENT_PIXEL;
+  });
+
+  const mbtilesLayer = new ol.layer.Tile({
+    source: mbtilesSource,
+    visible: true
+  });
+
   const osmBase = new ol.layer.Tile({
     source: new ol.source.OSM(),
-    visible: true
+    visible: false
   });
 
   const topoBase = new ol.layer.Tile({
@@ -99,11 +446,13 @@
       maxZoom: HILLSHADE_MAX_ZOOM
     }),
     opacity: HILLSHADE_BASE_OPACITY,
-    visible: true
+    visible: false
   });
 
   let tileLoadSuccessCount = 0;
   let tileLoadErrorCount = 0;
+  let currentBaseLayerType = "mbtiles";
+  let lastOnlineViewState = null;
 
   function bindTileErrorStatus(source, layerName) {
     if (!source || typeof source.on !== "function") return;
@@ -170,16 +519,27 @@
 
   const observationMarkerSource = new ol.source.Vector();
 
+  const baseCenterMap = mapCoordFromWgs84(35.315, 127.655);
+  //const extentMap = ol.proj.transformExtent(JIRISAN_BOUNDS_WGS84, WGS84_CODE, MAP_PROJECTION_CODE);
+  const extentMap = [944865,1669988,1077349,1732849];
+  const viewResolutions = build5179ViewResolutions(
+    MBTILES_MIN_ZOOM,
+    MBTILES_MAX_ZOOM,
+    mbtilesResolutions[0]
+  );
+
   const view = new ol.View({
-    center: ol.proj.fromLonLat([127.655, 35.315]),
-    zoom: 11,
-    minZoom: 3,
-    maxZoom: VIEW_MAX_ZOOM
+    projection: MAP_PROJECTION_CODE,
+    center: baseCenterMap,
+    minZoom: MBTILES_MIN_ZOOM,
+    maxZoom: MBTILES_MAX_ZOOM,
+    resolutions: viewResolutions,
+    extent: LOCK_EMPTY_AREA_PAN ? PAN_LIMIT_EXTENT : undefined // 이 한 줄을 주석 처리하면 빈공간 이동 제한 해제
   });
 
   const map = new ol.Map({
     target: "map",
-    layers: [osmBase, topoBase, hillshadeOverlay, bearMarkerLayer, myLocationLayer],
+    layers: [osmBase, topoBase, mbtilesLayer, hillshadeOverlay, bearMarkerLayer, myLocationLayer],
     view: view,
     controls: ol.control.defaults.defaults({
       zoom: false,
@@ -191,13 +551,20 @@
   window.__olMap = map;
   window.__olView = view;
 
-  const extent3857 = ol.proj.transformExtent(JIRISAN_BOUNDS_WGS84, "EPSG:4326", "EPSG:3857");
-  view.fit(extent3857, {
+  if (isNativeCapacitorPlatform()) {
+    ensureNativeMbtilesDatabase();
+  }
+
+  // 초기 위치: fit() 호출 (한 번만 실행)
+  view.fit(extentMap, {
     padding: [20, 20, 20, 20],
     maxZoom: 14,
     duration: 500
   });
+  view.setZoom(9.92);
+  window.__initialFitDone = true;
 
+  // 고줌에서 음영이 지저분해지는 것을 막기 위해 확대 시 음영 투명도를 낮춘다.
   function syncHillshadeByZoom() {
     const zoom = view.getZoom();
     if (typeof zoom !== "number") return;
@@ -207,11 +574,89 @@
   view.on("change:resolution", syncHillshadeByZoom);
   syncHillshadeByZoom();
 
-  function setBaseLayer(type) {
-    osmBase.setVisible(type === "osm");
-    topoBase.setVisible(type === "topo");
+  // 디버깅용: 현재 줌/중심/extent를 콘솔에 기록한다.
+  function logViewState(reason) {
+    const zoom = view.getZoom();
+    const center = view.getCenter();
+    const size = map.getSize();
+    const extent = size ? view.calculateExtent(size) : null;
+    const centerWgs84 = wgs84FromMapCoord(center);
+    const zoomText = Number.isFinite(zoom) ? zoom.toFixed(2) : String(zoom);
+    const latText = centerWgs84 && Number.isFinite(centerWgs84.lat) ? centerWgs84.lat.toFixed(6) : "n/a";
+    const lngText = centerWgs84 && Number.isFinite(centerWgs84.lng) ? centerWgs84.lng.toFixed(6) : "n/a";
+    const extentText = extent ? "[" + extent.map(v => v.toFixed(0)).join(",") + "]" : "n/a";
+    console.log("[Map] " + reason + " | zoom=" + zoomText + " | lat=" + latText + " lng=" + lngText + " | extent=" + extentText);
   }
 
+  map.on("moveend", function () {
+    logViewState("moveend");
+  });
+
+  function captureCurrentViewState() {
+    return {
+      center: view.getCenter(),
+      zoom: view.getZoom()
+    };
+  }
+
+  function restoreViewState(state) {
+    if (!state || !Array.isArray(state.center)) return false;
+    view.animate({
+      center: state.center,
+      zoom: typeof state.zoom === "number" ? state.zoom : (view.getZoom() || 11),
+      duration: 400
+    });
+    return true;
+  }
+
+  function isLikelyKoreaExtent(extent) {
+    if (!extent || !Array.isArray(extent)) return false;
+    const center = ol.extent.getCenter(extent);
+    const coord = wgs84FromMapCoord(center);
+    if (!coord) return false;
+    const lon = coord.lng;
+    const lat = coord.lat;
+    return lon >= 120 && lon <= 132 && lat >= 30 && lat <= 40;
+  }
+
+  // MBTiles 커버리지 범위로 뷰를 맞춘다(범위가 비정상일 때는 무시).
+  function fitMbtilesCoverage() {
+    if (!mbtilesExtentMap) return false;
+    if (!isLikelyKoreaExtent(mbtilesExtentMap)) return false;
+    view.fit(mbtilesExtentMap, {
+      padding: [20, 20, 20, 20],
+      maxZoom: 14,
+      duration: 500
+    });
+    return true;
+  }
+
+  // 현재는 오프라인 MBTiles만 허용하고, 필요 시 커버리지 범위로 재정렬한다.
+  function setBaseLayer(type) {
+    if (type !== "mbtiles") {
+      if (statusEl) statusEl.textContent = "ℹ️ 현재는 오프라인 지도만 사용합니다";
+      type = "mbtiles";
+    }
+    if (type === currentBaseLayerType) return;
+
+    if (type === "mbtiles") {
+      lastOnlineViewState = captureCurrentViewState();
+    }
+
+    osmBase.setVisible(false);
+    topoBase.setVisible(false);
+    hillshadeOverlay.setVisible(false);
+    mbtilesLayer.setVisible(true);
+
+    const moved = fitMbtilesCoverage();
+    if (!moved && statusEl) {
+      statusEl.textContent = "🟡 오프라인 범위 확인 실패, 기존 위치를 유지합니다";
+    }
+
+    currentBaseLayerType = type;
+  }
+
+  // 내부 SQLite 초기화. 실패해도 지도 기능은 계속 동작하도록 설계한다.
   async function initializeEmbeddedDatabase() {
     // sqlite-init.js가 로드되지 않았더라도 지도 기능은 계속 동작하도록 한다.
     if (!window.BearSQLite || typeof window.BearSQLite.initialize !== "function") {
@@ -233,7 +678,7 @@
 
   function flyToLatLng(latlng, zoom) {
     if (!Array.isArray(latlng) || latlng.length < 2) return;
-    const target = ol.proj.fromLonLat([latlng[1], latlng[0]]);
+    const target = mapCoordFromWgs84(latlng[0], latlng[1]);
     view.animate({
       center: target,
       zoom: typeof zoom === "number" ? zoom : (view.getZoom() || 11),
@@ -364,6 +809,7 @@
     return norm360(deg + offset);
   }
 
+  // GPS 샘플에서 속도/방향을 추정해 나침반 보정에 활용한다.
   function updateGpsHeadingSample(coords) {
     if (!coords) return;
 
@@ -518,6 +964,7 @@
     return null;
   }
 
+  // 급격한 방향 점프를 완화해 시각적으로 안정적인 헤딩을 만든다.
   function filterHeading(nextDeg) {
     if (headingSmoothed === null) {
       headingSmoothed = nextDeg;
@@ -585,6 +1032,7 @@
     updateRegistrationPreview();
   }
 
+  // 디바이스 방향 이벤트를 구독해 헤딩을 계산/보정/적용한다.
   async function startCompass() {
     if (compassEnabled) return;
 
@@ -821,6 +1269,18 @@
     }
   });
 
+  // 왼쪽 클릭 좌표 로깅
+  map.on("singleclick", function (event) {
+    const coord = event.coordinate;
+    const coordWgs84 = wgs84FromMapCoord(coord);
+    const xText = Number.isFinite(coord[0]) ? coord[0].toFixed(2) : String(coord[0]);
+    const yText = Number.isFinite(coord[1]) ? coord[1].toFixed(2) : String(coord[1]);
+    const latText = coordWgs84 && Number.isFinite(coordWgs84.lat) ? coordWgs84.lat.toFixed(6) : "n/a";
+    const lngText = coordWgs84 && Number.isFinite(coordWgs84.lng) ? coordWgs84.lng.toFixed(6) : "n/a";
+    console.log("[Left Click] x=" + xText + " y=" + yText + " | lat=" + latText + " lng=" + lngText);
+  });
+
+
   // obsList.js 재사용을 위한 최소 Leaflet 호환 어댑터
   if (!window.L) window.L = {};
   if (!window.L.divIcon) {
@@ -873,7 +1333,7 @@
     addLayer: function (marker) {
       if (!marker || !Array.isArray(marker._latlng)) return;
 
-      const coord = ol.proj.fromLonLat([marker._latlng[1], marker._latlng[0]]);
+      const coord = mapCoordFromWgs84(marker._latlng[0], marker._latlng[1]);
       const feature = new ol.Feature({ geometry: new ol.geom.Point(coord) });
       marker._feature = feature;
       feature.set("popupHtml", marker._popupHtml || "");
@@ -927,8 +1387,9 @@
     }
   }) : null;
 
+  // 내 위치 피처를 갱신하고 최초 1회만 현재 위치로 카메라를 이동한다.
   function updateMyLocation(lat, lng) {
-    const coord = ol.proj.fromLonLat([lng, lat]);
+    const coord = mapCoordFromWgs84(lat, lng);
     lastLatLng = [lat, lng];
     lastGpsTimestamp = Date.now();
     ensureMyLocationFeature(coord);
@@ -993,6 +1454,7 @@
     }
   }
 
+  // 위치 추적 시작: 빠른 1회 획득 + watchPosition 지속 추적.
   async function startMyLocationTracking() {
     if (!navigator.geolocation) {
       if (statusEl) statusEl.textContent = "🔴 위치 기능 미지원 브라우저";
@@ -1036,6 +1498,7 @@
     await startMyLocationTracking();
   }
 
+  // 우하단 컨트롤(지리산 이동, 내 위치, 줌) UI를 동적으로 마운트한다.
   function mountRightBottomControls() {
     const root = document.createElement("div");
     root.style.position = "absolute";
@@ -1075,7 +1538,9 @@
       "지리산으로 이동",
       "<svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M3 19l6.5-11L16 19H3z\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linejoin=\"round\"/><path d=\"M10.5 19l4.5-8 6 8h-10.5z\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linejoin=\"round\"/><path d=\"M9.5 8l1.2 2 1.3-2\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/></svg>",
       function () {
-        view.fit(extent3857, { padding: [20, 20, 20, 20], maxZoom: 14, duration: 450 });
+        if (!fitMbtilesCoverage()) {
+          view.fit(extentMap, { padding: [20, 20, 20, 20], maxZoom: 14, duration: 450 });
+        }
       }
     );
 
@@ -1090,7 +1555,7 @@
 
     const btnZoomIn = makeBtn("ol-zoom-in-btn", "확대", "+", function () {
       const current = view.getZoom() || 0;
-      const next = Math.min(VIEW_MAX_ZOOM, current + 1);
+      const next = Math.min(MBTILES_MAX_ZOOM, current + 1);
       view.animate({ zoom: next, duration: 180 });
     });
     btnZoomIn.style.fontSize = "19px";
@@ -1098,7 +1563,7 @@
 
     const btnZoomOut = makeBtn("ol-zoom-out-btn", "축소", "-", function () {
       const current = view.getZoom() || 0;
-      const next = Math.max(3, current - 1);
+      const next = Math.max(MBTILES_MIN_ZOOM, current - 1);
       view.animate({ zoom: next, duration: 180 });
     });
     btnZoomOut.style.fontSize = "20px";
@@ -1116,6 +1581,7 @@
     mapEl.appendChild(root);
   }
 
+  // 우상단 레이어 패널 UI를 구성한다(현재는 오프라인 지도 선택만 활성).
   function mountLayerSwitcher() {
     const root = document.createElement("div");
     root.style.position = "absolute";
@@ -1163,11 +1629,11 @@
     radioOsm.type = "radio";
     radioOsm.name = "ol-base-layer";
     radioOsm.value = "osm";
-    radioOsm.checked = true;
+    radioOsm.disabled = true;
 
     const labelOsm = document.createElement("label");
     labelOsm.style.cursor = "pointer";
-    labelOsm.textContent = "일반지도";
+    labelOsm.textContent = "인터넷 기본도(준비중)";
     row1.appendChild(radioOsm);
     row1.appendChild(labelOsm);
 
@@ -1181,22 +1647,44 @@
     radioTopo.type = "radio";
     radioTopo.name = "ol-base-layer";
     radioTopo.value = "topo";
+    radioTopo.disabled = true;
 
     const labelTopo = document.createElement("label");
-    labelTopo.style.cursor = "pointer";
-    labelTopo.textContent = "지형도(OpenTopoMap)";
-    rowTopo.appendChild(radioTopo);
-    rowTopo.appendChild(labelTopo);
+    //labelTopo.style.cursor = "pointer";
+    //labelTopo.textContent = "지형도(준비중)";
+    //rowTopo.appendChild(radioTopo);
+    //rowTopo.appendChild(labelTopo);
+
+    const rowMbtiles = document.createElement("div");
+    rowMbtiles.style.display = "flex";
+    rowMbtiles.style.alignItems = "center";
+    rowMbtiles.style.gap = "8px";
+    rowMbtiles.style.marginBottom = "2px";
+
+    const radioMbtiles = document.createElement("input");
+    radioMbtiles.type = "radio";
+    radioMbtiles.name = "ol-base-layer";
+    radioMbtiles.value = "mbtiles";
+    radioMbtiles.checked = true;
+
+    const labelMbtiles = document.createElement("label");
+    labelMbtiles.style.cursor = "pointer";
+    labelMbtiles.textContent = "오프라인 기본도(5179)";
+    rowMbtiles.appendChild(radioMbtiles);
+    rowMbtiles.appendChild(labelMbtiles);
 
     function syncBaseByRadio() {
-      const selected = radioTopo.checked ? "topo" : "osm";
-      setBaseLayer(selected);
+      if (radioTopo.checked) return setBaseLayer("topo");
+      if (radioMbtiles.checked) return setBaseLayer("mbtiles");
+      setBaseLayer("osm");
     }
 
     radioOsm.addEventListener("change", syncBaseByRadio);
     radioTopo.addEventListener("change", syncBaseByRadio);
+    radioMbtiles.addEventListener("change", syncBaseByRadio);
     labelOsm.addEventListener("click", function () { radioOsm.checked = true; syncBaseByRadio(); });
     labelTopo.addEventListener("click", function () { radioTopo.checked = true; syncBaseByRadio(); });
+    labelMbtiles.addEventListener("click", function () { radioMbtiles.checked = true; syncBaseByRadio(); });
 
     const row2 = document.createElement("label");
     row2.style.display = "flex";
@@ -1207,15 +1695,16 @@
 
     const chk = document.createElement("input");
     chk.type = "checkbox";
-    chk.checked = true;
+    chk.checked = false;
+    chk.disabled = true;
     chk.addEventListener("change", function () {
       hillshadeOverlay.setVisible(chk.checked);
     });
 
-    const txt = document.createElement("span");
-    txt.textContent = "음영(Hillshade)";
-    row2.appendChild(chk);
-    row2.appendChild(txt);
+    // const txt = document.createElement("span");
+    // txt.textContent = "음영(Hillshade, 준비중)";
+    // row2.appendChild(chk);
+    // row2.appendChild(txt);
 
     let hideTimer = null;
     let isPinned = false;
@@ -1267,7 +1756,10 @@
       }
     });
 
-    root.appendChild(toggleBtn);
+    //토글 버튼 활성/비활성 시 주석처리
+    //root.appendChild(toggleBtn);
+
+    panel.appendChild(rowMbtiles);
     panel.appendChild(row1);
     panel.appendChild(rowTopo);
     panel.appendChild(row2);
@@ -1275,6 +1767,7 @@
     mapEl.appendChild(root);
   }
 
+  // 샘플 곰 데이터 JSON을 비캐시 모드로 로드한다.
   async function loadBearsData() {
     try {
       const res = await fetch("json/bears.json", { cache: "no-store" });
@@ -1285,6 +1778,7 @@
     }
   }
 
+  // 곰 데이터의 basePoints 주변으로 샘플 추정 좌표를 생성한다.
   function makeBearEstimateSamples() {
     if (!bearsDataCache.length) return [];
     const picked = bearsDataCache.slice().sort(function () {
@@ -1304,13 +1798,14 @@
     });
   }
 
+  // 추정 좌표를 지도 마커 레이어로 렌더링한다.
   function renderBearMarkers(items) {
     bearMarkerSource.clear();
     if (!items || !items.length) return;
 
     items.forEach(function (it) {
       const feature = new ol.Feature({
-        geometry: new ol.geom.Point(ol.proj.fromLonLat([it.lng, it.lat]))
+        geometry: new ol.geom.Point(mapCoordFromWgs84(it.lat, it.lng))
       });
 
       feature.setStyle(new ol.style.Style({
@@ -1363,6 +1858,7 @@
     });
   }
 
+  // 곰 목록 패널/마커를 동기화한다. 초기 시점 보존을 위해 자동 fit은 하지 않는다.
   async function refreshBearEstimatePanel() {
     if (statusEl) statusEl.textContent = "🐻 곰 추정위치 계산중…";
 
@@ -1376,15 +1872,7 @@
       return;
     }
 
-    const extent = ol.extent.createEmpty();
-    items.forEach(function (it) {
-      const c = ol.proj.fromLonLat([it.lng, it.lat]);
-      ol.extent.extend(extent, [c[0], c[1], c[0], c[1]]);
-    });
-
-    if (!ol.extent.isEmpty(extent)) {
-      view.fit(extent, { padding: [20, 20, 20, 20], maxZoom: 14, duration: 450 });
-    }
+    // 초기 진입 시 사용자 시점을 보존하기 위해 자동 fit은 비활성화한다.
 
     if (statusEl) {
       statusEl.innerHTML = '<img src="assets/icons/icon_bear.png" style="height:18px;vertical-align:middle;margin-right:4px;" alt="곰"/> ' + items.length + '마리 표시됨';
@@ -1454,17 +1942,19 @@
   setTimeout(function () {
     if (!statusEl) return;
     if (tileLoadSuccessCount === 0 && tileLoadErrorCount === 0) {
-      statusEl.textContent = "🟠 타일 요청 없음 (지도 초기화/레이어 설정 확인)";
+      //statusEl.textContent = "🟠 타일 요청 없음 (지도 초기화/레이어 설정 확인)";
+      statusEl.textContent = "🟠 타일 요청 없음";
       return;
     }
     if (tileLoadSuccessCount === 0 && tileLoadErrorCount > 0) {
-      statusEl.textContent = "🟠 타일 요청 실패 " + tileLoadErrorCount + "건";
+      //statusEl.textContent = "🟠 타일 요청 실패 " + tileLoadErrorCount + "건";
+      statusEl.textContent = "🟠 타일 요청 실패 ";
     }
   }, 5000);
   } catch (error) {
     console.error("client-ol.js 초기화 오류:", error);
     if (statusEl) {
-      statusEl.textContent = "🔴 JS 오류: " + (error && error.message ? error.message : String(error));
+      statusEl.textContent = "🔴 오류: " + (error && error.message ? error.message : String(error));
     }
   }
 })();

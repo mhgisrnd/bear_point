@@ -5,7 +5,8 @@
   "main": "index.js",
   "scripts": {
     "dev": "nodemon server.js",
-    "start": "node server.js"
+    "start": "node server.js",
+    "prepare:mbtiles-assets": "node scripts/sync-mbtiles-assets.js"
   },
   "keywords": [],
   "author": "",
@@ -16,9 +17,11 @@
     "@capacitor/app": "^7.1.2",
     "@capacitor/cli": "^7.6.2",
     "@capacitor/core": "^7.6.2",
+    "better-sqlite3": "^12.9.0",
     "express": "^5.2.1",
     "forever": "^4.0.3",
     "ol": "^10.6.1",
+    "proj4": "^2.20.8",
     "socket.io": "^4.8.3"
   },
   "devDependencies": {

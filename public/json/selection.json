@@ -1,0 +1,85 @@
+{
+  "name": "jiri-focus",
+  "minZoom": 5,
+  "maxZoom": 17,
+  "levels": {
+    "5": {
+      "minX": 2,
+      "maxX": 2,
+      "minY": 4,
+      "maxY": 4
+    },
+    "6": {
+      "minX": 4,
+      "maxX": 4,
+      "minY": 8,
+      "maxY": 8
+    },
+    "7": {
+      "minX": 8,
+      "maxX": 9,
+      "minY": 17,
+      "maxY": 17
+    },
+    "8": {
+      "minX": 17,
+      "maxX": 18,
+      "minY": 34,
+      "maxY": 34
+    },
+    "9": {
+      "minX": 35,
+      "maxX": 36,
+      "minY": 68,
+      "maxY": 69
+    },
+    "10": {
+      "minX": 71,
+      "maxX": 73,
+      "minY": 136,
+      "maxY": 138
+    },
+    "11": {
+      "minX": 142,
+      "maxX": 147,
+      "minY": 273,
+      "maxY": 277
+    },
+    "12": {
+      "minX": 284,
+      "maxX": 295,
+      "minY": 546,
+      "maxY": 555
+    },
+    "13": {
+      "minX": 568,
+      "maxX": 591,
+      "minY": 1092,
+      "maxY": 1111
+    },
+    "14": {
+      "minX": 1136,
+      "maxX": 1183,
+      "minY": 2184,
+      "maxY": 2223
+    },
+    "15": {
+      "minX": 2272,
+      "maxX": 2367,
+      "minY": 4368,
+      "maxY": 4447
+    },
+    "16": {
+      "minX": 4544,
+      "maxX": 4735,
+      "minY": 8736,
+      "maxY": 8895
+    },
+    "17": {
+      "minX": 9088,
+      "maxX": 9471,
+      "minY": 17472,
+      "maxY": 17791
+    }
+  }
+}

@@ -4,3 +4,7 @@ node_modules/
 .DS_Store
 .vscode/
 .idea/
+*.mbtiles-shm
+*.mbtiles-wal
+*.mbtiles
+public/assets/databases/korea-selection2-z7-z17-webp.db
