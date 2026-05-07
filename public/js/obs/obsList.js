@@ -9,7 +9,8 @@ window.createObsListModule = function createObsListModule({
   onOpenList,
   onOpenRegister,
   onCloseRegister,
-  onEditObservation
+  onEditObservation,
+  onAnalysisResult
 }) {
   const btnBear = document.getElementById("btn-obs-list");
   const btnObsAdd = document.getElementById("btn-obs-add");
@@ -34,6 +35,8 @@ window.createObsListModule = function createObsListModule({
   let observationSamples = [];
   let currentTab = "none";
   let isPeekMode = false;
+  let observationKeySeed = 0;
+  let analysisOptionsDialogState = null;
 
   function getObservationLabel(item) {
     if (!item) return "";
@@ -197,12 +200,23 @@ window.createObsListModule = function createObsListModule({
       return null;
     }
 
-    return { id, place, bearCode, owner, lat, lng, heading, detectors };
+    return {
+      id,
+      place,
+      bearCode,
+      owner,
+      lat,
+      lng,
+      heading,
+      detectors,
+      _obsKey: `${id}::${observationKeySeed++}`
+    };
   }
 
   // 웹 미리보기에서는 observations.json을 관측점 소스로 사용한다.
   async function loadObservationSamplesFromDemoJson() {
     try {
+      observationKeySeed = 0;
       const response = await fetch(OBSERVATION_DEMO_URL, { cache: "no-store" });
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}`);
@@ -242,6 +256,7 @@ window.createObsListModule = function createObsListModule({
     }
 
     try {
+      observationKeySeed = 0;
       const initState = await sqliteModule.initialize();
       if (!initState || !initState.ready) {
         observationSamples = [];
@@ -356,7 +371,7 @@ window.createObsListModule = function createObsListModule({
     const zoom = map.getZoom();
 
     for (const item of items) {
-      item.isSelected = selectedObsIds.has(item.id);
+      item.isSelected = selectedObsIds.has(item._obsKey);
       const marker = L.marker([item.lat, item.lng], { icon: createObservationIcon(item, zoom) });
       marker.obsData = item;
       marker.bindPopup(buildObservationPopupHtml(item));
@@ -371,7 +386,7 @@ window.createObsListModule = function createObsListModule({
 
     for (const marker of observationMarkers) {
       if (!marker || !marker.obsData) continue;
-      marker.obsData.isSelected = selectedObsIds.has(marker.obsData.id);
+      marker.obsData.isSelected = selectedObsIds.has(marker.obsData._obsKey);
       marker.setIcon(createObservationIcon(marker.obsData, zoom));
     }
   }
@@ -409,11 +424,11 @@ window.createObsListModule = function createObsListModule({
 
     for (const item of items) {
       const row = document.createElement("tr");
-      const isChecked = selectedObsIds.has(item.id);
+      const isChecked = selectedObsIds.has(item._obsKey);
       if (isChecked) row.classList.add("selected");
 
       row.innerHTML = `
-        <td class="col-chk"><input type="checkbox" class="obs-row-chk" data-id="${item.id}" ${isChecked ? "checked" : ""} /></td>
+        <td class="col-chk"><input type="checkbox" class="obs-row-chk" data-id="${item._obsKey}" ${isChecked ? "checked" : ""} /></td>
         <td>${getObservationLabel(item)}</td>
         <td>${item.bearCode}</td>
         <td>${item.owner}</td>
@@ -427,7 +442,7 @@ window.createObsListModule = function createObsListModule({
       const chk = row.querySelector(".obs-row-chk");
       if (chk) chk.addEventListener("click", (e) => {
         e.stopPropagation();
-        handleObsCheck(item.id, chk.checked, row);
+        handleObsCheck(item._obsKey, chk.checked, row);
       });
 
       const editBtn = row.querySelector('[data-action="edit"]');
@@ -480,7 +495,7 @@ window.createObsListModule = function createObsListModule({
     }
 
     if (btnAnalysis) {
-      const canAnalyze = count === 2;
+      const canAnalyze = count >= 2;
       btnAnalysis.disabled = !canAnalyze;
       btnAnalysis.style.opacity = canAnalyze ? "1" : "0.45";
       btnAnalysis.style.cursor = canAnalyze ? "pointer" : "not-allowed";
@@ -499,8 +514,8 @@ window.createObsListModule = function createObsListModule({
   // 현재 필터 대상 기준으로 전체선택 체크박스 상태를 동기화한다.
   function syncChkAll(items) {
     if (!chkAllEl) return;
-    const allChecked = items.length > 0 && items.every((it) => selectedObsIds.has(it.id));
-    const someChecked = items.some((it) => selectedObsIds.has(it.id));
+    const allChecked = items.length > 0 && items.every((it) => selectedObsIds.has(it._obsKey));
+    const someChecked = items.some((it) => selectedObsIds.has(it._obsKey));
     chkAllEl.checked = allChecked;
     chkAllEl.indeterminate = !allChecked && someChecked;
   }
@@ -520,6 +535,279 @@ window.createObsListModule = function createObsListModule({
   function applySearch() {
     const filtered = getFilteredItems();
     renderObservationList(filtered);
+  }
+
+  function ensureAnalysisOptionsDialog() {
+    if (analysisOptionsDialogState) return analysisOptionsDialogState;
+
+    const overlay = document.createElement("div");
+    overlay.style.position = "fixed";
+    overlay.style.inset = "0";
+    overlay.style.background = "rgba(15,23,42,0.46)";
+    overlay.style.zIndex = "22000";
+    overlay.style.display = "none";
+    overlay.style.alignItems = "center";
+    overlay.style.justifyContent = "center";
+    overlay.style.padding = "16px";
+
+    const panel = document.createElement("div");
+    panel.style.width = "min(420px, 100%)";
+    panel.style.background = "#ffffff";
+    panel.style.border = "1px solid rgba(15,23,42,0.12)";
+    panel.style.borderRadius = "14px";
+    panel.style.boxShadow = "0 20px 48px rgba(15,23,42,0.28)";
+    panel.style.padding = "16px";
+    panel.style.display = "flex";
+    panel.style.flexDirection = "column";
+    panel.style.gap = "10px";
+
+    const title = document.createElement("div");
+    title.textContent = "위치분석 옵션";
+    title.style.fontSize = "17px";
+    title.style.fontWeight = "800";
+    title.style.color = "#111827";
+
+    const desc = document.createElement("div");
+    desc.textContent = "거리 제한과 편각을 입력한 뒤 분석을 실행하세요.";
+    desc.style.fontSize = "13px";
+    desc.style.color = "#4b5563";
+
+    const distanceWrap = document.createElement("label");
+    distanceWrap.style.display = "flex";
+    distanceWrap.style.flexDirection = "column";
+    distanceWrap.style.gap = "6px";
+    distanceWrap.style.fontSize = "13px";
+    distanceWrap.style.fontWeight = "700";
+    distanceWrap.style.color = "#1f2937";
+    distanceWrap.textContent = "거리 제한 (m)";
+
+    const distanceInput = document.createElement("input");
+    distanceInput.type = "number";
+    distanceInput.step = "1";
+    distanceInput.min = "1";
+    distanceInput.inputMode = "decimal";
+    distanceInput.style.height = "38px";
+    distanceInput.style.border = "1px solid #cbd5e1";
+    distanceInput.style.borderRadius = "9px";
+    distanceInput.style.padding = "0 11px";
+    distanceInput.style.fontSize = "14px";
+    distanceWrap.appendChild(distanceInput);
+
+    const declinationWrap = document.createElement("label");
+    declinationWrap.style.display = "flex";
+    declinationWrap.style.flexDirection = "column";
+    declinationWrap.style.gap = "6px";
+    declinationWrap.style.fontSize = "13px";
+    declinationWrap.style.fontWeight = "700";
+    declinationWrap.style.color = "#1f2937";
+    declinationWrap.textContent = "편각 (도)";
+
+    const declinationInput = document.createElement("input");
+    declinationInput.type = "number";
+    declinationInput.step = "0.1";
+    declinationInput.inputMode = "decimal";
+    declinationInput.style.height = "38px";
+    declinationInput.style.border = "1px solid #cbd5e1";
+    declinationInput.style.borderRadius = "9px";
+    declinationInput.style.padding = "0 11px";
+    declinationInput.style.fontSize = "14px";
+    declinationWrap.appendChild(declinationInput);
+
+    const errorEl = document.createElement("div");
+    errorEl.style.minHeight = "18px";
+    errorEl.style.fontSize = "12px";
+    errorEl.style.fontWeight = "700";
+    errorEl.style.color = "#dc2626";
+
+    const actions = document.createElement("div");
+    actions.style.display = "flex";
+    actions.style.justifyContent = "flex-end";
+    actions.style.gap = "8px";
+    actions.style.marginTop = "2px";
+
+    const cancelBtn = document.createElement("button");
+    cancelBtn.type = "button";
+    cancelBtn.textContent = "취소";
+    cancelBtn.style.height = "36px";
+    cancelBtn.style.padding = "0 14px";
+    cancelBtn.style.border = "1px solid #94a3b8";
+    cancelBtn.style.borderRadius = "8px";
+    cancelBtn.style.background = "#ffffff";
+    cancelBtn.style.color = "#334155";
+    cancelBtn.style.fontWeight = "700";
+    cancelBtn.style.cursor = "pointer";
+
+    const applyBtn = document.createElement("button");
+    applyBtn.type = "button";
+    applyBtn.textContent = "분석";
+    applyBtn.style.height = "36px";
+    applyBtn.style.padding = "0 14px";
+    applyBtn.style.border = "0";
+    applyBtn.style.borderRadius = "8px";
+    applyBtn.style.background = "#2563eb";
+    applyBtn.style.color = "#ffffff";
+    applyBtn.style.fontWeight = "700";
+    applyBtn.style.cursor = "pointer";
+
+    actions.appendChild(cancelBtn);
+    actions.appendChild(applyBtn);
+
+    panel.appendChild(title);
+    panel.appendChild(desc);
+    panel.appendChild(distanceWrap);
+    panel.appendChild(declinationWrap);
+    panel.appendChild(errorEl);
+    panel.appendChild(actions);
+
+    overlay.appendChild(panel);
+    document.body.appendChild(overlay);
+
+    analysisOptionsDialogState = {
+      overlay,
+      panel,
+      distanceInput,
+      declinationInput,
+      errorEl,
+      cancelBtn,
+      applyBtn,
+      resolve: null
+    };
+
+    return analysisOptionsDialogState;
+  }
+
+  function openAnalysisOptionsDialog(defaultValues) {
+    const dialog = ensureAnalysisOptionsDialog();
+    const defaults = defaultValues || {};
+    dialog.distanceInput.value = String(defaults.distanceLimitM ?? 8000);
+    dialog.declinationInput.value = String(defaults.declinationDeg ?? -7);
+    dialog.errorEl.textContent = "";
+    dialog.overlay.style.display = "flex";
+
+    return new Promise((resolve) => {
+      dialog.resolve = resolve;
+
+      function closeWith(value) {
+        if (!dialog.resolve) return;
+        const resolver = dialog.resolve;
+        dialog.resolve = null;
+        dialog.overlay.style.display = "none";
+        resolver(value);
+      }
+
+      dialog.cancelBtn.onclick = function () {
+        closeWith(null);
+      };
+
+      dialog.applyBtn.onclick = function () {
+        const distanceLimitM = Number(String(dialog.distanceInput.value || "").trim());
+        const declinationDeg = Number(String(dialog.declinationInput.value || "").trim());
+
+        if (!Number.isFinite(distanceLimitM) || distanceLimitM <= 0) {
+          dialog.errorEl.textContent = "거리 제한(m)은 0보다 큰 숫자여야 합니다.";
+          dialog.distanceInput.focus();
+          return;
+        }
+
+        if (!Number.isFinite(declinationDeg)) {
+          dialog.errorEl.textContent = "편각은 숫자여야 합니다.";
+          dialog.declinationInput.focus();
+          return;
+        }
+
+        closeWith({ distanceLimitM, declinationDeg });
+      };
+
+      dialog.overlay.onclick = function (event) {
+        if (event.target === dialog.overlay) {
+          closeWith(null);
+        }
+      };
+
+      dialog.panel.onkeydown = function (event) {
+        if (event.key === "Escape") {
+          event.preventDefault();
+          closeWith(null);
+          return;
+        }
+        if (event.key === "Enter") {
+          event.preventDefault();
+          dialog.applyBtn.click();
+        }
+      };
+
+      window.requestAnimationFrame(() => {
+        dialog.distanceInput.focus();
+        dialog.distanceInput.select();
+      });
+    });
+  }
+
+  function getSelectedObservations() {
+    if (selectedObsIds.size < 1) return [];
+    return observationSamples.filter((item) => selectedObsIds.has(item._obsKey));
+  }
+
+  async function runPositionAnalysis() {
+    const analysisModule = window.BearPositionAnalysis;
+    if (!analysisModule || typeof analysisModule.analyzePosition !== "function") {
+      statusEl.textContent = "⚠️ 위치분석 모듈을 찾을 수 없습니다.";
+      return;
+    }
+
+    const selectedItems = getSelectedObservations();
+    if (selectedItems.length < 2) {
+      statusEl.textContent = "⚠️ 위치분석은 관측점 2개 이상을 선택해야 합니다.";
+      return;
+    }
+
+    const bearCodes = new Set(selectedItems.map((item) => String(item.bearCode || "").trim()));
+    if (bearCodes.size !== 1 || !Array.from(bearCodes)[0]) {
+      statusEl.textContent = "⚠️ 동일한 코드의 관측점을 선택해주세요.";
+      return;
+    }
+
+    const optionInput = await openAnalysisOptionsDialog({
+      distanceLimitM: 8000,
+      declinationDeg: -7
+    });
+    if (!optionInput) {
+      statusEl.textContent = "ℹ️ 위치분석이 취소되었습니다.";
+      return;
+    }
+    const distanceLimitM = optionInput.distanceLimitM;
+    const declinationDeg = optionInput.declinationDeg;
+
+    const analysisResult = analysisModule.analyzePosition(selectedItems, {
+      distanceLimitM,
+      declinationDeg,
+      spreadToleranceM: 180
+    });
+
+    if (!analysisResult || !analysisResult.ok) {
+      statusEl.textContent = analysisResult && analysisResult.message
+        ? `⚠️ ${analysisResult.message}`
+        : "⚠️ 위치분석 실패";
+      return;
+    }
+
+    const point = analysisResult.result;
+    statusEl.textContent = `📍 추정 위치 계산 완료 (${point.bearCode}) 교차 ${point.intersectionsCount}건`;
+    flyToLatLng([point.lat, point.lng], 16);
+
+    if (typeof onAnalysisResult === "function") {
+      onAnalysisResult({
+        ...point,
+        sourceObservationIds: selectedItems.map((item) => item.id),
+        sourceObservations: selectedItems.map((item) => ({
+          id: item.id,
+          place: getObservationLabel(item),
+          bearCode: item.bearCode,
+          lat: item.lat,
+          lng: item.lng
+        }))
+      });
+    }
   }
 
   // 상단 탭 버튼의 active 클래스를 갱신한다.
@@ -605,13 +893,7 @@ window.createObsListModule = function createObsListModule({
     });
 
     if (btnAnalysis) btnAnalysis.addEventListener("click", () => {
-      if (selectedObsIds.size !== 2) {
-        statusEl.textContent = "⚠️ 위치분석은 관측점 2개를 선택해야 합니다.";
-        return;
-      }
-      // TODO: 위치분석 기능 미구현
-      // const ids = [...selectedObsIds];
-      // statusEl.textContent = `📐 위치분석: [${ids.join(", ")}] 분석 준비 중`;
+      void runPositionAnalysis();
     });
 
     // 선택된 관측점 삭제 버튼 핸들러
@@ -629,7 +911,9 @@ window.createObsListModule = function createObsListModule({
 
       // Step 2: SQLite 데이터베이스에서 삭제
       // 네이티브 환경(모바일 앱)에서만 SQLite 삭제 수행
-      const selectedIds = Array.from(selectedObsIds);
+      const selectedItems = getSelectedObservations();
+      const selectedIds = selectedItems.map((item) => item.id);
+      const selectedKeys = new Set(selectedItems.map((item) => item._obsKey));
       let sqliteDeletedCount = 0;
 
       if (isNativePlatform()) {
@@ -666,7 +950,7 @@ window.createObsListModule = function createObsListModule({
       // UI 상태를 최신으로 유지하기 위해 observationSamples 배열에서도 제거
       const initialLength = observationSamples.length;
       for (let i = observationSamples.length - 1; i >= 0; i -= 1) {
-        if (selectedIds.includes(observationSamples[i].id)) {
+        if (selectedKeys.has(observationSamples[i]._obsKey)) {
           observationSamples.splice(i, 1);
         }
       }
@@ -721,9 +1005,9 @@ window.createObsListModule = function createObsListModule({
     if (chkAllEl) chkAllEl.addEventListener("change", () => {
       const filtered = getFilteredItems();
       if (chkAllEl.checked) {
-        filtered.forEach((it) => selectedObsIds.add(it.id));
+        filtered.forEach((it) => selectedObsIds.add(it._obsKey));
       } else {
-        filtered.forEach((it) => selectedObsIds.delete(it.id));
+        filtered.forEach((it) => selectedObsIds.delete(it._obsKey));
       }
       applySearch();
       updateSelectionUI();

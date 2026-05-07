@@ -70,6 +70,9 @@
   const HILLSHADE_BASE_OPACITY = 0.32;
   const PARAM_MAX_ZOOM_LIMIT = 30;
   const VIEW_MAX_ZOOM = getNumericParam("olMaxZoom", 18, 3, PARAM_MAX_ZOOM_LIMIT);
+  const ONLINE_MAX_ZOOM = VIEW_MAX_ZOOM;
+  const BEAR_LABEL_OFFSET_Y = 12;
+  const ESTIMATE_LABEL_OFFSET_Y = 18;
   const TOPO_MAX_ZOOM = getNumericParam("olTopoMaxZoom", 18, 3, PARAM_MAX_ZOOM_LIMIT);
   const HILLSHADE_MAX_ZOOM = getNumericParam("olHillshadeMaxZoom", 18, 3, PARAM_MAX_ZOOM_LIMIT);
   const HILLSHADE_SAFE_MAX_ZOOM = getNumericParam("olHillshadeSafeMaxZoom", 16, 3, PARAM_MAX_ZOOM_LIMIT);
@@ -136,6 +139,13 @@
   const mbtilesResolutions = buildNgiiResolutions(MBTILES_MIN_ZOOM, MBTILES_MAX_ZOOM);
   if (!mbtilesResolutions) {
     if (statusEl) statusEl.textContent = "MBTiles 해상도 범위 오류";
+    return;
+  }
+  const NGII_GRID_MAX_ZOOM = NGII_RESOLUTION_BASE_ZOOM + GRID_RESOLUTIONS.length - 1;
+  const NGII_ONLINE_MAX_ZOOM = Math.min(ONLINE_MAX_ZOOM, NGII_GRID_MAX_ZOOM);
+  const ngiiOnlineResolutions = buildNgiiResolutions(MBTILES_MIN_ZOOM, NGII_ONLINE_MAX_ZOOM);
+  if (!ngiiOnlineResolutions) {
+    if (statusEl) statusEl.textContent = "NGII 해상도 범위 오류";
     return;
   }
 
@@ -410,6 +420,13 @@
     minZoom: 0
   });
 
+  const ngiiOnlineTileGrid = new ol.tilegrid.TileGrid({
+    origin: GRID_ORIGIN,
+    resolutions: ngiiOnlineResolutions,
+    tileSize: TILE_SIZE,
+    minZoom: 0
+  });
+
   const mbtilesSource = new ol.source.XYZ({
     projection: MAP_PROJECTION_CODE,
     tileGrid: mbtilesTileGrid,
@@ -462,9 +479,9 @@
   const osmBase = new ol.layer.Tile({
     source: new ol.source.XYZ({
       projection: MAP_PROJECTION_CODE,
-      tileGrid: mbtilesTileGrid,
+      tileGrid: ngiiOnlineTileGrid,
       minZoom: 0,
-      maxZoom: MBTILES_MAX_ZOOM,
+      maxZoom: NGII_ONLINE_MAX_ZOOM,
       wrapX: false,
       transition: 0,
       tilePixelRatio: 1,
@@ -478,9 +495,9 @@
   const englishBase = new ol.layer.Tile({
     source: new ol.source.XYZ({
       projection: MAP_PROJECTION_CODE,
-      tileGrid: mbtilesTileGrid,
+      tileGrid: ngiiOnlineTileGrid,
       minZoom: 0,
-      maxZoom: MBTILES_MAX_ZOOM,
+      maxZoom: NGII_ONLINE_MAX_ZOOM,
       wrapX: false,
       transition: 0,
       tilePixelRatio: 1,
@@ -494,9 +511,9 @@
   const largeBase = new ol.layer.Tile({
     source: new ol.source.XYZ({
       projection: MAP_PROJECTION_CODE,
-      tileGrid: mbtilesTileGrid,
+      tileGrid: ngiiOnlineTileGrid,
       minZoom: 0,
-      maxZoom: MBTILES_MAX_ZOOM,
+      maxZoom: NGII_ONLINE_MAX_ZOOM,
       wrapX: false,
       transition: 0,
       tilePixelRatio: 1,
@@ -510,9 +527,9 @@
   const nightBase = new ol.layer.Tile({
     source: new ol.source.XYZ({
       projection: MAP_PROJECTION_CODE,
-      tileGrid: mbtilesTileGrid,
+      tileGrid: ngiiOnlineTileGrid,
       minZoom: 0,
-      maxZoom: MBTILES_MAX_ZOOM,
+      maxZoom: NGII_ONLINE_MAX_ZOOM,
       wrapX: false,
       transition: 0,
       tilePixelRatio: 1,
@@ -609,6 +626,59 @@
   const bearMarkerSource = new ol.source.Vector();
   const bearMarkerLayer = new ol.layer.Vector({ source: bearMarkerSource });
 
+  const analysisGuideSource = new ol.source.Vector();
+  let analysisDashOffset = 0;
+  let analysisPulseStrength = 0;
+  let analysisAnimationStartTs = 0;
+  let analysisAnimationFrameId = null;
+  let analysisAnimationRunning = false;
+  let analysisActionBarEl = null;
+  let analysisActionOverlay = null;
+
+  const analysisGuideLayer = new ol.layer.Vector({
+    source: analysisGuideSource,
+    style: function (feature) {
+      const kind = feature ? feature.get("kind") : "";
+      if (kind === "ray") {
+        return new ol.style.Style({
+          stroke: new ol.style.Stroke({
+            color: "rgba(220,38,38,0.92)",
+            width: 3,
+            lineDash: [14, 10],
+            lineDashOffset: analysisDashOffset,
+            lineCap: "round"
+          })
+        });
+      }
+
+      if (kind === "pulse") {
+        const pulseRadius = 16 + analysisPulseStrength * 8;
+        const pulseOpacity = 0.5 - analysisPulseStrength * 0.28;
+        return [
+          new ol.style.Style({
+            image: new ol.style.Circle({
+              radius: pulseRadius,
+              fill: new ol.style.Fill({ color: `rgba(239,68,68,${Math.max(0.08, pulseOpacity).toFixed(3)})` }),
+              stroke: new ol.style.Stroke({ color: "rgba(220,38,38,0.95)", width: 2 })
+            })
+          }),
+          new ol.style.Style({
+            image: new ol.style.Circle({
+              radius: 6,
+              fill: new ol.style.Fill({ color: "rgba(255,255,255,0.96)" }),
+              stroke: new ol.style.Stroke({ color: "rgba(220,38,38,1)", width: 2 })
+            })
+          })
+        ];
+      }
+
+      return null;
+    }
+  });
+
+  const analysisEstimateSource = new ol.source.Vector();
+  const analysisEstimateLayer = new ol.layer.Vector({ source: analysisEstimateSource });
+
   const observationMarkerSource = new ol.source.Vector();
 
   const baseCenterMap = mapCoordFromWgs84(35.315, 127.655);
@@ -616,7 +686,7 @@
   const extentMap = [944865,1669988,1077349,1732849];
   const viewResolutions = build5179ViewResolutions(
     MBTILES_MIN_ZOOM,
-    MBTILES_MAX_ZOOM,
+    ONLINE_MAX_ZOOM,
     mbtilesResolutions[0]
   );
 
@@ -624,7 +694,7 @@
     projection: MAP_PROJECTION_CODE,
     center: baseCenterMap,
     minZoom: MBTILES_MIN_ZOOM,
-    maxZoom: MBTILES_MAX_ZOOM,
+    maxZoom: ONLINE_MAX_ZOOM,
     resolutions: viewResolutions,
     //extent: LOCK_EMPTY_AREA_PAN ? PAN_LIMIT_EXTENT : undefined // 이 한 줄을 주석 처리하면 빈공간 이동 제한 해제
   });
@@ -632,7 +702,7 @@
   //맵 기능
   const map = new ol.Map({
     target: "map",
-    layers: [osmBase, englishBase, largeBase, nightBase, topoBase, mbtilesLayer, hillshadeOverlay, bearMarkerLayer, myLocationLayer],
+    layers: [osmBase, englishBase, largeBase, nightBase, topoBase, mbtilesLayer, hillshadeOverlay, bearMarkerLayer, analysisGuideLayer, analysisEstimateLayer, myLocationLayer],
     view: view,
     interactions: ol.interaction.defaults.defaults({
       pinchRotate: false // 이 한 줄을 주석 처리하면 손가락 회전(핀치 회전) 활성
@@ -646,6 +716,8 @@
 
   window.__olMap = map;
   window.__olView = view;
+
+  applyViewZoomBounds(currentBaseLayerType);
 
   if (isNativeCapacitorPlatform()) {
     ensureNativeMbtilesDatabase();
@@ -688,6 +760,20 @@
       center: view.getCenter(),
       zoom: view.getZoom()
     };
+  }
+
+  function getActiveMaxZoomForBaseLayer(baseLayerType) {
+    return baseLayerType === "mbtiles" ? MBTILES_MAX_ZOOM : ONLINE_MAX_ZOOM;
+  }
+
+  function applyViewZoomBounds(baseLayerType) {
+    const maxZoom = getActiveMaxZoomForBaseLayer(baseLayerType);
+    view.setMinZoom(MBTILES_MIN_ZOOM);
+    view.setMaxZoom(maxZoom);
+    const currentZoom = view.getZoom();
+    if (typeof currentZoom === "number" && currentZoom > maxZoom) {
+      view.setZoom(maxZoom);
+    }
   }
 
   function restoreViewState(state) {
@@ -748,6 +834,8 @@
     }
 
     if (nextType === currentBaseLayerType) return;
+
+    applyViewZoomBounds(nextType);
 
     if (nextType === "mbtiles") {
       lastOnlineViewState = captureCurrentViewState();
@@ -1263,6 +1351,7 @@
         }));
       }
 
+      
       styles.push(new ol.style.Style({
           image: new ol.style.Icon({
             src: observationHeadingIconSrc,
@@ -1276,7 +1365,7 @@
           }),
           text: new ol.style.Text({
             text: labelText,
-            offsetY: -18,
+            offsetY: -22,
             padding: [4, 8, 4, 8],
             font: "700 11px sans-serif",
             fill: new ol.style.Fill({ color: "rgba(255,255,255,0.95)" }),
@@ -1686,7 +1775,7 @@
 
     const btnZoomIn = makeBtn("ol-zoom-in-btn", "확대", "+", function () {
       const current = view.getZoom() || 0;
-      const next = Math.min(MBTILES_MAX_ZOOM, current + 1);
+      const next = Math.min(getActiveMaxZoomForBaseLayer(currentBaseLayerType), current + 1);
       view.animate({ zoom: next, duration: 180 });
     });
     btnZoomIn.style.fontSize = "19px";
@@ -2021,7 +2110,7 @@
     });
   }
 
-  // 추정 좌표를 지도 마커 레이어로 렌더링한다.
+  // 곰 추정 좌표를 지도 마커 레이어로 렌더링한다.
   function renderBearMarkers(items) {
     bearMarkerSource.clear();
     if (!items || !items.length) return;
@@ -2040,7 +2129,7 @@
         }),
         text: new ol.style.Text({
           text: String(it.bearCode || it.id || "-"),
-          offsetY: 22,
+          offsetY: BEAR_LABEL_OFFSET_Y,
           font: "600 11px sans-serif",
           fill: new ol.style.Fill({ color: "#ffffff" }),
           backgroundFill: new ol.style.Fill({ color: "rgba(43,124,255,0.95)" }),
@@ -2051,6 +2140,182 @@
       bearMarkerSource.addFeature(feature);
     });
   }
+
+  function hideAnalysisActionBar() {
+    if (!analysisActionBarEl || !analysisActionOverlay) return;
+    analysisActionBarEl.style.display = "none";
+    analysisActionOverlay.setPosition(undefined);
+  }
+
+  function showAnalysisActionBar(anchorCoord) {
+    if (!analysisActionBarEl || !analysisActionOverlay || !Array.isArray(anchorCoord)) return;
+    analysisActionBarEl.style.display = "flex";
+    analysisActionOverlay.setPosition(anchorCoord);
+  }
+
+  function stopAnalysisVisualAnimation() {
+    analysisAnimationRunning = false;
+    if (analysisAnimationFrameId !== null) {
+      window.cancelAnimationFrame(analysisAnimationFrameId);
+      analysisAnimationFrameId = null;
+    }
+  }
+
+  function clearAnalysisEstimateVisuals() {
+    stopAnalysisVisualAnimation();
+    analysisDashOffset = 0;
+    analysisPulseStrength = 0;
+    analysisAnimationStartTs = 0;
+    analysisGuideSource.clear();
+    analysisEstimateSource.clear();
+    analysisGuideLayer.changed();
+    hideAnalysisActionBar();
+  }
+
+  function mountAnalysisActionBar() {
+    if (analysisActionBarEl) return;
+
+    const root = document.createElement("div");
+    root.style.display = "none";
+    root.style.alignItems = "center";
+    root.style.gap = "8px";
+    root.style.zIndex = "1600";
+    root.style.pointerEvents = "auto";
+
+    const saveBtn = document.createElement("button");
+    saveBtn.type = "button";
+    saveBtn.textContent = "저장";
+    saveBtn.style.height = "38px";
+    saveBtn.style.minWidth = "78px";
+    saveBtn.style.padding = "0 14px";
+    saveBtn.style.border = "1px solid rgba(255,255,255,0.62)";
+    saveBtn.style.borderRadius = "0";
+    saveBtn.style.background = "#0b72c7";
+    saveBtn.style.color = "#ffffff";
+    saveBtn.style.fontSize = "16px";
+    saveBtn.style.fontWeight = "700";
+    saveBtn.style.cursor = "pointer";
+    saveBtn.style.boxShadow = "0 8px 20px rgba(11,114,199,0.35)";
+
+    const cancelBtn = document.createElement("button");
+    cancelBtn.type = "button";
+    cancelBtn.textContent = "취소";
+    cancelBtn.style.height = "38px";
+    cancelBtn.style.minWidth = "78px";
+    cancelBtn.style.padding = "0 14px";
+    cancelBtn.style.border = "1px solid rgba(255,255,255,0.62)";
+    cancelBtn.style.borderRadius = "0";
+    cancelBtn.style.background = "#8a3b00";
+    cancelBtn.style.color = "#ffffff";
+    cancelBtn.style.fontSize = "16px";
+    cancelBtn.style.fontWeight = "700";
+    cancelBtn.style.cursor = "pointer";
+    cancelBtn.style.boxShadow = "0 8px 20px rgba(138,59,0,0.34)";
+
+    saveBtn.addEventListener("click", function () {
+      if (statusEl) statusEl.textContent = "ℹ️ 저장 기능은 준비 중입니다.";
+    });
+
+    cancelBtn.addEventListener("click", function () {
+      clearAnalysisEstimateVisuals();
+      if (statusEl) statusEl.textContent = "ℹ️ 위치분석 표시를 취소했습니다.";
+    });
+
+    root.addEventListener("pointerdown", function (e) { e.stopPropagation(); });
+    root.addEventListener("touchstart", function (e) { e.stopPropagation(); }, { passive: true });
+
+    root.appendChild(saveBtn);
+    root.appendChild(cancelBtn);
+
+    //분석 시 저장, 취소 버튼 위치 지정
+    analysisActionOverlay = new ol.Overlay({
+      element: root,
+      positioning: "top-center",
+      offset: [0, 35],
+      stopEvent: true,
+      autoPan: {
+        animation: { duration: 180 },
+        margin: 24
+      }
+    });
+    map.addOverlay(analysisActionOverlay);
+
+    analysisActionBarEl = root;
+  }
+
+  function renderAnalysisEstimatePoint(point) {
+    clearAnalysisEstimateVisuals();
+    if (!point || !Number.isFinite(point.lat) || !Number.isFinite(point.lng)) return;
+
+    const estimateCoord = mapCoordFromWgs84(point.lat, point.lng);
+
+    // 관측점 -> 추정점 점선 가이드
+    if (Array.isArray(point.sourceObservations)) {
+      point.sourceObservations.forEach(function (obs) {
+        if (!obs || !Number.isFinite(obs.lat) || !Number.isFinite(obs.lng)) return;
+        const obsCoord = mapCoordFromWgs84(obs.lat, obs.lng);
+        const lineFeature = new ol.Feature({
+          geometry: new ol.geom.LineString([obsCoord, estimateCoord])
+        });
+        lineFeature.set("kind", "ray");
+        analysisGuideSource.addFeature(lineFeature);
+      });
+    }
+
+    const pulseFeature = new ol.Feature({
+      geometry: new ol.geom.Point(estimateCoord)
+    });
+    pulseFeature.set("kind", "pulse");
+    analysisGuideSource.addFeature(pulseFeature);
+
+    const feature = new ol.Feature({
+      geometry: new ol.geom.Point(estimateCoord)
+    });
+
+    feature.setStyle(new ol.style.Style({
+      image: new ol.style.Icon({
+        src: "assets/icons/icon_bear.png",
+        anchor: [0.5, 1],
+        width: 40,
+        height: 40
+      }),
+      text: new ol.style.Text({
+        text: String(point.bearCode || "추정"),
+        offsetY: ESTIMATE_LABEL_OFFSET_Y,
+        font: "700 12px sans-serif",
+        fill: new ol.style.Fill({ color: "#ffffff" }),
+        backgroundFill: new ol.style.Fill({ color: "rgba(16,185,129,0.96)" }),
+        padding: [3, 6, 3, 6]
+      })
+    }));
+
+    analysisEstimateSource.addFeature(feature);
+    showAnalysisActionBar(estimateCoord);
+    startAnalysisVisualAnimation();
+  }
+
+  function animateAnalysisVisuals(timestamp) {
+    if (!analysisAnimationRunning) return;
+    if (!analysisAnimationStartTs) analysisAnimationStartTs = timestamp;
+
+    const elapsedSec = (timestamp - analysisAnimationStartTs) / 1000;
+    analysisDashOffset = -elapsedSec * 28;
+    analysisPulseStrength = (Math.sin(elapsedSec * Math.PI * 1.35) + 1) / 2;
+
+    analysisGuideLayer.changed();
+    analysisAnimationFrameId = window.requestAnimationFrame(animateAnalysisVisuals);
+  }
+
+  function startAnalysisVisualAnimation() {
+    if (analysisAnimationRunning) return;
+    analysisAnimationRunning = true;
+    analysisAnimationStartTs = 0;
+    analysisAnimationFrameId = window.requestAnimationFrame(animateAnalysisVisuals);
+  }
+
+  window.addEventListener("beforeunload", function () {
+    stopAnalysisVisualAnimation();
+  });
 
   function renderBears(items) {
     if (!bearsListEl) return;
@@ -2104,6 +2369,7 @@
 
   mountLayerSwitcher();
   mountRightBottomControls();
+  mountAnalysisActionBar();
 
   if (btnPanelToggle && panelEl) {
     btnPanelToggle.addEventListener("click", function (e) {
@@ -2140,6 +2406,9 @@
     },
     onCloseRegister: function () {
       if (obsRegisterModule) obsRegisterModule.hide(true);
+    },
+    onAnalysisResult: function (analysisPoint) {
+      renderAnalysisEstimatePoint(analysisPoint);
     }
   }) : null;
 
