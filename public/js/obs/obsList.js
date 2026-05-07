@@ -10,7 +10,8 @@ window.createObsListModule = function createObsListModule({
   onOpenRegister,
   onCloseRegister,
   onEditObservation,
-  onAnalysisResult
+  onAnalysisResult,
+  onAnalysisPreview
 }) {
   const btnBear = document.getElementById("btn-obs-list");
   const btnObsAdd = document.getElementById("btn-obs-add");
@@ -37,6 +38,7 @@ window.createObsListModule = function createObsListModule({
   let isPeekMode = false;
   let observationKeySeed = 0;
   let analysisOptionsDialogState = null;
+  let analysisCloseSilently = false;
 
   function getObservationLabel(item) {
     if (!item) return "";
@@ -397,6 +399,20 @@ window.createObsListModule = function createObsListModule({
     flyToLatLng([item.lat, item.lng], 17);
   }
 
+  // 목록에서 선택한 관측점에 해당하는 마커 팝업을 연다.
+  function showObservationPopupByItem(item) {
+    if (!item) return;
+    const marker = observationMarkers.find((m) =>
+      m && m.obsData && m.obsData._obsKey === item._obsKey
+    );
+    if (!marker || typeof marker.openPopup !== "function") return;
+
+    if (map && typeof map.closePopup === "function") {
+      map.closePopup();
+    }
+    marker.openPopup();
+  }
+
   // 지도 줌 변경 시 기존 마커 아이콘 스케일을 재계산해 갱신한다.
   function updateObservationMarkerScale() {
     const zoom = map.getZoom();
@@ -457,6 +473,7 @@ window.createObsListModule = function createObsListModule({
 
       row.addEventListener("click", () => {
         moveToObservation(item);
+        showObservationPopupByItem(item);
       });
 
       obsListBodyEl.appendChild(row);
@@ -482,13 +499,16 @@ window.createObsListModule = function createObsListModule({
   function updateSelectionUI() {
     const count = selectedObsIds.size;
 
+    // 배지를 obs-header-actions 안에 배치한다.
+    const headerActions = document.querySelector(".obs-header-actions");
     let badge = document.querySelector(".sel-count-badge");
-    const header = document.querySelector(".obs-sheet-header h2");
-    if (!badge && header) {
+    
+    if (!badge && headerActions) {
       badge = document.createElement("span");
       badge.className = "sel-count-badge";
-      header.appendChild(badge);
+      headerActions.insertBefore(badge, headerActions.firstChild);
     }
+    
     if (badge) {
       badge.textContent = count > 0 ? `${count}개 선택` : "";
       badge.style.opacity = count > 0 ? "1" : "0";
@@ -540,107 +560,219 @@ window.createObsListModule = function createObsListModule({
   function ensureAnalysisOptionsDialog() {
     if (analysisOptionsDialogState) return analysisOptionsDialogState;
 
+    // 반응형 스타일 주입: 작은 화면에서 텍스트 짤림 방지
+    const styleId = "analysis-dialog-responsive-styles";
+    if (!document.getElementById(styleId)) {
+      const style = document.createElement("style");
+      style.id = styleId;
+      style.textContent = `
+        /* 기본: 모든 텍스트 요소에 생략 기호 처리 추가 */
+        #analysis-dialog-title,
+        #analysis-dialog-desc,
+        #analysis-dialog-error,
+        .analysis-input-label,
+        .analysis-btn-action {
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+
+        @media (max-width: 640px) {
+          #analysis-dialog-overlay {
+            width: calc(100vw - 16px) !important;
+            left: 8px !important;
+            transform: none !important;
+          }
+        }
+        @media (max-width: 480px) {
+          #analysis-dialog-overlay {
+            width: calc(100vw - 12px) !important;
+            left: 6px !important;
+          }
+          #analysis-dialog-panel {
+            padding: 8px !important;
+          }
+          #analysis-dialog-title {
+            font-size: 13px !important;
+          }
+          #analysis-dialog-desc {
+            font-size: 11px !important;
+            margin-bottom: 2px !important;
+          }
+          #analysis-dialog-body {
+            grid-template-columns: 1fr !important;
+            gap: 6px !important;
+          }
+          .analysis-input-label {
+            font-size: 11px !important;
+            gap: 4px !important;
+          }
+          .analysis-input {
+            height: 32px !important;
+            padding: 0 8px !important;
+            font-size: 13px !important;
+          }
+          #analysis-dialog-actions {
+            gap: 6px !important;
+            margin-top: 2px !important;
+          }
+          .analysis-btn-action {
+            height: 32px !important;
+            min-width: 60px !important;
+            padding: 0 10px !important;
+            font-size: 12px !important;
+          }
+          #analysis-dialog-error {
+            font-size: 11px !important;
+            min-height: 14px !important;
+          }
+        }
+      `;
+      document.head.appendChild(style);
+    }
+
+    // 지도는 계속 보이게 두고, 상단 입력 탭만 고정으로 띄운다.
     const overlay = document.createElement("div");
+    overlay.id = "analysis-dialog-overlay";
     overlay.style.position = "fixed";
-    overlay.style.inset = "0";
-    overlay.style.background = "rgba(15,23,42,0.46)";
+    overlay.style.top = "calc(8px + var(--safe-top))";
+    overlay.style.left = "50%";
+    overlay.style.transform = "translateX(-50%)";
+    overlay.style.width = "min(640px, calc(100vw - 20px))";
     overlay.style.zIndex = "22000";
     overlay.style.display = "none";
-    overlay.style.alignItems = "center";
-    overlay.style.justifyContent = "center";
-    overlay.style.padding = "16px";
+    overlay.style.pointerEvents = "none";
 
+    // 탭 본체: 다크 반투명 배경으로 지도 위에서도 대비를 유지한다.
     const panel = document.createElement("div");
-    panel.style.width = "min(420px, 100%)";
-    panel.style.background = "#ffffff";
-    panel.style.border = "1px solid rgba(15,23,42,0.12)";
-    panel.style.borderRadius = "14px";
-    panel.style.boxShadow = "0 20px 48px rgba(15,23,42,0.28)";
-    panel.style.padding = "16px";
+    panel.id = "analysis-dialog-panel";
+    panel.style.width = "100%";
+    panel.style.pointerEvents = "auto";
+    panel.style.background = "rgba(15,23,42,0.9)";
+    panel.style.backdropFilter = "blur(4px)";
+    panel.style.border = "1px solid rgba(255,255,255,0.18)";
+    panel.style.borderRadius = "12px";
+    panel.style.boxShadow = "0 12px 28px rgba(15,23,42,0.3)";
+    panel.style.padding = "10px";
     panel.style.display = "flex";
     panel.style.flexDirection = "column";
-    panel.style.gap = "10px";
+    panel.style.gap = "8px";
+
+    // 헤더는 제목만 표시한다(접기 기능 제거).
+    const header = document.createElement("div");
+    header.style.display = "flex";
+    header.style.alignItems = "center";
+    header.style.justifyContent = "flex-start";
 
     const title = document.createElement("div");
-    title.textContent = "위치분석 옵션";
-    title.style.fontSize = "17px";
+    title.id = "analysis-dialog-title";
+    title.textContent = "위치분석 탭";
+    title.style.fontSize = "14px";
     title.style.fontWeight = "800";
-    title.style.color = "#111827";
+    title.style.color = "#ffffff";
+
+    header.appendChild(title);
+
+    // 본문은 2열 입력 + 하단 버튼행으로 구성해 모바일에서도 버튼 줄바꿈을 방지한다.
+    const body = document.createElement("div");
+    body.id = "analysis-dialog-body";
+    body.style.display = "grid";
+    body.style.gridTemplateColumns = "repeat(2, minmax(0, 1fr))";
+    body.style.gap = "8px";
+    body.style.alignItems = "end";
 
     const desc = document.createElement("div");
-    desc.textContent = "거리 제한과 편각을 입력한 뒤 분석을 실행하세요.";
-    desc.style.fontSize = "13px";
-    desc.style.color = "#4b5563";
+    desc.id = "analysis-dialog-desc";
+    desc.textContent = "입력값 변경 시 지도 프리뷰가 즉시 반영됩니다.";
+    desc.style.fontSize = "12px";
+    desc.style.color = "rgba(255,255,255,0.85)";
 
     const distanceWrap = document.createElement("label");
+    distanceWrap.className = "analysis-input-label";
     distanceWrap.style.display = "flex";
     distanceWrap.style.flexDirection = "column";
     distanceWrap.style.gap = "6px";
-    distanceWrap.style.fontSize = "13px";
+    distanceWrap.style.fontSize = "12px";
     distanceWrap.style.fontWeight = "700";
-    distanceWrap.style.color = "#1f2937";
+    distanceWrap.style.color = "rgba(255,255,255,0.94)";
     distanceWrap.textContent = "거리 제한 (m)";
 
     const distanceInput = document.createElement("input");
+    distanceInput.className = "analysis-input";
     distanceInput.type = "number";
     distanceInput.step = "1";
     distanceInput.min = "1";
     distanceInput.inputMode = "decimal";
-    distanceInput.style.height = "38px";
-    distanceInput.style.border = "1px solid #cbd5e1";
-    distanceInput.style.borderRadius = "9px";
-    distanceInput.style.padding = "0 11px";
+    distanceInput.style.height = "34px";
+    distanceInput.style.border = "1px solid rgba(255,255,255,0.3)";
+    distanceInput.style.borderRadius = "8px";
+    distanceInput.style.background = "rgba(255,255,255,0.96)";
+    distanceInput.style.padding = "0 10px";
     distanceInput.style.fontSize = "14px";
+    distanceInput.style.boxSizing = "border-box";
     distanceWrap.appendChild(distanceInput);
 
     const declinationWrap = document.createElement("label");
+    declinationWrap.className = "analysis-input-label";
     declinationWrap.style.display = "flex";
     declinationWrap.style.flexDirection = "column";
     declinationWrap.style.gap = "6px";
-    declinationWrap.style.fontSize = "13px";
+    declinationWrap.style.fontSize = "12px";
     declinationWrap.style.fontWeight = "700";
-    declinationWrap.style.color = "#1f2937";
+    declinationWrap.style.color = "rgba(255,255,255,0.94)";
     declinationWrap.textContent = "편각 (도)";
 
     const declinationInput = document.createElement("input");
+    declinationInput.className = "analysis-input";
     declinationInput.type = "number";
     declinationInput.step = "0.1";
     declinationInput.inputMode = "decimal";
-    declinationInput.style.height = "38px";
-    declinationInput.style.border = "1px solid #cbd5e1";
-    declinationInput.style.borderRadius = "9px";
-    declinationInput.style.padding = "0 11px";
+    declinationInput.style.height = "34px";
+    declinationInput.style.border = "1px solid rgba(255,255,255,0.3)";
+    declinationInput.style.borderRadius = "8px";
+    declinationInput.style.background = "rgba(255,255,255,0.96)";
+    declinationInput.style.padding = "0 10px";
     declinationInput.style.fontSize = "14px";
+    declinationInput.style.boxSizing = "border-box";
     declinationWrap.appendChild(declinationInput);
 
     const errorEl = document.createElement("div");
-    errorEl.style.minHeight = "18px";
+    errorEl.id = "analysis-dialog-error";
+    errorEl.style.minHeight = "16px";
     errorEl.style.fontSize = "12px";
     errorEl.style.fontWeight = "700";
-    errorEl.style.color = "#dc2626";
+    errorEl.style.color = "#fecaca";
 
     const actions = document.createElement("div");
+    actions.id = "analysis-dialog-actions";
     actions.style.display = "flex";
     actions.style.justifyContent = "flex-end";
     actions.style.gap = "8px";
-    actions.style.marginTop = "2px";
+    actions.style.alignItems = "center";
+    actions.style.gridColumn = "1 / -1";
+    actions.style.flexWrap = "nowrap";
 
     const cancelBtn = document.createElement("button");
+    cancelBtn.className = "analysis-btn-action";
     cancelBtn.type = "button";
     cancelBtn.textContent = "취소";
-    cancelBtn.style.height = "36px";
+    cancelBtn.style.height = "34px";
+    cancelBtn.style.minWidth = "74px";
     cancelBtn.style.padding = "0 14px";
-    cancelBtn.style.border = "1px solid #94a3b8";
+    cancelBtn.style.border = "1px solid rgba(255,255,255,0.38)";
     cancelBtn.style.borderRadius = "8px";
-    cancelBtn.style.background = "#ffffff";
-    cancelBtn.style.color = "#334155";
+    cancelBtn.style.background = "rgba(255,255,255,0.16)";
+    cancelBtn.style.color = "#ffffff";
     cancelBtn.style.fontWeight = "700";
     cancelBtn.style.cursor = "pointer";
+    cancelBtn.style.boxSizing = "border-box";
 
     const applyBtn = document.createElement("button");
+    applyBtn.className = "analysis-btn-action";
     applyBtn.type = "button";
     applyBtn.textContent = "분석";
-    applyBtn.style.height = "36px";
+    applyBtn.style.height = "34px";
+    applyBtn.style.minWidth = "74px";
     applyBtn.style.padding = "0 14px";
     applyBtn.style.border = "0";
     applyBtn.style.borderRadius = "8px";
@@ -648,16 +780,20 @@ window.createObsListModule = function createObsListModule({
     applyBtn.style.color = "#ffffff";
     applyBtn.style.fontWeight = "700";
     applyBtn.style.cursor = "pointer";
+    applyBtn.style.boxSizing = "border-box";
 
-    actions.appendChild(cancelBtn);
+    // 요청에 맞춰 버튼 순서를 분석 -> 취소로 배치한다.
     actions.appendChild(applyBtn);
+    actions.appendChild(cancelBtn);
 
-    panel.appendChild(title);
+    body.appendChild(distanceWrap);
+    body.appendChild(declinationWrap);
+    body.appendChild(actions);
+
+    panel.appendChild(header);
     panel.appendChild(desc);
-    panel.appendChild(distanceWrap);
-    panel.appendChild(declinationWrap);
+    panel.appendChild(body);
     panel.appendChild(errorEl);
-    panel.appendChild(actions);
 
     overlay.appendChild(panel);
     document.body.appendChild(overlay);
@@ -665,6 +801,8 @@ window.createObsListModule = function createObsListModule({
     analysisOptionsDialogState = {
       overlay,
       panel,
+      body,
+      desc,
       distanceInput,
       declinationInput,
       errorEl,
@@ -676,51 +814,167 @@ window.createObsListModule = function createObsListModule({
     return analysisOptionsDialogState;
   }
 
-  function openAnalysisOptionsDialog(defaultValues) {
+  function emitAnalysisPreview(payload) {
+    if (typeof onAnalysisPreview === "function") {
+      onAnalysisPreview(payload || null);
+    }
+  }
+
+  function setObservationListDisabled(disabled) {
+    if (!obsSheetEl) return;
+    if (disabled) {
+      obsSheetEl.style.pointerEvents = "none";
+      obsSheetEl.style.opacity = "0.85";
+      return;
+    }
+    obsSheetEl.style.pointerEvents = "";
+    obsSheetEl.style.opacity = "";
+  }
+
+  function closeAnalysisOptionsDialog(value, opts) {
+    const options = opts || {};
+    const dialog = analysisOptionsDialogState;
+    if (!dialog || !dialog.resolve) return;
+
+    const resolver = dialog.resolve;
+    dialog.resolve = null;
+    dialog.overlay.style.display = "none";
+    setObservationListDisabled(false);
+    emitAnalysisPreview(null);
+
+    if (options.silent) {
+      analysisCloseSilently = true;
+    }
+
+    resolver(value);
+  }
+
+  function escapeAnalysisOptionsDialog() {
+    closeAnalysisOptionsDialog(null, { silent: true });
+  }
+
+  function openAnalysisOptionsDialog(defaultValues, selectedItems) {
     const dialog = ensureAnalysisOptionsDialog();
     const defaults = defaultValues || {};
-    dialog.distanceInput.value = String(defaults.distanceLimitM ?? 8000);
-    dialog.declinationInput.value = String(defaults.declinationDeg ?? -7);
+    const previewItems = Array.isArray(selectedItems) ? selectedItems : [];
+
+    function parseDistanceValue(rawValue) {
+      const raw = String(rawValue == null ? "" : rawValue).trim();
+      if (!raw) {
+        return { ok: false, code: "EMPTY", message: "거리 제한(m)을 입력하세요." };
+      }
+      if (!/^\d+(?:\.\d+)?$/.test(raw)) {
+        return { ok: false, code: "INVALID_FORMAT", message: "거리 제한(m)은 숫자만 입력하세요." };
+      }
+
+      const parsed = Number(raw);
+      if (!Number.isFinite(parsed) || parsed <= 0) {
+        return { ok: false, code: "OUT_OF_RANGE", message: "거리 제한(m)은 0보다 큰 숫자여야 합니다." };
+      }
+
+      return { ok: true, value: parsed };
+    }
+
+    function parseDeclinationValue(rawValue) {
+      const raw = String(rawValue == null ? "" : rawValue).trim();
+      if (!raw) {
+        return { ok: false, code: "EMPTY", message: "편각을 입력하세요." };
+      }
+
+      const minusCount = (raw.match(/-/g) || []).length;
+      if (minusCount > 1 || (minusCount === 1 && raw.charAt(0) !== "-")) {
+        return { ok: false, code: "MINUS_TYPO", message: "편각의 '-' 기호 위치가 올바르지 않습니다." };
+      }
+
+      if (/[a-zA-Z가-힣]/.test(raw)) {
+        return { ok: false, code: "TEXT_INPUT", message: "편각은 숫자만 입력하세요." };
+      }
+
+      if (!/^-?\d+(?:\.\d+)?$/.test(raw)) {
+        return { ok: false, code: "INVALID_FORMAT", message: "편각 형식이 올바르지 않습니다." };
+      }
+
+      const parsed = Number(raw);
+      if (!Number.isFinite(parsed)) {
+        return { ok: false, code: "NAN", message: "편각은 유효한 숫자여야 합니다." };
+      }
+
+      return { ok: true, value: parsed };
+    }
+
+    function buildPreviewPayload() {
+      // 프리뷰는 거리만 유효해도 반경을 유지하고, 편각이 유효할 때만 방향선을 표시한다.
+      const distanceValidation = parseDistanceValue(dialog.distanceInput.value);
+      const declinationValidation = parseDeclinationValue(dialog.declinationInput.value);
+      if (!distanceValidation.ok) return null;
+
+      const distanceLimitM = distanceValidation.value;
+      const declinationDeg = declinationValidation.ok ? declinationValidation.value : null;
+
+      return {
+        distanceLimitM,
+        declinationDeg,
+        sourceObservations: previewItems.map((item) => ({
+          id: item.id,
+          place: getObservationLabel(item),
+          bearCode: item.bearCode,
+          lat: item.lat,
+          lng: item.lng,
+          heading: item.heading
+        }))
+      };
+    }
+
+    dialog.distanceInput.value = String(defaults.distanceLimitM ?? 3000);
+    dialog.declinationInput.value = String(defaults.declinationDeg ?? 0);
     dialog.errorEl.textContent = "";
     dialog.overlay.style.display = "flex";
+    setObservationListDisabled(true);
+    emitAnalysisPreview(buildPreviewPayload());
 
     return new Promise((resolve) => {
       dialog.resolve = resolve;
 
       function closeWith(value) {
-        if (!dialog.resolve) return;
-        const resolver = dialog.resolve;
-        dialog.resolve = null;
-        dialog.overlay.style.display = "none";
-        resolver(value);
+        closeAnalysisOptionsDialog(value);
       }
+
+      dialog.distanceInput.oninput = function () {
+        emitAnalysisPreview(buildPreviewPayload());
+      };
+
+      dialog.declinationInput.oninput = function () {
+        emitAnalysisPreview(buildPreviewPayload());
+      };
 
       dialog.cancelBtn.onclick = function () {
         closeWith(null);
       };
 
       dialog.applyBtn.onclick = function () {
-        const distanceLimitM = Number(String(dialog.distanceInput.value || "").trim());
-        const declinationDeg = Number(String(dialog.declinationInput.value || "").trim());
-
-        if (!Number.isFinite(distanceLimitM) || distanceLimitM <= 0) {
-          dialog.errorEl.textContent = "거리 제한(m)은 0보다 큰 숫자여야 합니다.";
+        const distanceValidation = parseDistanceValue(dialog.distanceInput.value);
+        if (!distanceValidation.ok) {
+          dialog.errorEl.textContent = distanceValidation.message;
           dialog.distanceInput.focus();
           return;
         }
 
-        if (!Number.isFinite(declinationDeg)) {
-          dialog.errorEl.textContent = "편각은 숫자여야 합니다.";
+        const declinationValidation = parseDeclinationValue(dialog.declinationInput.value);
+        if (!declinationValidation.ok) {
+          dialog.errorEl.textContent = declinationValidation.message;
           dialog.declinationInput.focus();
           return;
         }
+
+        const distanceLimitM = distanceValidation.value;
+        const declinationDeg = declinationValidation.value;
 
         closeWith({ distanceLimitM, declinationDeg });
       };
 
       dialog.overlay.onclick = function (event) {
         if (event.target === dialog.overlay) {
-          closeWith(null);
+          event.preventDefault();
         }
       };
 
@@ -768,10 +1022,14 @@ window.createObsListModule = function createObsListModule({
     }
 
     const optionInput = await openAnalysisOptionsDialog({
-      distanceLimitM: 8000,
-      declinationDeg: -7
-    });
+      distanceLimitM: 3000,
+      declinationDeg: 0
+    }, selectedItems);
     if (!optionInput) {
+      if (analysisCloseSilently) {
+        analysisCloseSilently = false;
+        return;
+      }
       statusEl.textContent = "ℹ️ 위치분석이 취소되었습니다.";
       return;
     }
@@ -877,6 +1135,9 @@ window.createObsListModule = function createObsListModule({
     });
 
     if (btnObsAdd) btnObsAdd.addEventListener("click", () => {
+      // 위치분석 탭이 떠 있을 때 등록으로 전환하면 즉시 종료(escape 초기화)한다.
+      escapeAnalysisOptionsDialog();
+
       const willClose = currentTab === "add";
 
       if (willClose) {

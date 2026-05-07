@@ -485,8 +485,7 @@
       wrapX: false,
       transition: 0,
       tilePixelRatio: 1,
-      tileUrlFunction: ngiiBaseTileUrlFn,
-      attributions: "국토정보플랫폼 인터넷 기본도"
+      tileUrlFunction: ngiiBaseTileUrlFn
     }),
     visible: DEFAULT_BASE_LAYER_TYPE === "osm"
   });
@@ -501,8 +500,7 @@
       wrapX: false,
       transition: 0,
       tilePixelRatio: 1,
-      tileUrlFunction: ngiiTileUrlFnFor("english_map"),
-      attributions: "국토정보플랫폼 영문지도"
+      tileUrlFunction: ngiiTileUrlFnFor("english_map")
     }),
     visible: false
   });
@@ -517,8 +515,7 @@
       wrapX: false,
       transition: 0,
       tilePixelRatio: 1,
-      tileUrlFunction: ngiiTileUrlFnFor("lowV_map"),
-      attributions: "국토정보플랫폼 큰글씨지도"
+      tileUrlFunction: ngiiTileUrlFnFor("lowV_map")
     }),
     visible: false
   });
@@ -533,8 +530,7 @@
       wrapX: false,
       transition: 0,
       tilePixelRatio: 1,
-      tileUrlFunction: ngiiNightTileUrlFn,
-      attributions: "국토정보플랫폼 야간지도"
+      tileUrlFunction: ngiiNightTileUrlFn
     }),
     visible: false
   });
@@ -560,8 +556,6 @@
 
   let tileLoadSuccessCount = 0;
   let tileLoadErrorCount = 0;
-  let currentBaseLayerType = DEFAULT_BASE_LAYER_TYPE;
-  let lastOnlineViewState = null;
 
   function bindTileErrorStatus(source, layerName) {
     if (!source || typeof source.on !== "function") return;
@@ -626,6 +620,65 @@
   const bearMarkerSource = new ol.source.Vector();
   const bearMarkerLayer = new ol.layer.Vector({ source: bearMarkerSource });
 
+  const analysisPreviewSource = new ol.source.Vector();
+  let previewDashOffset = 0;
+  let previewArrowPulse = 0;
+  let previewRayAnimationActive = false;
+  const analysisPreviewLayer = new ol.layer.Vector({
+    source: analysisPreviewSource,
+    style: function (feature) {
+      const kind = feature ? feature.get("kind") : "";
+
+      if (kind === "preview-radius") {
+        return new ol.style.Style({
+          stroke: new ol.style.Stroke({
+            color: "rgba(37,99,235,0.68)",
+            width: 2,
+            lineDash: [7, 8]
+          }),
+          fill: new ol.style.Fill({ color: "rgba(37,99,235,0.07)" })
+        });
+      }
+
+      if (kind === "preview-ray") {
+        return new ol.style.Style({
+          stroke: new ol.style.Stroke({
+            color: "rgba(37,99,235,0.84)",
+            width: 2.4,
+            lineDash: [10, 10],
+            lineDashOffset: previewDashOffset,
+            lineCap: "round"
+          })
+        });
+      }
+
+      if (kind === "preview-arrow") {
+        const angleRad = Number(feature.get("angleRad")) || 0;
+        return new ol.style.Style({
+          image: new ol.style.RegularShape({
+            points: 3,
+            radius: 7 + previewArrowPulse * 1.8,
+            rotation: angleRad,
+            fill: new ol.style.Fill({ color: "rgba(37,99,235,0.96)" }),
+            stroke: new ol.style.Stroke({ color: "rgba(255,255,255,0.96)", width: 1.4 })
+          })
+        });
+      }
+
+      if (kind === "preview-intersection") {
+        return new ol.style.Style({
+          image: new ol.style.Circle({
+            radius: 8,
+            fill: new ol.style.Fill({ color: "rgba(34,197,94,0.96)" }),
+            stroke: new ol.style.Stroke({ color: "rgba(255,255,255,0.96)", width: 2 })
+          })
+        });
+      }
+
+      return null;
+    }
+  });
+
   const analysisGuideSource = new ol.source.Vector();
   let analysisDashOffset = 0;
   let analysisPulseStrength = 0;
@@ -678,6 +731,58 @@
 
   const analysisEstimateSource = new ol.source.Vector();
   const analysisEstimateLayer = new ol.layer.Vector({ source: analysisEstimateSource });
+  // 거리 측정 전용 레이어: 시작점/끝점/선/거리라벨을 여기서만 관리한다.
+  const measureSource = new ol.source.Vector();
+  const measureLayer = new ol.layer.Vector({
+    source: measureSource,
+    style: function (feature) {
+      const kind = feature ? feature.get("kind") : "";
+
+      if (kind === "measure-line" || kind === "measure-line-preview") {
+        const isPreview = kind === "measure-line-preview";
+        return new ol.style.Style({
+          stroke: new ol.style.Stroke({
+            color: isPreview ? "rgba(239,68,68,0.85)" : "rgba(239,68,68,0.96)",
+            width: 3,
+            lineDash: isPreview ? [8, 6] : undefined,
+            lineCap: "round"
+          })
+        });
+      }
+
+      if (kind === "measure-area-line" || kind === "measure-area-line-preview") {
+        const isPreview = kind === "measure-area-line-preview";
+        return new ol.style.Style({
+          stroke: new ol.style.Stroke({
+            color: isPreview ? "rgba(6,182,212,0.82)" : "rgba(6,182,212,0.96)",
+            width: 3,
+            lineDash: isPreview ? [8, 6] : undefined,
+            lineCap: "round"
+          })
+        });
+      }
+
+      if (kind === "measure-point-start" || kind === "measure-point-end") {
+        const isStart = kind === "measure-point-start";
+        return new ol.style.Style({
+          image: new ol.style.Circle({
+            radius: 6,
+            fill: new ol.style.Fill({ color: isStart ? "rgba(14,165,233,0.95)" : "rgba(239,68,68,0.95)" }),
+            stroke: new ol.style.Stroke({ color: "rgba(255,255,255,0.96)", width: 2 })
+          })
+        });
+      }
+
+      if (kind === "measure-area-fill" || kind === "measure-area-fill-preview") {
+        const isPreview = kind === "measure-area-fill-preview";
+        return new ol.style.Style({
+          fill: new ol.style.Fill({ color: isPreview ? "rgba(6,182,212,0.2)" : "rgba(6,182,212,0.3)" })
+        });
+      }
+
+      return null;
+    }
+  });
 
   const observationMarkerSource = new ol.source.Vector();
 
@@ -702,7 +807,7 @@
   //맵 기능
   const map = new ol.Map({
     target: "map",
-    layers: [osmBase, englishBase, largeBase, nightBase, topoBase, mbtilesLayer, hillshadeOverlay, bearMarkerLayer, analysisGuideLayer, analysisEstimateLayer, myLocationLayer],
+    layers: [osmBase, englishBase, largeBase, nightBase, topoBase, mbtilesLayer, hillshadeOverlay, bearMarkerLayer, analysisPreviewLayer, analysisGuideLayer, analysisEstimateLayer, measureLayer, myLocationLayer],
     view: view,
     interactions: ol.interaction.defaults.defaults({
       pinchRotate: false // 이 한 줄을 주석 처리하면 손가락 회전(핀치 회전) 활성
@@ -717,25 +822,56 @@
   window.__olMap = map;
   window.__olView = view;
 
-  applyViewZoomBounds(currentBaseLayerType);
+  const controlsManager = window.createOlMapControlsManager ? window.createOlMapControlsManager({
+    ol: ol,
+    map: map,
+    mapEl: mapEl,
+    view: view,
+    statusEl: statusEl,
+    wgs84FromMapCoord: wgs84FromMapCoord,
+    extentMap: extentMap,
+    mbtilesExtentMap: mbtilesExtentMap,
+    ngiiApiKey: NGII_API_KEY,
+    mbtilesMinZoom: MBTILES_MIN_ZOOM,
+    mbtilesMaxZoom: MBTILES_MAX_ZOOM,
+    onlineMaxZoom: ONLINE_MAX_ZOOM,
+    offlineInitialZoom: OFFLINE_INITIAL_ZOOM,
+    hillshadeBaseOpacity: HILLSHADE_BASE_OPACITY,
+    hillshadeSafeMaxZoom: HILLSHADE_SAFE_MAX_ZOOM,
+    initialBaseLayerType: DEFAULT_BASE_LAYER_TYPE,
+    layers: {
+      osmBase: osmBase,
+      englishBase: englishBase,
+      largeBase: largeBase,
+      nightBase: nightBase,
+      topoBase: topoBase,
+      mbtilesLayer: mbtilesLayer,
+      hillshadeOverlay: hillshadeOverlay
+    },
+    measureSource: measureSource,
+    onToggleMyLocation: toggleMyLocation,
+    onMeasureActivated: function () {
+      clearAnalysisEstimateVisuals();
+      closeObservationPopup();
+    },
+    onLocateButtonReady: function (buttonEl) {
+      locateBtnEl = buttonEl || null;
+    }
+  }) : null;
+
+  if (controlsManager && typeof controlsManager.initialize === "function") {
+    controlsManager.initialize();
+  }
 
   if (isNativeCapacitorPlatform()) {
     ensureNativeMbtilesDatabase();
   }
 
   // 초기 위치: fit() 호출 (한 번만 실행)
-  moveToOfflineInitialView();
-  window.__initialFitDone = true;
-
-  // 고줌에서 음영이 지저분해지는 것을 막기 위해 확대 시 음영 투명도를 낮춘다.
-  function syncHillshadeByZoom() {
-    const zoom = view.getZoom();
-    if (typeof zoom !== "number") return;
-    hillshadeOverlay.setOpacity(zoom >= HILLSHADE_SAFE_MAX_ZOOM ? 0 : HILLSHADE_BASE_OPACITY);
+  if (controlsManager && typeof controlsManager.moveToOfflineInitialView === "function") {
+    controlsManager.moveToOfflineInitialView();
   }
-
-  view.on("change:resolution", syncHillshadeByZoom);
-  syncHillshadeByZoom();
+  window.__initialFitDone = true;
 
   // 디버깅용: 현재 줌/중심/extent를 콘솔에 기록한다.
   function logViewState(reason) {
@@ -754,117 +890,6 @@
   map.on("moveend", function () {
     logViewState("moveend");
   });
-
-  function captureCurrentViewState() {
-    return {
-      center: view.getCenter(),
-      zoom: view.getZoom()
-    };
-  }
-
-  function getActiveMaxZoomForBaseLayer(baseLayerType) {
-    return baseLayerType === "mbtiles" ? MBTILES_MAX_ZOOM : ONLINE_MAX_ZOOM;
-  }
-
-  function applyViewZoomBounds(baseLayerType) {
-    const maxZoom = getActiveMaxZoomForBaseLayer(baseLayerType);
-    view.setMinZoom(MBTILES_MIN_ZOOM);
-    view.setMaxZoom(maxZoom);
-    const currentZoom = view.getZoom();
-    if (typeof currentZoom === "number" && currentZoom > maxZoom) {
-      view.setZoom(maxZoom);
-    }
-  }
-
-  function restoreViewState(state) {
-    if (!state || !Array.isArray(state.center)) return false;
-    view.animate({
-      center: state.center,
-      zoom: typeof state.zoom === "number" ? state.zoom : (view.getZoom() || 11),
-      duration: 400
-    });
-    return true;
-  }
-
-  function isLikelyKoreaExtent(extent) {
-    if (!extent || !Array.isArray(extent)) return false;
-    const center = ol.extent.getCenter(extent);
-    const coord = wgs84FromMapCoord(center);
-    if (!coord) return false;
-    const lon = coord.lng;
-    const lat = coord.lat;
-    return lon >= 120 && lon <= 132 && lat >= 30 && lat <= 40;
-  }
-
-  // MBTiles 커버리지 범위로 뷰를 맞춘다(범위가 비정상일 때는 무시).
-  function fitMbtilesCoverage() {
-    if (!mbtilesExtentMap) return false;
-    if (!isLikelyKoreaExtent(mbtilesExtentMap)) return false;
-    view.fit(mbtilesExtentMap, {
-      padding: [20, 20, 20, 20],
-      maxZoom: 14,
-      duration: 500
-    });
-    return true;
-  }
-
-  // 오프라인 기본도를 선택하면 초기 오프라인 화면으로 되돌린다.
-  function moveToOfflineInitialView() {
-    if (!Array.isArray(extentMap) || extentMap.length !== 4) return false;
-    view.fit(extentMap, {
-      padding: [20, 20, 20, 20],
-      maxZoom: 14,
-      duration: 0
-    });
-    view.setZoom(OFFLINE_INITIAL_ZOOM);
-    return true;
-  }
-
-  // 베이스 레이어 전환: 온라인 전환 시 현재 중심/줌을 유지하고, 오프라인 복귀 시만 커버리지를 보정한다.
-  function setBaseLayer(type) {
-    let nextType = type;
-    const ONLINE_TYPES = ["osm", "english", "large", "night", "topo"];
-    if (nextType !== "mbtiles" && !ONLINE_TYPES.includes(nextType)) {
-      nextType = "mbtiles";
-    }
-
-    if (nextType !== "mbtiles" && nextType !== "topo" && !NGII_API_KEY) {
-      if (statusEl) statusEl.textContent = "🟠 NGII API 키가 없어 오프라인 지도로 전환합니다";
-      nextType = "mbtiles";
-    }
-
-    if (nextType === currentBaseLayerType) return;
-
-    applyViewZoomBounds(nextType);
-
-    if (nextType === "mbtiles") {
-      lastOnlineViewState = captureCurrentViewState();
-    }
-
-    osmBase.setVisible(nextType === "osm");
-    englishBase.setVisible(nextType === "english");
-    largeBase.setVisible(nextType === "large");
-    nightBase.setVisible(nextType === "night");
-    topoBase.setVisible(nextType === "topo");
-    mbtilesLayer.setVisible(nextType === "mbtiles");
-    if (nextType !== "topo") {
-      hillshadeOverlay.setVisible(false);
-    }
-
-    if (nextType === "mbtiles") {
-      const moved = moveToOfflineInitialView() || fitMbtilesCoverage();
-      if (!moved && statusEl) {
-        statusEl.textContent = "🟡 오프라인 범위 확인 실패, 기존 위치를 유지합니다";
-      } else if (statusEl) {
-        statusEl.textContent = "📦 오프라인 기본도 사용 중";
-      }
-    } else if (statusEl) {
-      const labels = { osm: "🌐 국문지도", english: "🌐 영문지도", large: "🌐 NGII 큰문자지도", night: "🌙 야간지도", topo: "🌐 OpenTopoMap" };
-      statusEl.textContent = labels[nextType] || "🌐 온라인 지도 사용 중";
-    }
-
-    currentBaseLayerType = nextType;
-  }
 
   // 내부 SQLite 초기화. 실패해도 지도 기능은 계속 동작하도록 설계한다.
   async function initializeEmbeddedDatabase() {
@@ -1464,6 +1489,11 @@
   });
 
   map.on("singleclick", function (event) {
+    // 측정 모드가 클릭을 소비하면 관측점 팝업 클릭 로직은 실행하지 않는다.
+    if (controlsManager && typeof controlsManager.consumeMapClick === "function" && controlsManager.consumeMapClick(event.coordinate)) {
+      return;
+    }
+
     let clickedObservation = false;
 
     map.forEachFeatureAtPixel(event.pixel, function (feature, layer) {
@@ -1509,6 +1539,19 @@
         obsData: null,
         bindPopup: function (html) {
           this._popupHtml = typeof html === "string" ? html : "";
+          if (this._feature) {
+            this._feature.set("popupHtml", this._popupHtml);
+          }
+          return this;
+        },
+        openPopup: function () {
+          if (this._feature) {
+            openObservationPopup(this._feature);
+          }
+          return this;
+        },
+        closePopup: function () {
+          closeObservationPopup();
           return this;
         },
         setIcon: function (icon) {
@@ -1718,367 +1761,6 @@
     await startMyLocationTracking();
   }
 
-  // 우하단 컨트롤(지리산 이동, 내 위치, 줌) UI를 동적으로 마운트한다.
-  function mountRightBottomControls() {
-    const root = document.createElement("div");
-    root.style.position = "absolute";
-    root.style.right = "calc(8px + var(--safe-right))";
-    root.style.bottom = "calc(55px + var(--safe-bottom))";
-    root.style.zIndex = "1400";
-    root.style.display = "flex";
-    root.style.flexDirection = "column";
-    root.style.gap = "6px";
-
-    function makeBtn(className, title, innerHTML, onClick) {
-      const btn = document.createElement("a");
-      btn.href = "#";
-      btn.title = title;
-      btn.className = className;
-      btn.style.width = "30px";
-      btn.style.height = "30px";
-      btn.style.display = "flex";
-      btn.style.alignItems = "center";
-      btn.style.justifyContent = "center";
-      btn.style.border = "1px solid #c9c9c9";
-      btn.style.borderRadius = "4px";
-      btn.style.background = "#fff";
-      btn.style.color = "#2f2f2f";
-      btn.style.textDecoration = "none";
-      btn.style.boxShadow = "0 2px 8px rgba(0,0,0,0.16)";
-      btn.innerHTML = innerHTML;
-      btn.addEventListener("click", function (e) {
-        e.preventDefault();
-        onClick();
-      });
-      return btn;
-    }
-
-    const btnJiri = makeBtn(
-      "leaflet-control-jiri-btn",
-      "지리산으로 이동",
-      "<svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M3 19l6.5-11L16 19H3z\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linejoin=\"round\"/><path d=\"M10.5 19l4.5-8 6 8h-10.5z\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linejoin=\"round\"/><path d=\"M9.5 8l1.2 2 1.3-2\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/></svg>",
-      function () {
-        if (!fitMbtilesCoverage()) {
-          view.fit(extentMap, { padding: [20, 20, 20, 20], maxZoom: 14, duration: 450 });
-        }
-      }
-    );
-
-    locateBtnEl = makeBtn(
-      "leaflet-control-locate-btn",
-      "내 위치 토글",
-      "<svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M12 2v3\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\"/><path d=\"M12 19v3\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\"/><path d=\"M2 12h3\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\"/><path d=\"M19 12h3\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\"/><circle cx=\"12\" cy=\"12\" r=\"6\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"/><circle cx=\"12\" cy=\"12\" r=\"1.5\" fill=\"currentColor\"/></svg>",
-      function () {
-        toggleMyLocation();
-      }
-    );
-
-    const btnZoomIn = makeBtn("ol-zoom-in-btn", "확대", "+", function () {
-      const current = view.getZoom() || 0;
-      const next = Math.min(getActiveMaxZoomForBaseLayer(currentBaseLayerType), current + 1);
-      view.animate({ zoom: next, duration: 180 });
-    });
-    btnZoomIn.style.fontSize = "19px";
-    btnZoomIn.style.fontWeight = "700";
-
-    const btnZoomOut = makeBtn("ol-zoom-out-btn", "축소", "-", function () {
-      const current = view.getZoom() || 0;
-      const next = Math.max(MBTILES_MIN_ZOOM, current - 1);
-      view.animate({ zoom: next, duration: 180 });
-    });
-    btnZoomOut.style.fontSize = "20px";
-    btnZoomOut.style.fontWeight = "700";
-
-    root.appendChild(btnJiri);
-    root.appendChild(locateBtnEl);
-    root.appendChild(btnZoomIn);
-    root.appendChild(btnZoomOut);
-
-    root.addEventListener("pointerdown", function (e) { e.stopPropagation(); });
-    root.addEventListener("touchstart", function (e) { e.stopPropagation(); }, { passive: true });
-    root.addEventListener("wheel", function (e) { e.stopPropagation(); }, { passive: true });
-
-    mapEl.appendChild(root);
-  }
-
-  // 우상단 레이어 패널 UI를 구성한다(현재는 오프라인 지도 선택만 활성).
-  function mountLayerSwitcher() {
-    const root = document.createElement("div");
-    root.style.position = "absolute";
-    root.style.top = "calc(12px + var(--safe-top))";
-    root.style.right = "calc(12px + var(--safe-right))";
-    // 목록/등록 팝업을 가리지 않도록 z-index를 패널보다 낮춘다.
-    root.style.zIndex = "9990";
-
-    const toggleBtn = document.createElement("button");
-    toggleBtn.type = "button";
-    toggleBtn.title = "레이어 선택";
-    toggleBtn.setAttribute("aria-label", "레이어 선택");
-    toggleBtn.setAttribute("aria-expanded", "false");
-    toggleBtn.style.width = "42px";
-    toggleBtn.style.height = "42px";
-    toggleBtn.style.border = "1px solid #c9c9c9";
-    toggleBtn.style.borderRadius = "6px";
-    toggleBtn.style.background = "#ffffff";
-    toggleBtn.style.boxShadow = "0 2px 8px rgba(0,0,0,0.16)";
-    toggleBtn.style.cursor = "pointer";
-    toggleBtn.style.display = "flex";
-    toggleBtn.style.alignItems = "center";
-    toggleBtn.style.justifyContent = "center";
-    toggleBtn.innerHTML = "<svg width=\"22\" height=\"22\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M12 3L2 8l10 5 10-5-10-5z\" fill=\"#d7dbe0\" stroke=\"#9aa3ad\" stroke-width=\"0.8\"/><path d=\"M2 12l10 5 10-5\" fill=\"none\" stroke=\"#9aa3ad\" stroke-width=\"1.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/><path d=\"M2 16l10 5 10-5\" fill=\"none\" stroke=\"#9aa3ad\" stroke-width=\"1.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/></svg>";
-
-    const panel = document.createElement("div");
-    panel.style.display = "none";
-    panel.style.position = "absolute";
-    panel.style.top = "46px";
-    panel.style.right = "0";
-    panel.style.background = "#f6f6f6";
-    panel.style.border = "1px solid #8e8e8e";
-    panel.style.borderRadius = "4px";
-    panel.style.padding = "8px 10px";
-    panel.style.fontSize = "13px";
-    panel.style.lineHeight = "1.5";
-    panel.style.minWidth = "120px";
-
-    function createSectionTitle(text, marginTop) {
-      const title = document.createElement("div");
-      title.textContent = text;
-      title.style.fontSize = "11px";
-      title.style.fontWeight = "700";
-      title.style.letterSpacing = "0.02em";
-      title.style.color = "#666";
-      title.style.marginTop = marginTop;
-      title.style.marginBottom = "4px";
-      return title;
-    }
-
-    const onlineTitle = createSectionTitle("온라인", "0");
-    const offlineTitle = createSectionTitle("오프라인", "6px");
-    offlineTitle.style.paddingTop = "6px";
-    offlineTitle.style.borderTop = "1px solid #c8c8c8";
-
-    const row1 = document.createElement("div");
-    row1.style.display = "flex";
-    row1.style.alignItems = "center";
-    row1.style.gap = "8px";
-    row1.style.marginBottom = "2px";
-
-    const radioOsm = document.createElement("input");
-    radioOsm.type = "radio";
-    radioOsm.name = "ol-base-layer";
-    radioOsm.value = "osm";
-    // 인터넷 기본도(NGII) 선택 허용.
-    radioOsm.disabled = false;
-
-    const labelOsm = document.createElement("label");
-    labelOsm.style.cursor = "pointer";
-    labelOsm.textContent = "국문";
-    row1.appendChild(radioOsm);
-    row1.appendChild(labelOsm);
-
-    const rowEnglish = document.createElement("div");
-    rowEnglish.style.display = "flex";
-    rowEnglish.style.alignItems = "center";
-    rowEnglish.style.gap = "8px";
-    rowEnglish.style.marginBottom = "2px";
-
-    const radioEnglish = document.createElement("input");
-    radioEnglish.type = "radio";
-    radioEnglish.name = "ol-base-layer";
-    radioEnglish.value = "english";
-    radioEnglish.disabled = !NGII_API_KEY;
-    radioEnglish.checked = currentBaseLayerType === "english";
-
-    const labelEnglish = document.createElement("label");
-    labelEnglish.style.cursor = NGII_API_KEY ? "pointer" : "default";
-    labelEnglish.textContent = "영문";
-    rowEnglish.appendChild(radioEnglish);
-    rowEnglish.appendChild(labelEnglish);
-
-    const rowLarge = document.createElement("div");
-    rowLarge.style.display = "flex";
-    rowLarge.style.alignItems = "center";
-    rowLarge.style.gap = "8px";
-    rowLarge.style.marginBottom = "2px";
-
-    const radioLarge = document.createElement("input");
-    radioLarge.type = "radio";
-    radioLarge.name = "ol-base-layer";
-    radioLarge.value = "large";
-    radioLarge.disabled = !NGII_API_KEY;
-    radioLarge.checked = currentBaseLayerType === "large";
-
-    const labelLarge = document.createElement("label");
-    labelLarge.style.cursor = NGII_API_KEY ? "pointer" : "default";
-    labelLarge.textContent = "큰 문자";
-    rowLarge.appendChild(radioLarge);
-    rowLarge.appendChild(labelLarge);
-
-    const rowNight = document.createElement("div");
-    rowNight.style.display = "flex";
-    rowNight.style.alignItems = "center";
-    rowNight.style.gap = "8px";
-    rowNight.style.marginBottom = "2px";
-
-    const radioNight = document.createElement("input");
-    radioNight.type = "radio";
-    radioNight.name = "ol-base-layer";
-    radioNight.value = "night";
-    radioNight.disabled = !NGII_API_KEY;
-    radioNight.checked = currentBaseLayerType === "night";
-
-    const labelNight = document.createElement("label");
-    labelNight.style.cursor = NGII_API_KEY ? "pointer" : "default";
-    labelNight.textContent = "야간";
-    rowNight.appendChild(radioNight);
-    rowNight.appendChild(labelNight);
-
-    // const rowTopo = document.createElement("div");
-    // rowTopo.style.display = "flex";
-    // rowTopo.style.alignItems = "center";
-    // rowTopo.style.gap = "8px";
-    // rowTopo.style.marginBottom = "2px";
-
-    // const radioTopo = document.createElement("input");
-    // radioTopo.type = "radio";
-    // radioTopo.name = "ol-base-layer";
-    // radioTopo.value = "topo";
-    // radioTopo.disabled = true;
-
-    // const labelTopo = document.createElement("label");
-    // labelTopo.style.cursor = "pointer";
-    // labelTopo.textContent = "지형도(준비중)";
-    // rowTopo.appendChild(radioTopo);
-    // rowTopo.appendChild(labelTopo);
-
-    const rowMbtiles = document.createElement("div");
-    rowMbtiles.style.display = "flex";
-    rowMbtiles.style.alignItems = "center";
-    rowMbtiles.style.gap = "8px";
-    rowMbtiles.style.marginBottom = "2px";
-
-    const radioMbtiles = document.createElement("input");
-    radioMbtiles.type = "radio";
-    radioMbtiles.name = "ol-base-layer";
-    radioMbtiles.value = "mbtiles";
-    radioMbtiles.checked = currentBaseLayerType === "mbtiles";
-
-    const labelMbtiles = document.createElement("label");
-    labelMbtiles.style.cursor = "pointer";
-    labelMbtiles.textContent = "오프라인(국문)";
-    rowMbtiles.appendChild(radioMbtiles);
-    rowMbtiles.appendChild(labelMbtiles);
-
-    radioOsm.checked = currentBaseLayerType === "osm";
-
-    function syncBaseByRadio() {
-      // if (radioTopo.checked) return setBaseLayer("topo");
-      if (radioMbtiles.checked) return setBaseLayer("mbtiles");
-      if (radioNight.checked) return setBaseLayer("night");
-      if (radioEnglish.checked) return setBaseLayer("english");
-      if (radioLarge.checked) return setBaseLayer("large");
-      setBaseLayer("osm");
-    }
-
-    radioOsm.addEventListener("change", syncBaseByRadio);
-    radioEnglish.addEventListener("change", syncBaseByRadio);
-    radioLarge.addEventListener("change", syncBaseByRadio);
-    // radioTopo.addEventListener("change", syncBaseByRadio);
-    radioNight.addEventListener("change", syncBaseByRadio);
-    radioMbtiles.addEventListener("change", syncBaseByRadio);
-    labelOsm.addEventListener("click", function () { radioOsm.checked = true; syncBaseByRadio(); });
-    labelEnglish.addEventListener("click", function () { if (!radioEnglish.disabled) { radioEnglish.checked = true; syncBaseByRadio(); } });
-    labelLarge.addEventListener("click", function () { if (!radioLarge.disabled) { radioLarge.checked = true; syncBaseByRadio(); } });
-    labelNight.addEventListener("click", function () { if (!radioNight.disabled) { radioNight.checked = true; syncBaseByRadio(); } });
-    // labelTopo.addEventListener("click", function () { radioTopo.checked = true; syncBaseByRadio(); });
-    labelMbtiles.addEventListener("click", function () { radioMbtiles.checked = true; syncBaseByRadio(); });
-
-    const row2 = document.createElement("label");
-    row2.style.display = "flex";
-    row2.style.alignItems = "center";
-    row2.style.gap = "8px";
-    row2.style.marginTop = "4px";
-    row2.style.cursor = "pointer";
-
-    const chk = document.createElement("input");
-    chk.type = "checkbox";
-    chk.checked = false;
-    chk.disabled = true;
-    chk.addEventListener("change", function () {
-      hillshadeOverlay.setVisible(chk.checked);
-    });
-
-    // const txt = document.createElement("span");
-    // txt.textContent = "음영(Hillshade, 준비중)";
-    // row2.appendChild(chk);
-    // row2.appendChild(txt);
-
-    let hideTimer = null;
-    let isPinned = false;
-    const preferHover = !!(window.matchMedia && window.matchMedia("(hover: hover) and (pointer: fine)").matches);
-
-    function openPanel() {
-      if (hideTimer) {
-        clearTimeout(hideTimer);
-        hideTimer = null;
-      }
-      panel.style.display = "block";
-      toggleBtn.setAttribute("aria-expanded", "true");
-    }
-
-    function closePanel(delayMs, forceClose) {
-      if (!forceClose && isPinned) return;
-      if (hideTimer) clearTimeout(hideTimer);
-      hideTimer = setTimeout(function () {
-        panel.style.display = "none";
-        toggleBtn.setAttribute("aria-expanded", "false");
-      }, delayMs);
-    }
-
-    root.addEventListener("mouseenter", function () {
-      if (!preferHover || isPinned) return;
-      openPanel();
-    });
-    root.addEventListener("mouseleave", function () {
-      if (!preferHover || isPinned) return;
-      closePanel(140, false);
-    });
-
-    toggleBtn.addEventListener("click", function (e) {
-      e.preventDefault();
-      e.stopPropagation();
-      if (panel.style.display === "block" && isPinned) {
-        isPinned = false;
-        closePanel(0, true);
-      } else {
-        isPinned = true;
-        openPanel();
-      }
-    });
-
-    document.addEventListener("pointerdown", function (e) {
-      if (!root.contains(e.target)) {
-        isPinned = false;
-        closePanel(0, true);
-      }
-    });
-
-    //타일선택 토글 버튼 활성/비활성 시 주석처리
-    root.appendChild(toggleBtn);
-
-    panel.appendChild(onlineTitle);
-    panel.appendChild(row1);
-    panel.appendChild(rowEnglish);
-    panel.appendChild(rowLarge);
-    panel.appendChild(rowNight);
-    panel.appendChild(offlineTitle);
-    panel.appendChild(rowMbtiles);
-    // panel.appendChild(rowTopo);
-    panel.appendChild(row2);
-    root.appendChild(panel);
-    mapEl.appendChild(root);
-  }
-
   // 샘플 곰 데이터 JSON을 비캐시 모드로 로드한다.
   async function loadBearsData() {
     try {
@@ -2141,18 +1823,144 @@
     });
   }
 
+  // 관측점 heading 문자열/숫자를 프리뷰 계산용 각도로 정규화한다.
+  function parseHeadingDegForPreview(value) {
+    const analyzer = window.BearPositionAnalysis;
+    if (analyzer && typeof analyzer.parseHeadingDegrees === "function") {
+      return analyzer.parseHeadingDegrees(value);
+    }
+
+    if (typeof value === "number" && Number.isFinite(value)) return value;
+    if (typeof value !== "string") return null;
+    const parsed = Number(value.replace(/[^0-9+-.]/g, ""));
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  // 실시간 입력 프리뷰(반경/방향선/화살표)를 비운다.
+  function clearAnalysisInputPreview() {
+    analysisPreviewSource.clear();
+    previewRayAnimationActive = false;
+  }
+
+  // 위치분석 입력값 변화에 따라 반경과 방향 화살표 프리뷰를 갱신한다.
+  function renderAnalysisInputPreview(previewPayload) {
+    clearAnalysisInputPreview();
+
+    if (!previewPayload || !Array.isArray(previewPayload.sourceObservations)) return;
+
+    const distanceLimitM = Number(previewPayload.distanceLimitM);
+    const declinationDeg = Number(previewPayload.declinationDeg);
+    if (!Number.isFinite(distanceLimitM) || distanceLimitM <= 0) return;
+    const canDrawRay = Number.isFinite(declinationDeg);
+    let hasRayFeature = false;
+
+    const rayEndPoints = []; // 교차점 계산용 광선 끝점
+
+    previewPayload.sourceObservations.forEach(function (obs) {
+      if (!obs || !Number.isFinite(obs.lat) || !Number.isFinite(obs.lng)) return;
+
+      const origin = mapCoordFromWgs84(obs.lat, obs.lng);
+
+      const radiusFeature = new ol.Feature({
+        geometry: new ol.geom.Circle(origin, distanceLimitM)
+      });
+      radiusFeature.set("kind", "preview-radius");
+      analysisPreviewSource.addFeature(radiusFeature);
+
+      if (!canDrawRay) return;
+
+      const headingDeg = parseHeadingDegForPreview(obs.heading);
+      if (!Number.isFinite(headingDeg)) return;
+
+      const adjustedDeg = ((headingDeg + declinationDeg) % 360 + 360) % 360;
+      const rad = adjustedDeg * Math.PI / 180;
+      const end = [
+        origin[0] + Math.sin(rad) * distanceLimitM,
+        origin[1] + Math.cos(rad) * distanceLimitM
+      ];
+
+      rayEndPoints.push({ origin, end, rad });
+
+      const rayFeature = new ol.Feature({
+        geometry: new ol.geom.LineString([origin, end])
+      });
+      rayFeature.set("kind", "preview-ray");
+      analysisPreviewSource.addFeature(rayFeature);
+
+      const arrowFeature = new ol.Feature({
+        geometry: new ol.geom.Point(end)
+      });
+      arrowFeature.set("kind", "preview-arrow");
+      arrowFeature.set("angleRad", rad);
+      analysisPreviewSource.addFeature(arrowFeature);
+      hasRayFeature = true;
+    });
+
+    // 교차점 계산 및 표시 (2개 이상의 광선이 있을 때)
+    if (rayEndPoints.length >= 2) {
+      for (let i = 0; i < rayEndPoints.length - 1; i++) {
+        for (let j = i + 1; j < rayEndPoints.length; j++) {
+          const line1 = rayEndPoints[i];
+          const line2 = rayEndPoints[j];
+
+          const intersection = lineIntersection(
+            line1.origin, line1.end,
+            line2.origin, line2.end
+          );
+
+          if (intersection) {
+            const intersectFeature = new ol.Feature({
+              geometry: new ol.geom.Point(intersection)
+            });
+            intersectFeature.set("kind", "preview-intersection");
+            analysisPreviewSource.addFeature(intersectFeature);
+          }
+        }
+      }
+    }
+
+    previewRayAnimationActive = hasRayFeature;
+    if (previewRayAnimationActive) {
+      startAnalysisVisualAnimation();
+    } else if (analysisGuideSource.getFeatures().length === 0) {
+      stopAnalysisVisualAnimation();
+    }
+  }
+
+  // 선-선 교차점 계산 (로컬 좌표계)
+  function lineIntersection(p1, p2, p3, p4) {
+    const x1 = p1[0], y1 = p1[1];
+    const x2 = p2[0], y2 = p2[1];
+    const x3 = p3[0], y3 = p3[1];
+    const x4 = p4[0], y4 = p4[1];
+
+    const denom = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4);
+    if (Math.abs(denom) < 1e-10) return null;
+
+    const t = ((x1 - x3) * (y3 - y4) - (y1 - y3) * (x3 - x4)) / denom;
+    if (t < 0 || t > 1) return null;
+
+    const u = -((x1 - x2) * (y1 - y3) - (y1 - y2) * (x1 - x3)) / denom;
+    if (u < 0 || u > 1) return null;
+
+    return [x1 + t * (x2 - x1), y1 + t * (y2 - y1)];
+  }
+
+  // 추정 결과 액션바(저장/취소)를 숨기고 오버레이 앵커를 해제한다.
   function hideAnalysisActionBar() {
     if (!analysisActionBarEl || !analysisActionOverlay) return;
     analysisActionBarEl.style.display = "none";
     analysisActionOverlay.setPosition(undefined);
   }
 
+  // 추정 좌표에 맞춰 액션바 오버레이를 표시한다.
   function showAnalysisActionBar(anchorCoord) {
     if (!analysisActionBarEl || !analysisActionOverlay || !Array.isArray(anchorCoord)) return;
     analysisActionBarEl.style.display = "flex";
     analysisActionOverlay.setPosition(anchorCoord);
   }
 
+  // 위치분석 관련 requestAnimationFrame 루프를 중지한다.
   function stopAnalysisVisualAnimation() {
     analysisAnimationRunning = false;
     if (analysisAnimationFrameId !== null) {
@@ -2161,17 +1969,23 @@
     }
   }
 
+  // 프리뷰/최종분석/액션바 상태를 한 번에 초기화한다.
   function clearAnalysisEstimateVisuals() {
     stopAnalysisVisualAnimation();
     analysisDashOffset = 0;
     analysisPulseStrength = 0;
     analysisAnimationStartTs = 0;
+    previewDashOffset = 0;
+    previewArrowPulse = 0;
+    clearAnalysisInputPreview();
     analysisGuideSource.clear();
     analysisEstimateSource.clear();
     analysisGuideLayer.changed();
+    analysisPreviewLayer.changed();
     hideAnalysisActionBar();
   }
 
+  // 추정 위치 근처에 뜨는 저장/취소 액션바 오버레이를 1회 생성한다.
   function mountAnalysisActionBar() {
     if (analysisActionBarEl) return;
 
@@ -2243,6 +2057,7 @@
     analysisActionBarEl = root;
   }
 
+  // 분석 완료 결과(추정점/가이드선/액션바)를 지도에 렌더링한다.
   function renderAnalysisEstimatePoint(point) {
     clearAnalysisEstimateVisuals();
     if (!point || !Number.isFinite(point.lat) || !Number.isFinite(point.lng)) return;
@@ -2294,6 +2109,7 @@
     startAnalysisVisualAnimation();
   }
 
+  // 점선 이동, 펄스, 화살표 크기 변화를 매 프레임 갱신한다.
   function animateAnalysisVisuals(timestamp) {
     if (!analysisAnimationRunning) return;
     if (!analysisAnimationStartTs) analysisAnimationStartTs = timestamp;
@@ -2301,11 +2117,23 @@
     const elapsedSec = (timestamp - analysisAnimationStartTs) / 1000;
     analysisDashOffset = -elapsedSec * 28;
     analysisPulseStrength = (Math.sin(elapsedSec * Math.PI * 1.35) + 1) / 2;
+    previewDashOffset = -elapsedSec * 22;
+    previewArrowPulse = (Math.sin(elapsedSec * Math.PI * 1.5) + 1) / 2;
 
     analysisGuideLayer.changed();
+    if (previewRayAnimationActive) {
+      analysisPreviewLayer.changed();
+    }
+
+    if (!previewRayAnimationActive && analysisGuideSource.getFeatures().length === 0) {
+      stopAnalysisVisualAnimation();
+      return;
+    }
+
     analysisAnimationFrameId = window.requestAnimationFrame(animateAnalysisVisuals);
   }
 
+  // 위치분석 시각효과 애니메이션 루프를 시작한다.
   function startAnalysisVisualAnimation() {
     if (analysisAnimationRunning) return;
     analysisAnimationRunning = true;
@@ -2367,8 +2195,6 @@
     }
   }
 
-  mountLayerSwitcher();
-  mountRightBottomControls();
   mountAnalysisActionBar();
 
   if (btnPanelToggle && panelEl) {
@@ -2392,9 +2218,15 @@
     flyToLatLng: flyToLatLng,
     observationMarkersLayer: observationMarkersLayer,
     onOpenList: function () {
+      if (controlsManager && typeof controlsManager.deactivateMeasure === "function") {
+        controlsManager.deactivateMeasure("menu");
+      }
       collapseBearEstimatePanel();
     },
     onOpenRegister: function () {
+      if (controlsManager && typeof controlsManager.deactivateMeasure === "function") {
+        controlsManager.deactivateMeasure("menu");
+      }
       collapseBearEstimatePanel();
       if (obsRegisterModule) obsRegisterModule.open();
     },
@@ -2408,7 +2240,16 @@
       if (obsRegisterModule) obsRegisterModule.hide(true);
     },
     onAnalysisResult: function (analysisPoint) {
+      if (controlsManager && typeof controlsManager.deactivateMeasure === "function") {
+        controlsManager.deactivateMeasure("analysis");
+      }
       renderAnalysisEstimatePoint(analysisPoint);
+    },
+    onAnalysisPreview: function (previewPayload) {
+      if (previewPayload && controlsManager && typeof controlsManager.deactivateMeasure === "function") {
+        controlsManager.deactivateMeasure("analysis");
+      }
+      renderAnalysisInputPreview(previewPayload);
     }
   }) : null;
 

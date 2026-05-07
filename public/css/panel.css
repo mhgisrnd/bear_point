@@ -7,10 +7,10 @@
   position: fixed;
   top: calc(8px + var(--safe-top));
   left: 16px;
-  right: auto;
+  right: 70px;
   z-index: 9998;
-  width: clamp(320px, 80vw, 640px);
-  max-width: calc(100vw - 32px);
+  width: auto;
+  max-width: clamp(300px, 50vw, 640px);
   box-sizing: border-box;
   background: rgba(255,255,255,0.9);
   border: 1px solid rgba(148, 163, 184, 0.32);
@@ -81,6 +81,10 @@
   cursor: pointer;
   box-shadow: 0 8px 18px rgba(37, 99, 235, 0.28);
   transition: transform 0.12s ease, box-shadow 0.16s ease, filter 0.16s ease;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
 }
 
 .analysis-btn:hover {
@@ -100,6 +104,10 @@
   cursor: pointer;
   box-shadow: 0 8px 16px rgba(220, 38, 38, 0.24);
   transition: transform 0.12s ease, box-shadow 0.16s ease, filter 0.16s ease;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
 }
 
 .bulk-delete-btn:hover {
@@ -208,15 +216,15 @@
 .sel-count-badge {
   display: inline-block;
   background: #ff0000;
-  /* color: #1d4ed8; */
+  color: #ffffff;
   font-size: 11px;
   font-weight: 800;
   border-radius: 999px;
   white-space: nowrap;
   flex-shrink: 0;
   transition: opacity 0.2s;
-  font-size: 10px;
   padding: 2px 7px;
+  margin-right: 4px;
 }
 
 .obs-table-wrap {
@@ -264,6 +272,8 @@
   padding: 9px 8px;
   text-align: center;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   background: rgba(255,255,255,0.72);
 }
 
@@ -486,7 +496,7 @@
 }
 
 .panel-tabs-floating {
-  width: 78%;
+  width: 74%;
 }
 
 .tab-btn {
@@ -624,11 +634,132 @@
   padding: 6px 2px;
 }
 
+@media (max-width: 480px) {
+  .obs-sheet {
+    width: auto;
+    left: 8px;
+    right: 65px;
+    max-width: none;
+  }
+
+  .obs-register-popup {
+    left: 8px;
+    right: 65px;
+    width: auto;
+    max-width: none;
+  }
+
+  .obs-reg-row {
+    gap: 6px;
+  }
+
+  .obs-reg-label {
+    min-width: 42px;
+    font-size: 12px;
+  }
+
+  .obs-reg-input,
+  .obs-reg-select {
+    min-width: 60px;
+    height: 28px;
+    padding: 0 6px;
+    font-size: 12px;
+  }
+
+  .obs-reg-input--heading {
+    min-width: 50px;
+  }
+
+  .obs-reg-lock-label {
+    font-size: 10px;
+    gap: 2px;
+  }
+
+  .obs-sheet-header {
+    padding: 8px 10px;
+    gap: 6px;
+  }
+
+  .obs-sheet-header h2 {
+    font-size: 13px;
+  }
+
+  .obs-header-actions {
+    gap: 3px;
+    flex-wrap: nowrap;
+    align-items: center;
+  }
+
+  .analysis-btn {
+    padding: 4px 6px;
+    font-size: 10px;
+    min-width: fit-content;
+    flex-shrink: 1;
+  }
+
+  .bulk-delete-btn {
+    padding: 4px 6px;
+    font-size: 10px;
+    min-width: fit-content;
+    flex-shrink: 1;
+  }
+
+  .sel-count-badge {
+    font-size: 9px;
+    padding: 1px 4px;
+    margin-right: 2px;
+    flex-shrink: 1;
+  }
+
+  .obs-sheet-close,
+  .obs-panel-icon-btn {
+    font-size: 16px;
+    padding: 2px 6px;
+  }
+
+  .obs-search-bar {
+    padding: 6px 8px 4px;
+    gap: 4px;
+  }
+
+  .obs-search-select {
+    padding: 4px 6px;
+    font-size: 11px;
+  }
+
+  .obs-search-input {
+    font-size: 11px;
+    padding: 4px 6px;
+  }
+
+  .obs-search-clear {
+    padding: 4px 8px;
+    font-size: 10px;
+  }
+
+  .obs-table-wrap {
+    padding: 4px 4px 8px;
+  }
+
+  .obs-table {
+    font-size: 11px;
+  }
+
+  .obs-table th,
+  .obs-table td {
+    padding: 6px 4px;
+  }
+
+  .obs-table tbody {
+    max-height: clamp(100px, 20dvh, 150px);
+  }
+}
+
 @media (max-width: 820px){
   .obs-sheet {
     top: calc(8px + var(--safe-top));
     left: 12px;
-    right: 12px;
+    right: 65px;
     width: auto;
     max-width: none;
     border-radius: 14px;
@@ -654,6 +785,7 @@
     flex: 0 0 auto;
     justify-content: flex-end;
     gap: 4px;
+    align-items: center;
   }
 
   .analysis-btn {
@@ -664,6 +796,12 @@
   .bulk-delete-btn {
     padding: 5px 7px;
     font-size: 11px;
+  }
+
+  .sel-count-badge {
+    font-size: 10px;
+    padding: 2px 5px;
+    margin-right: 2px;
   }
 
   .obs-sheet-close {
@@ -725,9 +863,10 @@
   position: fixed;
   top: calc(8px + var(--safe-top));
   left: 16px;
+  right: 70px;
   z-index: 10020;
-  width: clamp(320px, 80vw, 480px);
-  max-width: calc(100vw - 32px);
+  width: auto;
+  max-width: clamp(300px, 50vw, 480px);
   box-sizing: border-box;
   background: rgba(255, 255, 255, 0.95);
   border: 1px solid rgba(148, 163, 184, 0.32);
@@ -842,10 +981,12 @@
   align-items: center;
   gap: 8px;
   min-height: 32px;
+  flex-wrap: wrap;
 }
 
 .obs-reg-label {
-  flex: 0 0 52px;
+  flex: 0 0 auto;
+  min-width: 45px;
   font-size: 13px;
   font-weight: 600;
   color: #334155;
@@ -853,8 +994,8 @@
 }
 
 .obs-reg-input {
-  /* flex: 1; */
-  flex: 0 0 60%;  
+  flex: 1;
+  min-width: 70px;
   height: 30px;
   padding: 0 8px;
   border: 1px solid #cbd5e1;
@@ -892,22 +1033,25 @@
   flex: 1;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
+  min-width: 0;
 }
 
 .obs-reg-input--heading {
-  flex: 0 0 62%;
-  min-width: 110px;
+  flex: 1;
+  min-width: 60px;
 }
 
 .obs-reg-lock-label {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  font-size: 12px;
+  gap: 3px;
+  font-size: 11px;
   color: #475569;
   white-space: nowrap;
   cursor: pointer;
+  flex-shrink: 0;
+  min-width: 0;
 }
 
 .obs-reg-lock-label input {
@@ -975,8 +1119,8 @@
 }
 
 .obs-reg-select {
-  /* flex: 1; */
-  flex: 0 0 60%;
+  flex: 1;
+  min-width: 70px;
   height: 30px;
   padding: 0 6px;
   border: 1px solid #cbd5e1;
@@ -1124,11 +1268,71 @@
   color: #fff;
 }
 
+@media (max-width: 360px) {
+  .obs-register-popup {
+    left: 6px !important;
+    right: 60px !important;
+    width: auto !important;
+  }
+
+  .obs-sheet {
+    left: 6px !important;
+    right: 60px !important;
+    width: auto !important;
+  }
+
+  .obs-header-actions {
+    gap: 2px;
+  }
+
+  .analysis-btn,
+  .bulk-delete-btn {
+    padding: 3px 5px;
+    font-size: 9px;
+  }
+
+  .sel-count-badge {
+    font-size: 8px;
+    padding: 1px 3px;
+    margin-right: 1px;
+  }
+
+  .obs-reg-row {
+    flex-direction: column;
+    align-items: stretch;
+    min-height: auto;
+  }
+
+  .obs-reg-label {
+    text-align: left;
+    min-width: auto;
+    margin-bottom: 4px;
+  }
+
+  .obs-reg-input,
+  .obs-reg-select {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .obs-reg-coord-wrap,
+  .obs-reg-heading-wrap {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .obs-reg-coord-wrap .obs-reg-input {
+    flex: 1;
+    width: 100%;
+    min-width: 0;
+  }
+}
+
 @media (max-width: 820px) {
   .obs-register-popup {
     top: calc(8px + var(--safe-top));
     left: 12px;
-    right: 12px;
+    right: 65px;
     width: auto;
     max-width: none;
     border-radius: 14px;
@@ -1181,12 +1385,12 @@
   }
 
   .obs-register-popup--peek {
-    right: auto;
+    right: 65px;
     width: min(220px, calc(100vw - 24px));
   }
 
   .obs-sheet--peek {
-    right: auto;
+    right: 65px;
     width: min(220px, calc(100vw - 24px));
   }
 }
