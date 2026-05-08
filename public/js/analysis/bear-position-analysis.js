@@ -169,6 +169,7 @@
     let parallelCount = 0;
     let backwardCount = 0;
     let outOfRangeCount = 0;
+    const totalPairCount = (rays.length * (rays.length - 1)) / 2;
 
     for (let i = 0; i < rays.length - 1; i += 1) {
       for (let j = i + 1; j < rays.length; j += 1) {
@@ -217,6 +218,23 @@
       };
     }
 
+    // 엄격 판정: 한 쌍이라도 이상 징후(평행/역방향/거리범위초과)가 있으면 실패 처리
+    if (parallelCount > 0 || backwardCount > 0 || outOfRangeCount > 0) {
+      return {
+        ok: false,
+        code: "INCONSISTENT_INTERSECTIONS",
+        message: "잘못된 관측입니다. -> 교차점 불일치",
+        diagnostics: {
+          intersectionsCount: intersections.length,
+          totalPairCount,
+          parallelCount,
+          backwardCount,
+          outOfRangeCount,
+          strictRejected: true
+        }
+      };
+    }
+
     const center = averagePoint(intersections);
     const spreadM = maxDistanceFrom(intersections, center);
 
@@ -246,11 +264,33 @@
         lat: estimatedLatLng.lat,
         lng: estimatedLatLng.lng,
         intersectionsCount: intersections.length,
+        totalPairCount,
         spreadM: Number.isFinite(spreadM) ? spreadM : 0,
         options: {
           distanceLimitM: Number.isFinite(maxDistanceM) ? maxDistanceM : null,
           declinationDeg,
           spreadToleranceM
+        },
+        analysisDetails: {
+          originLat,
+          rays: rays.map(function (ray) {
+            return {
+              id: ray.id,
+              bearCode: ray.bearCode,
+              point: [ray.point[0], ray.point[1]],
+              headingDeg: ray.headingDeg,
+              adjustedBearing: ray.adjustedBearing,
+              direction: [ray.direction[0], ray.direction[1]]
+            };
+          }),
+          intersections: intersections.map(function (pointXY) {
+            const latLng = toLatLng(pointXY[0], pointXY[1], originLat);
+            return {
+              point: [pointXY[0], pointXY[1]],
+              lat: latLng.lat,
+              lng: latLng.lng
+            };
+          })
         }
       },
       diagnostics: {

@@ -13,12 +13,138 @@
   const searchParams = new URLSearchParams(window.location.search);
   let removeBackButtonListener = null;
   let exitConfirmOpen = false;
+  let startupOverlayEl = null;
+  let startupOverlayTextEl = null;
+  let startupOverlayRetryBtn = null;
 
   try {
 
   if (!window.ol || !mapEl) {
     if (statusEl) statusEl.textContent = "OpenLayers 로딩 실패";
     return;
+  }
+
+  // 앱 시작 시 SQLite 준비가 끝날 때까지 화면 입력을 잠그는 오버레이를 표시한다.
+  function ensureStartupOverlay() {
+    if (startupOverlayEl) return;
+
+    const overlay = document.createElement("div");
+    overlay.style.position = "fixed";
+    overlay.style.inset = "0";
+    overlay.style.zIndex = "5000";
+    overlay.style.display = "none";
+    overlay.style.alignItems = "center";
+    overlay.style.justifyContent = "center";
+    overlay.style.background = "rgba(13,18,30,0.74)";
+    overlay.style.backdropFilter = "blur(2px)";
+
+    const card = document.createElement("div");
+    card.style.width = "min(78vw, 320px)";
+    card.style.background = "rgba(16,26,45,0.96)";
+    card.style.border = "1px solid rgba(255,255,255,0.22)";
+    card.style.borderRadius = "14px";
+    card.style.padding = "16px 16px 14px";
+    card.style.boxShadow = "0 16px 36px rgba(0,0,0,0.34)";
+
+    const title = document.createElement("div");
+    title.textContent = "앱 준비 중";
+    title.style.color = "#ffffff";
+    title.style.fontWeight = "700";
+    title.style.fontSize = "15px";
+    title.style.marginBottom = "8px";
+
+    const text = document.createElement("div");
+    text.textContent = "SQLite 연결 준비 중...";
+    text.style.color = "rgba(255,255,255,0.88)";
+    text.style.fontSize = "13px";
+    text.style.marginBottom = "10px";
+
+    const barTrack = document.createElement("div");
+    barTrack.style.height = "6px";
+    barTrack.style.width = "100%";
+    barTrack.style.background = "rgba(255,255,255,0.16)";
+    barTrack.style.borderRadius = "999px";
+    barTrack.style.overflow = "hidden";
+
+    const bar = document.createElement("div");
+    bar.style.height = "100%";
+    bar.style.width = "42%";
+    bar.style.borderRadius = "999px";
+    bar.style.background = "linear-gradient(90deg, #3ea2ff, #7bd6ff)";
+    bar.style.animation = "bpStartLoading 1.05s ease-in-out infinite";
+
+    const retryBtn = document.createElement("button");
+    retryBtn.type = "button";
+    retryBtn.textContent = "다시 시도";
+    retryBtn.style.display = "none";
+    retryBtn.style.marginTop = "12px";
+    retryBtn.style.width = "100%";
+    retryBtn.style.height = "36px";
+    retryBtn.style.border = "1px solid rgba(255,255,255,0.35)";
+    retryBtn.style.borderRadius = "9px";
+    retryBtn.style.background = "#0b72c7";
+    retryBtn.style.color = "#ffffff";
+    retryBtn.style.fontWeight = "700";
+    retryBtn.style.cursor = "pointer";
+
+    barTrack.appendChild(bar);
+    card.appendChild(title);
+    card.appendChild(text);
+    card.appendChild(barTrack);
+    card.appendChild(retryBtn);
+    overlay.appendChild(card);
+    document.body.appendChild(overlay);
+
+    const styleEl = document.createElement("style");
+    styleEl.textContent = "@keyframes bpStartLoading { 0% { transform: translateX(-115%); } 100% { transform: translateX(250%); } }";
+    document.head.appendChild(styleEl);
+
+    startupOverlayEl = overlay;
+    startupOverlayTextEl = text;
+    startupOverlayRetryBtn = retryBtn;
+  }
+
+  function showStartupOverlay(message, allowRetry) {
+    ensureStartupOverlay();
+    if (startupOverlayTextEl && typeof message === "string" && message) {
+      startupOverlayTextEl.textContent = message;
+    }
+    if (startupOverlayRetryBtn) {
+      startupOverlayRetryBtn.style.display = allowRetry ? "block" : "none";
+    }
+    if (startupOverlayEl) startupOverlayEl.style.display = "flex";
+  }
+
+  function hideStartupOverlay() {
+    if (!startupOverlayEl) return;
+    startupOverlayEl.style.display = "none";
+  }
+
+  async function bootWithSQLiteGate() {
+    showStartupOverlay("SQLite 연결 준비 중...", false);
+
+    try {
+      const initState = await initializeEmbeddedDatabase();
+      if (!initState || !initState.ready) {
+        const reason = initState && initState.reason ? String(initState.reason) : "not-ready";
+        // 웹(non-native)에서는 JSON 폴백 목록을 렌더링한 뒤 화면을 연다.
+        if (reason === "non-native-platform") {
+          await refreshBearEstimatePanel();
+          hideStartupOverlay();
+          return;
+        }
+        throw new Error(reason);
+      }
+
+      await refreshBearEstimatePanel();
+      hideStartupOverlay();
+    } catch (error) {
+      console.error("SQLite 초기화 오류:", error);
+      if (statusEl) {
+        statusEl.textContent = "🔴 SQLite 초기화 실패: " + (error && error.message ? error.message : String(error));
+      }
+      showStartupOverlay("SQLite 준비 실패. 다시 시도해 주세요.", true);
+    }
   }
 
   // URL 쿼리 파라미터를 숫자로 읽고 범위를 벗어나면 기본값으로 되돌린다.
@@ -155,7 +281,7 @@
   let didMoveToMe = false;
   let lastLatLng = null;
   let lastGpsTimestamp = null;
-  let bearsDataCache = [];
+  let bearsDataCache = []; // 웹 폴백용 곰 추정위치 JSON 캐시
   let compassEnabled = false;
   let compassHandler = null;
   let compassEventName = null;
@@ -233,6 +359,501 @@
     const capacitor = window.Capacitor;
     if (!capacitor || !capacitor.Plugins) return null;
     return capacitor.Plugins.CapacitorSQLite || null;
+  }
+
+  function getCapacitorFilesystemPlugin() {
+    const capacitor = window.Capacitor;
+    if (!capacitor || !capacitor.Plugins) return null;
+    return capacitor.Plugins.Filesystem || null;
+  }
+
+  function getCapacitorSharePlugin() {
+    const capacitor = window.Capacitor;
+    if (!capacitor || !capacitor.Plugins) return null;
+    return capacitor.Plugins.Share || null;
+  }
+
+  function getCapacitorNativeTxtSharePlugin() {
+    const capacitor = window.Capacitor;
+    if (!capacitor) return null;
+    // Capacitor v6+ 는 registerPlugin()으로 JS 측에도 등록해야 플러그인 접근 가능
+    if (typeof capacitor.registerPlugin === "function") {
+      try {
+        const plugin = capacitor.registerPlugin("NativeTxtShare");
+        if (plugin && typeof plugin.shareTxtFile === "function") return plugin;
+      } catch (e) { /* ignore */ }
+    }
+    // 구버전 fallback
+    if (capacitor.Plugins) return capacitor.Plugins.NativeTxtShare || null;
+    return null;
+  }
+
+  function openSavedFileLink(uriValue) {
+    if (!uriValue) return false;
+    try {
+      const capacitor = window.Capacitor;
+      const link = (capacitor && typeof capacitor.convertFileSrc === "function")
+        ? capacitor.convertFileSrc(uriValue)
+        : uriValue;
+      const a = document.createElement("a");
+      a.href = link;
+      a.target = "_blank";
+      a.rel = "noopener";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      return true;
+    } catch (error) {
+      console.warn("저장 파일 링크 열기 실패:", error);
+      return false;
+    }
+  }
+
+  async function ensureFileUriForShare(fileName, uriCandidate, txtContent) {
+    if (uriCandidate && /^file:/i.test(String(uriCandidate))) {
+      return String(uriCandidate);
+    }
+
+    const filesystem = getCapacitorFilesystemPlugin();
+    if (!filesystem || typeof filesystem.writeFile !== "function") {
+      return uriCandidate || null;
+    }
+
+    try {
+      const cachePath = "BearMapShare/" + fileName;
+      await filesystem.writeFile({
+        path: cachePath,
+        data: txtContent || "",
+        directory: "CACHE",
+        encoding: "utf8",
+        recursive: true
+      });
+
+      if (typeof filesystem.getUri === "function") {
+        const uriRes = await filesystem.getUri({ path: cachePath, directory: "CACHE" });
+        const cacheUri = uriRes && uriRes.uri ? String(uriRes.uri) : null;
+        if (cacheUri && /^file:/i.test(cacheUri)) {
+          return cacheUri;
+        }
+      }
+    } catch (cacheError) {
+      console.warn("공유용 캐시 파일 준비 실패:", cacheError);
+    }
+
+    return uriCandidate || null;
+  }
+
+  async function shareSavedTxtFile(fileName, savedUri, txtContent) {
+    const nativeTxtShare = getCapacitorNativeTxtSharePlugin();
+    const sharePlugin = getCapacitorSharePlugin();
+
+    // 네이티브 플러그인이 있으면 파일 내용을 직접 넘긴다.
+    // Java가 Cache에 직접 쓰고 FileProvider content:// URI로 공유하므로 경로 해석 실패 없음.
+    if (nativeTxtShare && typeof nativeTxtShare.shareTxtFile === "function") {
+      try {
+        await nativeTxtShare.shareTxtFile({
+          fileName: fileName,
+          txtContent: txtContent || "",
+          dialogTitle: "TXT 공유"
+        });
+        if (statusEl) statusEl.textContent = "✅ 공유 창을 열었습니다: " + fileName;
+        return true;
+      } catch (shareError) {
+        console.warn("TXT 공유 실패:", shareError);
+        if (statusEl) {
+          statusEl.textContent = "🔴 공유 실패: " + (shareError && shareError.message ? shareError.message : String(shareError));
+        }
+        return false;
+      }
+    }
+
+    // fallback: @capacitor/share (웹/데스크톱)
+    if (!sharePlugin || typeof sharePlugin.share !== "function") {
+      if (statusEl) statusEl.textContent = "⚠️ 공유 플러그인이 없습니다.";
+      return false;
+    }
+    const fileUri = await ensureFileUriForShare(fileName, savedUri, txtContent);
+    if (!fileUri || !/^file:/i.test(String(fileUri))) {
+      if (statusEl) statusEl.textContent = "⚠️ 공유할 파일 경로를 찾지 못했습니다.";
+      return false;
+    }
+    try {
+      await sharePlugin.share({ title: fileName, files: [fileUri], dialogTitle: "TXT 공유" });
+      if (statusEl) statusEl.textContent = "✅ 공유 창을 열었습니다: " + fileName;
+      return true;
+    } catch (shareError) {
+      console.warn("TXT 공유 실패:", shareError);
+      if (statusEl) {
+        statusEl.textContent = "🔴 공유 실패: " + (shareError && shareError.message ? shareError.message : String(shareError));
+      }
+      return false;
+    }
+  }
+
+  async function saveTxtToNativeDocuments(fileName, txtContent) {
+    const filesystem = getCapacitorFilesystemPlugin();
+    if (!filesystem || typeof filesystem.writeFile !== "function") {
+      if (statusEl) statusEl.textContent = "⚠️ TXT 저장 플러그인이 없습니다. 앱을 다시 빌드해 주세요.";
+      return null;
+    }
+
+    const relativePath = "BearMap/" + fileName;
+    await filesystem.writeFile({
+      path: relativePath,
+      data: txtContent,
+      directory: "DOCUMENTS",
+      encoding: "utf8",
+      recursive: true
+    });
+
+    let savedUri = null;
+    if (typeof filesystem.getUri === "function") {
+      try {
+        const uriRes = await filesystem.getUri({ path: relativePath, directory: "DOCUMENTS" });
+        savedUri = uriRes && uriRes.uri ? uriRes.uri : null;
+      } catch (uriError) {
+        console.warn("저장 파일 URI 조회 실패:", uriError);
+      }
+    }
+
+    if (statusEl) statusEl.textContent = "✅ TXT 저장 완료: Documents/BearMap/" + fileName;
+
+    return {
+      relativePath: relativePath,
+      savedUri: savedUri
+    };
+  }
+
+  async function getNativeTxtUriIfExists(fileName) {
+    const filesystem = getCapacitorFilesystemPlugin();
+    if (!filesystem || typeof filesystem.stat !== "function") return null;
+
+    const relativePath = "BearMap/" + fileName;
+
+    try {
+      await filesystem.stat({
+        path: relativePath,
+        directory: "DOCUMENTS"
+      });
+
+      let savedUri = null;
+      if (typeof filesystem.getUri === "function") {
+        try {
+          const uriRes = await filesystem.getUri({ path: relativePath, directory: "DOCUMENTS" });
+          savedUri = uriRes && uriRes.uri ? uriRes.uri : null;
+        } catch (uriError) {
+          console.warn("기존 파일 URI 조회 실패:", uriError);
+        }
+      }
+
+      return {
+        relativePath: relativePath,
+        savedUri: savedUri
+      };
+    } catch (error) {
+      return null;
+    }
+  }
+
+  // 저장 완료 후 동작을 선택하는 미니 팝업 (미리보기 / 공유하기 / 닫기)
+  function showSavedFileActionPopup(fileName) {
+    return new Promise(function (resolve) {
+      const overlay = document.createElement("div");
+      overlay.style.position = "fixed";
+      overlay.style.inset = "0";
+      overlay.style.zIndex = "23050";
+      overlay.style.background = "rgba(15,23,42,0.35)";
+      overlay.style.display = "flex";
+      overlay.style.alignItems = "center";
+      overlay.style.justifyContent = "center";
+      overlay.style.pointerEvents = "auto";
+
+      const card = document.createElement("div");
+      card.style.position = "relative";
+      card.style.zIndex = "1";
+      card.style.width = "min(86vw, 320px)";
+      card.style.background = "#ffffff";
+      card.style.border = "1px solid rgba(15,23,42,0.12)";
+      card.style.borderRadius = "12px";
+      card.style.boxShadow = "0 14px 34px rgba(15,23,42,0.28)";
+      card.style.padding = "12px";
+
+      const header = document.createElement("div");
+      header.style.display = "flex";
+      header.style.alignItems = "center";
+      header.style.justifyContent = "space-between";
+      header.style.marginBottom = "8px";
+
+      const title = document.createElement("div");
+      title.textContent = "TXT 저장 완료";
+      title.style.fontSize = "14px";
+      title.style.fontWeight = "700";
+      title.style.color = "#0f172a";
+
+      const closeBtn = document.createElement("button");
+      closeBtn.type = "button";
+      closeBtn.textContent = "×";
+      closeBtn.style.width = "28px";
+      closeBtn.style.height = "28px";
+      closeBtn.style.border = "1px solid rgba(15,23,42,0.18)";
+      closeBtn.style.borderRadius = "8px";
+      closeBtn.style.background = "#ffffff";
+      closeBtn.style.fontSize = "18px";
+      closeBtn.style.lineHeight = "1";
+      closeBtn.style.cursor = "pointer";
+
+      const nameText = document.createElement("div");
+      nameText.textContent = fileName || "bear_estimate.txt";
+      nameText.style.fontSize = "11px";
+      nameText.style.color = "#64748b";
+      nameText.style.marginBottom = "10px";
+      nameText.style.whiteSpace = "nowrap";
+      nameText.style.overflow = "hidden";
+      nameText.style.textOverflow = "ellipsis";
+
+      const btnRow = document.createElement("div");
+      btnRow.style.display = "grid";
+      btnRow.style.gridTemplateColumns = "1fr 1fr";
+      btnRow.style.gap = "8px";
+
+      const openBtn = document.createElement("button");
+      openBtn.type = "button";
+      openBtn.textContent = "미리보기";
+      openBtn.style.height = "36px";
+      openBtn.style.border = "1px solid #0ea5e9";
+      openBtn.style.borderRadius = "9px";
+      openBtn.style.background = "#f0f9ff";
+      openBtn.style.color = "#0369a1";
+      openBtn.style.fontWeight = "700";
+      openBtn.style.cursor = "pointer";
+
+      const shareBtn = document.createElement("button");
+      shareBtn.type = "button";
+      shareBtn.textContent = "공유하기";
+      shareBtn.style.height = "36px";
+      shareBtn.style.border = "1px solid #16a34a";
+      shareBtn.style.borderRadius = "9px";
+      shareBtn.style.background = "#f0fdf4";
+      shareBtn.style.color = "#166534";
+      shareBtn.style.fontWeight = "700";
+      shareBtn.style.cursor = "pointer";
+
+      function closeWith(action) {
+        if (overlay && overlay.parentNode) overlay.parentNode.removeChild(overlay);
+        resolve(action || null);
+      }
+
+      closeBtn.addEventListener("click", function () { closeWith(null); });
+      openBtn.addEventListener("click", function () { closeWith("open"); });
+      shareBtn.addEventListener("click", function () { closeWith("share"); });
+
+      header.appendChild(title);
+      header.appendChild(closeBtn);
+      btnRow.appendChild(openBtn);
+      btnRow.appendChild(shareBtn);
+      card.appendChild(header);
+      card.appendChild(nameText);
+      card.appendChild(btnRow);
+      overlay.appendChild(card);
+      document.body.appendChild(overlay);
+    });
+  }
+
+  function showSavedTxtPreviewPopup(options) {
+    return new Promise(function (resolve) {
+      const fileName = options && options.fileName ? options.fileName : "bear_estimate.txt";
+      const txtContent = options && typeof options.txtContent === "string" ? options.txtContent : "";
+      const savedUri = options && options.savedUri ? options.savedUri : null;
+      const onSave = options && typeof options.onSave === "function" ? options.onSave : null;
+      const onShare = options && typeof options.onShare === "function" ? options.onShare : null;
+      const onOpen = options && typeof options.onOpen === "function" ? options.onOpen : null;
+
+      const overlay = document.createElement("div");
+      overlay.style.position = "fixed";
+      overlay.style.inset = "0";
+      overlay.style.zIndex = "23060";
+      overlay.style.background = "rgba(15,23,42,0.45)";
+      overlay.style.display = "flex";
+      overlay.style.alignItems = "center";
+      overlay.style.justifyContent = "center";
+      overlay.style.padding = "calc(env(safe-area-inset-top, 0px) + 18px) 18px calc(env(safe-area-inset-bottom, 0px) + 18px)";
+
+      const card = document.createElement("div");
+      card.style.width = "min(92vw, 520px)";
+      card.style.maxHeight = "calc(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 36px)";
+      card.style.display = "flex";
+      card.style.flexDirection = "column";
+      card.style.background = "#0f172a";
+      card.style.color = "#e2e8f0";
+      card.style.borderRadius = "16px";
+      card.style.boxShadow = "0 18px 40px rgba(2,6,23,0.45)";
+      card.style.overflow = "hidden";
+      card.style.border = "1px solid rgba(148,163,184,0.22)";
+
+      const header = document.createElement("div");
+      header.style.display = "flex";
+      header.style.alignItems = "center";
+      header.style.justifyContent = "space-between";
+      header.style.padding = "14px 14px 10px";
+      header.style.borderBottom = "1px solid rgba(148,163,184,0.14)";
+
+      const titleWrap = document.createElement("div");
+      titleWrap.style.minWidth = "0";
+
+      const title = document.createElement("div");
+      title.textContent = "TXT 미리보기";
+      title.style.fontSize = "15px";
+      title.style.fontWeight = "700";
+      title.style.color = "#f8fafc";
+
+      const subtitle = document.createElement("div");
+      subtitle.textContent = fileName;
+      subtitle.style.fontSize = "11px";
+      subtitle.style.color = "#94a3b8";
+      subtitle.style.marginTop = "3px";
+      subtitle.style.whiteSpace = "nowrap";
+      subtitle.style.overflow = "hidden";
+      subtitle.style.textOverflow = "ellipsis";
+
+      const closeBtn = document.createElement("button");
+      closeBtn.type = "button";
+      closeBtn.textContent = "×";
+      closeBtn.style.width = "32px";
+      closeBtn.style.height = "32px";
+      closeBtn.style.border = "1px solid rgba(148,163,184,0.24)";
+      closeBtn.style.borderRadius = "10px";
+      closeBtn.style.background = "rgba(255,255,255,0.06)";
+      closeBtn.style.color = "#f8fafc";
+      closeBtn.style.fontSize = "20px";
+      closeBtn.style.cursor = "pointer";
+
+      const body = document.createElement("pre");
+      body.textContent = txtContent;
+      body.style.margin = "0";
+      body.style.padding = "14px";
+      body.style.flex = "1 1 auto";
+      body.style.overflow = "auto";
+      body.style.background = "#020617";
+      body.style.color = "#e2e8f0";
+      body.style.fontSize = "12px";
+      body.style.lineHeight = "1.55";
+      body.style.fontFamily = "Consolas, 'Courier New', monospace";
+      body.style.whiteSpace = "pre-wrap";
+      body.style.wordBreak = "break-word";
+
+      const footer = document.createElement("div");
+      footer.style.display = "grid";
+      footer.style.gridTemplateColumns = "1fr 1fr";
+      footer.style.gap = "8px";
+      footer.style.padding = "12px 14px 14px";
+      footer.style.borderTop = "1px solid rgba(148,163,184,0.14)";
+      footer.style.background = "#0b1220";
+
+      const previewSaveBtn = document.createElement("button");
+      previewSaveBtn.type = "button";
+      previewSaveBtn.textContent = "저장하기";
+      previewSaveBtn.style.height = "38px";
+      previewSaveBtn.style.border = "1px solid #f59e0b";
+      previewSaveBtn.style.borderRadius = "10px";
+      previewSaveBtn.style.background = "#fef3c7";
+      previewSaveBtn.style.color = "#92400e";
+      previewSaveBtn.style.fontWeight = "700";
+      previewSaveBtn.style.cursor = "pointer";
+
+      const previewShareBtn = document.createElement("button");
+      previewShareBtn.type = "button";
+      previewShareBtn.textContent = "공유하기";
+      previewShareBtn.style.height = "38px";
+      previewShareBtn.style.border = "1px solid #16a34a";
+      previewShareBtn.style.borderRadius = "10px";
+      previewShareBtn.style.background = "#dcfce7";
+      previewShareBtn.style.color = "#166534";
+      previewShareBtn.style.fontWeight = "700";
+      previewShareBtn.style.cursor = "pointer";
+
+      const previewOpenBtn = document.createElement("button");
+      previewOpenBtn.type = "button";
+      previewOpenBtn.textContent = "파일 열기";
+      previewOpenBtn.style.height = "38px";
+      previewOpenBtn.style.border = "1px solid #38bdf8";
+      previewOpenBtn.style.borderRadius = "10px";
+      previewOpenBtn.style.background = "#e0f2fe";
+      previewOpenBtn.style.color = "#075985";
+      previewOpenBtn.style.fontWeight = "700";
+      previewOpenBtn.style.cursor = "pointer";
+
+      const doneBtn = document.createElement("button");
+      doneBtn.type = "button";
+      doneBtn.textContent = "닫기";
+      doneBtn.style.height = "38px";
+      doneBtn.style.border = "1px solid rgba(148,163,184,0.28)";
+      doneBtn.style.borderRadius = "10px";
+      doneBtn.style.background = "rgba(255,255,255,0.06)";
+      doneBtn.style.color = "#e2e8f0";
+      doneBtn.style.fontWeight = "700";
+      doneBtn.style.cursor = "pointer";
+
+      function closeWith(action) {
+        if (overlay && overlay.parentNode) overlay.parentNode.removeChild(overlay);
+        resolve(action || null);
+      }
+
+      overlay.addEventListener("click", function (event) {
+        if (event.target === overlay) closeWith(null);
+      });
+      closeBtn.addEventListener("click", function () { closeWith(null); });
+      doneBtn.addEventListener("click", function () { closeWith(null); });
+      previewSaveBtn.addEventListener("click", async function () {
+        previewSaveBtn.disabled = true;
+        if (onSave) {
+          try {
+            const saveResult = await onSave();
+            const savePath = saveResult && saveResult.relativePath
+              ? saveResult.relativePath
+              : ("BearMap/" + fileName);
+            window.alert("저장되었습니다.\n경로: Documents/" + savePath);
+            closeWith("saved");
+          } finally {
+            previewSaveBtn.disabled = false;
+          }
+          return;
+        }
+        previewSaveBtn.disabled = false;
+      });
+      previewShareBtn.addEventListener("click", async function () {
+        if (onShare) {
+          await onShare();
+          return;
+        }
+        await shareSavedTxtFile(fileName, savedUri, txtContent);
+      });
+      previewOpenBtn.addEventListener("click", async function () {
+        if (onOpen) {
+          await onOpen();
+          return;
+        }
+        const opened = openSavedFileLink(savedUri);
+        if (statusEl) {
+          statusEl.textContent = opened
+            ? "✅ 저장 파일 링크 열기 시도: " + fileName
+            : "⚠️ 링크 열기에 실패했습니다. 공유하기를 사용해 주세요.";
+        }
+      });
+
+      titleWrap.appendChild(title);
+      titleWrap.appendChild(subtitle);
+      header.appendChild(titleWrap);
+      header.appendChild(closeBtn);
+      footer.appendChild(previewSaveBtn);
+      footer.appendChild(previewShareBtn);
+      footer.appendChild(previewOpenBtn);
+      footer.appendChild(doneBtn);
+      card.appendChild(header);
+      card.appendChild(body);
+      card.appendChild(footer);
+      overlay.appendChild(card);
+      document.body.appendChild(overlay);
+    });
   }
 
   function rememberNativeTileUrl(cacheKey, dataUrl) {
@@ -687,6 +1308,99 @@
   let analysisAnimationRunning = false;
   let analysisActionBarEl = null;
   let analysisActionOverlay = null;
+  let currentAnalysisPoint = null; // 위치분석 최근 결과 (저장 버튼용)
+
+  // 십진수 위경도를 도분초(DMS) 문자열로 변환한다.
+  function decimalToDMS(deg, isLng) {
+    const abs = Math.abs(deg);
+    const d = Math.floor(abs);
+    const minFloat = (abs - d) * 60;
+    const m = Math.floor(minFloat);
+    const s = ((minFloat - m) * 60).toFixed(1);
+    const dir = isLng ? (deg >= 0 ? "E" : "W") : (deg >= 0 ? "N" : "S");
+    return d + "\u00b0" + m + "'" + s + '"' + dir;
+  }
+
+  // SQLite 저장용 한국시간(KST) ISO 문자열을 생성한다. (YYYY-MM-DDTHH:mm:ss+09:00)
+  function getKstSqliteTimestamp() {
+    const parts = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Seoul",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: false
+    }).formatToParts(new Date());
+
+    const map = {};
+    parts.forEach(function (p) {
+      if (p && p.type && p.type !== "literal") map[p.type] = p.value;
+    });
+
+    return [map.year, map.month, map.day].join("-") + "T" + [map.hour, map.minute, map.second].join(":") + "+09:00";
+  }
+
+  function parseSavedDateTime(value) {
+    if (!value) return "-";
+
+    let parsed = null;
+    if (typeof value === "number") {
+      parsed = new Date(value);
+    } else {
+      const text = String(value).trim();
+      if (!text) return "-";
+
+      // 신형: ISO 문자열(+09:00, Z 포함) 저장
+      if (/T.*([zZ]|[+-]\d{2}:\d{2})$/.test(text)) {
+        parsed = new Date(text);
+      } else if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(text)) {
+        // 구형: SQLite datetime('now') 텍스트는 UTC 기준으로 저장된 이력이라 Z를 붙여 보정한다.
+        parsed = new Date(text.replace(" ", "T") + "Z");
+      } else {
+        parsed = new Date(text);
+      }
+    }
+
+    if (!(parsed instanceof Date) || !Number.isFinite(parsed.getTime())) return null;
+    return parsed;
+  }
+
+  // 저장 시각 문자열을 한국시간으로 안전하게 표시한다.
+  function formatKstTimeLabel(value) {
+    const parsed = parseSavedDateTime(value);
+    if (!parsed) return "-";
+
+    return new Intl.DateTimeFormat("ko-KR", {
+      timeZone: "Asia/Seoul",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: true
+    }).format(parsed);
+  }
+
+  // 목록용 날짜 라벨(YYYY-MM-DD)
+  function formatKstDateLabel(value) {
+    const parsed = parseSavedDateTime(value);
+    if (!parsed) return "-";
+
+    const parts = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Seoul",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit"
+    }).formatToParts(parsed);
+
+    const map = {};
+    parts.forEach(function (p) {
+      if (p && p.type && p.type !== "literal") map[p.type] = p.value;
+    });
+
+    if (!map.year || !map.month || !map.day) return "-";
+    return [map.year, map.month, map.day].join("-");
+  }
 
   const analysisGuideLayer = new ol.layer.Vector({
     source: analysisGuideSource,
@@ -921,6 +1635,31 @@
     });
   }
 
+  // latlngList: [{lat, lng}, ...] 배열을 모두 포함하는 extent로 fit
+  function fitToPoints(latlngList, options) {
+    if (!latlngList || latlngList.length === 0) return;
+    const opts = options || {};
+    const padding = opts.padding !== undefined ? opts.padding : 80;
+    const maxZoom = opts.maxZoom !== undefined ? opts.maxZoom : 17;
+
+    if (latlngList.length === 1) {
+      flyToLatLng([latlngList[0].lat, latlngList[0].lng], 15);
+      return;
+    }
+
+    const coords = latlngList.map(function (p) { return mapCoordFromWgs84(p.lat, p.lng); });
+    const xs = coords.map(function (c) { return c[0]; });
+    const ys = coords.map(function (c) { return c[1]; });
+    const extent = [Math.min.apply(null, xs), Math.min.apply(null, ys),
+                    Math.max.apply(null, xs), Math.max.apply(null, ys)];
+
+    view.fit(extent, {
+      padding: [padding, padding, padding, padding],
+      maxZoom: maxZoom,
+      duration: 700
+    });
+  }
+
   function updateRegistrationPreview() {
     const baseLatLng = lastLatLng || [35.315, 127.655];
     const previewHeading = lastHeadingDeg !== null ? Math.round(lastHeadingDeg) + "°" : "대기중";
@@ -1000,6 +1739,8 @@
     return appPlugin;
   }
 
+  // 안드로이드 하단 뒤로가기(하드웨어 back) 공통 처리.
+  // 우선순위: 관측점 팝업 닫기 -> 목록/등록/분석 UI 닫기 -> 분석 결과 표시 취소 -> 앱 종료 확인.
   async function setupAndroidBackButtonExit() {
     if (getPlatform() !== "android") return;
 
@@ -1007,6 +1748,29 @@
     if (!appPlugin || removeBackButtonListener) return;
 
     const listener = await appPlugin.addListener("backButton", function () {
+      // 1) 지도 위 관측점 상세 팝업이 열려 있으면 먼저 닫는다.
+      if (observationPopupEl && observationPopupEl.style.display !== "none") {
+        closeObservationPopup();
+        return;
+      }
+
+      // 2) 목록/등록/분석 다이얼로그 등 메뉴성 UI는 obsList 모듈에서 우선 닫는다.
+      if (obsListModule && typeof obsListModule.handleBackNavigation === "function") {
+        const handled = obsListModule.handleBackNavigation();
+        if (handled) return;
+      }
+
+      // 3) 메뉴가 없다면 지도 위 분석 결과(추정 위치 표시)만 취소한다.
+      if (analysisEstimateSource && typeof analysisEstimateSource.getFeatures === "function") {
+        const estimateFeatures = analysisEstimateSource.getFeatures();
+        if (Array.isArray(estimateFeatures) && estimateFeatures.length > 0) {
+          clearAnalysisEstimateVisuals();
+          if (statusEl) statusEl.textContent = "ℹ️ 위치분석 표시를 취소했습니다.";
+          return;
+        }
+      }
+
+      // 4) 더 닫을 UI가 없을 때만 앱 종료를 물어본다.
       if (exitConfirmOpen) return;
 
       exitConfirmOpen = true;
@@ -1761,33 +2525,34 @@
     await startMyLocationTracking();
   }
 
-  // 샘플 곰 데이터 JSON을 비캐시 모드로 로드한다.
+  // 웹 환경(SQLite 미지원)에서는 bear_estimates와 유사한 JSON 행 구조를 폴백으로 사용한다.
   async function loadBearsData() {
     try {
       const res = await fetch("json/bears.json", { cache: "no-store" });
-      bearsDataCache = await res.json();
+      const data = await res.json();
+      bearsDataCache = Array.isArray(data) ? data : [];
     } catch (e) {
       console.error("bears.json 로드 실패:", e);
       bearsDataCache = [];
     }
   }
 
-  // 곰 데이터의 basePoints 주변으로 샘플 추정 좌표를 생성한다.
-  function makeBearEstimateSamples() {
-    if (!bearsDataCache.length) return [];
-    const picked = bearsDataCache.slice().sort(function () {
-      return Math.random() - 0.5;
-    });
+  function getWebFallbackBearEstimates() {
+    if (!Array.isArray(bearsDataCache) || !bearsDataCache.length) return [];
 
-    return picked.map(function (bearRecord) {
-      const basePoint = bearRecord.basePoints[Math.floor(Math.random() * bearRecord.basePoints.length)];
-      const bearCode = bearRecord.bear_code || bearRecord.id || "-";
+    return bearsDataCache.filter(function (row) {
+      return row && Number.isFinite(Number(row.lat)) && Number.isFinite(Number(row.lng));
+    }).map(function (row, index) {
       return {
-        bearCode: bearCode,
-        name: bearRecord.name,
-        lat: +(basePoint.lat + (Math.random() - 0.5) * 0.008).toFixed(6),
-        lng: +(basePoint.lng + (Math.random() - 0.5) * 0.008).toFixed(6),
-        ts: Date.now()
+        id: row.id || ("web-bear-" + index),
+        bear_code: String(row.bear_code || row.bearCode || "-").trim() || "-",
+        lat: Number(row.lat),
+        lng: Number(row.lng),
+        lat_dms: row.lat_dms || null,
+        lng_dms: row.lng_dms || null,
+        intersections_count: Number.isFinite(Number(row.intersections_count)) ? Number(row.intersections_count) : null,
+        created_at: row.created_at || null,
+        source_observation_ids: row.source_observation_ids || null
       };
     });
   }
@@ -1983,6 +2748,7 @@
     analysisGuideLayer.changed();
     analysisPreviewLayer.changed();
     hideAnalysisActionBar();
+    currentAnalysisPoint = null;
   }
 
   // 추정 위치 근처에 뜨는 저장/취소 액션바 오버레이를 1회 생성한다.
@@ -1999,7 +2765,7 @@
     const saveBtn = document.createElement("button");
     saveBtn.type = "button";
     saveBtn.textContent = "저장";
-    saveBtn.style.height = "38px";
+    saveBtn.style.height = "30px";
     saveBtn.style.minWidth = "78px";
     saveBtn.style.padding = "0 14px";
     saveBtn.style.border = "1px solid rgba(255,255,255,0.62)";
@@ -2014,7 +2780,7 @@
     const cancelBtn = document.createElement("button");
     cancelBtn.type = "button";
     cancelBtn.textContent = "취소";
-    cancelBtn.style.height = "38px";
+    cancelBtn.style.height = "30px";
     cancelBtn.style.minWidth = "78px";
     cancelBtn.style.padding = "0 14px";
     cancelBtn.style.border = "1px solid rgba(255,255,255,0.62)";
@@ -2026,8 +2792,103 @@
     cancelBtn.style.cursor = "pointer";
     cancelBtn.style.boxShadow = "0 8px 20px rgba(138,59,0,0.34)";
 
-    saveBtn.addEventListener("click", function () {
-      if (statusEl) statusEl.textContent = "ℹ️ 저장 기능은 준비 중입니다.";
+    saveBtn.addEventListener("click", async function () {
+      const point = currentAnalysisPoint;
+      if (!point || !Number.isFinite(point.lat) || !Number.isFinite(point.lng)) {
+        if (statusEl) statusEl.textContent = "⚠️ 저장할 분석 결과가 없습니다.";
+        return;
+      }
+
+      const initState = await initializeEmbeddedDatabase();
+      if (!initState || !initState.ready) {
+        if (statusEl) statusEl.textContent = "⚠️ SQLite 연결이 준비되지 않았습니다.";
+        return;
+      }
+
+      const sqlite = getCapacitorSQLitePlugin();
+      const dbName = window.BearSQLiteConfig && window.BearSQLiteConfig.dbName
+        ? window.BearSQLiteConfig.dbName
+        : "BearPointData";
+
+      if (!sqlite) {
+        if (statusEl) statusEl.textContent = "⚠️ SQLite를 사용할 수 없습니다.";
+        return;
+      }
+
+      const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+      const bearCode = String(point.bearCode || "").trim();
+      const sourceIds = Array.isArray(point.sourceObservationIds)
+        ? JSON.stringify(point.sourceObservationIds)
+        : null;
+      const intersectionsCount = Number.isFinite(point.intersectionsCount)
+        ? point.intersectionsCount
+        : null;
+      const latDms = decimalToDMS(point.lat, false);
+      const lngDms = decimalToDMS(point.lng, true);
+      const createdAtKst = getKstSqliteTimestamp();
+      const sourceObservationsJson = JSON.stringify((Array.isArray(point.sourceObservations) ? point.sourceObservations : []).map(function (obs) {
+        const projected = mapCoordFromWgs84(Number(obs.lat), Number(obs.lng));
+        return {
+          id: obs.id || null,
+          place: obs.place || null,
+          bearCode: obs.bearCode || null,
+          heading: obs.heading ?? null,
+          lat: Number(obs.lat),
+          lng: Number(obs.lng),
+          mapX: Array.isArray(projected) && Number.isFinite(projected[0]) ? projected[0] : null,
+          mapY: Array.isArray(projected) && Number.isFinite(projected[1]) ? projected[1] : null
+        };
+      }));
+      const analysisRaysJson = JSON.stringify((point.analysisDetails && Array.isArray(point.analysisDetails.rays) ? point.analysisDetails.rays : []).map(function (ray) {
+        const sourceObs = Array.isArray(point.sourceObservations)
+          ? point.sourceObservations.find(function (obs) { return obs && obs.id === ray.id; })
+          : null;
+        const projected = sourceObs ? mapCoordFromWgs84(Number(sourceObs.lat), Number(sourceObs.lng)) : null;
+        return {
+          id: ray.id || null,
+          headingDeg: Number.isFinite(Number(ray.headingDeg)) ? Number(ray.headingDeg) : null,
+          adjustedBearing: Number.isFinite(Number(ray.adjustedBearing)) ? Number(ray.adjustedBearing) : null,
+          localX: Array.isArray(ray.point) && Number.isFinite(Number(ray.point[0])) ? Number(ray.point[0]) : null,
+          localY: Array.isArray(ray.point) && Number.isFinite(Number(ray.point[1])) ? Number(ray.point[1]) : null,
+          directionX: Array.isArray(ray.direction) && Number.isFinite(Number(ray.direction[0])) ? Number(ray.direction[0]) : null,
+          directionY: Array.isArray(ray.direction) && Number.isFinite(Number(ray.direction[1])) ? Number(ray.direction[1]) : null,
+          mapX: Array.isArray(projected) && Number.isFinite(projected[0]) ? projected[0] : null,
+          mapY: Array.isArray(projected) && Number.isFinite(projected[1]) ? projected[1] : null
+        };
+      }));
+      const intersectionsJson = JSON.stringify((point.analysisDetails && Array.isArray(point.analysisDetails.intersections) ? point.analysisDetails.intersections : []).map(function (item, index) {
+        const projected = mapCoordFromWgs84(Number(item.lat), Number(item.lng));
+        return {
+          index: index + 1,
+          lat: Number(item.lat),
+          lng: Number(item.lng),
+          localX: Array.isArray(item.point) && Number.isFinite(Number(item.point[0])) ? Number(item.point[0]) : null,
+          localY: Array.isArray(item.point) && Number.isFinite(Number(item.point[1])) ? Number(item.point[1]) : null,
+          mapX: Array.isArray(projected) && Number.isFinite(projected[0]) ? projected[0] : null,
+          mapY: Array.isArray(projected) && Number.isFinite(projected[1]) ? projected[1] : null
+        };
+      }));
+      const analysisOptionsJson = JSON.stringify(point.analysisOptions || point.options || null);
+      const analysisDiagnosticsJson = JSON.stringify(point.analysisDiagnostics || null);
+
+      try {
+        saveBtn.disabled = true;
+        await sqlite.run({
+          database: dbName,
+          statement: "INSERT INTO bear_estimates (id, bear_code, lat, lng, lat_dms, lng_dms, intersections_count, source_observation_ids, source_observations_json, analysis_rays_json, intersections_json, analysis_options_json, analysis_diagnostics_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+          values: [id, bearCode, point.lat, point.lng, latDms, lngDms, intersectionsCount, sourceIds, sourceObservationsJson, analysisRaysJson, intersectionsJson, analysisOptionsJson, analysisDiagnosticsJson, createdAtKst],
+          transaction: true,
+          readonly: false
+        });
+        clearAnalysisEstimateVisuals();
+        if (statusEl) statusEl.textContent = `✅ 곰 추정위치(${bearCode}) 저장 완료`;
+        await refreshBearEstimatePanel();
+      } catch (saveError) {
+        console.error("[bear_estimates] 저장 실패:", saveError);
+        if (statusEl) statusEl.textContent = "🔴 저장 실패: " + (saveError && saveError.message ? saveError.message : String(saveError));
+      } finally {
+        saveBtn.disabled = false;
+      }
     });
 
     cancelBtn.addEventListener("click", function () {
@@ -2061,6 +2922,7 @@
   function renderAnalysisEstimatePoint(point) {
     clearAnalysisEstimateVisuals();
     if (!point || !Number.isFinite(point.lat) || !Number.isFinite(point.lng)) return;
+    currentAnalysisPoint = point; // clearAnalysisEstimateVisuals 이후에 재설정해야 null이 안 됨
 
     const estimateCoord = mapCoordFromWgs84(point.lat, point.lng);
 
@@ -2145,7 +3007,201 @@
     stopAnalysisVisualAnimation();
   });
 
-  function renderBears(items) {
+  // TXT 파일 생성 및 다운로드 (앱: DB 조회, 웹: 더미 포함)
+  async function downloadBearEstimateTxt(it, isFallback) {
+    const lat = Number(it.lat);
+    const lng = Number(it.lng);
+    const bearCode = it.bear_code || it.bearCode || "-";
+    const timeLabel = it.created_at || it.ts || "-";
+    const latDms = it.lat_dms || decimalToDMS(lat, false);
+    const lngDms = it.lng_dms || decimalToDMS(lng, true);
+    const projected = mapCoordFromWgs84(lat, lng);
+    const mapX = Array.isArray(projected) && Number.isFinite(projected[0]) ? projected[0].toFixed(3) : "-";
+    const mapY = Array.isArray(projected) && Number.isFinite(projected[1]) ? projected[1].toFixed(3) : "-";
+
+    let sourceObservations = [];
+    let intersections = [];
+
+    if (!isFallback) {
+      // DB에서 상세 JSON 조회
+      try {
+        const sqlite = getCapacitorSQLitePlugin();
+        const dbName = window.BearSQLiteConfig && window.BearSQLiteConfig.dbName
+          ? window.BearSQLiteConfig.dbName : "BearPointData";
+        const res = await sqlite.query({
+          database: dbName,
+          statement: "SELECT source_observations_json, intersections_json FROM bear_estimates WHERE id = ?",
+          values: [it.id]
+        });
+        const row = res && res.values && res.values[0];
+        if (row) {
+          try { sourceObservations = JSON.parse(row.source_observations_json || "[]"); } catch (e) { sourceObservations = []; }
+          try { intersections = JSON.parse(row.intersections_json || "[]"); } catch (e) { intersections = []; }
+        }
+      } catch (e) {
+        console.warn("TXT 다운로드 DB 조회 오류:", e);
+      }
+    } else {
+      // 웹 더미 데이터: source_observation_ids를 파싱해 가상 관측점 생성
+      let obsIds = [];
+      try { obsIds = JSON.parse(it.source_observation_ids || "[]"); } catch (e) { obsIds = []; }
+      sourceObservations = obsIds.map(function (obsId, idx) {
+        return {
+          id: obsId,
+          place: "관측지점 " + (idx + 1),
+          bearCode: bearCode,
+          lat: lat + (idx % 2 === 0 ? -0.01 : 0.01) * (idx + 1) * 0.5,
+          lng: lng + (idx % 2 === 0 ? 0.01 : -0.01) * (idx + 1) * 0.5,
+          heading: 180 + idx * 45
+        };
+      });
+      // 더미 교차점 (산술평균 단일 추정점)
+      const iLat = lat + 0.002;
+      const iLng = lng - 0.002;
+      const iProj = mapCoordFromWgs84(iLat, iLng);
+      intersections.push({
+        lat: iLat, lng: iLng,
+        x: Array.isArray(iProj) && Number.isFinite(iProj[0]) ? iProj[0].toFixed(3) : "-",
+        y: Array.isArray(iProj) && Number.isFinite(iProj[1]) ? iProj[1].toFixed(3) : "-"
+      });
+    }
+
+    // TXT 내용 조립
+    // 산술평균 교차점 (첫 번째 값 사용 - 단일 추정점)
+    const avgPt = intersections && intersections.length > 0 ? intersections[0] : null;
+    let avgLat = "-", avgLng = "-", avgX = "-", avgY = "-";
+    if (avgPt) {
+      avgLat = Number(avgPt.lat).toFixed(7);
+      avgLng = Number(avgPt.lng).toFixed(7);
+      const avgProj = (avgPt.x !== undefined && avgPt.y !== undefined)
+        ? [avgPt.x, avgPt.y]
+        : mapCoordFromWgs84(Number(avgPt.lat), Number(avgPt.lng));
+      avgX = Array.isArray(avgProj) && Number.isFinite(Number(avgProj[0])) ? Number(avgProj[0]).toFixed(3) : (avgPt.x || "-");
+      avgY = Array.isArray(avgProj) && Number.isFinite(Number(avgProj[1])) ? Number(avgProj[1]).toFixed(3) : (avgPt.y || "-");
+    }
+
+    let lines = [];
+    lines.push("========================================");
+    lines.push("  곰 추정위치 분석 결과");
+    lines.push("========================================");
+    lines.push("곰 코드     : " + bearCode);
+    lines.push("저장 일시   : " + timeLabel);
+    lines.push("");
+    lines.push("[ 추정 위치 ]");
+    lines.push("  위도(DMS) : " + latDms);
+    lines.push("  경도(DMS) : " + lngDms);
+    lines.push("  X (EPSG:5179) : " + mapX);
+    lines.push("  Y (EPSG:5179) : " + mapY);
+    lines.push("");
+    lines.push("[ 사용된 관측점 (" + sourceObservations.length + "개) ]");
+    sourceObservations.forEach(function (obs, idx) {
+      lines.push("  관측점 " + (idx + 1) + " ─────────────────────");
+      lines.push("    위도   : " + (Number(obs.lat).toFixed(7)));
+      lines.push("    경도   : " + (Number(obs.lng).toFixed(7)));
+      lines.push("    방향각 : " + (obs.heading != null ? obs.heading + "°" : "-"));
+    });
+    lines.push("");
+    lines.push("[ 산술평균 교차점 ]");
+    if (avgPt) {
+      lines.push("  위도   : " + avgLat);
+      lines.push("  경도   : " + avgLng);
+      lines.push("  X      : " + avgX);
+      lines.push("  Y      : " + avgY);
+    } else {
+      lines.push("  교차점 정보 없음");
+    }
+    lines.push("");
+    lines.push("========================================");
+    if (isFallback) lines.push("* 웹 환경: 관측점 및 교차점은 더미 데이터입니다.");
+
+    const txtContent = lines.join("\r\n");
+    const safeCode = bearCode.replace(/[^\w가-힣]/g, "_");
+    const fileDate = parseSavedDateTime(it.created_at || it.ts);
+    let safeTime = "unknown_time";
+    if (fileDate) {
+      const parts = new Intl.DateTimeFormat("en-CA", {
+        timeZone: "Asia/Seoul",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hour12: false
+      }).formatToParts(fileDate);
+
+      const map = {};
+      parts.forEach(function (p) {
+        if (p && p.type && p.type !== "literal") map[p.type] = p.value;
+      });
+
+      safeTime = [map.year, map.month, map.day].join("-") + "_" + [map.hour, map.minute, map.second].join("-");
+    }
+    const fileName = "bear_estimate_" + safeCode + "_" + safeTime + ".txt";
+
+    // 네이티브 앱은 먼저 인앱 미리보기를 띄우고, 저장/공유/열기는 그 안에서 실행한다.
+    if (isNativeCapacitorPlatform()) {
+      let savedFile = null;
+
+      async function ensureSavedFile() {
+        if (savedFile) return savedFile;
+
+        const existing = await getNativeTxtUriIfExists(fileName);
+        if (existing) {
+          savedFile = existing;
+          if (statusEl) statusEl.textContent = "ℹ️ 기존 저장 파일을 사용합니다: Documents/" + existing.relativePath;
+          return savedFile;
+        }
+
+        savedFile = await saveTxtToNativeDocuments(fileName, txtContent);
+        return savedFile;
+      }
+
+      try {
+        await showSavedTxtPreviewPopup({
+          fileName: fileName,
+          txtContent: txtContent,
+          onSave: async function () {
+            const saved = await ensureSavedFile();
+            return saved;
+          },
+          onShare: async function () {
+            const saved = await ensureSavedFile();
+            if (!saved) return;
+            await shareSavedTxtFile(fileName, saved && saved.savedUri ? saved.savedUri : undefined, txtContent);
+          },
+          onOpen: async function () {
+            const saved = await ensureSavedFile();
+            if (!saved) return;
+            const opened = openSavedFileLink(saved && saved.savedUri ? saved.savedUri : (saved && saved.relativePath ? saved.relativePath : null));
+            if (statusEl) {
+              statusEl.textContent = opened
+                ? "✅ 저장 파일 링크 열기 시도: " + fileName
+                : "⚠️ 링크 열기에 실패했습니다. 공유하기를 사용해 주세요.";
+            }
+          }
+        });
+      } catch (error) {
+        console.warn("TXT Filesystem 저장 오류:", error);
+        if (statusEl) {
+          statusEl.textContent = "🔴 TXT 저장 실패: " + (error && error.message ? error.message : String(error));
+        }
+      }
+      return;
+    }
+
+    const blob = new Blob([txtContent], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(function () { document.body.removeChild(a); URL.revokeObjectURL(url); }, 1000);
+    if (statusEl) statusEl.textContent = "✅ TXT 다운로드 시작: " + fileName;
+  }
+
+  function renderBears(items, isFallback) {
     if (!bearsListEl) return;
     bearsListEl.innerHTML = "";
 
@@ -2157,18 +3213,40 @@
     items.forEach(function (it) {
       const el = document.createElement("div");
       el.className = "bears-item";
+      const lat = Number(it.lat);
+      const lng = Number(it.lng);
+      const timeLabel = formatKstTimeLabel(it.created_at || it.ts);
+      const dateLabel = formatKstDateLabel(it.created_at || it.ts);
+      const bearCode = it.bear_code || it.bearCode || "-";
+      const latDms = it.lat_dms || decimalToDMS(lat, false);
+      const lngDms = it.lng_dms || decimalToDMS(lng, true);
+      const projected = mapCoordFromWgs84(lat, lng);
+      const mapX = Array.isArray(projected) && Number.isFinite(projected[0]) ? projected[0].toFixed(3) : "-";
+      const mapY = Array.isArray(projected) && Number.isFinite(projected[1]) ? projected[1].toFixed(3) : "-";
+      // 목록은 DMS와 X/Y를 우선 노출하고, lat/lng 줄은 요청에 따라 잠시 숨긴다.
       el.innerHTML =
-        '<div>' +
-          '<div><b>' + (it.bearCode || it.id || "-") + '</b></div>' +
-          '<div style="font-size:12px;opacity:.7">' + it.lat.toFixed(6) + ", " + it.lng.toFixed(6) + '</div>' +
+        '<div class="bears-item__main">' +
+          '<div><b>' + bearCode + '</b></div>' +
+          '<div style="font-size:11px;opacity:.55">' + latDms + ' ' + lngDms + '</div>' +
+          '<div style="font-size:11px;opacity:.6">X: ' + mapX + ' / Y: ' + mapY + '</div>' +
         '</div>' +
-        '<div style="font-size:12px;opacity:.7;align-self:center">' +
-          new Date(it.ts || Date.now()).toLocaleTimeString() +
+        '<div class="bears-item__meta">' +
+          '<button class="bears-txt-dl-btn" type="button" aria-label="TXT 다운로드"><span class="bears-txt-dl-btn__label">TXT 다운로드</span></button>' +
+          '<div class="bears-item__date">' + dateLabel + '</div>' +
+          '<div class="bears-item__time">' + timeLabel + '</div>' +
         '</div>';
 
       el.addEventListener("click", function () {
         flyToLatLng([it.lat, it.lng], 16);
       });
+
+      const dlBtn = el.querySelector(".bears-txt-dl-btn");
+      if (dlBtn) {
+        dlBtn.addEventListener("click", function (e) {
+          e.stopPropagation();
+          downloadBearEstimateTxt(it, !!isFallback);
+        });
+      }
 
       bearsListEl.appendChild(el);
     });
@@ -2176,22 +3254,116 @@
 
   // 곰 목록 패널/마커를 동기화한다. 초기 시점 보존을 위해 자동 fit은 하지 않는다.
   async function refreshBearEstimatePanel() {
-    if (statusEl) statusEl.textContent = "🐻 곰 추정위치 계산중…";
+    const initState = await initializeEmbeddedDatabase();
+    const isWebFallbackMode = !!(initState && initState.reason === "non-native-platform");
 
-    await loadBearsData();
-    const items = makeBearEstimateSamples();
-    renderBears(items);
-    renderBearMarkers(items);
-
-    if (!items.length) {
-      if (statusEl) statusEl.textContent = "🟠 표시할 곰 추정위치가 없습니다";
+    if (!isWebFallbackMode && (!initState || !initState.ready)) {
+      if (statusEl) statusEl.textContent = "🟠 SQLite 연결 대기 중입니다";
+      renderBears([], false);
+      renderBearMarkers([]);
       return;
     }
 
-    // 초기 진입 시 사용자 시점을 보존하기 위해 자동 fit은 비활성화한다.
+    const sqlite = getCapacitorSQLitePlugin();
+    const dbName = window.BearSQLiteConfig && window.BearSQLiteConfig.dbName
+      ? window.BearSQLiteConfig.dbName
+      : "BearPointData";
+
+    let items = [];
+    let usedFallback = false;
+    let hasQueryError = false;
+
+    async function queryBearEstimatesRows() {
+      let result = null;
+      try {
+        // 최신 스키마(lat_dms/lng_dms 컬럼 포함) 우선 조회
+        result = await sqlite.query({
+          database: dbName,
+          statement: "SELECT id, bear_code, lat, lng, lat_dms, lng_dms, intersections_count, created_at FROM bear_estimates ORDER BY created_at DESC LIMIT 100",
+          values: [],
+          readonly: false
+        });
+      } catch (primaryQueryError) {
+        const message = String(primaryQueryError && primaryQueryError.message ? primaryQueryError.message : primaryQueryError);
+        if (/no such column: lat_dms|no such column: lng_dms/i.test(message)) {
+          // 구버전 DB(도분초 컬럼 미생성)에서도 목록이 보이도록 하위호환 조회
+          result = await sqlite.query({
+            database: dbName,
+            statement: "SELECT id, bear_code, lat, lng, intersections_count, created_at FROM bear_estimates ORDER BY created_at DESC LIMIT 100",
+            values: [],
+            readonly: false
+          });
+        } else {
+          throw primaryQueryError;
+        }
+      }
+
+      return result;
+    }
+
+    if (sqlite) {
+      try {
+        let result = await queryBearEstimatesRows();
+
+        // 앱 첫 진입 타이밍에 연결 핸들이 늦게 준비되는 단말 대응: 1회 재초기화 후 재조회.
+        if (!result || !Array.isArray(result.values)) {
+          const retryState = await initializeEmbeddedDatabase();
+          if (retryState && retryState.ready) {
+            result = await queryBearEstimatesRows();
+          }
+        }
+
+        if (result && Array.isArray(result.values)) {
+          items = result.values.filter(function (row) {
+            return row && typeof row === "object" && Number.isFinite(Number(row.lat)) && Number.isFinite(Number(row.lng));
+          }).map(function (row) {
+            return {
+              id: row.id,
+              bear_code: String(row.bear_code || "-"),
+              lat: Number(row.lat),
+              lng: Number(row.lng),
+              lat_dms: row.lat_dms || null,
+              lng_dms: row.lng_dms || null,
+              intersections_count: row.intersections_count,
+              created_at: row.created_at
+            };
+          });
+        }
+      } catch (queryError) {
+        const message = String(queryError && queryError.message ? queryError.message : queryError);
+        const isConnectionNotReady = /No available connection for database/i.test(message);
+
+        if (isConnectionNotReady) {
+          // 시작 직후 일시적 연결 지연은 오류 대신 대기 상태로 안내한다.
+          if (statusEl) statusEl.textContent = "🟠 SQLite 연결 대기 중입니다";
+        } else {
+          hasQueryError = true;
+          console.warn("[bear_estimates] 조회 실패:", queryError);
+          if (statusEl) {
+            statusEl.textContent = "🔴 곰 추정위치 조회 실패: " + message;
+          }
+        }
+      }
+    } else {
+      await loadBearsData();
+      items = getWebFallbackBearEstimates();
+      usedFallback = true;
+    }
+
+    renderBears(items, usedFallback);
+
+    // renderBearMarkers는 bear_code/bearCode 모두 지원하는 구조로 변환해 전달한다.
+    renderBearMarkers(items.map(function (it) {
+      return { bearCode: it.bear_code || it.bearCode, lat: it.lat, lng: it.lng };
+    }));
+
+    if (!items.length) {
+      if (!hasQueryError && statusEl) statusEl.textContent = "🟠 표시할 곰 추정위치가 없습니다";
+      return;
+    }
 
     if (statusEl) {
-      statusEl.innerHTML = '<img src="assets/icons/icon_bear.png" style="height:18px;vertical-align:middle;margin-right:4px;" alt="곰"/> ' + items.length + '마리 표시됨';
+      statusEl.innerHTML = '<img src="assets/icons/icon_bear.png" style="height:18px;vertical-align:middle;margin-right:4px;" alt="곰"/> ' + items.length + '건 표시됨' + (usedFallback ? ' <span style="font-size:11px;opacity:.6">(샘플)</span>' : '');
     }
   }
 
@@ -2216,6 +3388,7 @@
     map: olMapAdapter,
     statusEl: statusEl,
     flyToLatLng: flyToLatLng,
+    fitToPoints: fitToPoints,
     observationMarkersLayer: observationMarkersLayer,
     onOpenList: function () {
       if (controlsManager && typeof controlsManager.deactivateMeasure === "function") {
@@ -2243,13 +3416,16 @@
       if (controlsManager && typeof controlsManager.deactivateMeasure === "function") {
         controlsManager.deactivateMeasure("analysis");
       }
-      renderAnalysisEstimatePoint(analysisPoint);
+      renderAnalysisEstimatePoint(analysisPoint); // 내부에서 currentAnalysisPoint 설정
     },
     onAnalysisPreview: function (previewPayload) {
       if (previewPayload && controlsManager && typeof controlsManager.deactivateMeasure === "function") {
         controlsManager.deactivateMeasure("analysis");
       }
       renderAnalysisInputPreview(previewPayload);
+    },
+    onClearAnalysisEstimate: function () {
+      clearAnalysisEstimateVisuals();
     }
   }) : null;
 
@@ -2265,10 +3441,14 @@
   }
   updateRegistrationPreview();
   if (obsListModule) obsListModule.initialize();
-  // 앱 시작 시 자산 DB 복사/연결 열기를 선행해 이후 CRUD 연결 준비를 끝낸다.
-  initializeEmbeddedDatabase().catch(function (error) {
-    console.error("SQLite 초기화 오류:", error);
-  });
+  ensureStartupOverlay();
+  if (startupOverlayRetryBtn && startupOverlayRetryBtn.dataset.bound !== "1") {
+    startupOverlayRetryBtn.dataset.bound = "1";
+    startupOverlayRetryBtn.addEventListener("click", function () {
+      bootWithSQLiteGate();
+    });
+  }
+  bootWithSQLiteGate();
   setupAndroidBackButtonExit().catch(function (error) {
     console.error("안드로이드 뒤로가기 초기화 오류:", error);
   });
@@ -2276,7 +3456,6 @@
   if (statusEl && statusEl.textContent === "연결됨") {
     statusEl.textContent = "✅ 지도 초기화 완료";
   }
-  refreshBearEstimatePanel();
 
   setTimeout(function () {
     if (!statusEl) return;

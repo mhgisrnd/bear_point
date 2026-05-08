@@ -657,8 +657,8 @@ window.createObsRegisterModule = function createObsRegisterModule({
         // GPS 비활성 또는 좌표 없음
         regCoordEl.value = "GPS 대기중";
       } else {
-        // TM 좌표 표시 고정 (위도, 경도)
-        regCoordEl.value = latestLive.lat.toFixed(6) + ", " + latestLive.lng.toFixed(6);
+        // TM 좌표 표시 고정 (위도, 경도) 소수점 5자리까지 보이게 정리
+        regCoordEl.value = latestLive.lat.toFixed(5) + ", " + latestLive.lng.toFixed(5);
       }
     }
 
@@ -697,6 +697,8 @@ window.createObsRegisterModule = function createObsRegisterModule({
   function startDrag(clientX, clientY) {
     if (!registerBoxEl) return;
     var rect = registerBoxEl.getBoundingClientRect();
+    // 드래그 중 width:auto 재계산으로 폭이 바뀌지 않도록 현재 폭을 고정한다.
+    registerBoxEl.style.width = Math.round(rect.width) + "px";
     isDragging = true;
     dragOffsetX = clientX - rect.left;
     dragOffsetY = clientY - rect.top;
@@ -733,6 +735,7 @@ window.createObsRegisterModule = function createObsRegisterModule({
     registerBoxEl.style.left = "";
     registerBoxEl.style.top = "";
     registerBoxEl.style.right = "";
+    registerBoxEl.style.width = "";
   }
 
   // 모바일에서 키보드 표시 시 visualViewport 기준으로 팝업/본문 높이를 보정한다.
@@ -746,17 +749,22 @@ window.createObsRegisterModule = function createObsRegisterModule({
       return;
     }
 
-    var viewportHeight = window.innerHeight;
+    var layoutViewportHeight = window.innerHeight;
+    var visualViewportHeight = null;
     if (window.visualViewport && Number.isFinite(window.visualViewport.height)) {
-      viewportHeight = Math.round(window.visualViewport.height);
+      visualViewportHeight = Math.round(window.visualViewport.height);
     }
 
-    var popupMaxHeight = Math.max(260, viewportHeight - 16);
+    var viewportHeight = Number.isFinite(visualViewportHeight) ? visualViewportHeight : layoutViewportHeight;
+    var keyboardLikelyOpen = Number.isFinite(visualViewportHeight) && visualViewportHeight < (layoutViewportHeight - 110);
+    var reservedBottomSpace = keyboardLikelyOpen ? 18 : 122;
+
+    var popupMaxHeight = Math.max(250, viewportHeight - reservedBottomSpace);
     registerBoxEl.style.maxHeight = popupMaxHeight + "px";
 
     if (registerBodyEl) {
       var headerHeight = registerHeaderEl ? registerHeaderEl.offsetHeight : 0;
-      var bodyMaxHeight = Math.max(120, popupMaxHeight - headerHeight - 12);
+      var bodyMaxHeight = Math.max(108, popupMaxHeight - headerHeight - 10);
       registerBodyEl.style.maxHeight = bodyMaxHeight + "px";
     }
   }
@@ -890,7 +898,7 @@ window.createObsRegisterModule = function createObsRegisterModule({
       var lat = Number(target.lat);
       var lng = Number(target.lng);
       regCoordEl.value = Number.isFinite(lat) && Number.isFinite(lng)
-        ? lat.toFixed(6) + ", " + lng.toFixed(6)
+        ? lat.toFixed(5) + ", " + lng.toFixed(5)
         : "-";
     }
     if (regHeadingEl) {

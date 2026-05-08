@@ -295,6 +295,8 @@ a.leaflet-control-locate-btn.is-active svg{
 .leaflet-popup.bear-popup .leaflet-popup-content {
   margin: 8px 10px;
   min-width: 120px;
+  max-height: min(52vh, 360px);
+  overflow-y: auto;
 }
 
 .leaflet-popup.bear-popup .leaflet-popup-close-button {
@@ -380,8 +382,6 @@ a.leaflet-control-locate-btn.is-active svg{
   display: flex;
   flex-direction: column;
   gap: 3px;
-  max-height: 90px;
-  overflow-y: auto;
   padding-right: 2px;
 }
 
@@ -414,6 +414,55 @@ a.leaflet-control-locate-btn.is-active svg{
   font-weight: 700;
   line-height: 1.3;
   word-break: break-word;
+}
+
+@media (max-width: 768px) {
+  .leaflet-popup.bear-popup .leaflet-popup-content-wrapper {
+    padding: 6px;
+  }
+
+  .leaflet-popup.bear-popup .leaflet-popup-content {
+    margin: 6px 8px;
+    max-height: min(44vh, 300px);
+  }
+
+  .obs-popup-card {
+    min-width: 180px;
+    max-width: 228px;
+  }
+
+  .obs-popup-card__eyebrow {
+    margin-bottom: 6px;
+    padding: 3px 7px;
+    font-size: 12px;
+  }
+
+  .obs-popup-card__grid {
+    gap: 5px;
+  }
+
+  .obs-popup-card__row {
+    padding: 6px 7px;
+    border-radius: 9px;
+  }
+
+  .obs-popup-card__label {
+    margin-bottom: 2px;
+    font-size: 9px;
+  }
+
+  .obs-popup-card__value {
+    font-size: 11px;
+  }
+
+  .obs-popup-card__value--coord {
+    font-size: 9px;
+  }
+
+  .obs-popup-det-table {
+    max-height: none;
+    overflow-y: visible;
+  }
 }
 
 #map .ol-attribution {

@@ -5,13 +5,15 @@ window.createObsListModule = function createObsListModule({
   map,
   statusEl,
   flyToLatLng,
+  fitToPoints,
   observationMarkersLayer,
   onOpenList,
   onOpenRegister,
   onCloseRegister,
   onEditObservation,
   onAnalysisResult,
-  onAnalysisPreview
+  onAnalysisPreview,
+  onClearAnalysisEstimate
 }) {
   const btnBear = document.getElementById("btn-obs-list");
   const btnObsAdd = document.getElementById("btn-obs-add");
@@ -70,6 +72,30 @@ window.createObsListModule = function createObsListModule({
     return Number.isFinite(numeric) ? numeric.toFixed(6) : "-";
   }
 
+  function formatDateTimeSeconds(value) {
+    if (value == null || value === "") return "-";
+
+    if (value instanceof Date && !Number.isNaN(value.getTime())) {
+      const yyyy = value.getFullYear();
+      const mm = String(value.getMonth() + 1).padStart(2, "0");
+      const dd = String(value.getDate()).padStart(2, "0");
+      const hh = String(value.getHours()).padStart(2, "0");
+      const mi = String(value.getMinutes()).padStart(2, "0");
+      const ss = String(value.getSeconds()).padStart(2, "0");
+      return `${yyyy}-${mm}-${dd} ${hh}:${mi}:${ss}`;
+    }
+
+    const text = String(value).trim();
+    if (!text) return "-";
+
+    // ISO 문자열은 소수초/타임존을 제거해 초 단위까지만 표시한다.
+    if (text.includes("T")) {
+      return text.replace("T", " ").replace(/\.\d+/, "").replace(/Z$/, "").replace(/[+-]\d{2}:\d{2}$/, "");
+    }
+
+    return text.replace(/\.\d+/, "");
+  }
+
   // 팝업 HTML에 들어갈 문자열을 기본적인 엔티티로 이스케이프한다.
   function escapeHtml(value) {
     return String(value == null ? "" : value)
@@ -125,6 +151,7 @@ window.createObsListModule = function createObsListModule({
     const yCoord = formatCoordinate(item && item.lng);
     const heading = escapeHtml(item && item.heading ? item.heading : "-");
     const detectorRowsHtml = buildDetectorRowsHtml(item && item.detectors);
+    const createdAt = escapeHtml(formatDateTimeSeconds(item && item.createdAt));
 
     return `
       <div class="obs-popup-card">
@@ -152,6 +179,10 @@ window.createObsListModule = function createObsListModule({
           <div class="obs-popup-card__row obs-popup-card__row--wide">
             <span class="obs-popup-card__label">감지기</span>
             <div class="obs-popup-det-table">${detectorRowsHtml}</div>
+          </div>
+          <div class="obs-popup-card__row obs-popup-card__row--wide">
+            <span class="obs-popup-card__label">최초 등록일시</span>
+            <span class="obs-popup-card__value">${createdAt}</span>
           </div>
         </div>
       </div>
@@ -210,6 +241,7 @@ window.createObsListModule = function createObsListModule({
       lat,
       lng,
       heading,
+      createdAt: row.created_at || row.createdAt || row.created || null,
       detectors,
       _obsKey: `${id}::${observationKeySeed++}`
     };
@@ -280,7 +312,7 @@ window.createObsListModule = function createObsListModule({
       const queryResult = await sqlite.query({
         database: dbName,
         statement: `
-          SELECT id, place, bear_code, owner, lat, lng, heading, detectors_json
+          SELECT id, place, bear_code, owner, lat, lng, heading, created_at, detectors_json
           FROM observations
           ORDER BY created_at DESC, id ASC
         `,
@@ -399,20 +431,6 @@ window.createObsListModule = function createObsListModule({
     flyToLatLng([item.lat, item.lng], 17);
   }
 
-  // 목록에서 선택한 관측점에 해당하는 마커 팝업을 연다.
-  function showObservationPopupByItem(item) {
-    if (!item) return;
-    const marker = observationMarkers.find((m) =>
-      m && m.obsData && m.obsData._obsKey === item._obsKey
-    );
-    if (!marker || typeof marker.openPopup !== "function") return;
-
-    if (map && typeof map.closePopup === "function") {
-      map.closePopup();
-    }
-    marker.openPopup();
-  }
-
   // 지도 줌 변경 시 기존 마커 아이콘 스케일을 재계산해 갱신한다.
   function updateObservationMarkerScale() {
     const zoom = map.getZoom();
@@ -473,7 +491,6 @@ window.createObsListModule = function createObsListModule({
 
       row.addEventListener("click", () => {
         moveToObservation(item);
-        showObservationPopupByItem(item);
       });
 
       obsListBodyEl.appendChild(row);
@@ -600,7 +617,7 @@ window.createObsListModule = function createObsListModule({
             margin-bottom: 2px !important;
           }
           #analysis-dialog-body {
-            grid-template-columns: 1fr !important;
+            grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
             gap: 6px !important;
           }
           .analysis-input-label {
@@ -683,9 +700,10 @@ window.createObsListModule = function createObsListModule({
 
     const desc = document.createElement("div");
     desc.id = "analysis-dialog-desc";
-    desc.textContent = "입력값 변경 시 지도 프리뷰가 즉시 반영됩니다.";
+    desc.textContent = "입력값 변경 시 지도 프리뷰가 즉시 반영됩니다.\n\n３점이상 교차점이면 산술평균 중심점을 사용하며, \n한 쌍이라도 불일치 징후가 있으면 실패 처리됩니다.";
     desc.style.fontSize = "12px";
     desc.style.color = "rgba(255,255,255,0.85)";
+    desc.style.whiteSpace = "pre-line";
 
     const distanceWrap = document.createElement("label");
     distanceWrap.className = "analysis-input-label";
@@ -710,6 +728,7 @@ window.createObsListModule = function createObsListModule({
     distanceInput.style.padding = "0 10px";
     distanceInput.style.fontSize = "14px";
     distanceInput.style.boxSizing = "border-box";
+    distanceInput.style.width = "100%";
     distanceWrap.appendChild(distanceInput);
 
     const declinationWrap = document.createElement("label");
@@ -724,9 +743,12 @@ window.createObsListModule = function createObsListModule({
 
     const declinationInput = document.createElement("input");
     declinationInput.className = "analysis-input";
-    declinationInput.type = "number";
-    declinationInput.step = "0.1";
-    declinationInput.inputMode = "decimal";
+    declinationInput.type = "text";
+    declinationInput.inputMode = "text";
+    declinationInput.setAttribute("autocapitalize", "off");
+    declinationInput.setAttribute("autocomplete", "off");
+    declinationInput.setAttribute("autocorrect", "off");
+    declinationInput.setAttribute("spellcheck", "false");
     declinationInput.style.height = "34px";
     declinationInput.style.border = "1px solid rgba(255,255,255,0.3)";
     declinationInput.style.borderRadius = "8px";
@@ -734,6 +756,7 @@ window.createObsListModule = function createObsListModule({
     declinationInput.style.padding = "0 10px";
     declinationInput.style.fontSize = "14px";
     declinationInput.style.boxSizing = "border-box";
+    declinationInput.style.width = "100%";
     declinationWrap.appendChild(declinationInput);
 
     const errorEl = document.createElement("div");
@@ -792,8 +815,8 @@ window.createObsListModule = function createObsListModule({
 
     panel.appendChild(header);
     panel.appendChild(desc);
-    panel.appendChild(body);
     panel.appendChild(errorEl);
+    panel.appendChild(body);
 
     overlay.appendChild(panel);
     document.body.appendChild(overlay);
@@ -840,6 +863,7 @@ window.createObsListModule = function createObsListModule({
     dialog.resolve = null;
     dialog.overlay.style.display = "none";
     setObservationListDisabled(false);
+    setPeekMode(false);
     emitAnalysisPreview(null);
 
     if (options.silent) {
@@ -853,7 +877,22 @@ window.createObsListModule = function createObsListModule({
     closeAnalysisOptionsDialog(null, { silent: true });
   }
 
-  function openAnalysisOptionsDialog(defaultValues, selectedItems) {
+  function isAnalysisDialogOpen() {
+    return !!(analysisOptionsDialogState && analysisOptionsDialogState.resolve);
+  }
+
+  async function confirmAndEscapeAnalysis(message) {
+    if (!isAnalysisDialogOpen()) return true;
+    const msg = message || "위치분석이 진행 중입니다. 종료하시겠습니까?";
+    const ok = window.confirm(msg);
+    if (ok) escapeAnalysisOptionsDialog();
+    return ok;
+  }
+
+  function openAnalysisOptionsDialog(defaultValues, selectedItems, onApplyAnalysis) {
+    // 이전 분석 결과(추정 위치 마커/원)를 클리어한다.
+    if (typeof onClearAnalysisEstimate === "function") onClearAnalysisEstimate();
+
     const dialog = ensureAnalysisOptionsDialog();
     const defaults = defaultValues || {};
     const previewItems = Array.isArray(selectedItems) ? selectedItems : [];
@@ -881,16 +920,16 @@ window.createObsListModule = function createObsListModule({
         return { ok: false, code: "EMPTY", message: "편각을 입력하세요." };
       }
 
-      const minusCount = (raw.match(/-/g) || []).length;
-      if (minusCount > 1 || (minusCount === 1 && raw.charAt(0) !== "-")) {
-        return { ok: false, code: "MINUS_TYPO", message: "편각의 '-' 기호 위치가 올바르지 않습니다." };
+      const signCount = (raw.match(/[+-]/g) || []).length;
+      if (signCount > 1 || (signCount === 1 && !/^[+-]/.test(raw))) {
+        return { ok: false, code: "SIGN_TYPO", message: "편각의 부호(+/-) 위치가 올바르지 않습니다." };
       }
 
       if (/[a-zA-Z가-힣]/.test(raw)) {
         return { ok: false, code: "TEXT_INPUT", message: "편각은 숫자만 입력하세요." };
       }
 
-      if (!/^-?\d+(?:\.\d+)?$/.test(raw)) {
+      if (!/^[+-]?\d+(?:\.\d+)?$/.test(raw)) {
         return { ok: false, code: "INVALID_FORMAT", message: "편각 형식이 올바르지 않습니다." };
       }
 
@@ -925,11 +964,19 @@ window.createObsListModule = function createObsListModule({
       };
     }
 
-    dialog.distanceInput.value = String(defaults.distanceLimitM ?? 3000);
-    dialog.declinationInput.value = String(defaults.declinationDeg ?? 0);
+    dialog.distanceInput.value = String(defaults.distanceLimitM ?? 3000);//반경 기본값 설정
+    dialog.declinationInput.value = String(defaults.declinationDeg ?? 0);//편각 기본값 설정
     dialog.errorEl.textContent = "";
+    dialog.body.style.setProperty("grid-template-columns", "repeat(2, minmax(0, 1fr))", "important");
     dialog.overlay.style.display = "flex";
     setObservationListDisabled(true);
+    setPeekMode(true);
+
+    // 탭 열릴 때 선택된 점들로 지도 포커싱
+    if (typeof fitToPoints === "function" && previewItems.length > 0) {
+      fitToPoints(previewItems.map(function (it) { return { lat: it.lat, lng: it.lng }; }), { padding: 80, maxZoom: 17 });
+    }
+
     emitAnalysisPreview(buildPreviewPayload());
 
     return new Promise((resolve) => {
@@ -940,10 +987,12 @@ window.createObsListModule = function createObsListModule({
       }
 
       dialog.distanceInput.oninput = function () {
+        dialog.errorEl.textContent = "";
         emitAnalysisPreview(buildPreviewPayload());
       };
 
       dialog.declinationInput.oninput = function () {
+        dialog.errorEl.textContent = "";
         emitAnalysisPreview(buildPreviewPayload());
       };
 
@@ -968,8 +1017,18 @@ window.createObsListModule = function createObsListModule({
 
         const distanceLimitM = distanceValidation.value;
         const declinationDeg = declinationValidation.value;
+        let analysisResult = null;
+        if (typeof onApplyAnalysis === "function") {
+          analysisResult = onApplyAnalysis({ distanceLimitM, declinationDeg });
+          if (!analysisResult || !analysisResult.ok) {
+            dialog.errorEl.textContent = analysisResult && analysisResult.message
+              ? `⚠️ ${analysisResult.message}`
+              : "⚠️ 위치분석 실패";
+            return;
+          }
+        }
 
-        closeWith({ distanceLimitM, declinationDeg });
+        closeWith({ distanceLimitM, declinationDeg, analysisResult });
       };
 
       dialog.overlay.onclick = function (event) {
@@ -986,6 +1045,11 @@ window.createObsListModule = function createObsListModule({
         }
         if (event.key === "Enter") {
           event.preventDefault();
+          if (event.target === dialog.distanceInput) {
+            dialog.declinationInput.focus();
+            dialog.declinationInput.select();
+            return;
+          }
           dialog.applyBtn.click();
         }
       };
@@ -1024,7 +1088,13 @@ window.createObsListModule = function createObsListModule({
     const optionInput = await openAnalysisOptionsDialog({
       distanceLimitM: 3000,
       declinationDeg: 0
-    }, selectedItems);
+    }, selectedItems, function (values) {
+      return analysisModule.analyzePosition(selectedItems, {
+        distanceLimitM: values.distanceLimitM,
+        declinationDeg: values.declinationDeg,
+        spreadToleranceM: 180
+      });
+    });
     if (!optionInput) {
       if (analysisCloseSilently) {
         analysisCloseSilently = false;
@@ -1033,21 +1103,7 @@ window.createObsListModule = function createObsListModule({
       statusEl.textContent = "ℹ️ 위치분석이 취소되었습니다.";
       return;
     }
-    const distanceLimitM = optionInput.distanceLimitM;
-    const declinationDeg = optionInput.declinationDeg;
-
-    const analysisResult = analysisModule.analyzePosition(selectedItems, {
-      distanceLimitM,
-      declinationDeg,
-      spreadToleranceM: 180
-    });
-
-    if (!analysisResult || !analysisResult.ok) {
-      statusEl.textContent = analysisResult && analysisResult.message
-        ? `⚠️ ${analysisResult.message}`
-        : "⚠️ 위치분석 실패";
-      return;
-    }
+    const analysisResult = optionInput.analysisResult;
 
     const point = analysisResult.result;
     statusEl.textContent = `📍 추정 위치 계산 완료 (${point.bearCode}) 교차 ${point.intersectionsCount}건`;
@@ -1056,11 +1112,15 @@ window.createObsListModule = function createObsListModule({
     if (typeof onAnalysisResult === "function") {
       onAnalysisResult({
         ...point,
+        analysisDetails: point.analysisDetails || null,
+        analysisOptions: point.options || null,
+        analysisDiagnostics: analysisResult.diagnostics || null,
         sourceObservationIds: selectedItems.map((item) => item.id),
         sourceObservations: selectedItems.map((item) => ({
           id: item.id,
           place: getObservationLabel(item),
           bearCode: item.bearCode,
+          heading: item.heading,
           lat: item.lat,
           lng: item.lng
         }))
@@ -1091,6 +1151,7 @@ window.createObsListModule = function createObsListModule({
     setPeekMode(false);
     setActiveTab(null);
     setTabLayout("none");
+    if (typeof onClearAnalysisEstimate === "function") onClearAnalysisEstimate();
   }
 
   // 현재 탭 상태(list/add/none)에 맞게 레이아웃과 마커를 제어한다.
@@ -1120,10 +1181,12 @@ window.createObsListModule = function createObsListModule({
       }
     });
 
-    if (btnBear) btnBear.addEventListener("click", () => {
+    if (btnBear) btnBear.addEventListener("click", async () => {
       const willClose = currentTab === "list";
 
       if (willClose) {
+        const ok = await confirmAndEscapeAnalysis();
+        if (!ok) return;
         closeListPanel();
         return;
       }
@@ -1134,9 +1197,10 @@ window.createObsListModule = function createObsListModule({
       if (onCloseRegister) onCloseRegister();
     });
 
-    if (btnObsAdd) btnObsAdd.addEventListener("click", () => {
-      // 위치분석 탭이 떠 있을 때 등록으로 전환하면 즉시 종료(escape 초기화)한다.
-      escapeAnalysisOptionsDialog();
+    if (btnObsAdd) btnObsAdd.addEventListener("click", async () => {
+      // 위치분석 탭이 떠 있을 때 등록으로 전환하면 확인 후 종료한다.
+      const analysisOk = await confirmAndEscapeAnalysis("위치분석이 진행 중입니다. 등록 화면으로 이동하시겠습니까?");
+      if (!analysisOk) return;
 
       const willClose = currentTab === "add";
 
@@ -1150,6 +1214,7 @@ window.createObsListModule = function createObsListModule({
       resetList();
       setActiveTab(btnObsAdd);
       setTabLayout("add");
+      if (typeof onClearAnalysisEstimate === "function") onClearAnalysisEstimate();
       if (onOpenRegister) onOpenRegister();
     });
 
@@ -1322,12 +1387,40 @@ window.createObsListModule = function createObsListModule({
     if (onCloseRegister) onCloseRegister();
   }
 
+  // 안드로이드 하드웨어 뒤로가기 시, 앱 종료 전에 닫아야 할 UI를 우선 정리한다.
+  // true 반환: 여기서 처리 완료(상위에서 종료 확인으로 가지 않음)
+  // false 반환: 닫을 UI 없음(상위에서 앱 종료 확인 진행)
+  function handleBackNavigation() {
+    // 1순위: 위치분석 옵션 다이얼로그 닫기
+    if (isAnalysisDialogOpen()) {
+      escapeAnalysisOptionsDialog();
+      return true;
+    }
+
+    // 2순위: 등록 탭 닫기
+    if (currentTab === "add") {
+      setActiveTab(null);
+      setTabLayout("none");
+      if (onCloseRegister) onCloseRegister();
+      return true;
+    }
+
+    // 3순위: 목록 탭 닫기
+    if (currentTab === "list") {
+      closeListPanel();
+      return true;
+    }
+
+    return false;
+  }
+
   return {
     initialize,
     openList,
     setTabLayout,
     deactivate: closeListPanel,
     getCurrentTab: () => currentTab,
+    handleBackNavigation,
     addObservation,
     updateObservation,
     renderObservationMarkers,
