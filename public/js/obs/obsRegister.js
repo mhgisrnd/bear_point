@@ -314,7 +314,7 @@ window.createObsRegisterModule = function createObsRegisterModule({
     });
   }
 
-  // 관측점 수정 시 허용된 필드(지명/등록자/곰코드/감지기)만 SQLite에 반영한다.
+  // 관측점 수정 시 허용된 필드(명칭/등록자/곰코드/감지기)만 SQLite에 반영한다.
   async function updateObservationInSQLite(observationId, payload, detectors) {
     var sqliteModule = window.BearSQLite;
     if (!sqliteModule || typeof sqliteModule.initialize !== "function") {
@@ -433,10 +433,10 @@ window.createObsRegisterModule = function createObsRegisterModule({
       throw new Error("수정 대상 관측점을 찾을 수 없습니다.");
     }
     if (!place) {
-      throw new Error("지명을 입력해야 합니다.");
+      throw new Error("명칭을 입력해야 합니다.");
     }
     if (!bearCode) {
-      throw new Error("곰 목록을 선택해주세요.");
+      throw new Error("곰 코드를 선택해주세요.");
     }
 
     return {
@@ -460,7 +460,7 @@ window.createObsRegisterModule = function createObsRegisterModule({
     var heading = parseHeadingNumber(isHeadingLocked ? lockedHeadingDeg : latestLive.heading);
 
     if (!place) {
-      throw new Error("지명을 입력해야 합니다.");
+      throw new Error("명칭을 입력해야 합니다.");
     }
     if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
       throw new Error(isManualEntryEnabled() ? "수동 좌표 형식이 올바르지 않습니다. (예: 35.326459, 127.637712)" : "GPS 좌표를 확인할 수 없어 등록할 수 없습니다.");
@@ -469,7 +469,7 @@ window.createObsRegisterModule = function createObsRegisterModule({
       throw new Error(isManualEntryEnabled() ? "수동 방향각을 입력하세요. (예: 270)" : "GPS 방향각을 확인할 수 없어 등록할 수 없습니다.");
     }
     if (!bearCode) {
-      throw new Error("곰 목록을 선택해주세요.");
+      throw new Error("곰 코드를 선택해주세요.");
     }
 
     return {
@@ -564,7 +564,7 @@ window.createObsRegisterModule = function createObsRegisterModule({
     editingObservationId = null;
     suppressCloseCallback = false;
     if (chkRegHeadingLock) chkRegHeadingLock.checked = false;
-    if (registerTitleEl) registerTitleEl.textContent = "관측점 등록";
+    if (registerTitleEl) registerTitleEl.textContent = "등록";
     if (btnRegSubmit) btnRegSubmit.textContent = "등록";
     if (btnRegCancel) btnRegCancel.textContent = "취소";
     if (btnGpsToggle) btnGpsToggle.disabled = false;
@@ -914,6 +914,10 @@ window.createObsRegisterModule = function createObsRegisterModule({
     if (labelEl) labelEl.textContent = isOn ? "내위치 ON" : "내위치 OFF";
   }
 
+  function isRegisterPopupVisible() {
+    return !!(registerBoxEl && !registerBoxEl.classList.contains("hidden"));
+  }
+
   function parseManualCoordInput(raw) {
     var text = String(raw == null ? "" : raw).trim();
     var parts = text.split(",");
@@ -935,6 +939,7 @@ window.createObsRegisterModule = function createObsRegisterModule({
 
   function emitManualPreview() {
     if (!isManualEntryEnabled() || typeof onManualPreview !== "function") return;
+    if (!isRegisterPopupVisible()) return;
     if (!Number.isFinite(latestLive.lat) || !Number.isFinite(latestLive.lng)) return;
 
     onManualPreview({

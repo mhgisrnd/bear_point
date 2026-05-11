@@ -51,12 +51,10 @@ public class NativeTxtSharePlugin extends Plugin {
             ArrayList<Uri> streamUris = new ArrayList<>();
             streamUris.add(contentUri);
             intent.putParcelableArrayListExtra(Intent.EXTRA_STREAM, streamUris);
-            // ClipData는 버전 무관하게 항상 설정 — 미설정 시 chooser를 거치면 URI 권한이 소멸됨
             ClipData clip = ClipData.newUri(getContext().getContentResolver(), shareFile.getName(), contentUri);
             intent.setClipData(clip);
             intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
 
-            // 대상 앱들에 URI 권한 명시 부여 (카카오 등 엄격한 권한 체크 대응)
             PackageManager packageManager = getContext().getPackageManager();
             List<ResolveInfo> resInfos = packageManager.queryIntentActivities(intent, PackageManager.MATCH_DEFAULT_ONLY);
             for (ResolveInfo resolveInfo : resInfos) {

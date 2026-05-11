@@ -4,7 +4,7 @@
 (function initBearSQLiteConfig() {
   window.BearSQLiteConfig = {
     dbName: "BearPointData",
-    dbVersion: 8,
+    dbVersion: 10,
     assetDbOverwrite: false,
     // 마이그레이션 이력과 실제 컬럼 상태가 어긋난 DB를 위한 보정 규칙.
     // 새 누락 컬럼이 생기면 여기에 규칙만 추가하면 된다.
@@ -41,13 +41,25 @@
       {
         type: "table-exists",
         table: "bear_estimates",
-        apply: "CREATE TABLE IF NOT EXISTS bear_estimates (id TEXT PRIMARY KEY, bear_code TEXT NOT NULL, lat REAL NOT NULL, lng REAL NOT NULL, lat_dms TEXT, lng_dms TEXT, intersections_count INTEGER, source_observation_ids TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now')))"
+        apply: "CREATE TABLE IF NOT EXISTS bear_estimates (id TEXT PRIMARY KEY, bear_code TEXT NOT NULL, owner TEXT, place TEXT, lat REAL NOT NULL, lng REAL NOT NULL, lat_dms TEXT, lng_dms TEXT, intersections_count INTEGER, source_observation_ids TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now')))"
       },
       {
         type: "index-exists",
         table: "bear_estimates",
         column: "created_at",
         apply: "CREATE INDEX IF NOT EXISTS idx_bear_estimates_created_at ON bear_estimates(created_at DESC)"
+      },
+      {
+        type: "column-exists",
+        table: "bear_estimates",
+        column: "owner",
+        apply: "ALTER TABLE bear_estimates ADD COLUMN owner TEXT"
+      },
+      {
+        type: "column-exists",
+        table: "bear_estimates",
+        column: "place",
+        apply: "ALTER TABLE bear_estimates ADD COLUMN place TEXT"
       },
       {
         type: "column-exists",
@@ -119,7 +131,7 @@
         "CREATE INDEX IF NOT EXISTS idx_observations_created_at ON observations(created_at)"
       ],
       7: [
-        "CREATE TABLE IF NOT EXISTS bear_estimates (id TEXT PRIMARY KEY, bear_code TEXT NOT NULL, lat REAL NOT NULL, lng REAL NOT NULL, lat_dms TEXT, lng_dms TEXT, intersections_count INTEGER, source_observation_ids TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now')))",
+        "CREATE TABLE IF NOT EXISTS bear_estimates (id TEXT PRIMARY KEY, bear_code TEXT NOT NULL, owner TEXT, place TEXT, lat REAL NOT NULL, lng REAL NOT NULL, lat_dms TEXT, lng_dms TEXT, intersections_count INTEGER, source_observation_ids TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now')))",
         "CREATE INDEX IF NOT EXISTS idx_bear_estimates_created_at ON bear_estimates(created_at DESC)"
       ],
       8: [
@@ -128,6 +140,12 @@
         "ALTER TABLE bear_estimates ADD COLUMN intersections_json TEXT",
         "ALTER TABLE bear_estimates ADD COLUMN analysis_options_json TEXT",
         "ALTER TABLE bear_estimates ADD COLUMN analysis_diagnostics_json TEXT"
+      ],
+      9: [
+        "ALTER TABLE bear_estimates ADD COLUMN owner TEXT"
+      ],
+      10: [
+        "ALTER TABLE bear_estimates ADD COLUMN place TEXT"
       ]
 
     }

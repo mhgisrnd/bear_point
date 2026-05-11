@@ -11,6 +11,7 @@
   const bearsToolbarEl = document.getElementById("bears-toolbar");
   const bearsSelectAllEl = document.getElementById("bears-select-all");
   const bearsSelectionCountEl = document.getElementById("bears-selection-count");
+  const btnBearsDownloadAllXlsEl = document.getElementById("btn-bears-download-all-xls");
   const btnBearsDeleteSelectedEl = document.getElementById("btn-bears-delete-selected");
   const currentCoordEl = document.getElementById("obs-current-coord");
   const currentHeadingEl = document.getElementById("obs-current-heading");
@@ -22,6 +23,7 @@
   let startupOverlayRetryBtn = null;
   let currentBearEstimateItems = [];
   let currentBearEstimateFallbackMode = false;
+  const overlayBackCloseStack = [];
   const selectedBearEstimateIds = new Set();
 
   try {
@@ -660,10 +662,20 @@
       shareBtn.style.fontWeight = "700";
       shareBtn.style.cursor = "pointer";
 
+      let isClosed = false;
+      let unregisterOverlayBackClose = function () {};
+
       function closeWith(action) {
+        if (isClosed) return;
+        isClosed = true;
+        unregisterOverlayBackClose();
         if (overlay && overlay.parentNode) overlay.parentNode.removeChild(overlay);
         resolve(action || null);
       }
+
+      unregisterOverlayBackClose = registerBackClosableOverlay(overlay, function () {
+        closeWith(null);
+      });
 
       closeBtn.addEventListener("click", function () { closeWith(null); });
       openBtn.addEventListener("click", function () { closeWith("open"); });
@@ -681,6 +693,56 @@
     });
   }
 
+  async function copyTextToClipboard(text) {
+    const value = typeof text === "string" ? text : String(text == null ? "" : text);
+
+    if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+      await navigator.clipboard.writeText(value);
+      return true;
+    }
+
+    const textarea = document.createElement("textarea");
+    textarea.value = value;
+    textarea.setAttribute("readonly", "readonly");
+    textarea.style.position = "fixed";
+    textarea.style.top = "0";
+    textarea.style.left = "-9999px";
+    textarea.style.opacity = "0";
+    document.body.appendChild(textarea);
+    textarea.focus();
+    textarea.select();
+
+    let copied = false;
+    try {
+      copied = document.execCommand("copy");
+    } finally {
+      if (textarea.parentNode) textarea.parentNode.removeChild(textarea);
+    }
+
+    if (!copied) {
+      throw new Error("클립보드 복사에 실패했습니다.");
+    }
+
+    return true;
+  }
+
+  // 문자 앱을 sms: 링크로 열고 TXT 본문을 미리 채우려던 보조 기능.
+  // 현재는 별도 문자 버튼을 숨기기로 해서 구현만 주석으로 보관한다.
+  // function openSmsComposer(text) {
+  //   const value = typeof text === "string" ? text : String(text == null ? "" : text);
+  //   if (!value.trim()) {
+  //     throw new Error("문자에 넣을 내용이 없습니다.");
+  //   }
+
+  //   const anchor = document.createElement("a");
+  //   anchor.href = "sms:?body=" + encodeURIComponent(value);
+  //   anchor.style.display = "none";
+  //   document.body.appendChild(anchor);
+  //   anchor.click();
+  //   document.body.removeChild(anchor);
+  //   return true;
+  // }
+
   function showSavedTxtPreviewPopup(options) {
     return new Promise(function (resolve) {
       const fileName = options && options.fileName ? options.fileName : "bear_estimate.txt";
@@ -688,6 +750,8 @@
       const savedUri = options && options.savedUri ? options.savedUri : null;
       const onSave = options && typeof options.onSave === "function" ? options.onSave : null;
       const onShare = options && typeof options.onShare === "function" ? options.onShare : null;
+      // 문자 버튼을 다시 쓸 경우 외부에서 문자 앱 실행 로직을 주입할 수 있도록 두었던 콜백.
+      // const onSms = options && typeof options.onSms === "function" ? options.onSms : null;
 
       const overlay = document.createElement("div");
       overlay.style.position = "fixed";
@@ -764,6 +828,254 @@
 
       const footer = document.createElement("div");
       footer.style.display = "grid";
+      footer.style.gridTemplateColumns = "repeat(4, minmax(0, 1fr))";
+      footer.style.gap = "8px";
+      footer.style.padding = "12px 14px 14px";
+      footer.style.borderTop = "1px solid rgba(148,163,184,0.14)";
+      footer.style.background = "#0b1220";
+
+      const previewSaveBtn = document.createElement("button");
+      previewSaveBtn.type = "button";
+      previewSaveBtn.textContent = "저장하기";
+      previewSaveBtn.style.height = "38px";
+      previewSaveBtn.style.border = "1px solid #f59e0b";
+      previewSaveBtn.style.borderRadius = "10px";
+      previewSaveBtn.style.background = "#fef3c7";
+      previewSaveBtn.style.color = "#92400e";
+      previewSaveBtn.style.fontWeight = "700";
+      previewSaveBtn.style.cursor = "pointer";
+
+      const previewShareBtn = document.createElement("button");
+      previewShareBtn.type = "button";
+      previewShareBtn.textContent = "공유하기";
+      previewShareBtn.style.height = "38px";
+      previewShareBtn.style.border = "1px solid #16a34a";
+      previewShareBtn.style.borderRadius = "10px";
+      previewShareBtn.style.background = "#dcfce7";
+      previewShareBtn.style.color = "#166534";
+      previewShareBtn.style.fontWeight = "700";
+      previewShareBtn.style.cursor = "pointer";
+
+      const previewCopyBtn = document.createElement("button");
+      previewCopyBtn.type = "button";
+      previewCopyBtn.textContent = "복사하기";
+      previewCopyBtn.style.height = "38px";
+      previewCopyBtn.style.border = "1px solid #7c3aed";
+      previewCopyBtn.style.borderRadius = "10px";
+      previewCopyBtn.style.background = "#f3e8ff";
+      previewCopyBtn.style.color = "#6d28d9";
+      previewCopyBtn.style.fontWeight = "700";
+      previewCopyBtn.style.cursor = "pointer";
+
+      // 문자 메시지 앱으로 직접 보내는 전용 버튼 UI.
+      // 공유하기가 파일 첨부 중심이라 문자 앱에서 TXT를 못 받는 경우를 우회하려고 추가했었다.
+      // const previewSmsBtn = document.createElement("button");
+      // previewSmsBtn.type = "button";
+      // previewSmsBtn.textContent = "문자 보내기";
+      // previewSmsBtn.style.height = "38px";
+      // previewSmsBtn.style.border = "1px solid #f97316";
+      // previewSmsBtn.style.borderRadius = "10px";
+      // previewSmsBtn.style.background = "#ffedd5";
+      // previewSmsBtn.style.color = "#c2410c";
+      // previewSmsBtn.style.fontWeight = "700";
+      // previewSmsBtn.style.cursor = "pointer";
+
+      const doneBtn = document.createElement("button");
+      doneBtn.type = "button";
+      doneBtn.textContent = "닫기";
+      doneBtn.style.height = "38px";
+      doneBtn.style.border = "1px solid rgba(148,163,184,0.28)";
+      doneBtn.style.borderRadius = "10px";
+      doneBtn.style.background = "rgba(255,255,255,0.06)";
+      doneBtn.style.color = "#e2e8f0";
+      doneBtn.style.fontWeight = "700";
+      doneBtn.style.cursor = "pointer";
+
+      let isClosed = false;
+      let unregisterOverlayBackClose = function () {};
+
+      function closeWith(action) {
+        if (isClosed) return;
+        isClosed = true;
+        unregisterOverlayBackClose();
+        if (overlay && overlay.parentNode) overlay.parentNode.removeChild(overlay);
+        resolve(action || null);
+      }
+
+      unregisterOverlayBackClose = registerBackClosableOverlay(overlay, function () {
+        closeWith(null);
+      });
+
+      overlay.addEventListener("click", function (event) {
+        if (event.target === overlay) closeWith(null);
+      });
+      closeBtn.addEventListener("click", function () { closeWith(null); });
+      doneBtn.addEventListener("click", function () { closeWith(null); });
+      previewSaveBtn.addEventListener("click", async function () {
+        previewSaveBtn.disabled = true;
+        if (onSave) {
+          try {
+            const saveResult = await onSave();
+            const savePath = saveResult && saveResult.relativePath
+              ? saveResult.relativePath
+              : ("BearMap/" + fileName);
+            window.alert("저장되었습니다.\n경로: Documents/" + savePath);
+            closeWith("saved");
+          } finally {
+            previewSaveBtn.disabled = false;
+          }
+          return;
+        }
+        previewSaveBtn.disabled = false;
+      });
+      previewShareBtn.addEventListener("click", async function () {
+        if (onShare) {
+          await onShare();
+          return;
+        }
+        await shareSavedTxtFile(fileName, savedUri, txtContent);
+      });
+      previewCopyBtn.addEventListener("click", async function () {
+        previewCopyBtn.disabled = true;
+        const originalText = previewCopyBtn.textContent;
+        try {
+          await copyTextToClipboard(txtContent);
+          previewCopyBtn.textContent = "복사 완료";
+          if (statusEl) statusEl.textContent = "✅ TXT 내용을 복사했습니다.";
+        } catch (copyError) {
+          console.warn("TXT 복사 실패:", copyError);
+          if (statusEl) {
+            statusEl.textContent = "🔴 TXT 복사 실패: " + (copyError && copyError.message ? copyError.message : String(copyError));
+          }
+          window.alert("복사에 실패했습니다. 다른 앱 공유를 사용해 주세요.");
+        } finally {
+          window.setTimeout(function () {
+            previewCopyBtn.textContent = originalText;
+            previewCopyBtn.disabled = false;
+          }, 1200);
+        }
+      });
+      // 문자 버튼 클릭 시 sms: 링크 또는 외부 onSms 콜백으로 문자 앱을 열던 처리.
+      // 본문 자동 입력이 안 되는 기기에서는 복사하기 버튼을 함께 쓰는 흐름을 의도했다.
+      // previewSmsBtn.addEventListener("click", async function () {
+      //   previewSmsBtn.disabled = true;
+      //   try {
+      //     if (onSms) {
+      //       await onSms();
+      //     } else {
+      //       openSmsComposer(txtContent);
+      //     }
+      //     if (statusEl) statusEl.textContent = "✅ 문자 앱을 열었습니다. 본문이 자동 입력되지 않으면 복사하기를 사용해 주세요.";
+      //   } catch (smsError) {
+      //     console.warn("문자 앱 열기 실패:", smsError);
+      //     if (statusEl) {
+      //       statusEl.textContent = "🔴 문자 앱 열기 실패: " + (smsError && smsError.message ? smsError.message : String(smsError));
+      //     }
+      //     window.alert("문자 앱을 열지 못했습니다. 복사하기로 붙여넣어 주세요.");
+      //   } finally {
+      //     previewSmsBtn.disabled = false;
+      //   }
+      // });
+
+      titleWrap.appendChild(title);
+      titleWrap.appendChild(subtitle);
+      header.appendChild(titleWrap);
+      header.appendChild(closeBtn);
+      footer.appendChild(previewSaveBtn);
+      footer.appendChild(previewShareBtn);
+      footer.appendChild(previewCopyBtn);
+      // 현재 팝업 버튼 구성은 저장하기, 공유하기, 복사하기, 닫기만 유지한다.
+      // footer.appendChild(previewSmsBtn);
+      footer.appendChild(doneBtn);
+      card.appendChild(header);
+      card.appendChild(body);
+      card.appendChild(footer);
+      overlay.appendChild(card);
+      document.body.appendChild(overlay);
+    });
+  }
+
+  // XLS 파일 미리보기 팝업 (저장하기, 공유하기, 닫기 3개 버튼만 지원)
+  function showSavedXlsPreviewPopup(options) {
+    return new Promise(function (resolve) {
+      const fileName = options && options.fileName ? options.fileName : "bear_estimate.xlsx";
+      const previewHtml = options && typeof options.previewHtml === "string" ? options.previewHtml : "";
+      const onSave = options && typeof options.onSave === "function" ? options.onSave : null;
+      const onShare = options && typeof options.onShare === "function" ? options.onShare : null;
+
+      const overlay = document.createElement("div");
+      overlay.style.position = "fixed";
+      overlay.style.inset = "0";
+      overlay.style.zIndex = "23060";
+      overlay.style.background = "rgba(15,23,42,0.45)";
+      overlay.style.display = "flex";
+      overlay.style.alignItems = "center";
+      overlay.style.justifyContent = "center";
+      overlay.style.padding = "calc(env(safe-area-inset-top, 0px) + 18px) 18px calc(env(safe-area-inset-bottom, 0px) + 18px)";
+
+      const card = document.createElement("div");
+      card.style.width = "min(92vw, 520px)";
+      card.style.maxHeight = "calc(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 36px)";
+      card.style.display = "flex";
+      card.style.flexDirection = "column";
+      card.style.background = "#0f172a";
+      card.style.color = "#e2e8f0";
+      card.style.borderRadius = "16px";
+      card.style.boxShadow = "0 18px 40px rgba(2,6,23,0.45)";
+      card.style.overflow = "hidden";
+      card.style.border = "1px solid rgba(148,163,184,0.22)";
+
+      const header = document.createElement("div");
+      header.style.display = "flex";
+      header.style.alignItems = "center";
+      header.style.justifyContent = "space-between";
+      header.style.padding = "14px 14px 10px";
+      header.style.borderBottom = "1px solid rgba(148,163,184,0.14)";
+
+      const titleWrap = document.createElement("div");
+      titleWrap.style.minWidth = "0";
+
+      const title = document.createElement("div");
+      title.textContent = "XLS 미리보기";
+      title.style.fontSize = "15px";
+      title.style.fontWeight = "700";
+      title.style.color = "#f8fafc";
+
+      const subtitle = document.createElement("div");
+      subtitle.textContent = fileName;
+      subtitle.style.fontSize = "11px";
+      subtitle.style.color = "#94a3b8";
+      subtitle.style.marginTop = "3px";
+      subtitle.style.whiteSpace = "nowrap";
+      subtitle.style.overflow = "hidden";
+      subtitle.style.textOverflow = "ellipsis";
+
+      const closeBtn = document.createElement("button");
+      closeBtn.type = "button";
+      closeBtn.textContent = "×";
+      closeBtn.style.width = "32px";
+      closeBtn.style.height = "32px";
+      closeBtn.style.border = "1px solid rgba(148,163,184,0.24)";
+      closeBtn.style.borderRadius = "10px";
+      closeBtn.style.background = "rgba(255,255,255,0.06)";
+      closeBtn.style.color = "#f8fafc";
+      closeBtn.style.fontSize = "20px";
+      closeBtn.style.cursor = "pointer";
+
+      const body = document.createElement("div");
+      body.innerHTML = previewHtml;
+      body.style.margin = "0";
+      body.style.padding = "14px";
+      body.style.flex = "1 1 auto";
+      body.style.overflow = "auto";
+      body.style.background = "#020617";
+      body.style.color = "#e2e8f0";
+      body.style.fontSize = "12px";
+      body.style.lineHeight = "1.55";
+      body.style.fontFamily = "Consolas, 'Courier New', monospace";
+
+      const footer = document.createElement("div");
+      footer.style.display = "grid";
       footer.style.gridTemplateColumns = "repeat(3, minmax(0, 1fr))";
       footer.style.gap = "8px";
       footer.style.padding = "12px 14px 14px";
@@ -803,10 +1115,20 @@
       doneBtn.style.fontWeight = "700";
       doneBtn.style.cursor = "pointer";
 
+      let isClosed = false;
+      let unregisterOverlayBackClose = function () {};
+
       function closeWith(action) {
+        if (isClosed) return;
+        isClosed = true;
+        unregisterOverlayBackClose();
         if (overlay && overlay.parentNode) overlay.parentNode.removeChild(overlay);
         resolve(action || null);
       }
+
+      unregisterOverlayBackClose = registerBackClosableOverlay(overlay, function () {
+        closeWith(null);
+      });
 
       overlay.addEventListener("click", function (event) {
         if (event.target === overlay) closeWith(null);
@@ -831,11 +1153,19 @@
         previewSaveBtn.disabled = false;
       });
       previewShareBtn.addEventListener("click", async function () {
-        if (onShare) {
+        if (!onShare) return;
+        previewShareBtn.disabled = true;
+        try {
           await onShare();
-          return;
+        } catch (shareError) {
+          console.warn("XLS 공유 처리 실패:", shareError);
+          if (statusEl) {
+            statusEl.textContent = "🔴 XLS 공유 실패: " + (shareError && shareError.message ? shareError.message : String(shareError));
+          }
+          window.alert("XLS 공유에 실패했습니다. 다시 시도해 주세요.");
+        } finally {
+          previewShareBtn.disabled = false;
         }
-        await shareSavedTxtFile(fileName, savedUri, txtContent);
       });
 
       titleWrap.appendChild(title);
@@ -1090,8 +1420,8 @@
 
   // 기존 NGII 기본도 URL 함수 (korean_map)
   const ngiiBaseTileUrlFn = ngiiTileUrlFnFor(NGII_BASE_LAYER_ID);
-  // NGII 야간지도 URL 함수 (night_map)
-  const ngiiNightTileUrlFn = ngiiTileUrlFnFor("night_map");
+  // NGII 위성지도 URL 함수 (satellite_map)
+  const ngiiSatelliteTileUrlFn = ngiiTileUrlFnFor("satellite_map");
 
   // '인터넷 기본도' 라디오에 연결되는 실제 온라인 베이스레이어(NGII).
   const osmBase = new ol.layer.Tile({
@@ -1138,8 +1468,8 @@
     visible: false
   });
 
-  // 야간지도 레이어(NGII night_map).
-  const nightBase = new ol.layer.Tile({
+  // 위성지도 레이어(NGII satellite_map).
+  const satelliteBase = new ol.layer.Tile({
     source: new ol.source.XYZ({
       projection: MAP_PROJECTION_CODE,
       tileGrid: ngiiOnlineTileGrid,
@@ -1148,7 +1478,7 @@
       wrapX: false,
       transition: 0,
       tilePixelRatio: 1,
-      tileUrlFunction: ngiiNightTileUrlFn
+      tileUrlFunction: ngiiSatelliteTileUrlFn
     }),
     visible: false
   });
@@ -1305,7 +1635,55 @@
   let analysisAnimationRunning = false;
   let analysisActionBarEl = null;
   let analysisActionOverlay = null;
+  let analysisOwnerInputEl = null;
+  let analysisPlaceInputEl = null;
   let currentAnalysisPoint = null; // 위치분석 최근 결과 (저장 버튼용)
+
+  function normalizeOwnerName(value) {
+    return String(value == null ? "" : value).trim();
+  }
+
+  function normalizePlaceName(value) {
+    return String(value == null ? "" : value).trim();
+  }
+
+  function buildUniqueOwnerList(values) {
+    const seen = new Set();
+    return (Array.isArray(values) ? values : []).reduce(function (result, value) {
+      const owner = normalizeOwnerName(value);
+      if (!owner || seen.has(owner)) return result;
+      seen.add(owner);
+      result.push(owner);
+      return result;
+    }, []);
+  }
+
+  function resolveDefaultAnalysisOwner(point) {
+    if (point && normalizeOwnerName(point.owner)) {
+      return normalizeOwnerName(point.owner);
+    }
+
+    const sourceOwners = buildUniqueOwnerList((point && Array.isArray(point.sourceObservations) ? point.sourceObservations : []).map(function (obs) {
+      return obs && obs.owner ? obs.owner : "";
+    }));
+
+    if (sourceOwners.length === 1) return sourceOwners[0];
+    return sourceOwners[0] || "";
+  }
+
+  function syncAnalysisOwnerInput(point) {
+    if (!analysisOwnerInputEl) return;
+    analysisOwnerInputEl.value = resolveDefaultAnalysisOwner(point);
+  }
+
+  function resolveDefaultAnalysisPlace(point) {
+    return "";
+  }
+
+  function syncAnalysisPlaceInput(point) {
+    if (!analysisPlaceInputEl) return;
+    analysisPlaceInputEl.value = resolveDefaultAnalysisPlace(point);
+  }
 
   // 십진수 위경도를 도분초(DMS) 문자열로 변환한다.
   function decimalToDMS(deg, isLng) {
@@ -1397,6 +1775,31 @@
 
     if (!map.year || !map.month || !map.day) return "-";
     return [map.year, map.month, map.day].join("-");
+  }
+
+  // 파일 출력용 날짜/시간 라벨(YYYY-MM-DD HH:mm:ss)
+  function formatKstDateTimeLabel(value) {
+    const parsed = parseSavedDateTime(value);
+    if (!parsed) return "-";
+
+    const parts = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Seoul",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: false
+    }).formatToParts(parsed);
+
+    const map = {};
+    parts.forEach(function (p) {
+      if (p && p.type && p.type !== "literal") map[p.type] = p.value;
+    });
+
+    if (!map.year || !map.month || !map.day || !map.hour || !map.minute || !map.second) return "-";
+    return [map.year, map.month, map.day].join("-") + " " + [map.hour, map.minute, map.second].join(":");
   }
 
   const analysisGuideLayer = new ol.layer.Vector({
@@ -1518,7 +1921,7 @@
   //맵 기능
   const map = new ol.Map({
     target: "map",
-    layers: [osmBase, englishBase, largeBase, nightBase, topoBase, mbtilesLayer, hillshadeOverlay, bearMarkerLayer, analysisPreviewLayer, analysisGuideLayer, analysisEstimateLayer, measureLayer, myLocationLayer],
+    layers: [osmBase, englishBase, largeBase, satelliteBase, topoBase, mbtilesLayer, hillshadeOverlay, bearMarkerLayer, analysisPreviewLayer, analysisGuideLayer, analysisEstimateLayer, measureLayer, myLocationLayer],
     view: view,
     interactions: ol.interaction.defaults.defaults({
       pinchRotate: false // 이 한 줄을 주석 처리하면 손가락 회전(핀치 회전) 활성
@@ -1554,7 +1957,7 @@
       osmBase: osmBase,
       englishBase: englishBase,
       largeBase: largeBase,
-      nightBase: nightBase,
+      satelliteBase: satelliteBase,
       topoBase: topoBase,
       mbtilesLayer: mbtilesLayer,
       hillshadeOverlay: hillshadeOverlay
@@ -1760,6 +2163,44 @@
     return appPlugin;
   }
 
+  function registerBackClosableOverlay(overlayEl, onBackClose) {
+    if (!overlayEl || typeof onBackClose !== "function") {
+      return function () {};
+    }
+
+    const entry = {
+      overlayEl: overlayEl,
+      onBackClose: onBackClose
+    };
+    overlayBackCloseStack.push(entry);
+
+    let removed = false;
+    return function unregisterOverlay() {
+      if (removed) return;
+      removed = true;
+      const index = overlayBackCloseStack.indexOf(entry);
+      if (index >= 0) overlayBackCloseStack.splice(index, 1);
+    };
+  }
+
+  function closeTopBackClosableOverlay() {
+    for (let index = overlayBackCloseStack.length - 1; index >= 0; index -= 1) {
+      const entry = overlayBackCloseStack[index];
+      if (!entry || !entry.overlayEl || !entry.overlayEl.parentNode) {
+        overlayBackCloseStack.splice(index, 1);
+        continue;
+      }
+
+      try {
+        entry.onBackClose();
+      } catch (error) {
+        console.warn("팝업 뒤로가기 닫기 실패:", error);
+      }
+      return true;
+    }
+    return false;
+  }
+
   // 안드로이드 하단 뒤로가기(하드웨어 back) 공통 처리.
   // 우선순위: 관측점 팝업 닫기 -> 목록/등록/분석 UI 닫기 -> 분석 결과 표시 취소 -> 앱 종료 확인.
   async function setupAndroidBackButtonExit() {
@@ -1769,6 +2210,11 @@
     if (!appPlugin || removeBackButtonListener) return;
 
     const listener = await appPlugin.addListener("backButton", function () {
+      // 최상단 저장/미리보기 팝업이 열려 있으면 우선 닫는다.
+      if (closeTopBackClosableOverlay()) {
+        return;
+      }
+
       // 1) 지도 위 관측점 상세 팝업이 열려 있으면 먼저 닫는다.
       if (observationPopupEl && observationPopupEl.style.display !== "none") {
         closeObservationPopup();
@@ -2596,6 +3042,8 @@
       return {
         id: row.id || ("web-bear-" + index),
         bear_code: String(row.bear_code || row.bearCode || "-").trim() || "-",
+        owner: normalizeOwnerName(row.owner) || "미지정",
+        place: normalizePlaceName(row.place) || "미지정",
         lat: Number(row.lat),
         lng: Number(row.lng),
         lat_dms: row.lat_dms || null,
@@ -2635,7 +3083,109 @@
       bearsSelectAllEl.indeterminate = selectedCount > 0 && selectedCount < totalCount;
     }
 
+    if (btnBearsDownloadAllXlsEl) {
+      btnBearsDownloadAllXlsEl.disabled = totalCount === 0;
+    }
+
     if (btnBearsDeleteSelectedEl) btnBearsDeleteSelectedEl.disabled = selectedCount === 0;
+  }
+
+  async function downloadAllBearEstimatesXls(items) {
+    const list = (Array.isArray(items) ? items : []).filter(function (it) {
+      return it && Number.isFinite(Number(it.lat)) && Number.isFinite(Number(it.lng));
+    });
+
+    if (!list.length) {
+      if (statusEl) statusEl.textContent = "🟠 다운로드할 곰 추정위치 목록이 없습니다";
+      return;
+    }
+
+    const xlsRows = [["등록일자", "위치추적담당자", "추정위치(위도)", "추정위치(경도)", "X좌표(TM)", "Y좌표(TM)", "지명"]];
+
+    list.forEach(function (it) {
+      const lat = Number(it.lat);
+      const lng = Number(it.lng);
+      const legacyProjected = legacyTmCoordFromWgs84(lat, lng);
+      const mapX = Array.isArray(legacyProjected) && Number.isFinite(legacyProjected[0]) ? legacyProjected[0].toFixed(3) : "-";
+      const mapY = Array.isArray(legacyProjected) && Number.isFinite(legacyProjected[1]) ? legacyProjected[1].toFixed(3) : "-";
+      const timeLabel = formatKstDateTimeLabel(it.created_at || it.ts);
+      const ownerName = normalizeOwnerName(it.owner) || "미지정";
+      const placeName = normalizePlaceName(it.place) || "미지정";
+
+      xlsRows.push([timeLabel, ownerName, lat, lng, mapX, mapY, placeName]);
+    });
+
+    const nowParts = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Seoul",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: false
+    }).formatToParts(new Date());
+    const timeMap = {};
+    nowParts.forEach(function (p) {
+      if (p && p.type && p.type !== "literal") timeMap[p.type] = p.value;
+    });
+    const safeTime = [timeMap.year, timeMap.month, timeMap.day].join("-") + "_" + [timeMap.hour, timeMap.minute, timeMap.second].join("-");
+    const fileName = "bear_estimates_all_" + safeTime + ".xlsx";
+
+    if (isNativeCapacitorPlatform()) {
+      let savedFile = null;
+
+      async function ensureSavedFile() {
+        if (savedFile) return savedFile;
+        savedFile = await saveXlsToNativeDocuments(fileName, xlsRows);
+        return savedFile;
+      }
+
+      try {
+        await showSavedXlsPreviewPopup({
+          fileName: fileName,
+          previewHtml: buildXlsPreviewHtml(xlsRows),
+          onSave: async function () {
+            const saved = await ensureSavedFile();
+            return saved;
+          },
+          onShare: async function () {
+            const saved = await saveXlsToNativeDocuments(fileName, xlsRows);
+            if (!saved) return;
+            await shareSavedXlsFile(fileName, saved && saved.savedUri ? saved.savedUri : undefined, xlsRows);
+          }
+        });
+      } catch (error) {
+        console.error("일괄 XLS 저장/공유 오류:", error);
+        if (statusEl) {
+          statusEl.textContent = "🔴 일괄 XLS 처리 실패: " + (error && error.message ? error.message : String(error));
+        }
+      }
+      return;
+    }
+
+    try {
+      const XLSX = await loadSheetJS();
+      const workbook = buildXlsWorkbook(XLSX, xlsRows, "곰추정위치목록");
+      const buffer = XLSX.write(workbook, { bookType: "xlsx", type: "array" });
+      const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+      const url = URL.createObjectURL(blob);
+
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+
+      if (statusEl) statusEl.textContent = "✅ 일괄 XLS 다운로드 시작: " + fileName;
+    } catch (error) {
+      console.error("일괄 XLS 생성 오류:", error);
+      if (statusEl) {
+        statusEl.textContent = "🔴 일괄 XLS 생성 실패: " + (error && error.message ? error.message : String(error));
+      }
+    }
   }
 
   async function deleteBearEstimateRows(ids, isFallback, deleteAll) {
@@ -2717,6 +3267,14 @@
       event.preventDefault();
       event.stopPropagation();
       handleDeleteSelectedBearEstimates();
+    });
+  }
+
+  if (btnBearsDownloadAllXlsEl) {
+    btnBearsDownloadAllXlsEl.addEventListener("click", function (event) {
+      event.preventDefault();
+      event.stopPropagation();
+      downloadAllBearEstimatesXls(currentBearEstimateItems);
     });
   }
 
@@ -2911,6 +3469,8 @@
     analysisGuideLayer.changed();
     analysisPreviewLayer.changed();
     hideAnalysisActionBar();
+    if (analysisOwnerInputEl) analysisOwnerInputEl.value = "";
+    if (analysisPlaceInputEl) analysisPlaceInputEl.value = "";
     currentAnalysisPoint = null;
   }
 
@@ -2920,10 +3480,83 @@
 
     const root = document.createElement("div");
     root.style.display = "none";
+    root.style.flexDirection = "column";
     root.style.alignItems = "center";
     root.style.gap = "8px";
+    root.style.width = "min(90vw, 260px)";
     root.style.zIndex = "1600";
     root.style.pointerEvents = "auto";
+
+    const inputCard = document.createElement("div");
+    inputCard.style.display = "flex";
+    inputCard.style.flexDirection = "column";
+    inputCard.style.gap = "8px";
+    inputCard.style.width = "100%";
+    inputCard.style.padding = "10px";
+    inputCard.style.background = "rgba(15,23,42,0.92)";
+    inputCard.style.border = "1px solid rgba(255,255,255,0.2)";
+    inputCard.style.borderRadius = "10px";
+    inputCard.style.boxShadow = "0 10px 24px rgba(15,23,42,0.3)";
+
+    const fieldGrid = document.createElement("div");
+    fieldGrid.style.display = "grid";
+    fieldGrid.style.gridTemplateColumns = "1fr";
+    fieldGrid.style.gap = "8px";
+
+    const ownerField = document.createElement("div");
+    ownerField.style.display = "flex";
+    ownerField.style.flexDirection = "column";
+    ownerField.style.gap = "4px";
+
+    const ownerLabel = document.createElement("label");
+    ownerLabel.textContent = "위치추적 담당자명";
+    ownerLabel.style.color = "#ffffff";
+    ownerLabel.style.fontSize = "12px";
+    ownerLabel.style.fontWeight = "700";
+
+    const ownerInput = document.createElement("input");
+    ownerInput.type = "text";
+    ownerInput.placeholder = "입력 또는 미지정";
+    ownerInput.autocomplete = "off";
+    ownerInput.style.height = "32px";
+    ownerInput.style.padding = "0 10px";
+    ownerInput.style.border = "1px solid rgba(148,163,184,0.65)";
+    ownerInput.style.borderRadius = "6px";
+    ownerInput.style.background = "rgba(255,255,255,0.96)";
+    ownerInput.style.color = "#0f172a";
+    ownerInput.style.fontSize = "14px";
+    ownerInput.style.outline = "none";
+
+    const placeField = document.createElement("div");
+    placeField.style.display = "flex";
+    placeField.style.flexDirection = "column";
+    placeField.style.gap = "4px";
+
+    const placeLabel = document.createElement("label");
+    placeLabel.textContent = "지명";
+    placeLabel.style.color = "#ffffff";
+    placeLabel.style.fontSize = "12px";
+    placeLabel.style.fontWeight = "700";
+
+    const placeInput = document.createElement("input");
+    placeInput.type = "text";
+    placeInput.placeholder = "입력 또는 미지정";
+    placeInput.autocomplete = "off";
+    placeInput.style.height = "32px";
+    placeInput.style.padding = "0 10px";
+    placeInput.style.border = "1px solid rgba(148,163,184,0.65)";
+    placeInput.style.borderRadius = "6px";
+    placeInput.style.background = "rgba(255,255,255,0.96)";
+    placeInput.style.color = "#0f172a";
+    placeInput.style.fontSize = "14px";
+    placeInput.style.outline = "none";
+
+    const buttonRow = document.createElement("div");
+    buttonRow.style.display = "flex";
+    buttonRow.style.alignItems = "center";
+    buttonRow.style.justifyContent = "center";
+    buttonRow.style.gap = "8px";
+    buttonRow.style.width = "100%";
 
     const saveBtn = document.createElement("button");
     saveBtn.type = "button";
@@ -2932,7 +3565,7 @@
     saveBtn.style.minWidth = "78px";
     saveBtn.style.padding = "0 14px";
     saveBtn.style.border = "1px solid rgba(255,255,255,0.62)";
-    saveBtn.style.borderRadius = "0";
+    saveBtn.style.borderRadius = "6px";
     saveBtn.style.background = "#0b72c7";
     saveBtn.style.color = "#ffffff";
     saveBtn.style.fontSize = "16px";
@@ -2947,7 +3580,7 @@
     cancelBtn.style.minWidth = "78px";
     cancelBtn.style.padding = "0 14px";
     cancelBtn.style.border = "1px solid rgba(255,255,255,0.62)";
-    cancelBtn.style.borderRadius = "0";
+    cancelBtn.style.borderRadius = "6px";
     cancelBtn.style.background = "#8a3b00";
     cancelBtn.style.color = "#ffffff";
     cancelBtn.style.fontSize = "16px";
@@ -2957,6 +3590,8 @@
 
     saveBtn.addEventListener("click", async function () {
       const point = currentAnalysisPoint;
+      const ownerName = normalizeOwnerName(analysisOwnerInputEl ? analysisOwnerInputEl.value : "");
+      const placeName = normalizePlaceName(analysisPlaceInputEl ? analysisPlaceInputEl.value : "");
       if (!point || !Number.isFinite(point.lat) || !Number.isFinite(point.lng)) {
         if (statusEl) statusEl.textContent = "⚠️ 저장할 분석 결과가 없습니다.";
         return;
@@ -3038,8 +3673,8 @@
         saveBtn.disabled = true;
         await sqlite.run({
           database: dbName,
-          statement: "INSERT INTO bear_estimates (id, bear_code, lat, lng, lat_dms, lng_dms, intersections_count, source_observation_ids, source_observations_json, analysis_rays_json, intersections_json, analysis_options_json, analysis_diagnostics_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-          values: [id, bearCode, point.lat, point.lng, latDms, lngDms, intersectionsCount, sourceIds, sourceObservationsJson, analysisRaysJson, intersectionsJson, analysisOptionsJson, analysisDiagnosticsJson, createdAtKst],
+          statement: "INSERT INTO bear_estimates (id, bear_code, owner, place, lat, lng, lat_dms, lng_dms, intersections_count, source_observation_ids, source_observations_json, analysis_rays_json, intersections_json, analysis_options_json, analysis_diagnostics_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+          values: [id, bearCode, ownerName || null, placeName || null, point.lat, point.lng, latDms, lngDms, intersectionsCount, sourceIds, sourceObservationsJson, analysisRaysJson, intersectionsJson, analysisOptionsJson, analysisDiagnosticsJson, createdAtKst],
           transaction: true,
           readonly: false
         });
@@ -3062,8 +3697,25 @@
     root.addEventListener("pointerdown", function (e) { e.stopPropagation(); });
     root.addEventListener("touchstart", function (e) { e.stopPropagation(); }, { passive: true });
 
-    root.appendChild(saveBtn);
-    root.appendChild(cancelBtn);
+    ownerField.appendChild(ownerLabel);
+    ownerField.appendChild(ownerInput);
+    placeField.appendChild(placeLabel);
+    placeField.appendChild(placeInput);
+    fieldGrid.appendChild(ownerField);
+    fieldGrid.appendChild(placeField);
+    inputCard.appendChild(fieldGrid);
+    buttonRow.appendChild(saveBtn);
+    buttonRow.appendChild(cancelBtn);
+
+    const headerText = document.createElement("div");
+    headerText.textContent = "추가정보 입력";
+    headerText.style.color = "#ffffff";
+    headerText.style.fontSize = "13px";
+    headerText.style.fontWeight = "600";
+
+    root.appendChild(headerText);
+    root.appendChild(inputCard);
+    root.appendChild(buttonRow);
 
     //분석 시 저장, 취소 버튼 위치 지정
     analysisActionOverlay = new ol.Overlay({
@@ -3079,6 +3731,8 @@
     map.addOverlay(analysisActionOverlay);
 
     analysisActionBarEl = root;
+    analysisOwnerInputEl = ownerInput;
+    analysisPlaceInputEl = placeInput;
   }
 
   // 분석 완료 결과(추정점/가이드선/액션바)를 지도에 렌더링한다.
@@ -3130,6 +3784,8 @@
     }));
 
     analysisEstimateSource.addFeature(feature);
+    syncAnalysisOwnerInput(point);
+    syncAnalysisPlaceInput(point);
     showAnalysisActionBar(estimateCoord);
     startAnalysisVisualAnimation();
   }
@@ -3175,6 +3831,8 @@
     const lat = Number(it.lat);
     const lng = Number(it.lng);
     const bearCode = it.bear_code || it.bearCode || "-";
+    const ownerName = normalizeOwnerName(it.owner) || "미지정";
+    const placeName = normalizePlaceName(it.place) || "미지정";
     const timeLabel = it.created_at || it.ts || "-";
     const latDms = it.lat_dms || decimalToDMS(lat, false);
     const lngDms = it.lng_dms || decimalToDMS(lng, true);
@@ -3244,6 +3902,8 @@
     lines.push("  곰 추적위치 결과");
     lines.push("========================================");
     lines.push("코드     : " + bearCode);
+    lines.push("등록자   : " + ownerName);
+    lines.push("지명     : " + placeName);
     lines.push("저장 일시   : " + timeLabel);
     lines.push("");
     lines.push("[ 사용된 관측점 목록 (" + sourceObservations.length + "개) ]");
@@ -3352,6 +4012,344 @@
     if (statusEl) statusEl.textContent = "✅ TXT 다운로드 시작: " + fileName;
   }
 
+  // SheetJS 라이브러리를 동적으로 로드
+  function loadSheetJS() {
+    return new Promise(function (resolve, reject) {
+      if (typeof XLSX !== "undefined") {
+        resolve(XLSX);
+        return;
+      }
+      const script = document.createElement("script");
+      script.src = "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js";
+      script.onload = function () {
+        if (typeof XLSX !== "undefined") {
+          resolve(XLSX);
+        } else {
+          reject(new Error("XLSX 라이브러리 로드 실패"));
+        }
+      };
+      script.onerror = function () {
+        reject(new Error("XLSX 라이브러리 다운로드 실패"));
+      };
+      document.head.appendChild(script);
+    });
+  }
+
+  async function downloadBearEstimateXls(it, isFallback) {
+    const lat = Number(it.lat);
+    const lng = Number(it.lng);
+    const bearCode = it.bear_code || it.bearCode || "-";
+    const ownerName = normalizeOwnerName(it.owner) || "미지정";
+    const placeName = normalizePlaceName(it.place) || "미지정";
+    const timeLabel = formatKstDateTimeLabel(it.created_at || it.ts);
+    const legacyProjected = legacyTmCoordFromWgs84(lat, lng);
+    const mapX = Array.isArray(legacyProjected) && Number.isFinite(legacyProjected[0]) ? legacyProjected[0].toFixed(3) : "-";
+    const mapY = Array.isArray(legacyProjected) && Number.isFinite(legacyProjected[1]) ? legacyProjected[1].toFixed(3) : "-";
+
+    const safeCode = bearCode.replace(/[^\w가-힣]/g, "_");
+    const fileDate = parseSavedDateTime(it.created_at || it.ts);
+    let safeTime = "unknown_time";
+    if (fileDate) {
+      const parts = new Intl.DateTimeFormat("en-CA", {
+        timeZone: "Asia/Seoul",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hour12: false
+      }).formatToParts(fileDate);
+
+      const map = {};
+      parts.forEach(function (p) {
+        if (p && p.type && p.type !== "literal") map[p.type] = p.value;
+      });
+
+      safeTime = [map.year, map.month, map.day].join("-") + "_" + [map.hour, map.minute, map.second].join("-");
+    }
+    const fileName = "bear_estimate_" + safeCode + "_" + safeTime + ".xlsx";
+
+    // 데이터 준비 (첫 번째 시트의 데이터)
+    const xlsData = [
+      ["등록일자", "위치추적담당자", "추정위치(위도)", "추정위치(경도)", "X좌표(TM)", "Y좌표(TM)", "지명"],
+      [timeLabel, ownerName, lat, lng, mapX, mapY, placeName]
+    ];
+
+    const previewHtml = buildXlsPreviewHtml(xlsData);
+
+    if (isNativeCapacitorPlatform()) {
+      let savedFile = null;
+
+      async function ensureSavedFile() {
+        if (savedFile) return savedFile;
+        savedFile = await saveXlsToNativeDocuments(fileName, xlsData);
+        return savedFile;
+      }
+
+      try {
+        await showSavedXlsPreviewPopup({
+          fileName: fileName,
+          previewHtml: previewHtml,
+          onSave: async function () {
+            const saved = await ensureSavedFile();
+            return saved;
+          },
+          onShare: async function () {
+            const saved = await saveXlsToNativeDocuments(fileName, xlsData);
+            if (!saved) return;
+            await shareSavedXlsFile(fileName, saved && saved.savedUri ? saved.savedUri : undefined, xlsData);
+          }
+        });
+      } catch (error) {
+        console.warn("XLS Filesystem 저장 오류:", error);
+        if (statusEl) {
+          statusEl.textContent = "🔴 XLS 저장 실패: " + (error && error.message ? error.message : String(error));
+        }
+      }
+      return;
+    }
+
+    // 웹 환경에서는 바로 다운로드
+    try {
+      const XLSX = await loadSheetJS();
+      const workbook = buildXlsWorkbook(XLSX, xlsData, "추정위치");
+
+      const buffer = XLSX.write(workbook, { bookType: "xlsx", type: "array" });
+      const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+      const url = URL.createObjectURL(blob);
+
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+
+      if (statusEl) statusEl.textContent = "✅ XLS 다운로드 시작: " + fileName;
+    } catch (error) {
+      console.error("XLS 생성 오류:", error);
+      if (statusEl) {
+        statusEl.textContent = "🔴 XLS 생성 실패: " + (error && error.message ? error.message : String(error));
+      }
+    }
+  }
+
+    function buildXlsPreviewHtml(xlsData) {
+      const rows = Array.isArray(xlsData) ? xlsData : [];
+      const headers = Array.isArray(rows[0]) ? rows[0] : [];
+      const bodyRows = rows.slice(1).filter(function (row) { return Array.isArray(row); });
+
+      function getVisualTextLength(value) {
+        const text = String(value == null ? "" : value);
+        let length = 0;
+        for (let i = 0; i < text.length; i += 1) {
+          const code = text.charCodeAt(i);
+          length += code > 255 ? 2 : 1;
+        }
+        return length;
+      }
+
+      const colWidths = headers.map(function (header, index) {
+        const headerLen = getVisualTextLength(header);
+        const maxBodyLen = bodyRows.reduce(function (maxLen, row) {
+          return Math.max(maxLen, getVisualTextLength(row[index]));
+        }, 0);
+        const widthCh = Math.max(headerLen, maxBodyLen) + 2;
+        return Math.max(8, Math.min(40, widthCh));
+      });
+
+      let previewHtml = '<table style="width:max-content; min-width:100%; border-collapse:collapse; font-size:11px; table-layout:auto; white-space:nowrap;">';
+      previewHtml += '<colgroup>';
+      colWidths.forEach(function (widthCh) {
+        previewHtml += '<col style="width:' + widthCh + 'ch;">';
+      });
+      previewHtml += '</colgroup>';
+      previewHtml += '<thead style="background:#1e293b;"><tr>';
+      headers.forEach(function (header) {
+        previewHtml += '<th style="border:1px solid #475569; padding:3px; text-align:left; color:#cbd5e1;">' + header + '</th>';
+      });
+      previewHtml += '</tr></thead>';
+      previewHtml += '<tbody>';
+      bodyRows.forEach(function (row) {
+        previewHtml += '<tr>';
+        headers.forEach(function (_, colIdx) {
+          previewHtml += '<td style="border:1px solid #475569; padding:3px; color:#e2e8f0;">' + String(row[colIdx] == null ? "" : row[colIdx]) + '</td>';
+        });
+        previewHtml += '</tr>';
+      });
+      previewHtml += '</tbody>';
+      previewHtml += '</table>';
+
+      return previewHtml;
+    }
+
+    function buildXlsWorkbook(XLSX, xlsData, sheetName) {
+      const rows = Array.isArray(xlsData) ? xlsData : [];
+      const worksheet = XLSX.utils.aoa_to_sheet(rows);
+
+      function getVisualTextLength(value) {
+        const text = String(value == null ? "" : value);
+        let length = 0;
+        for (let i = 0; i < text.length; i += 1) {
+          const code = text.charCodeAt(i);
+          length += code > 255 ? 2 : 1;
+        }
+        return length;
+      }
+
+      const colCount = rows.reduce(function (maxCount, row) {
+        return Math.max(maxCount, Array.isArray(row) ? row.length : 0);
+      }, 0);
+
+      if (colCount > 0) {
+        // 현재 컬럼 순서:
+        // 0 등록일자, 1 위치추적담당자, 2 위도, 3 경도, 4 X좌표, 5 Y좌표, 6 지명
+        const minWidthByColumn = [22, 16, 16, 16, 14, 14, 12];
+
+        worksheet["!cols"] = Array.from({ length: colCount }, function (_, colIndex) {
+          const maxVisualLength = rows.reduce(function (acc, row) {
+            if (!Array.isArray(row)) return acc;
+            return Math.max(acc, getVisualTextLength(row[colIndex]));
+          }, 0);
+
+          const minWidth = Number.isFinite(minWidthByColumn[colIndex])
+            ? minWidthByColumn[colIndex]
+            : 10;
+          const widthCh = Math.max(minWidth, Math.min(64, maxVisualLength + 4));
+
+          return {
+            // 일부 모바일 오피스 뷰어는 wch만으로는 폭을 무시해 wpx도 함께 지정한다.
+            wch: widthCh,
+            wpx: Math.round(widthCh * 8)
+          };
+        });
+      }
+
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, sheetName || "추정위치");
+      return workbook;
+    }
+
+    function bytesToBase64(bytes) {
+      if (!(bytes instanceof Uint8Array)) return "";
+      let binary = "";
+      const chunkSize = 0x8000;
+      for (let i = 0; i < bytes.length; i += chunkSize) {
+        const chunk = bytes.subarray(i, i + chunkSize);
+        binary += String.fromCharCode.apply(null, Array.from(chunk));
+      }
+      return btoa(binary);
+    }
+
+    async function ensureXlsFileUriForShare(fileName, uriCandidate, xlsData) {
+      if (uriCandidate && /^(file:|content:)/i.test(String(uriCandidate))) {
+        return String(uriCandidate);
+      }
+
+      const filesystem = getCapacitorFilesystemPlugin();
+      if (!filesystem || typeof filesystem.writeFile !== "function") {
+        return uriCandidate || null;
+      }
+
+      try {
+        const XLSX = await loadSheetJS();
+        const workbook = buildXlsWorkbook(XLSX, xlsData || [], "곰추정위치");
+        const buffer = XLSX.write(workbook, { bookType: "xlsx", type: "array" });
+        const base64Data = bytesToBase64(new Uint8Array(buffer));
+
+        const cachePath = "BearMapShare/" + fileName;
+        await filesystem.writeFile({
+          path: cachePath,
+          data: base64Data,
+          directory: "CACHE",
+          recursive: true
+        });
+
+        if (typeof filesystem.getUri === "function") {
+          const uriRes = await filesystem.getUri({ path: cachePath, directory: "CACHE" });
+          const cacheUri = uriRes && uriRes.uri ? String(uriRes.uri) : null;
+          if (cacheUri && /^(file:|content:)/i.test(cacheUri)) {
+            return cacheUri;
+          }
+        }
+      } catch (cacheError) {
+        console.warn("XLS 공유용 캐시 파일 준비 실패:", cacheError);
+      }
+
+      return uriCandidate || null;
+    }
+
+    async function saveXlsToNativeDocuments(fileName, xlsData) {
+      const filesystem = getCapacitorFilesystemPlugin();
+      if (!filesystem || typeof filesystem.writeFile !== "function") {
+        if (statusEl) statusEl.textContent = "⚠️ XLS 저장 플러그인이 없습니다.";
+        return null;
+      }
+
+      const XLSX = await loadSheetJS();
+      const workbook = buildXlsWorkbook(XLSX, xlsData, "곰추정위치");
+
+      const buffer = XLSX.write(workbook, { bookType: "xlsx", type: "array" });
+      const base64Data = bytesToBase64(new Uint8Array(buffer));
+
+      const relativePath = "BearMap/" + fileName;
+      await filesystem.writeFile({
+        path: relativePath,
+        data: base64Data,
+        directory: "DOCUMENTS",
+        recursive: true
+      });
+
+      let savedUri = null;
+      if (typeof filesystem.getUri === "function") {
+        try {
+          const uriRes = await filesystem.getUri({ path: relativePath, directory: "DOCUMENTS" });
+          savedUri = uriRes && uriRes.uri ? uriRes.uri : null;
+        } catch (uriError) {
+          console.warn("XLS 저장 파일 URI 조회 실패:", uriError);
+        }
+      }
+
+      return {
+        fileName: fileName,
+        relativePath: relativePath,
+        savedUri: savedUri
+      };
+    }
+
+    async function shareSavedXlsFile(fileName, savedUri, xlsData) {
+      const sharePlugin = getCapacitorSharePlugin();
+
+      if (!sharePlugin || typeof sharePlugin.share !== "function") {
+        if (statusEl) statusEl.textContent = "⚠️ 공유 플러그인이 없습니다.";
+        return false;
+      }
+
+      const fileUri = await ensureXlsFileUriForShare(fileName, savedUri, xlsData);
+      if (!fileUri || !/^(file:|content:)/i.test(String(fileUri))) {
+        if (statusEl) statusEl.textContent = "⚠️ XLS 공유 파일 경로를 찾지 못했습니다.";
+        return false;
+      }
+
+      try {
+        await sharePlugin.share({
+          title: fileName,
+          files: [fileUri],
+          dialogTitle: "XLS 공유"
+        });
+        if (statusEl) statusEl.textContent = "✅ 공유 창을 열었습니다: " + fileName;
+        return true;
+      } catch (shareError) {
+        console.warn("XLS 공유 실패:", shareError);
+        if (statusEl) {
+          statusEl.textContent = "🔴 공유 실패: " + (shareError && shareError.message ? shareError.message : String(shareError));
+        }
+        return false;
+      }
+    }
+
   function renderBears(items, isFallback) {
     if (!bearsListEl) return;
     syncSelectedBearEstimateIds(items);
@@ -3373,6 +4371,8 @@
       const timeLabel = formatKstTimeLabel(it.created_at || it.ts);
       const dateLabel = formatKstDateLabel(it.created_at || it.ts);
       const bearCode = it.bear_code || it.bearCode || "-";
+      const ownerName = normalizeOwnerName(it.owner) || "미지정";
+      const placeName = normalizePlaceName(it.place) || "미지정";
       const latDms = it.lat_dms || decimalToDMS(lat, false);
       const lngDms = it.lng_dms || decimalToDMS(lng, true);
       // const projected = mapCoordFromWgs84(lat, lng); // EPSG:5179 목록표시(기존)
@@ -3385,12 +4385,17 @@
           '<input class="bears-item__checkbox" type="checkbox" aria-label="곰 추정위치 선택" ' + (isSelected ? 'checked' : '') + ' />' +
         '</div>' +
         '<div class="bears-item__main">' +
-          '<div><b>' + bearCode + '</b></div>' +
-          '<div style="font-size:11px;opacity:.55">' + latDms + ' ' + lngDms + '</div>' +
-          '<div style="font-size:11px;opacity:.6">X: ' + mapX + ' / Y: ' + mapY + '</div>' +
+          '<div class="bears-item__code"><b>' + bearCode + '</b></div>' +
+          '<div class="bears-item__line">지명: ' + placeName + '</div>' +
+          '<div class="bears-item__line">등록자: ' + ownerName + '</div>' +
+          '<div class="bears-item__line bears-item__line--sub">' + latDms + ' ' + lngDms + '</div>' +
+          '<div class="bears-item__line bears-item__line--sub">X: ' + mapX + ' / Y: ' + mapY + '</div>' +
         '</div>' +
         '<div class="bears-item__meta">' +
-          '<button class="bears-txt-dl-btn" type="button" aria-label="TXT 다운로드"><span class="bears-txt-dl-btn__label">TXT 다운로드</span></button>' +
+          '<div class="bears-item__buttons">' +
+            '<button class="bears-txt-dl-btn" type="button" aria-label="TXT 다운로드"><span class="bears-txt-dl-btn__label">TXT 다운로드</span></button>' +
+            '<button class="bears-xls-dl-btn" type="button" aria-label="XLS 다운로드"><span class="bears-xls-dl-btn__label">XLS 다운로드</span></button>' +
+          '</div>' +
           '<div class="bears-item__date">' + dateLabel + '</div>' +
           '<div class="bears-item__time">' + timeLabel + '</div>' +
         '</div>';
@@ -3404,6 +4409,14 @@
         dlBtn.addEventListener("click", function (e) {
           e.stopPropagation();
           downloadBearEstimateTxt(it, !!isFallback);
+        });
+      }
+
+      const xlsBtn = el.querySelector(".bears-xls-dl-btn");
+      if (xlsBtn) {
+        xlsBtn.addEventListener("click", function (e) {
+          e.stopPropagation();
+          downloadBearEstimateXls(it, !!isFallback);
         });
       }
 
@@ -3454,13 +4467,13 @@
         // 최신 스키마(lat_dms/lng_dms 컬럼 포함) 우선 조회
         result = await sqlite.query({
           database: dbName,
-          statement: "SELECT id, bear_code, lat, lng, lat_dms, lng_dms, intersections_count, created_at FROM bear_estimates ORDER BY created_at DESC LIMIT 100",
+          statement: "SELECT id, bear_code, owner, place, lat, lng, lat_dms, lng_dms, intersections_count, created_at FROM bear_estimates ORDER BY created_at DESC LIMIT 100",
           values: [],
           readonly: false
         });
       } catch (primaryQueryError) {
         const message = String(primaryQueryError && primaryQueryError.message ? primaryQueryError.message : primaryQueryError);
-        if (/no such column: lat_dms|no such column: lng_dms/i.test(message)) {
+        if (/no such column: owner|no such column: place|no such column: lat_dms|no such column: lng_dms/i.test(message)) {
           // 구버전 DB(도분초 컬럼 미생성)에서도 목록이 보이도록 하위호환 조회
           result = await sqlite.query({
             database: dbName,
@@ -3495,6 +4508,8 @@
             return {
               id: row.id,
               bear_code: String(row.bear_code || "-"),
+              owner: normalizeOwnerName(row.owner) || "미지정",
+              place: normalizePlaceName(row.place) || "미지정",
               lat: Number(row.lat),
               lng: Number(row.lng),
               lat_dms: row.lat_dms || null,

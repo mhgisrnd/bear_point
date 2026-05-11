@@ -487,7 +487,7 @@
   vertical-align: middle;
 }
 
-/* 곰 목록 박스 */
+/* 곰 코드 박스 */
 /* 탭 버튼 */
 .panel-tabs {
   display: flex;
@@ -594,12 +594,30 @@
 }
 
 .bears-toolbar {
-  display: inline-flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 6px;
-  flex-wrap: wrap;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+  gap: 10px;
   width: 100%;
+}
+
+.bears-toolbar__row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+}
+
+.bears-toolbar__row--top {
+  justify-content: flex-end;
+  padding-bottom: 3px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.28);
+}
+
+.bears-toolbar__row--bottom {
+  justify-content: space-between;
+  padding-top: 2px;
 }
 
 .bears-toolbar.is-idle .bears-toolbar__actions {
@@ -610,9 +628,9 @@
   display: inline-flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 6px;
+  gap: 9px;
   flex-wrap: wrap;
-  margin-left: auto;
+  margin-left: 0;
 }
 
 .bears-select-all {
@@ -634,7 +652,7 @@
 .bears-selection-count {
   display: inline-flex;
   align-items: center;
-  min-height: 26px;
+  min-height: 22px;
   padding: 0 9px;
   border-radius: 999px;
   background: rgba(37, 99, 235, 0.1);
@@ -645,8 +663,8 @@
 }
 
 .bears-toolbar-btn {
-  min-height: 28px;
-  padding: 0 10px;
+  min-height: 26px;
+  padding: 0 11px;
   border-radius: 999px;
   border: 1px solid transparent;
   font-size: 11px;
@@ -680,6 +698,24 @@
   color: #334155;
 }
 
+.bears-toolbar-btn--excel-all {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 11px;
+  min-height: 30px;
+}
+
+.bears-toolbar-btn__excel-icon {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 14px;
+  background-image: url("./image/excel_all.png");
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: 14px 14px;
+}
+
 .bears-hint{
   font-size: 12px;
   padding: 4px 10px;
@@ -709,12 +745,13 @@
 .bears-item{
   display: flex;
   justify-content: space-between;
-  gap: 8px;
-  padding: 8px;
+  gap: 6px;
+  padding: 6px;
   border-radius: 10px;
-  background: rgba(255,255,255,0.9);
-  box-shadow: 0 6px 16px rgba(0,0,0,0.06);
-  margin-bottom: 8px;
+  background: rgba(255,255,255,0.95);
+  border: 1px solid rgba(15, 23, 42, 0.14);
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08);
+  margin-bottom: 6px;
   cursor: pointer;
 }
 
@@ -741,6 +778,23 @@
 .bears-item__main {
   min-width: 0;
   flex: 1 1 auto;
+  padding-right: 6px;
+}
+
+.bears-item__code {
+  color: #0f172a;
+  font-size: 13px;
+  line-height: 1.2;
+}
+
+.bears-item__line {
+  font-size: 11px;
+  color: rgba(30, 41, 59, 0.9);
+  line-height: 1.25;
+}
+
+.bears-item__line--sub {
+  color: rgba(51, 65, 85, 0.95);
 }
 
 .bears-item__meta {
@@ -750,26 +804,41 @@
   gap: 4px;
   align-self: center;
   flex: 0 0 auto;
+  border-left: 1px dashed rgba(100, 116, 139, 0.5);
+  padding-left: 7px;
+  min-width: 82px;
+}
+
+.bears-item__buttons {
+  display: flex;
+  gap: 7px;
+  align-items: center;
+  padding: 4px 6px;
+  border: 1px solid rgba(148, 163, 184, 0.45);
+  border-radius: 8px;
+  background: rgba(248, 250, 252, 0.85);
 }
 
 .bears-txt-dl-btn {
-  width: 36px;
-  height: 36px;
+  width: 38px;
+  height: 38px;
   padding: 0;
-  border: 0;
-  border-radius: 0;
-  background-color: transparent;
+  border: 1px solid rgba(148, 163, 184, 0.56);
+  border-radius: 7px;
+  background-color: rgba(255, 255, 255, 0.95);
   background-image: url("./image/txt-file.png");
   background-position: center;
   background-repeat: no-repeat;
   background-size: 28px 28px;
   cursor: pointer;
-  box-shadow: none;
-  transition: opacity 0.16s ease;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.64);
+  transition: opacity 0.16s ease, border-color 0.16s ease, background-color 0.16s ease;
 }
 
 .bears-txt-dl-btn:hover,
 .bears-txt-dl-btn:focus-visible {
+  border-color: rgba(59, 130, 246, 0.62);
+  background-color: #ffffff;
   opacity: 0.86;
 }
 
@@ -789,16 +858,57 @@
   border: 0;
 }
 
+.bears-xls-dl-btn {
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  border: 1px solid rgba(148, 163, 184, 0.56);
+  border-radius: 7px;
+  background-color: rgba(255, 255, 255, 0.95);
+  background-image: url("./image/xls-file.png");
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: 28px 28px;
+  cursor: pointer;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.64);
+  transition: opacity 0.16s ease, border-color 0.16s ease, background-color 0.16s ease;
+}
+
+.bears-xls-dl-btn:hover,
+.bears-xls-dl-btn:focus-visible {
+  border-color: rgba(34, 197, 94, 0.62);
+  background-color: #ffffff;
+  opacity: 0.86;
+}
+
+.bears-xls-dl-btn:active {
+  opacity: 0.72;
+}
+
+.bears-xls-dl-btn__label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 .bears-item__date {
   font-size: 10px;
-  opacity: .62;
+  color: rgba(30, 41, 59, 0.82);
+  font-weight: 700;
   line-height: 1.1;
   white-space: nowrap;
 }
 
 .bears-item__time {
   font-size: 11px;
-  opacity: .78;
+  color: rgba(15, 23, 42, 0.92);
+  font-weight: 700;
   line-height: 1.1;
   white-space: nowrap;
 }
@@ -861,17 +971,80 @@
   }
 
   .bears-toolbar {
+    gap: 8px;
+  }
+
+  .bears-toolbar__row {
+    gap: 5px;
+  }
+
+  .bears-toolbar__row--top {
+    justify-content: flex-end;
+    padding-bottom: 2px;
+  }
+
+  .bears-toolbar__row--bottom {
     justify-content: space-between;
+    padding-top: 1px;
   }
 
   .bears-toolbar__actions {
     margin-left: 0;
+    gap: 7px;
+  }
+
+  .bears-toolbar-btn--excel-all {
+    gap: 5px;
+    padding: 0 9px;
+    min-height: 28px;
+    font-size: 10px;
+  }
+
+  .bears-toolbar-btn__excel-icon {
+    width: 12px;
+    height: 12px;
+    flex: 0 0 12px;
+    background-size: 12px 12px;
+  }
+
+  .bears-item {
+    gap: 4px;
+    padding: 5px;
+    margin-bottom: 4px;
+  }
+
+  .bears-item__main {
+    padding-right: 4px;
+  }
+
+  .bears-item__line {
+    font-size: 10px;
+  }
+
+  .bears-item__meta {
+    padding-left: 4px;
+    min-width: 74px;
+  }
+
+  .bears-item__buttons {
+    gap: 5px;
+    padding: 3px 4px;
   }
 
   .bears-txt-dl-btn {
-    width: 36px;
-    height: 36px;
-    border-radius: 9px;
+    width: 34px;
+    height: 34px;
+    background-size: 24px 24px;
+    border-radius: 6px;
+    border-width: 1px;
+  }
+
+  .bears-xls-dl-btn {
+    width: 34px;
+    height: 34px;
+    background-size: 24px 24px;
+    border-radius: 6px;
+    border-width: 1px;
   }
 
   .bears-item__date {

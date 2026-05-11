@@ -88,7 +88,7 @@ window.createOlMapControlsManager = function createOlMapControlsManager(options)
 
   function setBaseLayer(type) {
     let nextType = type;
-    const ONLINE_TYPES = ["osm", "english", "large", "night", "topo"];
+    const ONLINE_TYPES = ["osm", "english", "large", "satellite", "topo"];
     if (nextType !== "mbtiles" && !ONLINE_TYPES.includes(nextType)) {
       nextType = "mbtiles";
     }
@@ -105,7 +105,7 @@ window.createOlMapControlsManager = function createOlMapControlsManager(options)
     layers.osmBase.setVisible(nextType === "osm");
     layers.englishBase.setVisible(nextType === "english");
     layers.largeBase.setVisible(nextType === "large");
-    layers.nightBase.setVisible(nextType === "night");
+    layers.satelliteBase.setVisible(nextType === "satellite");
     layers.topoBase.setVisible(nextType === "topo");
     layers.mbtilesLayer.setVisible(nextType === "mbtiles");
     if (nextType !== "topo") {
@@ -124,7 +124,7 @@ window.createOlMapControlsManager = function createOlMapControlsManager(options)
         osm: "🌐 국문지도",
         english: "🌐 영문지도",
         large: "🌐 NGII 큰문자지도",
-        night: "🌙 야간지도",
+        satellite: "🛰️ 위성지도",
         topo: "🌐 OpenTopoMap"
       };
       statusEl.textContent = labels[nextType] || "🌐 온라인 지도 사용 중";
@@ -832,24 +832,24 @@ window.createOlMapControlsManager = function createOlMapControlsManager(options)
     rowLarge.appendChild(radioLarge);
     rowLarge.appendChild(labelLarge);
 
-    const rowNight = document.createElement("div");
-    rowNight.style.display = "flex";
-    rowNight.style.alignItems = "center";
-    rowNight.style.gap = "8px";
-    rowNight.style.marginBottom = "2px";
+    const rowSatellite = document.createElement("div");
+    rowSatellite.style.display = "flex";
+    rowSatellite.style.alignItems = "center";
+    rowSatellite.style.gap = "8px";
+    rowSatellite.style.marginBottom = "2px";
 
-    const radioNight = document.createElement("input");
-    radioNight.type = "radio";
-    radioNight.name = "ol-base-layer";
-    radioNight.value = "night";
-    radioNight.disabled = !ngiiApiKey;
-    radioNight.checked = currentBaseLayerType === "night";
+    const radioSatellite = document.createElement("input");
+    radioSatellite.type = "radio";
+    radioSatellite.name = "ol-base-layer";
+    radioSatellite.value = "satellite";
+    radioSatellite.disabled = !ngiiApiKey;
+    radioSatellite.checked = currentBaseLayerType === "satellite";
 
-    const labelNight = document.createElement("label");
-    labelNight.style.cursor = ngiiApiKey ? "pointer" : "default";
-    labelNight.textContent = "야간";
-    rowNight.appendChild(radioNight);
-    rowNight.appendChild(labelNight);
+    const labelSatellite = document.createElement("label");
+    labelSatellite.style.cursor = ngiiApiKey ? "pointer" : "default";
+    labelSatellite.textContent = "위성";
+    rowSatellite.appendChild(radioSatellite);
+    rowSatellite.appendChild(labelSatellite);
 
     const rowMbtiles = document.createElement("div");
     rowMbtiles.style.display = "flex";
@@ -873,7 +873,7 @@ window.createOlMapControlsManager = function createOlMapControlsManager(options)
 
     function syncBaseByRadio() {
       if (radioMbtiles.checked) return setBaseLayer("mbtiles");
-      if (radioNight.checked) return setBaseLayer("night");
+      if (radioSatellite.checked) return setBaseLayer("satellite");
       if (radioEnglish.checked) return setBaseLayer("english");
       if (radioLarge.checked) return setBaseLayer("large");
       setBaseLayer("osm");
@@ -882,12 +882,12 @@ window.createOlMapControlsManager = function createOlMapControlsManager(options)
     radioOsm.addEventListener("change", syncBaseByRadio);
     radioEnglish.addEventListener("change", syncBaseByRadio);
     radioLarge.addEventListener("change", syncBaseByRadio);
-    radioNight.addEventListener("change", syncBaseByRadio);
+    radioSatellite.addEventListener("change", syncBaseByRadio);
     radioMbtiles.addEventListener("change", syncBaseByRadio);
     labelOsm.addEventListener("click", function () { radioOsm.checked = true; syncBaseByRadio(); });
     labelEnglish.addEventListener("click", function () { if (!radioEnglish.disabled) { radioEnglish.checked = true; syncBaseByRadio(); } });
     labelLarge.addEventListener("click", function () { if (!radioLarge.disabled) { radioLarge.checked = true; syncBaseByRadio(); } });
-    labelNight.addEventListener("click", function () { if (!radioNight.disabled) { radioNight.checked = true; syncBaseByRadio(); } });
+    labelSatellite.addEventListener("click", function () { if (!radioSatellite.disabled) { radioSatellite.checked = true; syncBaseByRadio(); } });
     labelMbtiles.addEventListener("click", function () { radioMbtiles.checked = true; syncBaseByRadio(); });
 
     const row2 = document.createElement("label");
@@ -960,7 +960,7 @@ window.createOlMapControlsManager = function createOlMapControlsManager(options)
     panel.appendChild(row1);
     panel.appendChild(rowEnglish);
     panel.appendChild(rowLarge);
-    panel.appendChild(rowNight);
+    panel.appendChild(rowSatellite);
     panel.appendChild(offlineTitle);
     panel.appendChild(rowMbtiles);
     panel.appendChild(row2);

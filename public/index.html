@@ -14,7 +14,7 @@
   <!-- 관측점 목록 패널 -->
   <section class="obs-sheet hidden" id="obs-sheet" aria-label="관측점 목록 패널">
     <div class="obs-sheet-header">
-      <h2>관측점 목록</h2>
+      <h2>목록</h2>
       <div class="obs-header-actions">
         <button class="analysis-btn" id="btn-analysis" type="button">위치분석</button>
         <button class="bulk-delete-btn" id="btn-delete-selected" type="button">선택 삭제</button>
@@ -51,7 +51,7 @@
   <!-- 관측점 등록 팝업 -->
   <div class="obs-register-popup hidden" id="register-box" aria-label="관측점 등록 팝업">
     <div class="obs-register-header">
-      <h2>관측점 등록</h2>
+      <h2>등록</h2>
       <div class="obs-register-header-actions">
         <button class="obs-panel-icon-btn" id="btn-register-peek" type="button" aria-label="최소화" title="최소화">−</button>
         <button class="obs-register-close" id="btn-register-close" type="button" aria-label="닫기">✕</button>
@@ -63,10 +63,10 @@
         <!-- 기본 정보 영역 -->
         <div class="obs-reg-section">
 
-          <!-- 지명 -->
+          <!-- 명칭 -->
           <div class="obs-reg-row">
-            <label class="obs-reg-label" for="reg-place">지명</label>
-            <input class="obs-reg-input" id="reg-place" type="text" placeholder="지명을 입력하세요" />
+            <label class="obs-reg-label" for="reg-place">명칭</label>
+            <input class="obs-reg-input" id="reg-place" type="text" placeholder="명칭을 입력하세요" />
           </div>
 
           <!-- 담당자 -->
@@ -98,9 +98,9 @@
             </div>
           </div>
 
-          <!-- 곰 목록 -->
+          <!-- 곰 코드 -->
           <div class="obs-reg-row">
-            <label class="obs-reg-label" for="reg-bear">곰 목록</label>
+            <label class="obs-reg-label" for="reg-bear">곰 코드</label>
             <select class="obs-reg-select" id="reg-bear">
               <option value="">-- 선택 --</option>
             </select>
@@ -187,13 +187,21 @@
           <div class="bears-title">
             <span>곰 추정위치 목록</span>
             <div class="bears-toolbar" id="bears-toolbar">
-              <label class="bears-select-all" for="bears-select-all">
-                <input type="checkbox" id="bears-select-all" />
-                <span>선택</span>
-              </label>
-              <div class="bears-toolbar__actions" id="bears-toolbar-actions">
-                <span class="bears-selection-count" id="bears-selection-count">0개 선택</span>
-                <button class="bears-toolbar-btn bears-toolbar-btn--danger" id="btn-bears-delete-selected" type="button" disabled>선택 삭제</button>
+              <div class="bears-toolbar__row bears-toolbar__row--top">
+                <button class="bears-toolbar-btn bears-toolbar-btn--ghost bears-toolbar-btn--excel-all" id="btn-bears-download-all-xls" type="button" aria-label="엑셀 일괄 다운로드" disabled>
+                  <span class="bears-toolbar-btn__excel-icon" aria-hidden="true"></span>
+                  <span>일괄 다운로드</span>
+                </button>
+              </div>
+              <div class="bears-toolbar__row bears-toolbar__row--bottom">
+                <label class="bears-select-all" for="bears-select-all">
+                  <input type="checkbox" id="bears-select-all" />
+                  <span>선택</span>
+                </label>
+                <div class="bears-toolbar__actions" id="bears-toolbar-actions">
+                  <span class="bears-selection-count" id="bears-selection-count">0개 선택</span>
+                  <button class="bears-toolbar-btn bears-toolbar-btn--danger" id="btn-bears-delete-selected" type="button" disabled>선택 삭제</button>
+                </div>
               </div>
             </div>
           </div>
