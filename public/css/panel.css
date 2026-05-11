@@ -587,8 +587,97 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
   font-size: 13px;
   margin-bottom: 8px;
+}
+
+.bears-toolbar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  flex-wrap: wrap;
+  width: 100%;
+}
+
+.bears-toolbar.is-idle .bears-toolbar__actions {
+  display: none;
+}
+
+.bears-toolbar__actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-left: auto;
+}
+
+.bears-select-all {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #334155;
+  white-space: nowrap;
+}
+
+.bears-select-all input {
+  width: 14px;
+  height: 14px;
+  accent-color: #2563eb;
+}
+
+.bears-selection-count {
+  display: inline-flex;
+  align-items: center;
+  min-height: 26px;
+  padding: 0 9px;
+  border-radius: 999px;
+  background: rgba(37, 99, 235, 0.1);
+  color: #1d4ed8;
+  font-size: 11px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.bears-toolbar-btn {
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  font-size: 11px;
+  font-weight: 800;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: transform 0.12s ease, filter 0.16s ease, opacity 0.16s ease;
+}
+
+.bears-toolbar-btn:hover:not(:disabled),
+.bears-toolbar-btn:focus-visible:not(:disabled) {
+  transform: translateY(-1px);
+  filter: saturate(1.04);
+  outline: none;
+}
+
+.bears-toolbar-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.bears-toolbar-btn--danger {
+  background: linear-gradient(135deg, #ef4444, #dc2626);
+  border-color: rgba(239, 68, 68, 0.7);
+  color: #ffffff;
+}
+
+.bears-toolbar-btn--ghost {
+  background: rgba(255,255,255,0.86);
+  border-color: rgba(148,163,184,0.45);
+  color: #334155;
 }
 
 .bears-hint{
@@ -629,6 +718,26 @@
   cursor: pointer;
 }
 
+.bears-item.is-selected {
+  background: rgba(219, 234, 254, 0.92);
+  box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.24), 0 8px 18px rgba(37, 99, 235, 0.12);
+}
+
+.bears-item__select {
+  display: flex;
+  align-items: flex-start;
+  padding-top: 2px;
+  flex: 0 0 auto;
+}
+
+.bears-item__checkbox {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: #2563eb;
+  cursor: pointer;
+}
+
 .bears-item__main {
   min-width: 0;
   flex: 1 1 auto;
@@ -644,31 +753,28 @@
 }
 
 .bears-txt-dl-btn {
-  width: 40px;
-  height: 40px;
+  width: 36px;
+  height: 36px;
   padding: 0;
   border: 0;
-  border-radius: 10px;
+  border-radius: 0;
   background-color: transparent;
-  background-image: url("./image/txt_download.png");
+  background-image: url("./image/txt-file.png");
   background-position: center;
   background-repeat: no-repeat;
-  background-size: contain;
+  background-size: 28px 28px;
   cursor: pointer;
-  box-shadow: 0 4px 10px rgba(37, 99, 235, 0.12);
-  transition: transform 0.16s ease, filter 0.16s ease, box-shadow 0.16s ease;
+  box-shadow: none;
+  transition: opacity 0.16s ease;
 }
 
 .bears-txt-dl-btn:hover,
 .bears-txt-dl-btn:focus-visible {
-  transform: translateY(-1px) scale(1.04);
-  filter: saturate(1.05);
-  box-shadow: 0 6px 14px rgba(37, 99, 235, 0.2);
-  outline: none;
+  opacity: 0.86;
 }
 
 .bears-txt-dl-btn:active {
-  transform: scale(0.96);
+  opacity: 0.72;
 }
 
 .bears-txt-dl-btn__label {
@@ -752,6 +858,14 @@
 
   .obs-sheet-header h2 {
     font-size: 13px;
+  }
+
+  .bears-toolbar {
+    justify-content: space-between;
+  }
+
+  .bears-toolbar__actions {
+    margin-left: 0;
   }
 
   .bears-txt-dl-btn {
@@ -1106,6 +1220,7 @@
 .obs-reg-gps-toggle-row {
   display: flex;
   align-items: center;
+  gap: 8px;
   padding-left: calc(50px + 6px);
   min-height: 18px;
 }

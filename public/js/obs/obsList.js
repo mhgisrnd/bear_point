@@ -162,7 +162,7 @@ window.createObsListModule = function createObsListModule({
             <span class="obs-popup-card__value">${bearCode}</span>
           </div>
           <div class="obs-popup-card__row">
-            <span class="obs-popup-card__label">등록자</span>
+            <span class="obs-popup-card__label">담당자</span>
             <span class="obs-popup-card__value">${owner}</span>
           </div>
           <div class="obs-popup-card__row">
@@ -1086,8 +1086,8 @@ window.createObsListModule = function createObsListModule({
     }
 
     const optionInput = await openAnalysisOptionsDialog({
-      distanceLimitM: 3000,
-      declinationDeg: 0
+      distanceLimitM: 8000, //거리 제한 기본값
+      declinationDeg: -7 //편각 기본값
     }, selectedItems, function (values) {
       return analysisModule.analyzePosition(selectedItems, {
         distanceLimitM: values.distanceLimitM,

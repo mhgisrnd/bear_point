@@ -8,6 +8,10 @@
   const panelEl = document.getElementById("panel");
   const btnPanelToggle = document.getElementById("btn-panel-toggle");
   const bearsListEl = document.getElementById("bears-list");
+  const bearsToolbarEl = document.getElementById("bears-toolbar");
+  const bearsSelectAllEl = document.getElementById("bears-select-all");
+  const bearsSelectionCountEl = document.getElementById("bears-selection-count");
+  const btnBearsDeleteSelectedEl = document.getElementById("btn-bears-delete-selected");
   const currentCoordEl = document.getElementById("obs-current-coord");
   const currentHeadingEl = document.getElementById("obs-current-heading");
   const searchParams = new URLSearchParams(window.location.search);
@@ -16,6 +20,9 @@
   let startupOverlayEl = null;
   let startupOverlayTextEl = null;
   let startupOverlayRetryBtn = null;
+  let currentBearEstimateItems = [];
+  let currentBearEstimateFallbackMode = false;
+  const selectedBearEstimateIds = new Set();
 
   try {
 
@@ -160,6 +167,8 @@
 
   const JIRISAN_BOUNDS_WGS84 = [127.4, 35.15, 127.85, 35.5];
   const MAP_PROJECTION_CODE = "EPSG:5179";
+  // 구형 TM 비교 출력용(중부원점 계열) 좌표계. 지도 내부 계산은 계속 EPSG:5179를 사용한다.
+  const LEGACY_TM_PROJECTION_CODE = "EPSG:5181";
   const WGS84_CODE = "EPSG:4326";
   const TILE_SIZE = 256;
   const NGII_RESOLUTION_BASE_ZOOM = 5;
@@ -230,11 +239,22 @@
     MAP_PROJECTION_CODE,
     "+proj=tmerc +lat_0=38 +lon_0=127.5 +k=0.9996 +x_0=1000000 +y_0=2000000 +ellps=GRS80 +units=m +no_defs +type=crs"
   );
+  // 주의: EPSG:5181은 Bessel 경위도(BL)가 아니라 TM 평면좌표계다.
+  // BL(베셀 경위도) 직접 표기가 필요하면 별도 타원체/datum 변환 단계를 추가해야 한다.
+  window.proj4.defs(
+    LEGACY_TM_PROJECTION_CODE,
+    "+proj=tmerc +lat_0=38 +lon_0=127 +k=1 +x_0=200000 +y_0=500000 +ellps=GRS80 +units=m +no_defs +type=crs"
+  );
   ol.proj.proj4.register(window.proj4);
 
   // WGS84(위경도) -> EPSG:5179(미터 좌표) 변환.
   function mapCoordFromWgs84(lat, lng) {
     return ol.proj.transform([lng, lat], WGS84_CODE, MAP_PROJECTION_CODE);
+  }
+
+  // 비교 출력용: WGS84(위경도) -> EPSG:5181(TM) 변환.
+  function legacyTmCoordFromWgs84(lat, lng) {
+    return ol.proj.transform([lng, lat], WGS84_CODE, LEGACY_TM_PROJECTION_CODE);
   }
 
   // EPSG:5179(미터 좌표) -> WGS84(위경도) 변환.
@@ -280,6 +300,7 @@
   let isMyVisible = false;
   let didMoveToMe = false;
   let lastLatLng = null;
+  let lastTrackedLatLng = null;
   let lastGpsTimestamp = null;
   let bearsDataCache = []; // 웹 폴백용 곰 추정위치 JSON 캐시
   let compassEnabled = false;
@@ -287,6 +308,7 @@
   let compassEventName = null;
   let headingSmoothed = null;
   let lastHeadingDeg = null;
+  let lastTrackedHeadingDeg = null;
   let lastAbsoluteSampleTs = 0;
   let lastGpsHeadingDeg = null;
   let lastGpsSpeedMps = null;
@@ -666,7 +688,6 @@
       const savedUri = options && options.savedUri ? options.savedUri : null;
       const onSave = options && typeof options.onSave === "function" ? options.onSave : null;
       const onShare = options && typeof options.onShare === "function" ? options.onShare : null;
-      const onOpen = options && typeof options.onOpen === "function" ? options.onOpen : null;
 
       const overlay = document.createElement("div");
       overlay.style.position = "fixed";
@@ -743,7 +764,7 @@
 
       const footer = document.createElement("div");
       footer.style.display = "grid";
-      footer.style.gridTemplateColumns = "1fr 1fr";
+      footer.style.gridTemplateColumns = "repeat(3, minmax(0, 1fr))";
       footer.style.gap = "8px";
       footer.style.padding = "12px 14px 14px";
       footer.style.borderTop = "1px solid rgba(148,163,184,0.14)";
@@ -770,17 +791,6 @@
       previewShareBtn.style.color = "#166534";
       previewShareBtn.style.fontWeight = "700";
       previewShareBtn.style.cursor = "pointer";
-
-      const previewOpenBtn = document.createElement("button");
-      previewOpenBtn.type = "button";
-      previewOpenBtn.textContent = "파일 열기";
-      previewOpenBtn.style.height = "38px";
-      previewOpenBtn.style.border = "1px solid #38bdf8";
-      previewOpenBtn.style.borderRadius = "10px";
-      previewOpenBtn.style.background = "#e0f2fe";
-      previewOpenBtn.style.color = "#075985";
-      previewOpenBtn.style.fontWeight = "700";
-      previewOpenBtn.style.cursor = "pointer";
 
       const doneBtn = document.createElement("button");
       doneBtn.type = "button";
@@ -827,18 +837,6 @@
         }
         await shareSavedTxtFile(fileName, savedUri, txtContent);
       });
-      previewOpenBtn.addEventListener("click", async function () {
-        if (onOpen) {
-          await onOpen();
-          return;
-        }
-        const opened = openSavedFileLink(savedUri);
-        if (statusEl) {
-          statusEl.textContent = opened
-            ? "✅ 저장 파일 링크 열기 시도: " + fileName
-            : "⚠️ 링크 열기에 실패했습니다. 공유하기를 사용해 주세요.";
-        }
-      });
 
       titleWrap.appendChild(title);
       titleWrap.appendChild(subtitle);
@@ -846,7 +844,6 @@
       header.appendChild(closeBtn);
       footer.appendChild(previewSaveBtn);
       footer.appendChild(previewShareBtn);
-      footer.appendChild(previewOpenBtn);
       footer.appendChild(doneBtn);
       card.appendChild(header);
       card.appendChild(body);
@@ -1661,8 +1658,8 @@
   }
 
   function updateRegistrationPreview() {
-    const baseLatLng = lastLatLng || [35.315, 127.655];
-    const previewHeading = lastHeadingDeg !== null ? Math.round(lastHeadingDeg) + "°" : "대기중";
+    const baseLatLng = lastLatLng || [35.326459, 127.637712];
+    const previewHeading = Math.round(lastHeadingDeg !== null ? lastHeadingDeg : 0) + "°";
 
     if (currentCoordEl) {
       currentCoordEl.textContent = baseLatLng[0].toFixed(6) + ", " + baseLatLng[1].toFixed(6);
@@ -1670,6 +1667,30 @@
     if (currentHeadingEl) {
       currentHeadingEl.textContent = previewHeading;
     }
+  }
+
+  function clearManualRegistrationPreview() {
+    if (isMyVisible) {
+      const fallbackLatLng = lastTrackedLatLng || [35.326459, 127.637712];
+      const fallbackHeading = Number.isFinite(lastTrackedHeadingDeg) ? lastTrackedHeadingDeg : 0;
+      const fallbackCoord = mapCoordFromWgs84(fallbackLatLng[0], fallbackLatLng[1]);
+
+      lastLatLng = [fallbackLatLng[0], fallbackLatLng[1]];
+      lastHeadingDeg = fallbackHeading;
+
+      const previewFeature = ensureMyLocationFeature(fallbackCoord);
+      if (previewFeature) {
+        previewFeature.set("headingDeg", lastHeadingDeg);
+        previewFeature.changed();
+      }
+    } else {
+      lastLatLng = null;
+      lastHeadingDeg = 0;
+      myLocationSource.clear();
+      myLocationFeature = null;
+    }
+
+    updateRegistrationPreview();
   }
 
   function ensureMyLocationFeature(coord) {
@@ -2010,6 +2031,9 @@
     }
 
     lastHeadingDeg = effectiveDeg;
+    if (isMyVisible || watchId !== null) {
+      lastTrackedHeadingDeg = effectiveDeg;
+    }
 
     if (myLocationFeature) {
       myLocationFeature.set("headingDeg", effectiveDeg);
@@ -2390,6 +2414,29 @@
     statusEl: statusEl,
     updateRegistrationPreview: updateRegistrationPreview,
     onGpsToggle: function() { toggleMyLocation(); }, // 등록 폼 GPS 토글 ↔ 하단 내위치 버튼 동기화
+    onManualPreview: function (payload) {
+      if (!payload) {
+        clearManualRegistrationPreview();
+        return;
+      }
+      if (!payload || !Number.isFinite(payload.lat) || !Number.isFinite(payload.lng)) return;
+
+      lastLatLng = [payload.lat, payload.lng];
+      lastHeadingDeg = Number.isFinite(payload.heading) ? payload.heading : null;
+      updateRegistrationPreview();
+
+      const centerCoord = mapCoordFromWgs84(payload.lat, payload.lng);
+      const manualFeature = ensureMyLocationFeature(centerCoord);
+      if (manualFeature) {
+        manualFeature.set("headingDeg", Number.isFinite(lastHeadingDeg) ? lastHeadingDeg : null);
+        manualFeature.changed();
+      }
+
+      view.setCenter(centerCoord);
+      if ((view.getZoom() || 0) < 15) {
+        view.setZoom(15);
+      }
+    },
     onObservationSaved: async function (payload) {
       if (!obsListModule || !payload || !payload.observation) return;
 
@@ -2418,6 +2465,7 @@
   function updateMyLocation(lat, lng) {
     const coord = mapCoordFromWgs84(lat, lng);
     lastLatLng = [lat, lng];
+    lastTrackedLatLng = [lat, lng];
     lastGpsTimestamp = Date.now();
     ensureMyLocationFeature(coord);
 
@@ -2456,8 +2504,10 @@
     isMyVisible = false;
     didMoveToMe = false;
     lastLatLng = null;
+    lastTrackedLatLng = null;
     lastGpsTimestamp = null;
     lastHeadingDeg = null;
+    lastTrackedHeadingDeg = null;
     lastGpsHeadingDeg = null;
     lastGpsSpeedMps = null;
     lastGpsHeadingTs = 0;
@@ -2554,6 +2604,119 @@
         created_at: row.created_at || null,
         source_observation_ids: row.source_observation_ids || null
       };
+    });
+  }
+
+  function syncSelectedBearEstimateIds(items) {
+    const validIds = new Set((items || []).map(function (it) { return String(it.id); }));
+    Array.from(selectedBearEstimateIds).forEach(function (id) {
+      if (!validIds.has(String(id))) selectedBearEstimateIds.delete(String(id));
+    });
+  }
+
+  function updateBearEstimateToolbar(items) {
+    const list = Array.isArray(items) ? items : [];
+    const totalCount = list.length;
+    const selectedCount = list.reduce(function (count, it) {
+      return count + (selectedBearEstimateIds.has(String(it.id)) ? 1 : 0);
+    }, 0);
+
+    if (bearsToolbarEl) {
+      bearsToolbarEl.classList.toggle("is-idle", selectedCount === 0);
+    }
+
+    if (bearsSelectionCountEl) {
+      bearsSelectionCountEl.textContent = selectedCount + " / " + totalCount + " 선택";
+    }
+
+    if (bearsSelectAllEl) {
+      bearsSelectAllEl.disabled = totalCount === 0;
+      bearsSelectAllEl.checked = totalCount > 0 && selectedCount === totalCount;
+      bearsSelectAllEl.indeterminate = selectedCount > 0 && selectedCount < totalCount;
+    }
+
+    if (btnBearsDeleteSelectedEl) btnBearsDeleteSelectedEl.disabled = selectedCount === 0;
+  }
+
+  async function deleteBearEstimateRows(ids, isFallback, deleteAll) {
+    if (isFallback) {
+      if (deleteAll) {
+        bearsDataCache = [];
+        return;
+      }
+
+      const idSet = new Set((ids || []).map(function (id) { return String(id); }));
+      bearsDataCache = bearsDataCache.filter(function (row, index) {
+        const fallbackId = row && row.id ? String(row.id) : ("web-bear-" + index);
+        return !idSet.has(fallbackId);
+      });
+      return;
+    }
+
+    const sqlite = getCapacitorSQLitePlugin();
+    if (!sqlite) throw new Error("SQLite 플러그인을 찾지 못했습니다.");
+
+    const dbName = window.BearSQLiteConfig && window.BearSQLiteConfig.dbName
+      ? window.BearSQLiteConfig.dbName
+      : "BearPointData";
+
+    let statements = "DELETE FROM bear_estimates";
+    if (!deleteAll) {
+      const safeIds = (ids || []).map(function (id) {
+        return "'" + String(id).replace(/'/g, "''") + "'";
+      });
+      if (!safeIds.length) return;
+      statements = "DELETE FROM bear_estimates WHERE id IN (" + safeIds.join(", ") + ")";
+    }
+
+    await sqlite.execute({
+      database: dbName,
+      statements: statements,
+      transaction: true,
+      readonly: false
+    });
+  }
+
+  async function handleDeleteSelectedBearEstimates() {
+    const targetIds = currentBearEstimateItems.filter(function (it) {
+      return selectedBearEstimateIds.has(String(it.id));
+    }).map(function (it) {
+      return String(it.id);
+    });
+
+    if (!targetIds.length) return;
+
+    const ok = window.confirm("선택한 곰 추정위치 " + targetIds.length + "건을 삭제할까요?");
+    if (!ok) return;
+
+    try {
+      await deleteBearEstimateRows(targetIds, currentBearEstimateFallbackMode, false);
+      selectedBearEstimateIds.clear();
+      await refreshBearEstimatePanel();
+      if (statusEl) statusEl.textContent = "🗑️ 선택한 곰 추정위치 " + targetIds.length + "건을 삭제했습니다";
+    } catch (error) {
+      console.warn("[bear_estimates] 선택 삭제 실패:", error);
+      if (statusEl) statusEl.textContent = "🔴 선택 삭제 실패: " + (error && error.message ? error.message : String(error));
+    }
+  }
+
+  if (bearsSelectAllEl) {
+    bearsSelectAllEl.addEventListener("change", function () {
+      selectedBearEstimateIds.clear();
+      if (bearsSelectAllEl.checked) {
+        currentBearEstimateItems.forEach(function (it) {
+          selectedBearEstimateIds.add(String(it.id));
+        });
+      }
+      renderBears(currentBearEstimateItems, currentBearEstimateFallbackMode);
+    });
+  }
+
+  if (btnBearsDeleteSelectedEl) {
+    btnBearsDeleteSelectedEl.addEventListener("click", function (event) {
+      event.preventDefault();
+      event.stopPropagation();
+      handleDeleteSelectedBearEstimates();
     });
   }
 
@@ -3015,12 +3178,14 @@
     const timeLabel = it.created_at || it.ts || "-";
     const latDms = it.lat_dms || decimalToDMS(lat, false);
     const lngDms = it.lng_dms || decimalToDMS(lng, true);
-    const projected = mapCoordFromWgs84(lat, lng);
-    const mapX = Array.isArray(projected) && Number.isFinite(projected[0]) ? projected[0].toFixed(3) : "-";
-    const mapY = Array.isArray(projected) && Number.isFinite(projected[1]) ? projected[1].toFixed(3) : "-";
+    // const projected = mapCoordFromWgs84(lat, lng); // EPSG:5179 출력(기존)
+    // const mapX = Array.isArray(projected) && Number.isFinite(projected[0]) ? projected[0].toFixed(3) : "-";
+    // const mapY = Array.isArray(projected) && Number.isFinite(projected[1]) ? projected[1].toFixed(3) : "-";
+    const legacyProjected = legacyTmCoordFromWgs84(lat, lng);
+    const mapX = Array.isArray(legacyProjected) && Number.isFinite(legacyProjected[0]) ? legacyProjected[0].toFixed(3) : "-";
+    const mapY = Array.isArray(legacyProjected) && Number.isFinite(legacyProjected[1]) ? legacyProjected[1].toFixed(3) : "-";
 
     let sourceObservations = [];
-    let intersections = [];
 
     if (!isFallback) {
       // DB에서 상세 JSON 조회
@@ -3030,13 +3195,12 @@
           ? window.BearSQLiteConfig.dbName : "BearPointData";
         const res = await sqlite.query({
           database: dbName,
-          statement: "SELECT source_observations_json, intersections_json FROM bear_estimates WHERE id = ?",
+          statement: "SELECT source_observations_json FROM bear_estimates WHERE id = ?",
           values: [it.id]
         });
         const row = res && res.values && res.values[0];
         if (row) {
           try { sourceObservations = JSON.parse(row.source_observations_json || "[]"); } catch (e) { sourceObservations = []; }
-          try { intersections = JSON.parse(row.intersections_json || "[]"); } catch (e) { intersections = []; }
         }
       } catch (e) {
         console.warn("TXT 다운로드 DB 조회 오류:", e);
@@ -3055,64 +3219,51 @@
           heading: 180 + idx * 45
         };
       });
-      // 더미 교차점 (산술평균 단일 추정점)
-      const iLat = lat + 0.002;
-      const iLng = lng - 0.002;
-      const iProj = mapCoordFromWgs84(iLat, iLng);
-      intersections.push({
-        lat: iLat, lng: iLng,
-        x: Array.isArray(iProj) && Number.isFinite(iProj[0]) ? iProj[0].toFixed(3) : "-",
-        y: Array.isArray(iProj) && Number.isFinite(iProj[1]) ? iProj[1].toFixed(3) : "-"
-      });
     }
 
     // TXT 내용 조립
-    // 산술평균 교차점 (첫 번째 값 사용 - 단일 추정점)
-    const avgPt = intersections && intersections.length > 0 ? intersections[0] : null;
-    let avgLat = "-", avgLng = "-", avgX = "-", avgY = "-";
-    if (avgPt) {
-      avgLat = Number(avgPt.lat).toFixed(7);
-      avgLng = Number(avgPt.lng).toFixed(7);
-      const avgProj = (avgPt.x !== undefined && avgPt.y !== undefined)
-        ? [avgPt.x, avgPt.y]
-        : mapCoordFromWgs84(Number(avgPt.lat), Number(avgPt.lng));
-      avgX = Array.isArray(avgProj) && Number.isFinite(Number(avgProj[0])) ? Number(avgProj[0]).toFixed(3) : (avgPt.x || "-");
-      avgY = Array.isArray(avgProj) && Number.isFinite(Number(avgProj[1])) ? Number(avgProj[1]).toFixed(3) : (avgPt.y || "-");
+
+    function formatHeadingDegree(value) {
+      if (value == null || value === "") return "-";
+      const raw = String(value).trim();
+      const numericText = raw.replace(/[^0-9+\-.]/g, "");
+      const numeric = Number(numericText);
+      if (Number.isFinite(numeric)) {
+        return numeric.toFixed(1).replace(/\.0$/, "") + "°";
+      }
+      return raw.replace(/°+/g, "").trim() + "°";
+    }
+
+    function formatCoord7(value) {
+      const n = Number(value);
+      return Number.isFinite(n) ? n.toFixed(7) : "-";
     }
 
     let lines = [];
     lines.push("========================================");
-    lines.push("  곰 추정위치 분석 결과");
+    lines.push("  곰 추적위치 결과");
     lines.push("========================================");
     lines.push("곰 코드     : " + bearCode);
     lines.push("저장 일시   : " + timeLabel);
     lines.push("");
+    lines.push("[ 사용된 관측점 목록 (" + sourceObservations.length + "개) ]");
+    sourceObservations.forEach(function (obs, idx) {
+      const label = (obs && (obs.place || obs.name || obs.id)) ? String(obs.place || obs.name || obs.id) : null;
+      lines.push("  관측점 " + (idx + 1) + (label ? " (" + label + ")" : ""));
+      lines.push("    위도   : " + formatCoord7(obs && obs.lat));
+      lines.push("    경도   : " + formatCoord7(obs && obs.lng));
+      lines.push("    방향각 : " + formatHeadingDegree(obs && obs.heading));
+      if (idx < sourceObservations.length - 1) lines.push("    ------------------------------");
+    });
+    lines.push("");
     lines.push("[ 추정 위치 ]");
     lines.push("  위도(DMS) : " + latDms);
     lines.push("  경도(DMS) : " + lngDms);
-    lines.push("  X (EPSG:5179) : " + mapX);
-    lines.push("  Y (EPSG:5179) : " + mapY);
-    lines.push("");
-    lines.push("[ 사용된 관측점 (" + sourceObservations.length + "개) ]");
-    sourceObservations.forEach(function (obs, idx) {
-      lines.push("  관측점 " + (idx + 1) + " ─────────────────────");
-      lines.push("    위도   : " + (Number(obs.lat).toFixed(7)));
-      lines.push("    경도   : " + (Number(obs.lng).toFixed(7)));
-      lines.push("    방향각 : " + (obs.heading != null ? obs.heading + "°" : "-"));
-    });
-    lines.push("");
-    lines.push("[ 산술평균 교차점 ]");
-    if (avgPt) {
-      lines.push("  위도   : " + avgLat);
-      lines.push("  경도   : " + avgLng);
-      lines.push("  X      : " + avgX);
-      lines.push("  Y      : " + avgY);
-    } else {
-      lines.push("  교차점 정보 없음");
-    }
+    lines.push("  X (TM:EPSG:5181) : " + mapX);
+    lines.push("  Y (TM:EPSG:5181) : " + mapY);
     lines.push("");
     lines.push("========================================");
-    if (isFallback) lines.push("* 웹 환경: 관측점 및 교차점은 더미 데이터입니다.");
+    if (isFallback) lines.push("* 웹 환경: 관측점 목록은 더미 데이터입니다.");
 
     const txtContent = lines.join("\r\n");
     const safeCode = bearCode.replace(/[^\w가-힣]/g, "_");
@@ -3203,16 +3354,20 @@
 
   function renderBears(items, isFallback) {
     if (!bearsListEl) return;
+    syncSelectedBearEstimateIds(items);
     bearsListEl.innerHTML = "";
 
     if (!items || items.length === 0) {
       bearsListEl.innerHTML = '<div class="bears-empty">아직 목록이 없습니다.</div>';
+      updateBearEstimateToolbar([]);
       return;
     }
 
     items.forEach(function (it) {
+      const itemId = String(it.id);
+      const isSelected = selectedBearEstimateIds.has(itemId);
       const el = document.createElement("div");
-      el.className = "bears-item";
+      el.className = "bears-item" + (isSelected ? " is-selected" : "");
       const lat = Number(it.lat);
       const lng = Number(it.lng);
       const timeLabel = formatKstTimeLabel(it.created_at || it.ts);
@@ -3220,11 +3375,15 @@
       const bearCode = it.bear_code || it.bearCode || "-";
       const latDms = it.lat_dms || decimalToDMS(lat, false);
       const lngDms = it.lng_dms || decimalToDMS(lng, true);
-      const projected = mapCoordFromWgs84(lat, lng);
+      // const projected = mapCoordFromWgs84(lat, lng); // EPSG:5179 목록표시(기존)
+      const projected = legacyTmCoordFromWgs84(lat, lng);
       const mapX = Array.isArray(projected) && Number.isFinite(projected[0]) ? projected[0].toFixed(3) : "-";
       const mapY = Array.isArray(projected) && Number.isFinite(projected[1]) ? projected[1].toFixed(3) : "-";
       // 목록은 DMS와 X/Y를 우선 노출하고, lat/lng 줄은 요청에 따라 잠시 숨긴다.
       el.innerHTML =
+        '<div class="bears-item__select">' +
+          '<input class="bears-item__checkbox" type="checkbox" aria-label="곰 추정위치 선택" ' + (isSelected ? 'checked' : '') + ' />' +
+        '</div>' +
         '<div class="bears-item__main">' +
           '<div><b>' + bearCode + '</b></div>' +
           '<div style="font-size:11px;opacity:.55">' + latDms + ' ' + lngDms + '</div>' +
@@ -3248,8 +3407,22 @@
         });
       }
 
+      const checkboxEl = el.querySelector(".bears-item__checkbox");
+      if (checkboxEl) {
+        checkboxEl.addEventListener("click", function (e) {
+          e.stopPropagation();
+        });
+        checkboxEl.addEventListener("change", function (e) {
+          if (e.target.checked) selectedBearEstimateIds.add(itemId);
+          else selectedBearEstimateIds.delete(itemId);
+          renderBears(currentBearEstimateItems, currentBearEstimateFallbackMode);
+        });
+      }
+
       bearsListEl.appendChild(el);
     });
+
+    updateBearEstimateToolbar(items);
   }
 
   // 곰 목록 패널/마커를 동기화한다. 초기 시점 보존을 위해 자동 fit은 하지 않는다.
@@ -3259,6 +3432,8 @@
 
     if (!isWebFallbackMode && (!initState || !initState.ready)) {
       if (statusEl) statusEl.textContent = "🟠 SQLite 연결 대기 중입니다";
+      currentBearEstimateItems = [];
+      currentBearEstimateFallbackMode = false;
       renderBears([], false);
       renderBearMarkers([]);
       return;
@@ -3349,6 +3524,9 @@
       items = getWebFallbackBearEstimates();
       usedFallback = true;
     }
+
+    currentBearEstimateItems = items.slice();
+    currentBearEstimateFallbackMode = usedFallback;
 
     renderBears(items, usedFallback);
 

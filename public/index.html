@@ -39,7 +39,7 @@
             <th class="col-chk"><input type="checkbox" id="chk-all" title="전체선택" /></th>
             <th>관측점</th>
             <th>곰 코드</th>
-            <th>등록자</th>
+            <th>담당자</th>
             <th>관리</th>
           </tr>
         </thead>
@@ -69,10 +69,10 @@
             <input class="obs-reg-input" id="reg-place" type="text" placeholder="지명을 입력하세요" />
           </div>
 
-          <!-- 등록자 -->
+          <!-- 담당자 -->
           <div class="obs-reg-row">
-            <label class="obs-reg-label" for="reg-owner">등록자</label>
-            <input class="obs-reg-input" id="reg-owner" type="text" placeholder="등록자를 입력하세요" />
+            <label class="obs-reg-label" for="reg-owner">담당자</label>
+            <input class="obs-reg-input" id="reg-owner" type="text" placeholder="담당자를 입력하세요" />
           </div>
 
           <!-- 좌표 -->
@@ -186,6 +186,16 @@
         <div class="bears-box" id="bears-box">
           <div class="bears-title">
             <span>곰 추정위치 목록</span>
+            <div class="bears-toolbar" id="bears-toolbar">
+              <label class="bears-select-all" for="bears-select-all">
+                <input type="checkbox" id="bears-select-all" />
+                <span>선택</span>
+              </label>
+              <div class="bears-toolbar__actions" id="bears-toolbar-actions">
+                <span class="bears-selection-count" id="bears-selection-count">0개 선택</span>
+                <button class="bears-toolbar-btn bears-toolbar-btn--danger" id="btn-bears-delete-selected" type="button" disabled>선택 삭제</button>
+              </div>
+            </div>
           </div>
           <div class="bears-list" id="bears-list">
             <div class="bears-empty">아직 목록이 없습니다.</div>
