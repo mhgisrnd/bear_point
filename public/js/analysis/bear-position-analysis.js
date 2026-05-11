@@ -111,12 +111,12 @@
 
     const bearCode = String(observations[0].bearCode || "").trim();
     if (!bearCode) {
-      return { ok: false, code: "BEAR_CODE_REQUIRED", message: "곰 코드가 없는 관측점은 분석할 수 없습니다." };
+      return { ok: false, code: "BEAR_CODE_REQUIRED", message: "코드가 없는 관측점은 분석할 수 없습니다." };
     }
 
     for (const obs of observations) {
       if (String(obs.bearCode || "").trim() !== bearCode) {
-        return { ok: false, code: "MISMATCH_BEAR_CODE", message: "동일한 곰 코드 관측점만 함께 분석할 수 있습니다." };
+        return { ok: false, code: "MISMATCH_BEAR_CODE", message: "동일한 코드 관측점만 함께 분석할 수 있습니다." };
       }
 
       if (!Number.isFinite(Number(obs.lat)) || !Number.isFinite(Number(obs.lng))) {

@@ -158,7 +158,7 @@ window.createObsListModule = function createObsListModule({
         <div class="obs-popup-card__eyebrow">${title}</div>
         <div class="obs-popup-card__grid">
           <div class="obs-popup-card__row">
-            <span class="obs-popup-card__label">곰 코드</span>
+            <span class="obs-popup-card__label">코드</span>
             <span class="obs-popup-card__value">${bearCode}</span>
           </div>
           <div class="obs-popup-card__row">
@@ -557,7 +557,7 @@ window.createObsListModule = function createObsListModule({
     chkAllEl.indeterminate = !allChecked && someChecked;
   }
 
-  // 검색 조건(관측점/곰 코드)에 맞는 데이터만 반환한다.
+  // 검색 조건(관측점/코드)에 맞는 데이터만 반환한다.
   function getFilteredItems() {
     const field = searchFieldEl ? searchFieldEl.value : "obs";
     const query = (searchQueryEl ? searchQueryEl.value : "").trim().toLowerCase();

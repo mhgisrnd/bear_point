@@ -3243,7 +3243,7 @@
     lines.push("========================================");
     lines.push("  곰 추적위치 결과");
     lines.push("========================================");
-    lines.push("곰 코드     : " + bearCode);
+    lines.push("코드     : " + bearCode);
     lines.push("저장 일시   : " + timeLabel);
     lines.push("");
     lines.push("[ 사용된 관측점 목록 (" + sourceObservations.length + "개) ]");
