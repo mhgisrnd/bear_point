@@ -1586,26 +1586,98 @@
   const myHeadingIconSrc = createHeadingIconDataUri(MY_HEADING_ICON_SIZE, "#2b7cff", 6);
   const OBSERVATION_HEADING_ICON_SIZE = 40;
   const observationHeadingIconSrc = createHeadingIconDataUri(OBSERVATION_HEADING_ICON_SIZE, "#ea580c", 5.5);
+  const MAP_HEADING_HANDLE_LENGTH_PX = 60;
+  const MAP_HEADING_HANDLE_RADIUS_PX = 10;
+
+  // 좌표 드래그 인터랙션 활성 시 스타일에 추가되는 핸들 요소의 크기 정의 (핵심 원, 바깥 링, 전체 터치 영역)
+  const COORD_DRAG_HALO_RADIUS_PX = 38;
+  const COORD_DRAG_RING_RADIUS_PX = 30;
+  const COORD_DRAG_CORE_RADIUS_PX = 8;
+
+  function getHeadingHandleCoordinate(centerCoord, headingDeg) {
+    const resolution = Number(view && view.getResolution && view.getResolution()) || 1;
+    const lengthMapUnits = MAP_HEADING_HANDLE_LENGTH_PX * resolution;
+    const headingRad = (headingDeg * Math.PI) / 180;
+    return [
+      centerCoord[0] + Math.sin(headingRad) * lengthMapUnits,
+      centerCoord[1] + Math.cos(headingRad) * lengthMapUnits
+    ];
+  }
+
   const myLocationLayer = new ol.layer.Vector({
     source: myLocationSource,
     style: function (feature) {
       const headingDeg = feature ? feature.get("headingDeg") : null;
       const rotation = Number.isFinite(headingDeg) ? (headingDeg * Math.PI) / 180 : 0;
+      const centerCoord = feature && feature.getGeometry() ? feature.getGeometry().getCoordinates() : null;
+      const showHeadingHandle = !!(feature && feature.get("showHeadingHandle"));
+      const styles = [];
 
-      return [
-        new ol.style.Style({
-          image: new ol.style.Icon({
-            src: myHeadingIconSrc,
-            width: MY_HEADING_ICON_SIZE,
-            height: MY_HEADING_ICON_SIZE,
-            anchor: [0.5, 0.5],
-            anchorXUnits: "fraction",
-            anchorYUnits: "fraction",
-            rotateWithView: true,
-            rotation: rotation
+      if (showHeadingHandle && Number.isFinite(headingDeg) && Array.isArray(centerCoord)) {
+        const handleCoord = getHeadingHandleCoordinate(centerCoord, headingDeg);
+
+        styles.push(new ol.style.Style({
+          geometry: new ol.geom.LineString([centerCoord, handleCoord]),
+          stroke: new ol.style.Stroke({
+            color: "rgba(37,99,235,0.95)",
+            width: 5,
+            lineCap: "round"
           })
+        }));
+
+        styles.push(new ol.style.Style({
+          geometry: new ol.geom.Point(handleCoord),
+          image: new ol.style.Circle({
+            radius: MAP_HEADING_HANDLE_RADIUS_PX,
+            fill: new ol.style.Fill({ color: "rgba(255,255,255,0.97)" }),
+            stroke: new ol.style.Stroke({ color: "rgba(37,99,235,0.98)", width: 3 })
+          })
+        }));
+      }
+
+      if (feature && feature.get("isCoordinateDragActive") && Array.isArray(centerCoord)) {
+        styles.push(new ol.style.Style({
+          geometry: new ol.geom.Point(centerCoord),
+          image: new ol.style.Circle({
+            radius: COORD_DRAG_HALO_RADIUS_PX,
+            fill: new ol.style.Fill({ color: "rgba(251,191,36,0.18)" }),
+            stroke: new ol.style.Stroke({ color: "rgba(245,158,11,0.76)", width: 3 })
+          })
+        }));
+
+        styles.push(new ol.style.Style({
+          geometry: new ol.geom.Point(centerCoord),
+          image: new ol.style.Circle({
+            radius: COORD_DRAG_RING_RADIUS_PX,
+            fill: new ol.style.Fill({ color: "rgba(37,99,235,0.16)" }),
+            stroke: new ol.style.Stroke({ color: "rgba(37,99,235,0.98)", width: 4 })
+          })
+        }));
+
+        styles.push(new ol.style.Style({
+          geometry: new ol.geom.Point(centerCoord),
+          image: new ol.style.Circle({
+            radius: COORD_DRAG_CORE_RADIUS_PX,
+            fill: new ol.style.Fill({ color: "rgba(239,68,68,0.96)" }),
+            stroke: new ol.style.Stroke({ color: "rgba(255,255,255,0.98)", width: 2.2 })
+          })
+        }));
+      }
+
+      styles.push(new ol.style.Style({
+        image: new ol.style.Icon({
+          src: myHeadingIconSrc,
+          width: MY_HEADING_ICON_SIZE,
+          height: MY_HEADING_ICON_SIZE,
+          anchor: [0.5, 0.5],
+          anchorXUnits: "fraction",
+          anchorYUnits: "fraction",
+          rotateWithView: true,
+          rotation: rotation
         })
-      ];
+      }));
+
+      return styles;
     }
   });
 
@@ -2128,6 +2200,7 @@
       const previewFeature = ensureMyLocationFeature(fallbackCoord);
       if (previewFeature) {
         previewFeature.set("headingDeg", lastHeadingDeg);
+        previewFeature.set("showHeadingHandle", false);
         previewFeature.changed();
       }
     } else {
@@ -2766,7 +2839,198 @@
     syncObservationPopupPlacement();
   });
 
+  let mapGesturePointerId = null;
+  let mapGestureMode = null; // null | coord-drag | heading-drag
+  let mapGestureDidMove = false;
+  let suppressManualPreviewAutoCenterUntil = 0;
+  let suppressManualMapClickUntil = 0;
+  const MAP_COORD_DRAG_HIT_RADIUS_PX = 46;
+  const MAP_HEADING_DRAG_HIT_HANDLE_RADIUS_PX = 34;
+  const MAP_HEADING_DRAG_HIT_LINE_HALF_WIDTH_PX = 18;
+
+  function setMapDragPanEnabled(enabled) {
+    if (!map || typeof map.getInteractions !== "function") return;
+    if (!ol || !ol.interaction || !ol.interaction.DragPan) return;
+
+    map.getInteractions().forEach(function (interaction) {
+      if (interaction instanceof ol.interaction.DragPan) {
+        interaction.setActive(!!enabled);
+      }
+    });
+  }
+
+  function getManualMarkerCenterPixel() {
+    if (!Array.isArray(lastLatLng) || !Number.isFinite(lastLatLng[0]) || !Number.isFinite(lastLatLng[1])) return null;
+    const centerCoord = mapCoordFromWgs84(lastLatLng[0], lastLatLng[1]);
+    const centerPixel = map.getPixelFromCoordinate(centerCoord);
+    return Array.isArray(centerPixel) ? centerPixel : null;
+  }
+
+  function pointToSegmentDistancePx(point, segStart, segEnd) {
+    const vx = segEnd[0] - segStart[0];
+    const vy = segEnd[1] - segStart[1];
+    const wx = point[0] - segStart[0];
+    const wy = point[1] - segStart[1];
+    const c1 = vx * wx + vy * wy;
+    if (c1 <= 0) {
+      const dxStart = point[0] - segStart[0];
+      const dyStart = point[1] - segStart[1];
+      return Math.sqrt(dxStart * dxStart + dyStart * dyStart);
+    }
+
+    const c2 = vx * vx + vy * vy;
+    if (c2 <= c1) {
+      const dxEnd = point[0] - segEnd[0];
+      const dyEnd = point[1] - segEnd[1];
+      return Math.sqrt(dxEnd * dxEnd + dyEnd * dyEnd);
+    }
+
+    const t = c1 / c2;
+    const projX = segStart[0] + t * vx;
+    const projY = segStart[1] + t * vy;
+    const dx = point[0] - projX;
+    const dy = point[1] - projY;
+    return Math.sqrt(dx * dx + dy * dy);
+  }
+
+  function getManualHitType(event) {
+    if (!obsRegisterModule) return false;
+    if (typeof obsRegisterModule.isManualMapControlEnabled !== "function") return false;
+    if (!obsRegisterModule.isManualMapControlEnabled()) return false;
+    if (!event || !Array.isArray(event.pixel)) return false;
+
+    const centerPixel = getManualMarkerCenterPixel();
+    if (!Array.isArray(centerPixel)) return false;
+    const dx = event.pixel[0] - centerPixel[0];
+    const dy = event.pixel[1] - centerPixel[1];
+    const centerDistance = Math.sqrt(dx * dx + dy * dy);
+    if (centerDistance <= MAP_COORD_DRAG_HIT_RADIUS_PX) return "center";
+
+    const headingDeg = Number.isFinite(lastHeadingDeg) ? lastHeadingDeg : 0;
+    const headingRad = (headingDeg * Math.PI) / 180;
+    const handlePixel = [
+      centerPixel[0] + Math.sin(headingRad) * MAP_HEADING_HANDLE_LENGTH_PX,
+      centerPixel[1] - Math.cos(headingRad) * MAP_HEADING_HANDLE_LENGTH_PX
+    ];
+
+    const dxHandle = event.pixel[0] - handlePixel[0];
+    const dyHandle = event.pixel[1] - handlePixel[1];
+    const handleDistance = Math.sqrt(dxHandle * dxHandle + dyHandle * dyHandle);
+    if (handleDistance <= MAP_HEADING_DRAG_HIT_HANDLE_RADIUS_PX) return "heading";
+
+    const lineDistance = pointToSegmentDistancePx(event.pixel, centerPixel, handlePixel);
+    if (lineDistance <= MAP_HEADING_DRAG_HIT_LINE_HALF_WIDTH_PX) return "heading";
+
+    return null;
+  }
+
+  function setCoordinateDragHighlight(active) {
+    if (!myLocationFeature) return;
+    myLocationFeature.set("isCoordinateDragActive", !!active);
+    myLocationFeature.changed();
+  }
+
+  function stopManualMapGesture() {
+    const hadActiveGesture = !!mapGestureMode;
+    const movedDuringGesture = mapGestureDidMove;
+    mapGesturePointerId = null;
+    mapGestureMode = null;
+    mapGestureDidMove = false;
+    setCoordinateDragHighlight(false);
+    setMapDragPanEnabled(true);
+
+    if (hadActiveGesture && movedDuringGesture) {
+      const now = Date.now();
+      suppressManualPreviewAutoCenterUntil = now + 280;
+      suppressManualMapClickUntil = now + 280;
+    }
+  }
+
+  map.on("pointerdown", function (event) {
+    stopManualMapGesture();
+    const hitType = getManualHitType(event);
+    if (!hitType) return;
+
+    mapGesturePointerId = Number.isFinite(event.pointerId) ? event.pointerId : null;
+    mapGestureDidMove = false;
+
+    // 마커 조작 시작 시점부터 지도 팬을 잠가 충돌을 방지한다.
+    setMapDragPanEnabled(false);
+
+    if (hitType === "heading") {
+      mapGestureMode = "heading-drag";
+      if (event.originalEvent && typeof event.originalEvent.preventDefault === "function") {
+        event.originalEvent.preventDefault();
+      }
+      return;
+    }
+
+    mapGestureMode = "coord-drag";
+    setCoordinateDragHighlight(true);
+    if (statusEl) statusEl.textContent = "🧲 좌표 이동 모드: 마커를 드래그해서 위치를 조정하세요.";
+    if (event.originalEvent && typeof event.originalEvent.preventDefault === "function") {
+      event.originalEvent.preventDefault();
+    }
+  });
+
+  map.on("pointerdrag", function (event) {
+    if (mapGesturePointerId !== null && Number.isFinite(event.pointerId) && event.pointerId !== mapGesturePointerId) return;
+    if (!mapGestureMode) return;
+
+    if (!obsRegisterModule) {
+      stopManualMapGesture();
+      return;
+    }
+
+    const dragWgs84 = wgs84FromMapCoord(event.coordinate);
+    if (!dragWgs84 || !Number.isFinite(dragWgs84.lat) || !Number.isFinite(dragWgs84.lng)) return;
+
+    let applied = false;
+    if (mapGestureMode === "heading-drag") {
+      if (typeof obsRegisterModule.applyMapHeadingDegrees !== "function") {
+        stopManualMapGesture();
+        return;
+      }
+      if (!Array.isArray(lastLatLng) || !Number.isFinite(lastLatLng[0]) || !Number.isFinite(lastLatLng[1])) {
+        stopManualMapGesture();
+        return;
+      }
+      const headingDeg = computeBearingFromLatLng(lastLatLng, [dragWgs84.lat, dragWgs84.lng]);
+      if (!Number.isFinite(headingDeg)) return;
+      applied = obsRegisterModule.applyMapHeadingDegrees(headingDeg);
+    } else if (mapGestureMode === "coord-drag") {
+      if (typeof obsRegisterModule.applyMapClickCoordinate !== "function") {
+        stopManualMapGesture();
+        return;
+      }
+      applied = obsRegisterModule.applyMapClickCoordinate(dragWgs84.lat, dragWgs84.lng);
+    }
+
+    if (!applied) {
+      stopManualMapGesture();
+      return;
+    }
+
+    mapGestureDidMove = true;
+
+    if (event.originalEvent && typeof event.originalEvent.preventDefault === "function") {
+      event.originalEvent.preventDefault();
+    }
+  });
+
+  map.on("pointerup", function () {
+    stopManualMapGesture();
+  });
+
+  map.on("pointercancel", function () {
+    stopManualMapGesture();
+  });
+
   map.on("singleclick", function (event) {
+    if (Date.now() < suppressManualMapClickUntil) {
+      return;
+    }
+
     // 측정 모드가 클릭을 소비하면 관측점 팝업 클릭 로직은 실행하지 않는다.
     if (controlsManager && typeof controlsManager.consumeMapClick === "function" && controlsManager.consumeMapClick(event.coordinate)) {
       return;
@@ -2797,6 +3061,21 @@
     const latText = coordWgs84 && Number.isFinite(coordWgs84.lat) ? coordWgs84.lat.toFixed(6) : "n/a";
     const lngText = coordWgs84 && Number.isFinite(coordWgs84.lng) ? coordWgs84.lng.toFixed(6) : "n/a";
     console.log("[Left Click] x=" + xText + " y=" + yText + " | lat=" + latText + " lng=" + lngText);
+  });
+
+  // 등록 팝업이 열려있고 GPS OFF 모드일 때 맵 클릭으로 좌표 입력
+  map.on("singleclick", function (event) {
+    if (!obsRegisterModule) return;
+    if (typeof obsRegisterModule.applyMapClickCoordinate !== "function") return;
+
+    const coordWgs84 = wgs84FromMapCoord(event.coordinate);
+    if (!coordWgs84 || !Number.isFinite(coordWgs84.lat) || !Number.isFinite(coordWgs84.lng)) return;
+
+    // GPS OFF 모드일 때만 작동 (applyMapClickCoordinate 내에서 검증)
+    const applied = obsRegisterModule.applyMapClickCoordinate(coordWgs84.lat, coordWgs84.lng);
+    if (applied) {
+      console.log("[Map Click] 좌표 입력: lat=" + coordWgs84.lat.toFixed(6) + " lng=" + coordWgs84.lng.toFixed(6));
+    }
   });
 
 
@@ -2919,12 +3198,15 @@
       const manualFeature = ensureMyLocationFeature(centerCoord);
       if (manualFeature) {
         manualFeature.set("headingDeg", Number.isFinite(lastHeadingDeg) ? lastHeadingDeg : null);
+        manualFeature.set("showHeadingHandle", true);
         manualFeature.changed();
       }
 
-      view.setCenter(centerCoord);
-      if ((view.getZoom() || 0) < 15) {
-        view.setZoom(15);
+      if (payload.shouldFocus) {
+        view.setCenter(centerCoord);
+        if ((view.getZoom() || 0) < 15) {
+          view.setZoom(15);
+        }
       }
     },
     onObservationSaved: async function (payload) {
@@ -2957,7 +3239,10 @@
     lastLatLng = [lat, lng];
     lastTrackedLatLng = [lat, lng];
     lastGpsTimestamp = Date.now();
-    ensureMyLocationFeature(coord);
+    const feature = ensureMyLocationFeature(coord);
+    if (feature) {
+      feature.set("showHeadingHandle", false);
+    }
 
     updateRegistrationPreview();
 

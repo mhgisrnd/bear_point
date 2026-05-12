@@ -7,7 +7,8 @@ window.createObsRegisterModule = function createObsRegisterModule({
   onClose,
   onObservationSaved,
   onGpsToggle,   // GPS ON/OFF 토글 클릭 시 실제 GPS를 켜고 끄는 콜백
-  onManualPreview // 수동 좌표 입력 시 지도 프리뷰를 갱신하는 콜백
+  onManualPreview, // 수동 좌표 입력 시 지도 프리뷰를 갱신하는 콜백
+  onMapCoordinate // 맵 클릭으로 좌표 선택 시 호출되는 콜백
 }) {
   var registerBoxEl = document.getElementById("register-box");
   var btnRegisterClose = document.getElementById("btn-register-close");
@@ -937,16 +938,19 @@ window.createObsRegisterModule = function createObsRegisterModule({
     return (parsed % 360 + 360) % 360;
   }
 
-  function emitManualPreview() {
+  function emitManualPreview(options) {
     if (!isManualEntryEnabled() || typeof onManualPreview !== "function") return;
     if (!isRegisterPopupVisible()) return;
     if (!Number.isFinite(latestLive.lat) || !Number.isFinite(latestLive.lng)) return;
+
+    var previewOptions = options || {};
 
     onManualPreview({
       lat: latestLive.lat,
       lng: latestLive.lng,
       heading: Number.isFinite(latestLive.heading) ? latestLive.heading : null,
-      isManual: true
+      isManual: true,
+      shouldFocus: !!previewOptions.shouldFocus
     });
   }
 
@@ -954,6 +958,47 @@ window.createObsRegisterModule = function createObsRegisterModule({
     if (typeof onManualPreview === "function") {
       onManualPreview(null);
     }
+  }
+
+  function isManualMapControlEnabled() {
+    return isManualEntryEnabled() && isRegisterPopupVisible();
+  }
+
+  // 맵 클릭으로 전달된 좌표를 수동 입력 필드에 적용한다. (GPS OFF 모드일 때만)
+  function applyMapClickCoordinate(lat, lng) {
+    if (!isManualMapControlEnabled()) return false;
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return false;
+    if (Math.abs(lat) > 90 || Math.abs(lng) > 180) return false;
+
+    latestLive.lat = lat;
+    latestLive.lng = lng;
+    
+    if (regCoordEl) {
+      regCoordEl.value = lat.toFixed(5) + ", " + lng.toFixed(5);
+    }
+    
+    renderLiveFields();
+    emitManualPreview();
+    
+    return true;
+  }
+
+  // 맵 드래그 회전으로 계산된 방향각을 수동 입력값으로 적용한다.
+  function applyMapHeadingDegrees(headingDeg) {
+    if (!isManualMapControlEnabled()) return false;
+    if (isHeadingLocked) return false;
+
+    var parsedHeading = parseManualHeadingInput(headingDeg);
+    if (!Number.isFinite(parsedHeading)) return false;
+
+    latestLive.heading = parsedHeading;
+    if (regHeadingEl) {
+      regHeadingEl.value = String(Math.round(parsedHeading));
+    }
+
+    renderLiveFields();
+    emitManualPreview();
+    return true;
   }
 
   function applyManualInputValues() {
@@ -996,7 +1041,7 @@ window.createObsRegisterModule = function createObsRegisterModule({
     if (updateRegistrationPreview) updateRegistrationPreview();
     if (chkRegHeadingLock) chkRegHeadingLock.disabled = isManualEntryEnabled();
     renderLiveFields();
-    emitManualPreview();
+    emitManualPreview({ shouldFocus: true });
     statusEl.textContent = "🧭 관측점 등록(GPS ON 시 위치 자동 갱신)";
   }
 
@@ -1219,6 +1264,9 @@ window.createObsRegisterModule = function createObsRegisterModule({
     hide,
     isHeadingLocked: getHeadingLockState,
     getLockedHeading,
-    updateLiveData
+    updateLiveData,
+    applyMapClickCoordinate,
+    applyMapHeadingDegrees,
+    isManualMapControlEnabled
   };
 };
