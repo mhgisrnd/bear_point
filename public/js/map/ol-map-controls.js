@@ -10,6 +10,7 @@ window.createOlMapControlsManager = function createOlMapControlsManager(options)
     statusEl,
     wgs84FromMapCoord,
     extentMap,
+    offlineInitialCenterLatLng,
     mbtilesExtentMap,
     ngiiApiKey,
     mbtilesMinZoom,
@@ -75,12 +76,29 @@ window.createOlMapControlsManager = function createOlMapControlsManager(options)
     return true;
   }
 
-  function moveToOfflineInitialView() {
+  function moveToOfflineInitialView(options) {
+    const moveOptions = options || {};
+    const duration = Number.isFinite(Number(moveOptions.duration)) ? Number(moveOptions.duration) : 0;
+
+    if (Array.isArray(offlineInitialCenterLatLng) && offlineInitialCenterLatLng.length >= 2) {
+      const lat = Number(offlineInitialCenterLatLng[0]);
+      const lng = Number(offlineInitialCenterLatLng[1]);
+      if (Number.isFinite(lat) && Number.isFinite(lng)) {
+        const coord = ol.proj.transform([lng, lat], "EPSG:4326", "EPSG:5179");
+        view.animate({
+          center: coord,
+          zoom: Number.isFinite(offlineInitialZoom) ? offlineInitialZoom : 14,
+          duration: duration
+        });
+        return true;
+      }
+    }
+
     if (!Array.isArray(extentMap) || extentMap.length !== 4) return false;
     view.fit(extentMap, {
       padding: [20, 20, 20, 20],
       maxZoom: 14,
-      duration: 0
+      duration: duration
     });
     return true;
   }
@@ -122,7 +140,7 @@ window.createOlMapControlsManager = function createOlMapControlsManager(options)
       const labels = {
         osm: "🌐 국문지도",
         english: "🌐 영문지도",
-        large: "🌐 NGII 큰문자지도",
+        large: "🌐 큰 문자지도",
         satellite: "🛰️ 위성지도",
         topo: "🌐 OpenTopoMap"
       };
@@ -330,7 +348,9 @@ window.createOlMapControlsManager = function createOlMapControlsManager(options)
       "white-space:nowrap",
       "pointer-events:auto",
       "user-select:none",
-      "box-shadow:0 1px 6px rgba(15,23,42,0.18)"
+      "box-shadow:0 1px 6px rgba(15,23,42,0.18)",
+      "position:relative",
+      "z-index:10001"
     ].join(";");
 
     const textSpan = document.createElement("span");
@@ -403,7 +423,8 @@ window.createOlMapControlsManager = function createOlMapControlsManager(options)
       measureSource.addFeature(areaFeature);
       storedFeatures.push(areaFeature);
       measureText = formatMeasureAreaText(polygon.getArea());
-      labelPos = polygon.getInteriorPoint().getCoordinates();
+      // 면적 레이블을 폴리곤 경계의 첫 번째 점으로 설정 (내부가 아닌 경계에)
+      labelPos = ring.length > 0 ? ring[0] : polygon.getInteriorPoint().getCoordinates();
     } else {
       const distanceM = new ol.geom.LineString(points).getLength();
       measureText = formatMeasureDistanceText(distanceM);
@@ -574,8 +595,10 @@ window.createOlMapControlsManager = function createOlMapControlsManager(options)
       "지리산으로 이동",
       "<svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M3 19l6.5-11L16 19H3z\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linejoin=\"round\"/><path d=\"M10.5 19l4.5-8 6 8h-10.5z\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linejoin=\"round\"/><path d=\"M9.5 8l1.2 2 1.3-2\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/></svg>",
       function () {
-        if (!fitMbtilesCoverage()) {
-          view.fit(extentMap, { padding: [20, 20, 20, 20], maxZoom: 14, duration: 450 });
+        if (!moveToOfflineInitialView({ duration: 450 })) {
+          if (!fitMbtilesCoverage()) {
+            view.fit(extentMap, { padding: [20, 20, 20, 20], maxZoom: 14, duration: 450 });
+          }
         }
       }
     );

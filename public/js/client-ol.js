@@ -30,8 +30,56 @@
   let currentBearEstimateFallbackMode = false;
   const overlayBackCloseStack = [];
   const selectedBearEstimateIds = new Set();
+  let statusBlinkResetTimer = null;
+
+  function ensureStatusBlinkStyle() {
+    if (!document || document.getElementById("bp-status-blink-style")) return;
+    const styleEl = document.createElement("style");
+    styleEl.id = "bp-status-blink-style";
+    styleEl.textContent = [
+      "@keyframes bpStatusBlinkPulse {",
+      "  0% { background-color: rgba(250, 204, 21, 0); color: inherit; opacity: 1; text-shadow: 0 0 0 rgba(0,0,0,0); }",
+      "  18% { background-color: rgba(250, 204, 21, 0.38); color: #111827; opacity: 1; text-shadow: 0 0 6px rgba(250, 204, 21, 0.35); }",
+      "  40% { background-color: rgba(250, 204, 21, 0.14); color: #111827; opacity: 0.9; text-shadow: 0 0 2px rgba(250, 204, 21, 0.2); }",
+      "  62% { background-color: rgba(250, 204, 21, 0.3); color: #111827; opacity: 1; text-shadow: 0 0 4px rgba(250, 204, 21, 0.26); }",
+      "  82% { background-color: rgba(250, 204, 21, 0.1); color: inherit; opacity: 0.95; text-shadow: 0 0 0 rgba(0,0,0,0); }",
+      "  100% { background-color: rgba(250, 204, 21, 0); color: inherit; opacity: 1; text-shadow: 0 0 0 rgba(0,0,0,0); }",
+      "}",
+      "#status.bp-status-blink-highlight {",
+      "  border-radius: 8px;",
+      "  padding: 2px 6px;",
+      "  animation: bpStatusBlinkPulse 2s cubic-bezier(0.22, 0.61, 0.36, 1) 1;",
+      "  will-change: opacity, background-color;",
+      "}"
+    ].join("\n");
+    document.head.appendChild(styleEl);
+  }
+
+  function triggerStatusBlinkHighlight() {
+    if (!statusEl) return;
+    const nextText = String(statusEl.textContent || "").trim();
+    if (!nextText) return;
+
+    statusEl.classList.remove("bp-status-blink-highlight");
+    void statusEl.offsetWidth;
+    statusEl.classList.add("bp-status-blink-highlight");
+
+    if (statusBlinkResetTimer) {
+      window.clearTimeout(statusBlinkResetTimer);
+      statusBlinkResetTimer = null;
+    }
+
+    statusBlinkResetTimer = window.setTimeout(function () {
+      statusEl.classList.remove("bp-status-blink-highlight");
+      statusBlinkResetTimer = null;
+    }, 2000);
+  }
+
+  // 상태 강조는 필요한 상황(메뉴 진입/예외 처리)에서만 수동 호출한다.
+  window.__bpTriggerStatusHighlight = triggerStatusBlinkHighlight;
 
   try {
+  ensureStatusBlinkStyle();
 
   if (!window.ol || !mapEl) {
     if (statusEl) statusEl.textContent = "OpenLayers 로딩 실패";
@@ -1582,6 +1630,7 @@
 
   const myLocationSource = new ol.source.Vector();
   let myLocationFeature = null;
+  let editOriginFeature = null;
   const MY_HEADING_ICON_SIZE = 48;
   const myHeadingIconSrc = createHeadingIconDataUri(MY_HEADING_ICON_SIZE, "#2b7cff", 6);
   const OBSERVATION_HEADING_ICON_SIZE = 40;
@@ -1589,10 +1638,9 @@
   const MAP_HEADING_HANDLE_LENGTH_PX = 60;
   const MAP_HEADING_HANDLE_RADIUS_PX = 10;
 
-  // 좌표 드래그 인터랙션 활성 시 스타일에 추가되는 핸들 요소의 크기 정의 (핵심 원, 바깥 링, 전체 터치 영역)
+  // 좌표 드래그 인터랙션 활성 시 스타일에 추가되는 하이라이트 반경 정의
   const COORD_DRAG_HALO_RADIUS_PX = 38;
   const COORD_DRAG_RING_RADIUS_PX = 30;
-  const COORD_DRAG_CORE_RADIUS_PX = 8;
 
   function getHeadingHandleCoordinate(centerCoord, headingDeg) {
     const resolution = Number(view && view.getResolution && view.getResolution()) || 1;
@@ -1607,9 +1655,30 @@
   const myLocationLayer = new ol.layer.Vector({
     source: myLocationSource,
     style: function (feature) {
+      const markerKind = feature ? feature.get("markerKind") : "";
+      const centerCoord = feature && feature.getGeometry() ? feature.getGeometry().getCoordinates() : null;
+
+      if (markerKind === "edit-origin" && Array.isArray(centerCoord)) {
+        return [
+          new ol.style.Style({
+            image: new ol.style.Circle({
+              radius: 13,
+              fill: new ol.style.Fill({ color: "rgba(245,158,11,0.16)" }),
+              stroke: new ol.style.Stroke({ color: "rgba(245,158,11,0.96)", width: 3 })
+            })
+          }),
+          new ol.style.Style({
+            image: new ol.style.Circle({
+              radius: 5,
+              fill: new ol.style.Fill({ color: "rgba(245,158,11,0.98)" }),
+              stroke: new ol.style.Stroke({ color: "rgba(255,255,255,0.96)", width: 2 })
+            })
+          })
+        ];
+      }
+
       const headingDeg = feature ? feature.get("headingDeg") : null;
       const rotation = Number.isFinite(headingDeg) ? (headingDeg * Math.PI) / 180 : 0;
-      const centerCoord = feature && feature.getGeometry() ? feature.getGeometry().getCoordinates() : null;
       const showHeadingHandle = !!(feature && feature.get("showHeadingHandle"));
       const styles = [];
 
@@ -1654,14 +1723,6 @@
           })
         }));
 
-        styles.push(new ol.style.Style({
-          geometry: new ol.geom.Point(centerCoord),
-          image: new ol.style.Circle({
-            radius: COORD_DRAG_CORE_RADIUS_PX,
-            fill: new ol.style.Fill({ color: "rgba(239,68,68,0.96)" }),
-            stroke: new ol.style.Stroke({ color: "rgba(255,255,255,0.98)", width: 2.2 })
-          })
-        }));
       }
 
       styles.push(new ol.style.Style({
@@ -2060,6 +2121,7 @@
     statusEl: statusEl,
     wgs84FromMapCoord: wgs84FromMapCoord,
     extentMap: extentMap,
+    offlineInitialCenterLatLng: [35.32634, 127.63770],
     mbtilesExtentMap: mbtilesExtentMap,
     ngiiApiKey: NGII_API_KEY,
     mbtilesMinZoom: MBTILES_MIN_ZOOM,
@@ -2081,8 +2143,19 @@
     measureSource: measureSource,
     onToggleMyLocation: toggleMyLocation,
     onMeasureActivated: function () {
+      stopManualMapGesture();
       clearAnalysisEstimateVisuals();
       closeObservationPopup();
+      if (obsListModule && typeof obsListModule.deactivate === "function") {
+        obsListModule.deactivate();
+      }
+      if (obsRegisterModule) {
+        obsRegisterModule.hide(true);
+      }
+      clearManualRegistrationPreview();
+      if (statusEl) {
+        statusEl.textContent = "📏 측정 모드 활성화 (등록 기능 일시 종료)";
+      }
     },
     onLocateButtonReady: function (buttonEl) {
       locateBtnEl = buttonEl || null;
@@ -2211,6 +2284,30 @@
     }
 
     updateRegistrationPreview();
+  }
+
+  function setEditOriginMarker(lat, lng) {
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+      clearEditOriginMarker();
+      return;
+    }
+
+    const coord = mapCoordFromWgs84(lat, lng);
+    if (!editOriginFeature) {
+      editOriginFeature = new ol.Feature(new ol.geom.Point(coord));
+      editOriginFeature.set("markerKind", "edit-origin");
+      myLocationSource.addFeature(editOriginFeature);
+      return;
+    }
+
+    editOriginFeature.setGeometry(new ol.geom.Point(coord));
+    editOriginFeature.changed();
+  }
+
+  function clearEditOriginMarker() {
+    if (!editOriginFeature) return;
+    myLocationSource.removeFeature(editOriginFeature);
+    editOriginFeature = null;
   }
 
   function ensureMyLocationFeature(coord) {
@@ -2895,6 +2992,7 @@
 
   function getManualHitType(event) {
     if (!obsRegisterModule) return false;
+    if (controlsManager && typeof controlsManager.isMeasureModeActive === "function" && controlsManager.isMeasureModeActive()) return false;
     if (typeof obsRegisterModule.isManualMapControlEnabled !== "function") return false;
     if (!obsRegisterModule.isManualMapControlEnabled()) return false;
     if (!event || !Array.isArray(event.pixel)) return false;
@@ -2967,7 +3065,7 @@
 
     mapGestureMode = "coord-drag";
     setCoordinateDragHighlight(true);
-    if (statusEl) statusEl.textContent = "🧲 좌표 이동 모드: 마커를 드래그해서 위치를 조정하세요.";
+    if (statusEl) statusEl.textContent = "🧲 드래그 또는 지도 위 터치하여 좌표 이동";
     if (event.originalEvent && typeof event.originalEvent.preventDefault === "function") {
       event.originalEvent.preventDefault();
     }
@@ -3026,6 +3124,34 @@
     stopManualMapGesture();
   });
 
+  function forceResetManualMapGestureOnInterrupt() {
+    if (!mapGestureMode && mapGesturePointerId === null) return;
+    stopManualMapGesture();
+  }
+
+  // 푸시 알림/앱 전환 등으로 포인터 종료 이벤트가 누락될 수 있어 인터럽트 시 제스처 상태를 강제 해제한다.
+  window.addEventListener("blur", function () {
+    forceResetManualMapGestureOnInterrupt();
+  });
+
+  window.addEventListener("pagehide", function () {
+    forceResetManualMapGestureOnInterrupt();
+  });
+
+  document.addEventListener("visibilitychange", function () {
+    if (document.visibilityState === "hidden") {
+      forceResetManualMapGestureOnInterrupt();
+    }
+  });
+
+  if (window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.App && typeof window.Capacitor.Plugins.App.addListener === "function") {
+    window.Capacitor.Plugins.App.addListener("appStateChange", function (state) {
+      if (state && state.isActive === false) {
+        forceResetManualMapGestureOnInterrupt();
+      }
+    });
+  }
+
   map.on("singleclick", function (event) {
     if (Date.now() < suppressManualMapClickUntil) {
       return;
@@ -3065,6 +3191,10 @@
 
   // 등록 팝업이 열려있고 GPS OFF 모드일 때 맵 클릭으로 좌표 입력
   map.on("singleclick", function (event) {
+    if (controlsManager && typeof controlsManager.isMeasureModeActive === "function" && controlsManager.isMeasureModeActive()) {
+      return;
+    }
+
     if (!obsRegisterModule) return;
     if (typeof obsRegisterModule.applyMapClickCoordinate !== "function") return;
 
@@ -3183,6 +3313,23 @@
     statusEl: statusEl,
     updateRegistrationPreview: updateRegistrationPreview,
     onGpsToggle: function() { toggleMyLocation(); }, // 등록 폼 GPS 토글 ↔ 하단 내위치 버튼 동기화
+    onDefaultManualCoordinate: function () {
+      var size = map.getSize();
+      var extent = Array.isArray(size) && size.length >= 2 ? view.calculateExtent(size) : null;
+      var targetCoord = Array.isArray(extent) && extent.length >= 4
+        ? ol.extent.getCenter(extent)
+        : view.getCenter();
+      var targetWgs84 = wgs84FromMapCoord(targetCoord);
+
+      if (!targetWgs84 || !Number.isFinite(targetWgs84.lat) || !Number.isFinite(targetWgs84.lng)) {
+        return null;
+      }
+
+      return {
+        lat: targetWgs84.lat,
+        lng: targetWgs84.lng
+      };
+    },
     onManualPreview: function (payload) {
       if (!payload) {
         clearManualRegistrationPreview();
@@ -3213,6 +3360,7 @@
       if (!obsListModule || !payload || !payload.observation) return;
 
       if (payload.mode === "edit") {
+        clearEditOriginMarker();
         if (payload.source === "sqlite") {
           await obsListModule.refreshObservationList();
         } else {
@@ -4941,15 +5089,22 @@
         controlsManager.deactivateMeasure("menu");
       }
       collapseBearEstimatePanel();
+      clearEditOriginMarker();
       if (obsRegisterModule) obsRegisterModule.open();
     },
     onEditObservation: function (item) {
       collapseBearEstimatePanel();
+      if (item && Number.isFinite(Number(item.lat)) && Number.isFinite(Number(item.lng))) {
+        setEditOriginMarker(Number(item.lat), Number(item.lng));
+      } else {
+        clearEditOriginMarker();
+      }
       if (obsRegisterModule && typeof obsRegisterModule.openForEdit === "function") {
         obsRegisterModule.openForEdit(item);
       }
     },
     onCloseRegister: function () {
+      clearEditOriginMarker();
       if (obsRegisterModule) obsRegisterModule.hide(true);
     },
     onAnalysisResult: function (analysisPoint) {

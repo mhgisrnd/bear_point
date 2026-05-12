@@ -43,6 +43,12 @@ window.createObsListModule = function createObsListModule({
   let analysisOptionsDialogState = null;
   let analysisCloseSilently = false;
 
+  function highlightStatusOnce() {
+    if (typeof window.__bpTriggerStatusHighlight === "function") {
+      window.__bpTriggerStatusHighlight();
+    }
+  }
+
   function getObservationLabel(item) {
     if (!item) return "";
     return item.place ? String(item.place).trim() : item.id;
@@ -342,14 +348,23 @@ window.createObsListModule = function createObsListModule({
     obsListStatusEl.hidden = false;
   }
 
+  function updateMainStatusForList() {
+    if (!statusEl || currentTab !== "list") return;
+    const count = observationSamples.length;
+    statusEl.textContent = count > 0
+      ? `📋 관측점 목록 ${count}건을 불러왔습니다.`
+      : "🟠 관측점 목록이 비어있습니다.";
+  }
+
   async function refreshObservationData() {
-    const result = await loadObservationSamples();
+    await loadObservationSamples();
     selectedObsIds.clear();
     applySearch();
     renderObservationMarkers(observationSamples);
     updateSelectionUI();
 
     updateObservationSummary();
+    updateMainStatusForList();
   }
 
   // 목록 패널 최소화/복원 상태를 토글하고 아이콘 상태를 동기화한다.
@@ -1070,18 +1085,21 @@ window.createObsListModule = function createObsListModule({
     const analysisModule = window.BearPositionAnalysis;
     if (!analysisModule || typeof analysisModule.analyzePosition !== "function") {
       statusEl.textContent = "⚠️ 위치분석 모듈을 찾을 수 없습니다.";
+      highlightStatusOnce();
       return;
     }
 
     const selectedItems = getSelectedObservations();
     if (selectedItems.length < 2) {
       statusEl.textContent = "⚠️ 위치분석은 관측점 2개 이상을 선택해야 합니다.";
+      highlightStatusOnce();
       return;
     }
 
     const bearCodes = new Set(selectedItems.map((item) => String(item.bearCode || "").trim()));
     if (bearCodes.size !== 1 || !Array.from(bearCodes)[0]) {
       statusEl.textContent = "⚠️ 동일한 코드의 관측점을 선택해주세요.";
+      highlightStatusOnce();
       return;
     }
 
@@ -1169,7 +1187,17 @@ window.createObsListModule = function createObsListModule({
 
     if (isList) {
       setPeekMode(false);
+      if (statusEl) {
+        statusEl.textContent = "📋 관측점 목록을 불러오는 중...";
+        highlightStatusOnce();
+      }
       void refreshObservationData();
+      return;
+    }
+
+    // 메뉴를 완전히 닫을 때(목록/등록 탭 탈출) 상태 표시를 기본값으로 정리한다.
+    if (tab === "none" && statusEl) {
+      statusEl.textContent = "";
     }
   }
 

@@ -8,7 +8,8 @@ window.createObsRegisterModule = function createObsRegisterModule({
   onObservationSaved,
   onGpsToggle,   // GPS ON/OFF 토글 클릭 시 실제 GPS를 켜고 끄는 콜백
   onManualPreview, // 수동 좌표 입력 시 지도 프리뷰를 갱신하는 콜백
-  onMapCoordinate // 맵 클릭으로 좌표 선택 시 호출되는 콜백
+  onMapCoordinate, // 맵 클릭으로 좌표 선택 시 호출되는 콜백
+  onDefaultManualCoordinate // 등록 폼 기본 좌표를 계산하는 콜백
 }) {
   var registerBoxEl = document.getElementById("register-box");
   var btnRegisterClose = document.getElementById("btn-register-close");
@@ -24,6 +25,7 @@ window.createObsRegisterModule = function createObsRegisterModule({
   var regBearEl = document.getElementById("reg-bear");
   var chkRegHeadingLock = document.getElementById("chk-reg-heading-lock");
   var btnGpsToggle = document.getElementById("btn-gps-toggle");
+  var gpsToggleRowEl = btnGpsToggle ? btnGpsToggle.closest(".obs-reg-gps-toggle-row") : null;
   var registerHeaderEl = registerBoxEl ? registerBoxEl.querySelector(".obs-register-header") : null;
   var registerBodyEl = registerBoxEl ? registerBoxEl.querySelector(".obs-register-body") : null;
   var registerTitleEl = registerHeaderEl ? registerHeaderEl.querySelector("h2") : null;
@@ -50,6 +52,7 @@ window.createObsRegisterModule = function createObsRegisterModule({
   var DEFAULT_MANUAL_LAT = 35.326459;
   var DEFAULT_MANUAL_LNG = 127.637712;
   var DEFAULT_MANUAL_HEADING = 0;
+  var LAST_OWNER_STORAGE_KEY = "bearpoint.lastRegisteredOwner";
 
   var BEAR_LIST_URL = "json/bear-list.json";
 
@@ -64,6 +67,19 @@ window.createObsRegisterModule = function createObsRegisterModule({
         '</select>' +
       '</td>' +
     '</tr>';
+
+  function highlightStatusOnce() {
+    if (typeof window.__bpTriggerStatusHighlight === "function") {
+      window.__bpTriggerStatusHighlight();
+    }
+  }
+
+  function syncGpsToggleModeUi() {
+    var isEditMode = formMode === "edit";
+    if (gpsToggleRowEl) {
+      gpsToggleRowEl.style.display = isEditMode ? "none" : "";
+    }
+  }
 
   // 감지기 select 옵션을 렌더링하고 기존 선택값을 유지한다.
   function fillSelectOptions(selectEl, options, preferredValue) {
@@ -134,6 +150,39 @@ window.createObsRegisterModule = function createObsRegisterModule({
     }
     fieldEl.setAttribute("aria-invalid", "true");
     fieldEl.setAttribute("title", "필수 입력 항목입니다.");
+  }
+
+  function clearCoreFieldError(fieldEl) {
+    if (!fieldEl) return;
+    fieldEl.classList.remove("obs-reg-select--error");
+    fieldEl.classList.remove("obs-reg-input--error");
+    fieldEl.removeAttribute("aria-invalid");
+    fieldEl.removeAttribute("title");
+  }
+
+  function markCoreFieldError(fieldEl, message) {
+    if (!fieldEl) return;
+    var tag = String(fieldEl.tagName || "").toLowerCase();
+    if (tag === "select") {
+      fieldEl.classList.add("obs-reg-select--error");
+    } else {
+      fieldEl.classList.add("obs-reg-input--error");
+    }
+    fieldEl.setAttribute("aria-invalid", "true");
+    fieldEl.setAttribute("title", String(message || "입력값을 확인해주세요."));
+  }
+
+  function clearCoreFieldErrors() {
+    clearCoreFieldError(regOwnerEl);
+    clearCoreFieldError(regPlaceEl);
+    clearCoreFieldError(regCoordEl);
+    clearCoreFieldError(regHeadingEl);
+    clearCoreFieldError(regBearEl);
+  }
+
+  function clearAllValidationErrors() {
+    clearCoreFieldErrors();
+    clearDetectorRowErrors();
   }
 
   function clearDetectorRowErrors() {
@@ -419,9 +468,69 @@ window.createObsRegisterModule = function createObsRegisterModule({
     return Number.isFinite(parsed) ? parsed : NaN;
   }
 
+  function resolveDefaultManualCoordinate() {
+    var fallback = {
+      lat: DEFAULT_MANUAL_LAT,
+      lng: DEFAULT_MANUAL_LNG
+    };
+
+    if (typeof onDefaultManualCoordinate !== "function") {
+      return fallback;
+    }
+
+    try {
+      var candidate = onDefaultManualCoordinate();
+      var lat = parseFiniteNumber(candidate && candidate.lat);
+      var lng = parseFiniteNumber(candidate && candidate.lng);
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+        return fallback;
+      }
+      if (Math.abs(lat) > 90 || Math.abs(lng) > 180) {
+        return fallback;
+      }
+      return { lat: lat, lng: lng };
+    } catch (error) {
+      return fallback;
+    }
+  }
+
+  function loadLastOwner() {
+    try {
+      var raw = window.localStorage ? window.localStorage.getItem(LAST_OWNER_STORAGE_KEY) : "";
+      return String(raw || "").trim();
+    } catch (error) {
+      return "";
+    }
+  }
+
+  function saveLastOwner(value) {
+    var owner = String(value || "").trim();
+    if (!owner || owner === "미지정") return;
+
+    try {
+      if (window.localStorage) {
+        window.localStorage.setItem(LAST_OWNER_STORAGE_KEY, owner);
+      }
+    } catch (error) {
+      // localStorage 사용 불가 환경에서는 무시한다.
+    }
+  }
+
+  function applyLastOwnerDefault() {
+    if (!regOwnerEl) return;
+    if (formMode !== "create") return;
+
+    var current = String(regOwnerEl.value || "").trim();
+    if (current) return;
+
+    var lastOwner = loadLastOwner();
+    if (!lastOwner) return;
+    regOwnerEl.value = lastOwner;
+  }
+
   // 등록 모드에서 GPS가 꺼져 있으면 수동 입력을 허용한다.
   function isManualEntryEnabled() {
-    return formMode !== "edit" && !latestLive.isGpsActive;
+    return !latestLive.isGpsActive;
   }
 
   // 수정 모드에서 사용할 payload를 만든다. (좌표/방향각은 기존값 유지)
@@ -429,25 +538,41 @@ window.createObsRegisterModule = function createObsRegisterModule({
     var place = regPlaceEl ? regPlaceEl.value.trim() : "";
     var owner = regOwnerEl ? regOwnerEl.value.trim() : "";
     var bearCode = regBearEl ? regBearEl.value.trim() : "";
+    var coordParsed = parseManualCoordInput(regCoordEl ? regCoordEl.value : "");
+    var headingParsed = parseManualHeadingInput(regHeadingEl ? regHeadingEl.value : "");
 
     if (!baseObservation || !String(baseObservation.id || "").trim()) {
       throw new Error("수정 대상 관측점을 찾을 수 없습니다.");
     }
+    if (!owner) {
+      markCoreFieldError(regOwnerEl, "담당자를 입력해주세요.");
+      throw new Error("담당자를 입력해야 합니다.");
+    }
     if (!place) {
+      markCoreFieldError(regPlaceEl, "명칭을 입력해주세요.");
       throw new Error("명칭을 입력해야 합니다.");
     }
     if (!bearCode) {
+      markCoreFieldError(regBearEl, "곰 코드를 선택해주세요.");
       throw new Error("곰 코드를 선택해주세요.");
+    }
+    if (!coordParsed) {
+      markCoreFieldError(regCoordEl, "좌표 형식이 올바르지 않습니다. 예: 35.326459, 127.637712");
+      throw new Error("좌표를 입력해야 합니다. (예: 35.326459, 127.637712)");
+    }
+    if (!Number.isFinite(headingParsed)) {
+      markCoreFieldError(regHeadingEl, "방향각 형식이 올바르지 않습니다. 예: 270");
+      throw new Error("방향각을 입력해야 합니다. (예: 270)");
     }
 
     return {
       id: String(baseObservation.id).trim(),
       place: place,
       bearCode: bearCode,
-      owner: owner || "미지정",
-      lat: Number(baseObservation.lat),
-      lng: Number(baseObservation.lng),
-      heading: parseHeadingNumber(baseObservation.heading)
+      owner: owner,
+      lat: coordParsed.lat,
+      lng: coordParsed.lng,
+      heading: Math.round(headingParsed)
     };
   }
 
@@ -460,16 +585,24 @@ window.createObsRegisterModule = function createObsRegisterModule({
     var lng = parseFiniteNumber(latestLive.lng);
     var heading = parseHeadingNumber(isHeadingLocked ? lockedHeadingDeg : latestLive.heading);
 
+    if (!owner) {
+      markCoreFieldError(regOwnerEl, "담당자를 입력해주세요.");
+      throw new Error("담당자를 입력해야 합니다.");
+    }
     if (!place) {
+      markCoreFieldError(regPlaceEl, "명칭을 입력해주세요.");
       throw new Error("명칭을 입력해야 합니다.");
     }
     if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+      markCoreFieldError(regCoordEl, "좌표 형식이 올바르지 않습니다. 예: 35.326459, 127.637712");
       throw new Error(isManualEntryEnabled() ? "수동 좌표 형식이 올바르지 않습니다. (예: 35.326459, 127.637712)" : "GPS 좌표를 확인할 수 없어 등록할 수 없습니다.");
     }
     if (!Number.isFinite(heading)) {
+      markCoreFieldError(regHeadingEl, "방향각 형식이 올바르지 않습니다. 예: 270");
       throw new Error(isManualEntryEnabled() ? "수동 방향각을 입력하세요. (예: 270)" : "GPS 방향각을 확인할 수 없어 등록할 수 없습니다.");
     }
     if (!bearCode) {
+      markCoreFieldError(regBearEl, "곰 코드를 선택해주세요.");
       throw new Error("곰 코드를 선택해주세요.");
     }
 
@@ -477,7 +610,7 @@ window.createObsRegisterModule = function createObsRegisterModule({
       id: generateObservationId(),
       place: place,
       bearCode: bearCode,
-      owner: owner || "미지정",
+      owner: owner,
       lat: lat,
       lng: lng,
       heading: Math.round(heading)
@@ -487,9 +620,11 @@ window.createObsRegisterModule = function createObsRegisterModule({
   // 제출 버튼 진입점으로, payload 생성부터 저장 후 콜백 호출까지 처리한다.
   async function submitObservation() {
     try {
+      clearAllValidationErrors();
       var observation = buildObservationPayload();
       var detectors = collectDetectorRows();
       await saveObservationToSQLite(observation, detectors);
+      saveLastOwner(observation.owner);
 
       if (onObservationSaved) {
         await onObservationSaved({ observation: observation, detectors: detectors, source: "sqlite" });
@@ -499,20 +634,16 @@ window.createObsRegisterModule = function createObsRegisterModule({
       hide(true);
     } catch (error) {
       statusEl.textContent = "⚠️ " + (error && error.message ? error.message : String(error));
+      highlightStatusOnce();
     }
   }
 
   // 수정 모드 제출: 확인 후 앱(SQLite) 업데이트 또는 웹 더미 메모리 업데이트를 수행한다.
   async function submitObservationEdit() {
     try {
+      clearAllValidationErrors();
       if (!editingObservationId) {
         throw new Error("수정 대상 관측점이 없습니다.");
-      }
-
-      var confirmed = window.confirm("수정 내용을 저장하시겠습니까?");
-      if (!confirmed) {
-        statusEl.textContent = "⚠️ 수정 저장이 취소되었습니다.";
-        return;
       }
 
       var baseObservation = {
@@ -523,13 +654,19 @@ window.createObsRegisterModule = function createObsRegisterModule({
       };
       var editedObservation = buildObservationEditPayload(baseObservation);
       var detectors = collectDetectorRows();
+
+      var confirmed = window.confirm("수정 내용을 저장하시겠습니까?");
+      if (!confirmed) {
+        statusEl.textContent = "⚠️ 수정 저장이 취소되었습니다.";
+        return;
+      }
+
       var source = "demo";
 
       if (window.Capacitor && typeof window.Capacitor.isNativePlatform === "function" && window.Capacitor.isNativePlatform()) {
         await updateObservationInSQLite(editingObservationId, editedObservation, detectors);
         source = "sqlite";
       }
-
       if (onObservationSaved) {
         await onObservationSaved({
           observation: editedObservation,
@@ -545,6 +682,7 @@ window.createObsRegisterModule = function createObsRegisterModule({
       hide(true);
     } catch (error) {
       statusEl.textContent = "⚠️ " + (error && error.message ? error.message : String(error));
+      highlightStatusOnce();
     }
   }
 
@@ -552,6 +690,8 @@ window.createObsRegisterModule = function createObsRegisterModule({
   function resetFormState() {
     clearManualPreview();
     if (obsRegFormEl) obsRegFormEl.reset();
+    applyLastOwnerDefault();
+    clearAllValidationErrors();
     if (detListEl) detListEl.innerHTML = DET_ROW_TEMPLATE;
     ensureDetectorRowAutocomplete();
     if (!latestLive.isGpsActive) {
@@ -562,6 +702,7 @@ window.createObsRegisterModule = function createObsRegisterModule({
     isHeadingLocked = false;
     lockedHeadingDeg = null;
     formMode = "create";
+    syncGpsToggleModeUi();
     editingObservationId = null;
     suppressCloseCallback = false;
     if (chkRegHeadingLock) chkRegHeadingLock.checked = false;
@@ -675,10 +816,11 @@ window.createObsRegisterModule = function createObsRegisterModule({
     var headingToShow = isHeadingLocked ? lockedHeadingDeg : latestLive.heading;
 
     if (isManualInputMode && !hasCoord) {
-      latestLive.lat = DEFAULT_MANUAL_LAT;
-      latestLive.lng = DEFAULT_MANUAL_LNG;
-      latValue = DEFAULT_MANUAL_LAT;
-      lngValue = DEFAULT_MANUAL_LNG;
+      var defaultCoord = resolveDefaultManualCoordinate();
+      latestLive.lat = defaultCoord.lat;
+      latestLive.lng = defaultCoord.lng;
+      latValue = defaultCoord.lat;
+      lngValue = defaultCoord.lng;
       hasCoord = true;
     }
 
@@ -1032,6 +1174,15 @@ window.createObsRegisterModule = function createObsRegisterModule({
   // 등록 팝업을 열고 위치/UI 상태를 초기 표시로 맞춘다.
   function open() {
     if (registerBoxEl) registerBoxEl.classList.remove("hidden");
+    formMode = "create";
+    syncGpsToggleModeUi();
+    clearAllValidationErrors();
+    if (!latestLive.isGpsActive) {
+      // 등록창을 다시 열 때마다 현재 화면 기준 기본 좌표를 다시 계산한다.
+      latestLive.lat = null;
+      latestLive.lng = null;
+    }
+    applyLastOwnerDefault();
     setPeekMode(false);
     clearInlinePosition();
     void loadDetectorCatalogOptions();
@@ -1043,6 +1194,7 @@ window.createObsRegisterModule = function createObsRegisterModule({
     renderLiveFields();
     emitManualPreview({ shouldFocus: true });
     statusEl.textContent = "🧭 관측점 등록(GPS ON 시 위치 자동 갱신)";
+    highlightStatusOnce();
   }
 
   // 관측점 수정 모드로 팝업을 열고 기존 데이터를 폼에 채운다.
@@ -1055,6 +1207,7 @@ window.createObsRegisterModule = function createObsRegisterModule({
     }
 
     if (registerBoxEl) registerBoxEl.classList.remove("hidden");
+    clearAllValidationErrors();
     setPeekMode(false);
     clearInlinePosition();
     void loadDetectorCatalogOptions();
@@ -1062,6 +1215,7 @@ window.createObsRegisterModule = function createObsRegisterModule({
     keepPopupInViewport(true);
 
     formMode = "edit";
+    syncGpsToggleModeUi();
     editingObservationId = targetId;
     suppressCloseCallback = true;
     if (registerTitleEl) registerTitleEl.textContent = "관측점 수정";
@@ -1079,7 +1233,7 @@ window.createObsRegisterModule = function createObsRegisterModule({
 
     if (chkRegHeadingLock) {
       chkRegHeadingLock.checked = false;
-      chkRegHeadingLock.disabled = true;
+      chkRegHeadingLock.disabled = isManualEntryEnabled();
     }
     isHeadingLocked = false;
     lockedHeadingDeg = null;
@@ -1089,20 +1243,10 @@ window.createObsRegisterModule = function createObsRegisterModule({
       syncGpsToggleUi(false);
     }
 
-    if (regCoordEl) {
-      var lat = Number(target.lat);
-      var lng = Number(target.lng);
-      regCoordEl.value = Number.isFinite(lat) && Number.isFinite(lng)
-        ? lat.toFixed(5) + ", " + lng.toFixed(5)
-        : "-";
-    }
-    if (regHeadingEl) {
-      var heading = parseHeadingNumber(target.heading);
-      regHeadingEl.value = Number.isFinite(heading) ? Math.round(heading) + "°" : "-";
-    }
-
     setDetectorRows(target.detectors);
     ensureDetectorRowAutocomplete();
+    renderLiveFields();
+    emitManualPreview({ shouldFocus: true });
     statusEl.textContent = "✏️ 관측점 정보를 수정하세요.";
   }
 
@@ -1173,6 +1317,7 @@ window.createObsRegisterModule = function createObsRegisterModule({
 
     if (regCoordEl) {
       regCoordEl.addEventListener("input", function() {
+        clearCoreFieldError(regCoordEl);
         applyManualInputValues();
       });
       regCoordEl.addEventListener("blur", function() {
@@ -1185,6 +1330,7 @@ window.createObsRegisterModule = function createObsRegisterModule({
 
     if (regHeadingEl) {
       regHeadingEl.addEventListener("input", function() {
+        clearCoreFieldError(regHeadingEl);
         applyManualInputValues();
       });
       regHeadingEl.addEventListener("blur", function() {
@@ -1198,6 +1344,24 @@ window.createObsRegisterModule = function createObsRegisterModule({
     if (chkRegHeadingLock) chkRegHeadingLock.addEventListener("change", function() {
       setHeadingLock(chkRegHeadingLock.checked);
     });
+
+    if (regOwnerEl) {
+      regOwnerEl.addEventListener("input", function() {
+        clearCoreFieldError(regOwnerEl);
+      });
+    }
+
+    if (regPlaceEl) {
+      regPlaceEl.addEventListener("input", function() {
+        clearCoreFieldError(regPlaceEl);
+      });
+    }
+
+    if (regBearEl) {
+      regBearEl.addEventListener("change", function() {
+        clearCoreFieldError(regBearEl);
+      });
+    }
 
     if (registerHeaderEl) {
       registerHeaderEl.addEventListener("mousedown", function(e) {
