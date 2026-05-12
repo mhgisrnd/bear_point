@@ -9,6 +9,7 @@
   const btnPanelToggle = document.getElementById("btn-panel-toggle");
   const bearsListEl = document.getElementById("bears-list");
   const bearsToolbarEl = document.getElementById("bears-toolbar");
+  const bearsToolbarSummaryEl = document.getElementById("bears-toolbar-summary");
   const bearsSelectAllEl = document.getElementById("bears-select-all");
   const bearsSelectionCountEl = document.getElementById("bears-selection-count");
   const btnBearsDownloadAllXlsEl = document.getElementById("btn-bears-download-all-xls");
@@ -21,6 +22,10 @@
   let startupOverlayEl = null;
   let startupOverlayTextEl = null;
   let startupOverlayRetryBtn = null;
+  let startupOverlayShowTimer = null;
+  let startupOverlayVisibleAt = 0;
+  const STARTUP_OVERLAY_DELAY_MS = 140;
+  const STARTUP_OVERLAY_MIN_VISIBLE_MS = 320;
   let currentBearEstimateItems = [];
   let currentBearEstimateFallbackMode = false;
   const overlayBackCloseStack = [];
@@ -113,7 +118,7 @@
     startupOverlayRetryBtn = retryBtn;
   }
 
-  function showStartupOverlay(message, allowRetry) {
+  function showStartupOverlay(message, allowRetry, forceImmediate) {
     ensureStartupOverlay();
     if (startupOverlayTextEl && typeof message === "string" && message) {
       startupOverlayTextEl.textContent = message;
@@ -121,12 +126,51 @@
     if (startupOverlayRetryBtn) {
       startupOverlayRetryBtn.style.display = allowRetry ? "block" : "none";
     }
-    if (startupOverlayEl) startupOverlayEl.style.display = "flex";
+
+    const revealOverlay = function () {
+      if (!startupOverlayEl) return;
+      startupOverlayEl.style.display = "flex";
+      startupOverlayVisibleAt = Date.now();
+    };
+
+    if (startupOverlayShowTimer) {
+      window.clearTimeout(startupOverlayShowTimer);
+      startupOverlayShowTimer = null;
+    }
+
+    if (forceImmediate) {
+      revealOverlay();
+      return;
+    }
+
+    startupOverlayShowTimer = window.setTimeout(function () {
+      startupOverlayShowTimer = null;
+      revealOverlay();
+    }, STARTUP_OVERLAY_DELAY_MS);
   }
 
   function hideStartupOverlay() {
-    if (!startupOverlayEl) return;
-    startupOverlayEl.style.display = "none";
+    return new Promise(function (resolve) {
+      if (startupOverlayShowTimer) {
+        window.clearTimeout(startupOverlayShowTimer);
+        startupOverlayShowTimer = null;
+      }
+
+      if (!startupOverlayEl || startupOverlayEl.style.display === "none") {
+        startupOverlayVisibleAt = 0;
+        resolve();
+        return;
+      }
+
+      const elapsedMs = startupOverlayVisibleAt > 0 ? (Date.now() - startupOverlayVisibleAt) : 0;
+      const waitMs = Math.max(0, STARTUP_OVERLAY_MIN_VISIBLE_MS - elapsedMs);
+
+      window.setTimeout(function () {
+        if (startupOverlayEl) startupOverlayEl.style.display = "none";
+        startupOverlayVisibleAt = 0;
+        resolve();
+      }, waitMs);
+    });
   }
 
   async function bootWithSQLiteGate() {
@@ -139,20 +183,20 @@
         // 웹(non-native)에서는 JSON 폴백 목록을 렌더링한 뒤 화면을 연다.
         if (reason === "non-native-platform") {
           await refreshBearEstimatePanel();
-          hideStartupOverlay();
+          await hideStartupOverlay();
           return;
         }
         throw new Error(reason);
       }
 
       await refreshBearEstimatePanel();
-      hideStartupOverlay();
+      await hideStartupOverlay();
     } catch (error) {
       console.error("SQLite 초기화 오류:", error);
       if (statusEl) {
         statusEl.textContent = "🔴 SQLite 초기화 실패: " + (error && error.message ? error.message : String(error));
       }
-      showStartupOverlay("SQLite 준비 실패. 다시 시도해 주세요.", true);
+      showStartupOverlay("SQLite 준비 실패. 다시 시도해 주세요.", true, true);
     }
   }
 
@@ -1902,7 +1946,7 @@
 
   const baseCenterMap = mapCoordFromWgs84(35.315, 127.655);
   //const extentMap = ol.proj.transformExtent(JIRISAN_BOUNDS_WGS84, WGS84_CODE, MAP_PROJECTION_CODE);
-  const extentMap = [944865,1669988,1077349,1732849];
+  const extentMap = [991351,1650474,1033184,1742203];
   const viewResolutions = build5179ViewResolutions(
     MBTILES_MIN_ZOOM,
     ONLINE_MAX_ZOOM,
@@ -3490,13 +3534,14 @@
     const inputCard = document.createElement("div");
     inputCard.style.display = "flex";
     inputCard.style.flexDirection = "column";
-    inputCard.style.gap = "8px";
+    inputCard.style.gap = "0";
     inputCard.style.width = "100%";
-    inputCard.style.padding = "10px";
+    inputCard.style.padding = "0";
     inputCard.style.background = "rgba(15,23,42,0.92)";
     inputCard.style.border = "1px solid rgba(255,255,255,0.2)";
     inputCard.style.borderRadius = "10px";
     inputCard.style.boxShadow = "0 10px 24px rgba(15,23,42,0.3)";
+    inputCard.style.overflow = "hidden";
 
     const fieldGrid = document.createElement("div");
     fieldGrid.style.display = "grid";
@@ -3703,17 +3748,29 @@
     placeField.appendChild(placeInput);
     fieldGrid.appendChild(ownerField);
     fieldGrid.appendChild(placeField);
-    inputCard.appendChild(fieldGrid);
-    buttonRow.appendChild(saveBtn);
-    buttonRow.appendChild(cancelBtn);
 
     const headerText = document.createElement("div");
     headerText.textContent = "추가정보 입력";
     headerText.style.color = "#ffffff";
     headerText.style.fontSize = "13px";
-    headerText.style.fontWeight = "600";
+    headerText.style.fontWeight = "700";
+    headerText.style.textAlign = "center";
+    headerText.style.padding = "9px 12px";
+    headerText.style.borderBottom = "1px solid rgba(255,255,255,0.15)";
+    headerText.style.letterSpacing = "0.03em";
 
-    root.appendChild(headerText);
+    const fieldWrap = document.createElement("div");
+    fieldWrap.style.padding = "10px";
+    fieldWrap.style.display = "flex";
+    fieldWrap.style.flexDirection = "column";
+    fieldWrap.style.gap = "8px";
+    fieldWrap.appendChild(fieldGrid);
+
+    inputCard.appendChild(headerText);
+    inputCard.appendChild(fieldWrap);
+    buttonRow.appendChild(saveBtn);
+    buttonRow.appendChild(cancelBtn);
+
     root.appendChild(inputCard);
     root.appendChild(buttonRow);
 
@@ -4357,8 +4414,17 @@
 
     if (!items || items.length === 0) {
       bearsListEl.innerHTML = '<div class="bears-empty">아직 목록이 없습니다.</div>';
+      if (bearsToolbarSummaryEl) {
+        bearsToolbarSummaryEl.hidden = true;
+        bearsToolbarSummaryEl.textContent = "";
+      }
       updateBearEstimateToolbar([]);
       return;
+    }
+
+    if (bearsToolbarSummaryEl) {
+      bearsToolbarSummaryEl.innerHTML = '<img src="assets/icons/icon_bear.png" style="height:16px;vertical-align:middle;margin-right:4px;" alt="곰"/> ' + items.length + '건 표시됨' + (isFallback ? ' <span style="font-size:11px;opacity:.6">(샘플)</span>' : '');
+      bearsToolbarSummaryEl.hidden = false;
     }
 
     items.forEach(function (it) {
@@ -4554,10 +4620,6 @@
       if (!hasQueryError && statusEl) statusEl.textContent = "🟠 표시할 곰 추정위치가 없습니다";
       return;
     }
-
-    if (statusEl) {
-      statusEl.innerHTML = '<img src="assets/icons/icon_bear.png" style="height:18px;vertical-align:middle;margin-right:4px;" alt="곰"/> ' + items.length + '건 표시됨' + (usedFallback ? ' <span style="font-size:11px;opacity:.6">(샘플)</span>' : '');
-    }
   }
 
   mountAnalysisActionBar();
@@ -4645,10 +4707,6 @@
   setupAndroidBackButtonExit().catch(function (error) {
     console.error("안드로이드 뒤로가기 초기화 오류:", error);
   });
-
-  if (statusEl && statusEl.textContent === "연결됨") {
-    statusEl.textContent = "✅ 지도 초기화 완료";
-  }
 
   setTimeout(function () {
     if (!statusEl) return;

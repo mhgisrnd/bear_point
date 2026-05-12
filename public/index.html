@@ -32,6 +32,8 @@
       <button class="obs-search-clear" id="btn-search-clear" type="button">초기화</button>
     </div>
 
+    <div class="obs-list-status" id="obs-list-status" aria-live="polite" hidden></div>
+
     <div class="obs-table-wrap">
       <table class="obs-table">
         <thead>
@@ -178,7 +180,7 @@
 
     <div class="panel" id="panel">
       <div class="panel-header">
-        <div id="status">연결됨</div>
+        <div id="status"></div>
         <button class="panel-toggle" id="btn-panel-toggle" aria-expanded="true">▼</button>
       </div>
 
@@ -188,6 +190,7 @@
             <span>곰 추정위치 목록</span>
             <div class="bears-toolbar" id="bears-toolbar">
               <div class="bears-toolbar__row bears-toolbar__row--top">
+                <span class="bears-toolbar__summary" id="bears-toolbar-summary" aria-live="polite" hidden></span>
                 <button class="bears-toolbar-btn bears-toolbar-btn--ghost bears-toolbar-btn--excel-all" id="btn-bears-download-all-xls" type="button" aria-label="엑셀 일괄 다운로드" disabled>
                   <span class="bears-toolbar-btn__excel-icon" aria-hidden="true"></span>
                   <span>일괄 다운로드</span>
@@ -196,7 +199,7 @@
               <div class="bears-toolbar__row bears-toolbar__row--bottom">
                 <label class="bears-select-all" for="bears-select-all">
                   <input type="checkbox" id="bears-select-all" />
-                  <span>선택</span>
+                  <span>일괄 선택</span>
                 </label>
                 <div class="bears-toolbar__actions" id="bears-toolbar-actions">
                   <span class="bears-selection-count" id="bears-selection-count">0개 선택</span>

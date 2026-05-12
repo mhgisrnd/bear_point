@@ -27,6 +27,7 @@ window.createObsListModule = function createObsListModule({
   const obsListBodyEl = document.getElementById("obs-list-body");
   const obsTableWrapEl = document.querySelector(".obs-table-wrap");
   const obsTableBodyScrollableEl = document.querySelector(".obs-table tbody");
+  const obsListStatusEl = document.getElementById("obs-list-status");
   const searchFieldEl = document.getElementById("search-field");
   const searchQueryEl = document.getElementById("search-query");
   const btnSearchClearEl = document.getElementById("btn-search-clear");
@@ -333,6 +334,14 @@ window.createObsListModule = function createObsListModule({
   }
 
   // 관측점 데이터 로드 이후 목록/마커/상태 문구를 한 번에 갱신한다.
+  function updateObservationSummary() {
+    if (!obsListStatusEl) return;
+
+    const count = observationSamples.length;
+    obsListStatusEl.textContent = `${count}건`;
+    obsListStatusEl.hidden = false;
+  }
+
   async function refreshObservationData() {
     const result = await loadObservationSamples();
     selectedObsIds.clear();
@@ -340,15 +349,7 @@ window.createObsListModule = function createObsListModule({
     renderObservationMarkers(observationSamples);
     updateSelectionUI();
 
-    if (statusEl) {
-      if (result.source === "sqlite") {
-        statusEl.textContent = `✅ 관측점 ${observationSamples.length}건 로드`;
-      } else if (result.source === "demo") {
-        statusEl.textContent = `🧪 웹 더미 관측점 ${observationSamples.length}건 로드`;
-      } else {
-        statusEl.textContent = "ℹ️ 관측점 데이터가 없습니다.";
-      }
-    }
+    updateObservationSummary();
   }
 
   // 목록 패널 최소화/복원 상태를 토글하고 아이콘 상태를 동기화한다.
@@ -472,7 +473,6 @@ window.createObsListModule = function createObsListModule({
           </div>
         </td>
       `;
-
       const chk = row.querySelector(".obs-row-chk");
       if (chk) chk.addEventListener("click", (e) => {
         e.stopPropagation();
@@ -1296,6 +1296,8 @@ window.createObsListModule = function createObsListModule({
         ? `🗑️ ${memoryDeletedCount}개 관측점을 삭제했습니다.`
         : "🟠 삭제할 관측점이 없습니다.";
 
+      updateObservationSummary();
+
     });
 
     if (btnObsListPeek) btnObsListPeek.addEventListener("click", () => {
@@ -1359,6 +1361,7 @@ window.createObsListModule = function createObsListModule({
       renderObservationMarkers(getFilteredItems());
     }
     updateSelectionUI();
+    updateObservationSummary();
   }
 
   function updateObservation(item) {
@@ -1378,6 +1381,7 @@ window.createObsListModule = function createObsListModule({
       renderObservationMarkers(getFilteredItems());
     }
     updateSelectionUI();
+    updateObservationSummary();
   }
 
   function openList() {

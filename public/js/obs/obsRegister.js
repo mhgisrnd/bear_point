@@ -997,7 +997,7 @@ window.createObsRegisterModule = function createObsRegisterModule({
     if (chkRegHeadingLock) chkRegHeadingLock.disabled = isManualEntryEnabled();
     renderLiveFields();
     emitManualPreview();
-    statusEl.textContent = "🧭 관측점 등록(GPS OFF 시 수동 입력 가능)";
+    statusEl.textContent = "🧭 관측점 등록(GPS ON 시 위치 자동 갱신)";
   }
 
   // 관측점 수정 모드로 팝업을 열고 기존 데이터를 폼에 채운다.
@@ -1071,6 +1071,7 @@ window.createObsRegisterModule = function createObsRegisterModule({
   function close() {
     var shouldSuppressClose = suppressCloseCallback;
     hide(true);
+    statusEl.textContent = "";
     if (!shouldSuppressClose && onClose) onClose();
   }
 

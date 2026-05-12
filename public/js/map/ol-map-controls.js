@@ -82,7 +82,6 @@ window.createOlMapControlsManager = function createOlMapControlsManager(options)
       maxZoom: 14,
       duration: 0
     });
-    view.setZoom(offlineInitialZoom);
     return true;
   }
 
@@ -533,7 +532,18 @@ window.createOlMapControlsManager = function createOlMapControlsManager(options)
     root.style.zIndex = "1400";
     root.style.display = "flex";
     root.style.flexDirection = "column";
-    root.style.gap = "6px";
+    root.style.gap = "0px";
+
+    const mainControlGroup = document.createElement("div");
+    mainControlGroup.style.display = "flex";
+    mainControlGroup.style.flexDirection = "column";
+    mainControlGroup.style.gap = "6px";
+
+    const measureControlGroup = document.createElement("div");
+    measureControlGroup.style.display = "flex";
+    measureControlGroup.style.flexDirection = "column";
+    measureControlGroup.style.gap = "6px";
+    measureControlGroup.style.marginTop = "25px";
 
     function makeBtn(className, title, innerHTML, onClick) {
       const btn = document.createElement("a");
@@ -698,12 +708,16 @@ window.createOlMapControlsManager = function createOlMapControlsManager(options)
     measureActionPanelEl.appendChild(measureActionRowEl);
     updateMeasureActionButtons();
 
-    root.appendChild(btnJiri);
-    root.appendChild(locateBtnEl);
-    root.appendChild(btnZoomIn);
-    root.appendChild(btnZoomOut);
-    root.appendChild(measureDistanceBtnEl);
-    root.appendChild(measureAreaBtnEl);
+    mainControlGroup.appendChild(btnJiri);
+    mainControlGroup.appendChild(locateBtnEl);
+    mainControlGroup.appendChild(btnZoomIn);
+    mainControlGroup.appendChild(btnZoomOut);
+
+    measureControlGroup.appendChild(measureDistanceBtnEl);
+    measureControlGroup.appendChild(measureAreaBtnEl);
+
+    root.appendChild(mainControlGroup);
+    root.appendChild(measureControlGroup);
 
     const panelStackEl = document.querySelector(".panel-stack.panel-bottom-left");
     const panelTabsEl = document.querySelector(".panel-tabs.panel-tabs-floating");
