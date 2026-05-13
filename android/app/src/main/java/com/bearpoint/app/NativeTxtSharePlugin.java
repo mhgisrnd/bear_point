@@ -1,5 +1,6 @@
 package com.bearpoint.app;
 
+import android.content.ActivityNotFoundException;
 import android.content.ClipData;
 import android.content.Intent;
 import android.content.pm.PackageManager;
@@ -22,6 +23,75 @@ import java.util.List;
 @CapacitorPlugin(name = "NativeTxtShare")
 public class NativeTxtSharePlugin extends Plugin {
     private static final String TAG = "NativeTxtShare";
+
+    @PluginMethod
+    public void openFile(PluginCall call) {
+        String uriString = call.getString("uri");
+        String fileName = call.getString("fileName", "");
+        String dialogTitle = call.getString("dialogTitle", "파일 열기");
+
+        if (uriString == null || uriString.trim().isEmpty()) {
+            call.reject("uri is required");
+            return;
+        }
+
+        try {
+            Uri targetUri = normalizeToShareableUri(uriString.trim());
+            String mimeType = guessMimeType(uriString, fileName);
+            boolean opened = tryOpenFileIntent(targetUri, mimeType, fileName, dialogTitle);
+            if (!opened && !"*/*".equals(mimeType)) {
+                opened = tryOpenFileIntent(targetUri, "*/*", fileName, dialogTitle);
+                if (opened) {
+                    mimeType = "*/*";
+                }
+            }
+            if (!opened) {
+                call.reject("No app can open this file type");
+                return;
+            }
+
+            JSObject result = new JSObject();
+            result.put("ok", true);
+            result.put("uri", targetUri.toString());
+            result.put("mimeType", mimeType);
+            call.resolve(result);
+        } catch (Exception ex) {
+            Log.e(TAG, "openFile failed: " + ex.getMessage(), ex);
+            call.reject("openFile failed: " + ex.getMessage());
+        }
+    }
+
+    private boolean tryOpenFileIntent(Uri targetUri, String mimeType, String fileName, String dialogTitle) {
+        try {
+            Intent intent = new Intent(Intent.ACTION_VIEW);
+            intent.setDataAndType(targetUri, mimeType);
+            intent.addCategory(Intent.CATEGORY_DEFAULT);
+            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+
+            ClipData clip = ClipData.newUri(
+                getContext().getContentResolver(),
+                (fileName != null && !fileName.isEmpty()) ? fileName : "file",
+                targetUri
+            );
+            intent.setClipData(clip);
+
+            PackageManager packageManager = getContext().getPackageManager();
+            List<ResolveInfo> resInfos = packageManager.queryIntentActivities(intent, 0);
+            for (ResolveInfo resolveInfo : resInfos) {
+                String packageName = resolveInfo.activityInfo.packageName;
+                getContext().grantUriPermission(packageName, targetUri, Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            }
+
+            Intent chooser = Intent.createChooser(intent, dialogTitle);
+            chooser.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            chooser.setClipData(clip);
+            getContext().startActivity(chooser);
+            return true;
+        } catch (ActivityNotFoundException notFound) {
+            Log.w(TAG, "No activity for mimeType=" + mimeType + ", uri=" + targetUri);
+            return false;
+        }
+    }
 
     @PluginMethod
     public void shareTxtFile(PluginCall call) {
@@ -93,5 +163,47 @@ public class NativeTxtSharePlugin extends Plugin {
             out.flush();
         }
         return cacheFile;
+    }
+
+    private Uri normalizeToShareableUri(String uriString) {
+        Uri parsed = Uri.parse(uriString);
+        String scheme = parsed.getScheme() != null ? parsed.getScheme().toLowerCase() : "";
+
+        if ("content".equals(scheme)) {
+            return parsed;
+        }
+
+        if ("file".equals(scheme)) {
+            File file = new File(parsed.getPath());
+            return FileProvider.getUriForFile(
+                getContext(),
+                getContext().getPackageName() + ".fileprovider",
+                file
+            );
+        }
+
+        File maybeFile = new File(uriString);
+        if (maybeFile.exists()) {
+            return FileProvider.getUriForFile(
+                getContext(),
+                getContext().getPackageName() + ".fileprovider",
+                maybeFile
+            );
+        }
+
+        return parsed;
+    }
+
+    private String guessMimeType(String uriString, String fileName) {
+        String lower = (fileName != null ? fileName : "").toLowerCase();
+        if (lower.isEmpty() && uriString != null) {
+            lower = uriString.toLowerCase();
+        }
+
+        if (lower.endsWith(".xlsx")) return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+        if (lower.endsWith(".xls")) return "application/vnd.ms-excel";
+        if (lower.endsWith(".txt")) return "text/plain";
+        if (lower.endsWith(".csv")) return "text/csv";
+        return "*/*";
     }
 }

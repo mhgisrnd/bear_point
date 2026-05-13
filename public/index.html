@@ -14,12 +14,15 @@
   <!-- 관측점 목록 패널 -->
   <section class="obs-sheet hidden" id="obs-sheet" aria-label="관측점 목록 패널">
     <div class="obs-sheet-header">
-      <h2>목록</h2>
+      <h2>관측점 목록</h2>
       <div class="obs-header-actions">
         <button class="analysis-btn" id="btn-analysis" type="button">위치분석</button>
-        <button class="bulk-delete-btn" id="btn-delete-selected" type="button">선택 삭제</button>
         <button class="obs-panel-icon-btn" id="btn-obs-list-peek" type="button" aria-label="최소화" title="최소화">−</button>
-        <button class="obs-sheet-close" id="btn-obs-list-close" type="button" aria-label="닫기">✕</button>
+        <button class="obs-sheet-close" id="btn-obs-list-close" type="button" aria-label="닫기">
+          <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+        </button>
       </div>
     </div>
 
@@ -32,7 +35,16 @@
       <button class="obs-search-clear" id="btn-search-clear" type="button">초기화</button>
     </div>
 
-    <div class="obs-list-status" id="obs-list-status" aria-live="polite" hidden></div>
+    <div class="obs-list-status" id="obs-list-status" aria-live="polite" hidden>
+      <div class="obs-list-status__meta">
+        <span class="obs-list-status__count" id="obs-list-count">0건</span>
+        <span class="sel-count-badge" id="obs-selected-count" hidden>0개 선택</span>
+      </div>
+      <div class="obs-list-status__actions">
+        <button class="obs-inline-register-btn" id="btn-obs-add-inline" type="button">관측점 등록</button>
+        <button class="bulk-delete-btn bulk-delete-btn--inline" id="btn-delete-selected" type="button">선택 삭제</button>
+      </div>
+    </div>
 
     <div class="obs-table-wrap">
       <table class="obs-table">
@@ -53,10 +65,14 @@
   <!-- 관측점 등록 팝업 -->
   <div class="obs-register-popup hidden" id="register-box" aria-label="관측점 등록 팝업">
     <div class="obs-register-header">
-      <h2>등록</h2>
+      <h2>관측점 등록</h2>
       <div class="obs-register-header-actions">
         <button class="obs-panel-icon-btn" id="btn-register-peek" type="button" aria-label="최소화" title="최소화">−</button>
-        <button class="obs-register-close" id="btn-register-close" type="button" aria-label="닫기">✕</button>
+        <button class="obs-register-close" id="btn-register-close" type="button" aria-label="닫기">
+          <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+        </button>
       </div>
     </div>
     <div class="obs-register-body">
@@ -174,8 +190,7 @@
   <!-- 하단 좌측 패널 -->
   <div class="panel-stack panel-bottom-left">
     <div class="panel-tabs panel-tabs-floating">
-      <button class="tab-btn" id="btn-obs-add">관측점 등록</button>
-      <button class="tab-btn" id="btn-obs-list">관측점 목록</button>
+      <button class="tab-btn" id="btn-obs-list">관측점</button>
     </div>
 
     <div class="panel" id="panel">

@@ -791,10 +791,10 @@ window.createOlMapControlsManager = function createOlMapControlsManager(options)
     panel.style.background = "#f6f6f6";
     panel.style.border = "1px solid #8e8e8e";
     panel.style.borderRadius = "4px";
-    panel.style.padding = "8px 10px";
+    panel.style.padding = "6px 10px";
     panel.style.fontSize = "13px";
     panel.style.lineHeight = "1.5";
-    panel.style.minWidth = "120px";
+    panel.style.minWidth = "126px";
 
     function createSectionTitle(text, marginTop) {
       const title = document.createElement("div");
@@ -902,7 +902,7 @@ window.createOlMapControlsManager = function createOlMapControlsManager(options)
 
     const labelMbtiles = document.createElement("label");
     labelMbtiles.style.cursor = "pointer";
-    labelMbtiles.textContent = "오프라인(국문)";
+    labelMbtiles.textContent = "국문(지리산 일대)";
     rowMbtiles.appendChild(radioMbtiles);
     rowMbtiles.appendChild(labelMbtiles);
 
@@ -1014,7 +1014,7 @@ window.createOlMapControlsManager = function createOlMapControlsManager(options)
       if (measureAreaBtnEl && measureAreaBtnEl.contains(target)) return;
 
       const shouldDeactivate = !!target.closest(
-        "#btn-obs-add, #btn-obs-list, #btn-analysis, #btn-delete-selected, #btn-obs-list-close, #btn-obs-list-peek, .obs-action-btn, #btn-panel-toggle"
+        "#btn-obs-add-inline, #btn-obs-list, #btn-analysis, #btn-delete-selected, #btn-obs-list-close, #btn-obs-list-peek, .obs-action-btn, #btn-panel-toggle"
       );
       if (shouldDeactivate) {
         setMeasureMode(false, "menu");

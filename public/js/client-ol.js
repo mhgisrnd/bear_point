@@ -232,6 +232,7 @@
         if (reason === "non-native-platform") {
           await refreshBearEstimatePanel();
           await hideStartupOverlay();
+          if (statusEl) statusEl.innerHTML = '<img src="/css/image/helloHiking.png" style="height:1.2em;vertical-align:middle;margin-top:-8px;"> 반달가슴곰 위치추적분석';
           return;
         }
         throw new Error(reason);
@@ -239,6 +240,7 @@
 
       await refreshBearEstimatePanel();
       await hideStartupOverlay();
+      if (statusEl) statusEl.textContent = "🐻 반달가슴곰 위치추적분석";
     } catch (error) {
       console.error("SQLite 초기화 오류:", error);
       if (statusEl) {
@@ -504,13 +506,77 @@
     return null;
   }
 
-  function openSavedFileLink(uriValue) {
+  function getCapacitorNativeFileOpenPlugin() {
+    // NativeTxtShare 플러그인에 openFile 메서드를 함께 확장해 재사용한다.
+    const plugin = getCapacitorNativeTxtSharePlugin();
+    if (plugin && typeof plugin.openFile === "function") return plugin;
+    return null;
+  }
+
+  async function openSavedFileLink(uriValue, options) {
     if (!uriValue) return false;
+
+    const fileName = options && options.fileName ? String(options.fileName) : "파일";
+    const filesystemDirectory = options && options.directory ? String(options.directory) : "DOCUMENTS";
+    const filesystem = getCapacitorFilesystemPlugin();
+    const nativeFileOpenPlugin = getCapacitorNativeFileOpenPlugin();
+    const capacitor = window.Capacitor;
+    let targetUri = String(uriValue).trim();
+
+    // 상대 경로(BearMap/...)가 전달된 경우 실제 URI로 먼저 변환한다.
+    if (!/^(file:|content:|https?:|blob:|data:)/i.test(targetUri)) {
+      if (filesystem && typeof filesystem.getUri === "function") {
+        try {
+          const uriRes = await filesystem.getUri({
+            path: targetUri,
+            directory: filesystemDirectory
+          });
+          if (uriRes && uriRes.uri) {
+            targetUri = String(uriRes.uri);
+          }
+        } catch (uriError) {
+          console.warn("열기 대상 URI 변환 실패:", uriError);
+        }
+      }
+    }
+
+    // 네이티브 openFile 메서드가 있으면 가장 먼저 사용한다.
+    if (
+      isNativeCapacitorPlatform() &&
+      nativeFileOpenPlugin &&
+      typeof nativeFileOpenPlugin.openFile === "function" &&
+      /^(file:|content:)/i.test(targetUri)
+    ) {
+      try {
+        await nativeFileOpenPlugin.openFile({
+          uri: targetUri,
+          fileName: fileName,
+          dialogTitle: "파일 열기"
+        });
+        return true;
+      } catch (nativeOpenError) {
+        console.warn("네이티브 파일 열기 실패:", nativeOpenError);
+      }
+    }
+
+    // 사용자가 '열기'를 눌렀을 때는 공유 시트로 우회하지 않고 실패를 명확히 반환한다.
+    if (isNativeCapacitorPlatform() && /^(file:|content:)/i.test(targetUri)) {
+      return false;
+    }
+
+    if (/^content:/i.test(targetUri)) {
+      return false;
+    }
+
     try {
-      const capacitor = window.Capacitor;
-      const link = (capacitor && typeof capacitor.convertFileSrc === "function")
-        ? capacitor.convertFileSrc(uriValue)
-        : uriValue;
+      const link = (/^file:/i.test(targetUri) && capacitor && typeof capacitor.convertFileSrc === "function")
+        ? capacitor.convertFileSrc(targetUri)
+        : targetUri;
+
+      if (!/^(https?:|file:|blob:|data:)/i.test(link)) {
+        return false;
+      }
+
       const a = document.createElement("a");
       a.href = link;
       a.target = "_blank";
@@ -523,6 +589,105 @@
       console.warn("저장 파일 링크 열기 실패:", error);
       return false;
     }
+  }
+
+  // 저장 완료 후 '열기/닫기'를 선택하는 공용 다이얼로그.
+  function showSavedFileOpenDialog(options) {
+    return new Promise(function (resolve) {
+      const filePathText = options && options.filePathText ? String(options.filePathText) : "Documents/BearMap";
+      const overlay = document.createElement("div");
+      overlay.style.position = "fixed";
+      overlay.style.inset = "0";
+      overlay.style.zIndex = "23100";
+      overlay.style.background = "rgba(15,23,42,0.45)";
+      overlay.style.display = "flex";
+      overlay.style.alignItems = "center";
+      overlay.style.justifyContent = "center";
+      overlay.style.padding = "18px";
+
+      const card = document.createElement("div");
+      card.style.width = "min(92vw, 360px)";
+      card.style.background = "#ffffff";
+      card.style.color = "#0f172a";
+      card.style.border = "1px solid rgba(15,23,42,0.12)";
+      card.style.borderRadius = "14px";
+      card.style.boxShadow = "0 16px 36px rgba(2,6,23,0.3)";
+      card.style.overflow = "hidden";
+
+      const body = document.createElement("div");
+      body.style.padding = "16px 16px 12px";
+
+      const title = document.createElement("div");
+      title.textContent = "저장되었습니다.";
+      title.style.fontSize = "20px";
+      title.style.fontWeight = "700";
+      title.style.marginBottom = "10px";
+
+      const pathLabel = document.createElement("div");
+      pathLabel.textContent = "경로: " + filePathText;
+      pathLabel.style.fontSize = "14px";
+      pathLabel.style.lineHeight = "1.5";
+      pathLabel.style.color = "#334155";
+      pathLabel.style.wordBreak = "break-all";
+
+      const footer = document.createElement("div");
+      footer.style.display = "grid";
+      footer.style.gridTemplateColumns = "1fr 1fr";
+      footer.style.gap = "8px";
+      footer.style.padding = "12px 16px 16px";
+
+      const openBtn = document.createElement("button");
+      openBtn.type = "button";
+      openBtn.textContent = "열기";
+      openBtn.style.height = "40px";
+      openBtn.style.border = "1px solid #0ea5e9";
+      openBtn.style.borderRadius = "10px";
+      openBtn.style.background = "#f0f9ff";
+      openBtn.style.color = "#075985";
+      openBtn.style.fontWeight = "700";
+      openBtn.style.cursor = "pointer";
+
+      const closeBtn = document.createElement("button");
+      closeBtn.type = "button";
+      closeBtn.textContent = "닫기";
+      closeBtn.style.height = "40px";
+      closeBtn.style.border = "1px solid rgba(148,163,184,0.3)";
+      closeBtn.style.borderRadius = "10px";
+      closeBtn.style.background = "#f8fafc";
+      closeBtn.style.color = "#334155";
+      closeBtn.style.fontWeight = "700";
+      closeBtn.style.cursor = "pointer";
+
+      let isClosed = false;
+      let unregisterOverlayBackClose = function () {};
+
+      function closeWith(action) {
+        if (isClosed) return;
+        isClosed = true;
+        unregisterOverlayBackClose();
+        if (overlay && overlay.parentNode) overlay.parentNode.removeChild(overlay);
+        resolve(action || "close");
+      }
+
+      unregisterOverlayBackClose = registerBackClosableOverlay(overlay, function () {
+        closeWith("close");
+      });
+
+      overlay.addEventListener("click", function (event) {
+        if (event.target === overlay) closeWith("close");
+      });
+      closeBtn.addEventListener("click", function () { closeWith("close"); });
+      openBtn.addEventListener("click", function () { closeWith("open"); });
+
+      body.appendChild(title);
+      body.appendChild(pathLabel);
+      footer.appendChild(openBtn);
+      footer.appendChild(closeBtn);
+      card.appendChild(body);
+      card.appendChild(footer);
+      overlay.appendChild(card);
+      document.body.appendChild(overlay);
+    });
   }
 
   async function ensureFileUriForShare(fileName, uriCandidate, txtContent) {
@@ -1011,7 +1176,18 @@
             const savePath = saveResult && saveResult.relativePath
               ? saveResult.relativePath
               : ("BearMap/" + fileName);
-            window.alert("저장되었습니다.\n경로: Documents/" + savePath);
+            const nextAction = await showSavedFileOpenDialog({
+              filePathText: "Documents/" + savePath
+            });
+            if (nextAction === "open") {
+              const opened = await openSavedFileLink(
+                saveResult && saveResult.savedUri ? saveResult.savedUri : (saveResult && saveResult.relativePath ? saveResult.relativePath : null),
+                { fileName: fileName, directory: "DOCUMENTS" }
+              );
+              if (!opened) {
+                window.alert("파일을 열지 못했습니다. 파일 관리자에서 직접 열어주세요.\n경로: Documents/" + savePath);
+              }
+            }
             closeWith("saved");
           } finally {
             previewSaveBtn.disabled = false;
@@ -1235,7 +1411,18 @@
             const savePath = saveResult && saveResult.relativePath
               ? saveResult.relativePath
               : ("BearMap/" + fileName);
-            window.alert("저장되었습니다.\n경로: Documents/" + savePath);
+            const nextAction = await showSavedFileOpenDialog({
+              filePathText: "Documents/" + savePath
+            });
+            if (nextAction === "open") {
+              const opened = await openSavedFileLink(
+                saveResult && saveResult.savedUri ? saveResult.savedUri : (saveResult && saveResult.relativePath ? saveResult.relativePath : null),
+                { fileName: fileName, directory: "DOCUMENTS" }
+              );
+              if (!opened) {
+                window.alert("파일을 열지 못했습니다. 파일 관리자에서 직접 열어주세요.\n경로: Documents/" + savePath);
+              }
+            }
             closeWith("saved");
           } finally {
             previewSaveBtn.disabled = false;
@@ -3351,9 +3538,6 @@
 
       if (payload.shouldFocus) {
         view.setCenter(centerCoord);
-        if ((view.getZoom() || 0) < 15) {
-          view.setZoom(15);
-        }
       }
     },
     onObservationSaved: async function (payload) {
@@ -3366,9 +3550,12 @@
         } else {
           obsListModule.updateObservation(payload.observation);
         }
+        // 수정 완료 후 목록 패널 복원
+        if (typeof obsListModule.showPanel === "function") obsListModule.showPanel();
         return;
       }
 
+      // 등록 완료 후 목록 패널 복원 및 새 데이터 반영
       obsListModule.openList();
       if (payload.source === "sqlite") {
         await obsListModule.refreshObservationList();
@@ -3377,7 +3564,9 @@
       }
     },
     onClose: function () {
-      if (obsListModule) obsListModule.deactivate();
+      clearEditOriginMarker();
+      // X 버튼 및 취소 시 목록 패널 복원
+      if (obsListModule && typeof obsListModule.showPanel === "function") obsListModule.showPanel();
     }
   }) : null;
 
@@ -4474,7 +4663,10 @@
           onOpen: async function () {
             const saved = await ensureSavedFile();
             if (!saved) return;
-            const opened = openSavedFileLink(saved && saved.savedUri ? saved.savedUri : (saved && saved.relativePath ? saved.relativePath : null));
+            const opened = await openSavedFileLink(
+              saved && saved.savedUri ? saved.savedUri : (saved && saved.relativePath ? saved.relativePath : null),
+              { fileName: fileName, directory: "DOCUMENTS" }
+            );
             if (statusEl) {
               statusEl.textContent = opened
                 ? "✅ 저장 파일 링크 열기 시도: " + fileName
@@ -5090,6 +5282,8 @@
       }
       collapseBearEstimatePanel();
       clearEditOriginMarker();
+      // 등록 팝업이 열리는 동안 목록 패널을 숨긴다.
+      if (obsListModule && typeof obsListModule.hidePanel === "function") obsListModule.hidePanel();
       if (obsRegisterModule) obsRegisterModule.open();
     },
     onEditObservation: function (item) {
@@ -5099,6 +5293,8 @@
       } else {
         clearEditOriginMarker();
       }
+      // 수정 팝업이 열리는 동안 목록 패널을 숨긴다.
+      if (obsListModule && typeof obsListModule.hidePanel === "function") obsListModule.hidePanel();
       if (obsRegisterModule && typeof obsRegisterModule.openForEdit === "function") {
         obsRegisterModule.openForEdit(item);
       }

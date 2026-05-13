@@ -16,18 +16,21 @@ window.createObsListModule = function createObsListModule({
   onClearAnalysisEstimate
 }) {
   const btnBear = document.getElementById("btn-obs-list");
-  const btnObsAdd = document.getElementById("btn-obs-add");
+  const btnObsAdd = document.getElementById("btn-obs-add-inline");
   const btnAnalysis = document.getElementById("btn-analysis");
   const btnDeleteSelected = document.getElementById("btn-delete-selected");
   const btnObsListPeek = document.getElementById("btn-obs-list-peek");
   const btnObsListClose = document.getElementById("btn-obs-list-close");
 
   const obsSheetEl = document.getElementById("obs-sheet");
+  const obsSheetHeaderEl = obsSheetEl ? obsSheetEl.querySelector(".obs-sheet-header") : null;
   const obsListPanelEl = document.getElementById("obs-list-panel");
   const obsListBodyEl = document.getElementById("obs-list-body");
   const obsTableWrapEl = document.querySelector(".obs-table-wrap");
   const obsTableBodyScrollableEl = document.querySelector(".obs-table tbody");
   const obsListStatusEl = document.getElementById("obs-list-status");
+  const obsListCountEl = document.getElementById("obs-list-count");
+  const obsSelectedCountEl = document.getElementById("obs-selected-count");
   const searchFieldEl = document.getElementById("search-field");
   const searchQueryEl = document.getElementById("search-query");
   const btnSearchClearEl = document.getElementById("btn-search-clear");
@@ -42,6 +45,11 @@ window.createObsListModule = function createObsListModule({
   let observationKeySeed = 0;
   let analysisOptionsDialogState = null;
   let analysisCloseSilently = false;
+  // 목록 패널 드래그 상태(헤더 포인터 기반)
+  let isDraggingSheet = false;
+  let dragPointerId = null;
+  let dragOffsetX = 0;
+  let dragOffsetY = 0;
 
   function highlightStatusOnce() {
     if (typeof window.__bpTriggerStatusHighlight === "function") {
@@ -344,7 +352,11 @@ window.createObsListModule = function createObsListModule({
     if (!obsListStatusEl) return;
 
     const count = observationSamples.length;
-    obsListStatusEl.textContent = `${count}건`;
+    if (obsListCountEl) {
+      obsListCountEl.textContent = `${count}건`;
+    } else {
+      obsListStatusEl.textContent = `${count}건`;
+    }
     obsListStatusEl.hidden = false;
   }
 
@@ -372,10 +384,76 @@ window.createObsListModule = function createObsListModule({
     isPeekMode = !!nextState;
     if (obsSheetEl) obsSheetEl.classList.toggle("obs-sheet--peek", isPeekMode);
     if (btnObsListPeek) {
-      btnObsListPeek.textContent = isPeekMode ? "□" : "―";
+      btnObsListPeek.innerHTML = isPeekMode
+        ? '<svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="2" fill="none" stroke="currentColor" stroke-width="2"/></svg>'
+        : '<svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 12h12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
       btnObsListPeek.setAttribute("aria-label", isPeekMode ? "확장" : "최소화");
       btnObsListPeek.setAttribute("title", isPeekMode ? "확장" : "최소화");
     }
+  }
+
+  // 헤더에서 드래그를 시작해 목록 패널의 절대 위치를 고정한다.
+  function startSheetDrag(e) {
+    if (!obsSheetEl || !obsSheetHeaderEl) return;
+    if (!e || typeof e.clientX !== "number" || typeof e.clientY !== "number") return;
+    // 헤더 내부의 실제 조작 요소(닫기/최소화/버튼)를 누른 경우 드래그 시작을 막는다.
+    const interactiveTarget = e.target && e.target.closest
+      ? e.target.closest("button, input, select, textarea, a, label")
+      : null;
+    if (interactiveTarget) return;
+
+    const rect = obsSheetEl.getBoundingClientRect();
+    isDraggingSheet = true;
+    dragPointerId = e.pointerId;
+    dragOffsetX = e.clientX - rect.left;
+    dragOffsetY = e.clientY - rect.top;
+
+    // left/right 고정 레이아웃에서 드래그 시 폭이 튀지 않도록 현재 폭을 고정한다.
+    obsSheetEl.style.width = `${Math.round(rect.width)}px`;
+    obsSheetEl.style.right = "auto";
+    obsSheetEl.style.left = `${Math.round(rect.left)}px`;
+    obsSheetEl.style.top = `${Math.round(rect.top)}px`;
+
+    if (obsSheetHeaderEl.setPointerCapture && typeof dragPointerId === "number") {
+      obsSheetHeaderEl.setPointerCapture(dragPointerId);
+    }
+  }
+
+  // 포인터 이동에 맞춰 목록 패널을 화면 경계 안에서 이동시킨다.
+  function moveSheetDrag(e) {
+    if (!isDraggingSheet || !obsSheetEl) return;
+    if (!e || typeof e.clientX !== "number" || typeof e.clientY !== "number") return;
+    if (dragPointerId != null && e.pointerId != null && e.pointerId !== dragPointerId) return;
+
+    const maxLeft = Math.max(0, window.innerWidth - obsSheetEl.offsetWidth);
+    const maxTop = Math.max(0, window.innerHeight - obsSheetEl.offsetHeight);
+    let nextLeft = e.clientX - dragOffsetX;
+    let nextTop = e.clientY - dragOffsetY;
+
+    if (nextLeft < 0) nextLeft = 0;
+    if (nextTop < 0) nextTop = 0;
+    if (nextLeft > maxLeft) nextLeft = maxLeft;
+    if (nextTop > maxTop) nextTop = maxTop;
+
+    obsSheetEl.style.left = `${Math.round(nextLeft)}px`;
+    obsSheetEl.style.top = `${Math.round(nextTop)}px`;
+  }
+
+  // 드래그 상태와 pointer capture를 정리한다.
+  function endSheetDrag(e) {
+    if (!isDraggingSheet) return;
+    if (dragPointerId != null && e && e.pointerId != null && e.pointerId !== dragPointerId) return;
+
+    if (obsSheetHeaderEl && obsSheetHeaderEl.releasePointerCapture && typeof dragPointerId === "number") {
+      try {
+        obsSheetHeaderEl.releasePointerCapture(dragPointerId);
+      } catch (_) {
+        // pointer capture 해제가 불필요한 브라우저를 허용한다.
+      }
+    }
+
+    isDraggingSheet = false;
+    dragPointerId = null;
   }
 
   // 줌 레벨에 따라 크기가 변하는 관측점 아이콘을 생성한다.
@@ -531,19 +609,9 @@ window.createObsListModule = function createObsListModule({
   function updateSelectionUI() {
     const count = selectedObsIds.size;
 
-    // 배지를 obs-header-actions 안에 배치한다.
-    const headerActions = document.querySelector(".obs-header-actions");
-    let badge = document.querySelector(".sel-count-badge");
-    
-    if (!badge && headerActions) {
-      badge = document.createElement("span");
-      badge.className = "sel-count-badge";
-      headerActions.insertBefore(badge, headerActions.firstChild);
-    }
-    
-    if (badge) {
-      badge.textContent = count > 0 ? `${count}개 선택` : "";
-      badge.style.opacity = count > 0 ? "1" : "0";
+    if (obsSelectedCountEl) {
+      obsSelectedCountEl.textContent = `${count}개 선택`;
+      obsSelectedCountEl.hidden = count < 1;
     }
 
     if (btnAnalysis) {
@@ -1148,7 +1216,7 @@ window.createObsListModule = function createObsListModule({
 
   // 상단 탭 버튼의 active 클래스를 갱신한다.
   function setActiveTab(activeBtn) {
-    [btnBear, btnObsAdd].forEach((button) => { if (button) button.classList.remove("tab-active"); });
+    [btnBear].forEach((button) => { if (button) button.classList.remove("tab-active"); });
     if (activeBtn) activeBtn.classList.add("tab-active");
   }
 
@@ -1163,6 +1231,19 @@ window.createObsListModule = function createObsListModule({
     updateSelectionUI();
   }
 
+  // 등록 팝업이 열리는 동안 목록 패널을 일시적으로 숨긴다 (currentTab 유지).
+  function hidePanel() {
+    if (obsSheetEl) obsSheetEl.classList.add("hidden");
+    if (obsListPanelEl) obsListPanelEl.classList.add("hidden");
+  }
+
+  // 등록 팝업이 닫힌 후 목록 패널을 다시 표시한다 (currentTab 이 "list" 일 때만).
+  function showPanel() {
+    if (currentTab !== "list") return;
+    if (obsSheetEl) obsSheetEl.classList.remove("hidden");
+    if (obsListPanelEl) obsListPanelEl.classList.remove("hidden");
+  }
+
   // 목록 패널을 닫으면서 내부 상태를 초기화한다.
   function closeListPanel() {
     resetList();
@@ -1170,6 +1251,8 @@ window.createObsListModule = function createObsListModule({
     setActiveTab(null);
     setTabLayout("none");
     if (typeof onClearAnalysisEstimate === "function") onClearAnalysisEstimate();
+    // 목록 닫힐 때 등록 팝업도 함께 종료한다.
+    if (typeof onCloseRegister === "function") onCloseRegister();
   }
 
   // 현재 탭 상태(list/add/none)에 맞게 레이아웃과 마커를 제어한다.
@@ -1197,7 +1280,7 @@ window.createObsListModule = function createObsListModule({
 
     // 메뉴를 완전히 닫을 때(목록/등록 탭 탈출) 상태 표시를 기본값으로 정리한다.
     if (tab === "none" && statusEl) {
-      statusEl.textContent = "";
+      statusEl.textContent = "� 반달가슴곰 위치추적분석";
     }
   }
 
@@ -1226,22 +1309,10 @@ window.createObsListModule = function createObsListModule({
     });
 
     if (btnObsAdd) btnObsAdd.addEventListener("click", async () => {
-      // 위치분석 탭이 떠 있을 때 등록으로 전환하면 확인 후 종료한다.
-      const analysisOk = await confirmAndEscapeAnalysis("위치분석이 진행 중입니다. 등록 화면으로 이동하시겠습니까?");
+      // 등록 화면에서는 목록이 가림 이슈를 만들기 쉬워, 열기 직전에 목록 패널을 숨긴다.
+      const analysisOk = await confirmAndEscapeAnalysis("위치분석이 진행 중입니다. 등록 화면을 여시겠습니까?");
       if (!analysisOk) return;
 
-      const willClose = currentTab === "add";
-
-      if (willClose) {
-        setActiveTab(null);
-        setTabLayout("none");
-        if (onCloseRegister) onCloseRegister();
-        return;
-      }
-
-      resetList();
-      setActiveTab(btnObsAdd);
-      setTabLayout("add");
       if (typeof onClearAnalysisEstimate === "function") onClearAnalysisEstimate();
       if (onOpenRegister) onOpenRegister();
     });
@@ -1335,6 +1406,22 @@ window.createObsListModule = function createObsListModule({
     if (btnObsListClose) btnObsListClose.addEventListener("click", () => {
       closeListPanel();
     });
+
+    if (obsSheetHeaderEl) {
+      // 목록 패널은 헤더 영역에서만 드래그 가능하게 제한한다.
+      obsSheetHeaderEl.addEventListener("pointerdown", (e) => {
+        startSheetDrag(e);
+      });
+      obsSheetHeaderEl.addEventListener("pointermove", (e) => {
+        moveSheetDrag(e);
+      });
+      obsSheetHeaderEl.addEventListener("pointerup", (e) => {
+        endSheetDrag(e);
+      });
+      obsSheetHeaderEl.addEventListener("pointercancel", (e) => {
+        endSheetDrag(e);
+      });
+    }
 
     if (obsSheetEl) {
       obsSheetEl.addEventListener("pointerdown", (e) => e.stopPropagation());
@@ -1449,6 +1536,8 @@ window.createObsListModule = function createObsListModule({
   return {
     initialize,
     openList,
+    hidePanel,
+    showPanel,
     setTabLayout,
     deactivate: closeListPanel,
     getCurrentTab: () => currentTab,

@@ -364,7 +364,7 @@ window.createObsRegisterModule = function createObsRegisterModule({
     });
   }
 
-  // 관측점 수정 시 허용된 필드(명칭/등록자/곰코드/감지기)만 SQLite에 반영한다.
+  // 관측점 수정 시 핵심 필드(명칭/등록자/곰코드/좌표/방향각/감지기)를 SQLite에 반영한다.
   async function updateObservationInSQLite(observationId, payload, detectors) {
     var sqliteModule = window.BearSQLite;
     if (!sqliteModule || typeof sqliteModule.initialize !== "function") {
@@ -396,13 +396,16 @@ window.createObsRegisterModule = function createObsRegisterModule({
       database: getDbName(),
       statement: [
         "UPDATE observations",
-        "SET bear_code = ?, owner = ?, place = ?, detectors_json = ?, updated_at = datetime('now')",
+        "SET bear_code = ?, owner = ?, place = ?, lat = ?, lng = ?, heading = ?, detectors_json = ?, updated_at = datetime('now')",
         "WHERE id = ?"
       ].join(" "),
       values: [
         payload.bearCode,
         payload.owner,
         payload.place,
+        payload.lat,
+        payload.lng,
+        payload.heading,
         JSON.stringify(normalizedDetectors),
         observationId
       ],
@@ -892,9 +895,15 @@ window.createObsRegisterModule = function createObsRegisterModule({
   // 등록 팝업 최소화/복원 상태를 토글하고 아이콘 상태를 동기화한다.
   function setPeekMode(nextState) {
     isPeekMode = !!nextState;
-    if (registerBoxEl) registerBoxEl.classList.toggle("obs-register-popup--peek", isPeekMode);
+    if (registerBoxEl) {
+      registerBoxEl.classList.toggle("obs-register-popup--peek", isPeekMode);
+      // 드래그 중 고정된 inline width가 최소화 폭으로 남아 복원 시 폭이 줄어드는 현상을 방지한다.
+      registerBoxEl.style.width = "";
+    }
     if (btnRegisterPeek) {
-      btnRegisterPeek.textContent = isPeekMode ? "□" : "―";
+      btnRegisterPeek.innerHTML = isPeekMode
+        ? '<svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="2" fill="none" stroke="currentColor" stroke-width="2"/></svg>'
+        : '<svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 12h12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
       btnRegisterPeek.setAttribute("aria-label", isPeekMode ? "확장" : "최소화");
       btnRegisterPeek.setAttribute("title", isPeekMode ? "확장" : "최소화");
     }
@@ -1217,7 +1226,8 @@ window.createObsRegisterModule = function createObsRegisterModule({
     formMode = "edit";
     syncGpsToggleModeUi();
     editingObservationId = targetId;
-    suppressCloseCallback = true;
+    // 수정 팝업을 닫을 때(onClose) 목록 패널 복원 콜백이 실행되도록 suppress를 끈다.
+    suppressCloseCallback = false;
     if (registerTitleEl) registerTitleEl.textContent = "관측점 수정";
     if (btnRegSubmit) btnRegSubmit.textContent = "수정";
     if (btnRegCancel) btnRegCancel.textContent = "취소";
@@ -1245,6 +1255,20 @@ window.createObsRegisterModule = function createObsRegisterModule({
 
     setDetectorRows(target.detectors);
     ensureDetectorRowAutocomplete();
+
+    // 수정 팝업 진입 시 좌표/방향각 입력값을 현재 관측점 값으로 강제 동기화한다.
+    // (manual 모드 렌더는 기존 입력값이 남아 있으면 덮어쓰지 않기 때문에 여기서 명시적으로 세팅)
+    if (regCoordEl && Number.isFinite(latestLive.lat) && Number.isFinite(latestLive.lng)) {
+      regCoordEl.value = latestLive.lat.toFixed(5) + ", " + latestLive.lng.toFixed(5);
+    } else if (regCoordEl) {
+      regCoordEl.value = "";
+    }
+    if (regHeadingEl && Number.isFinite(latestLive.heading)) {
+      regHeadingEl.value = String(Math.round(latestLive.heading));
+    } else if (regHeadingEl) {
+      regHeadingEl.value = "";
+    }
+
     renderLiveFields();
     emitManualPreview({ shouldFocus: true });
     statusEl.textContent = "✏️ 관측점 정보를 수정하세요.";
@@ -1260,7 +1284,7 @@ window.createObsRegisterModule = function createObsRegisterModule({
   function close() {
     var shouldSuppressClose = suppressCloseCallback;
     hide(true);
-    statusEl.textContent = "";
+    statusEl.textContent = "� 반달가슴곰 위치추적분석";
     if (!shouldSuppressClose && onClose) onClose();
   }
 
