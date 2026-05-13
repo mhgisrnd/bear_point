@@ -243,7 +243,7 @@
 }
 
 .obs-list-status {
-  margin: 8px 12px 6px;
+  margin: 4px 10px 4px;
   padding: 8px 10px;
   border-radius: 14px;
   background: linear-gradient(180deg, rgba(248,250,252,0.98), rgba(241,245,249,0.9));
@@ -334,16 +334,17 @@
 .sel-count-badge {
   display: inline-flex;
   align-items: center;
-  background: rgba(15, 23, 42, 0.05);
+  /* background: rgba(15, 23, 42, 0.05); */
   color: #334155;
-  font-size: 11px;
+  font-size: var(--sel-count-badge-font-size, 11px);
   font-weight: 800;
-  border-radius: 10px;
+  /* border-radius: 10px; */
   white-space: nowrap;
-  flex-shrink: 0;
+  flex-shrink: var(--sel-count-badge-flex-shrink, 0);
   min-height: 30px;
-  padding: 0 9px;
-  border: 1px solid rgba(148, 163, 184, 0.16);
+  /* padding: var(--sel-count-badge-padding, 0 9px); */
+  margin-right: var(--sel-count-badge-margin-right, 0);
+  /* border: 1px solid rgba(148, 163, 184, 0.16); */
 }
 
 .obs-table-wrap {
@@ -355,7 +356,7 @@
   touch-action: pan-x pan-y;
   -webkit-overflow-scrolling: touch;
   background: linear-gradient(180deg, rgba(255,255,255,0.78), rgba(248,250,252,0.72));
-  padding: 8px 10px 12px;
+  padding: var(--obs-table-wrap-padding, 0px 10px 4px);
   isolation: isolate;
 }
 
@@ -376,7 +377,7 @@
 
 .obs-table tbody {
   display: block;
-  max-height: clamp(180px, 42dvh, 320px);
+  max-height: clamp(180px, 36dvh, 320px);
   overflow-y: scroll;
   overflow-x: visible;
   scrollbar-gutter: stable both-edges;
@@ -1244,11 +1245,11 @@
     flex-shrink: 1;
   }
 
-  .sel-count-badge {
-    font-size: 9px;
-    padding: 1px 4px;
-    margin-right: 2px;
-    flex-shrink: 1;
+  :root {
+    --sel-count-badge-font-size: 9px;
+    --sel-count-badge-padding: 1px 4px;
+    --sel-count-badge-margin-right: 2px;
+    --sel-count-badge-flex-shrink: 1;
   }
 
   .obs-sheet-close,
@@ -1269,7 +1270,7 @@
 
   .obs-search-input {
     font-size: 11px;
-    padding: 4px 6px;
+    /* padding: 4px 6px; */
   }
 
   .obs-search-clear {
@@ -1277,8 +1278,8 @@
     font-size: 10px;
   }
 
-  .obs-table-wrap {
-    padding: 4px 4px 8px;
+  :root {
+    --obs-table-wrap-padding: 4px 4px 8px;
   }
 
   .obs-table {
@@ -1338,10 +1339,10 @@
     font-size: 11px;
   }
 
-  .sel-count-badge {
-    font-size: 10px;
-    padding: 2px 5px;
-    margin-right: 2px;
+  :root {
+    --sel-count-badge-font-size: 10px;
+    --sel-count-badge-padding: 2px 5px;
+    --sel-count-badge-margin-right: 2px;
   }
 
   .obs-sheet-close {
@@ -1358,14 +1359,12 @@
     gap: 4px;
   }
 
-  .obs-table-wrap {
-    padding: 6px 6px 10px;
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
+  :root {
+    --obs-table-wrap-padding: 6px 6px 10px;
   }
 
   .obs-table tbody {
-    max-height: clamp(130px, 28dvh, 220px);
+    max-height: clamp(130px, 28dvh, 170px);
   }
 
   .panel-bottom-left{
@@ -1786,6 +1785,16 @@
   padding: 4px 4px;
 }
 
+.obs-reg-det-table .det-row-empty td {
+  padding: 12px 8px;
+  text-align: center;
+  color: #64748b;
+  font-size: 12px;
+  background: #f8fafc;
+  border: 1px dashed #cbd5e1;
+  border-radius: 8px;
+}
+
 .obs-reg-select--det {
   width: 100%;
   height: 28px;
@@ -1865,10 +1874,10 @@
     font-size: 9px;
   }
 
-  .sel-count-badge {
-    font-size: 8px;
-    padding: 1px 3px;
-    margin-right: 1px;
+  :root {
+    --sel-count-badge-font-size: 8px;
+    --sel-count-badge-padding: 1px 3px;
+    --sel-count-badge-margin-right: 1px;
   }
 
   .obs-reg-row {

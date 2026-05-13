@@ -68,6 +68,11 @@ window.createObsRegisterModule = function createObsRegisterModule({
       '</td>' +
     '</tr>';
 
+  var DET_EMPTY_ROW_TEMPLATE =
+    '<tr class="det-row-empty">' +
+      '<td colspan="2">감지기가 없습니다. + 버튼으로 추가하세요.</td>' +
+    '</tr>';
+
   function highlightStatusOnce() {
     if (typeof window.__bpTriggerStatusHighlight === "function") {
       window.__bpTriggerStatusHighlight();
@@ -130,6 +135,17 @@ window.createObsRegisterModule = function createObsRegisterModule({
 
       if (strengthSelect) strengthSelect.removeAttribute("data-value");
     }
+  }
+
+  function renderEmptyDetectorState() {
+    if (!detListEl) return;
+    detListEl.innerHTML = DET_EMPTY_ROW_TEMPLATE;
+  }
+
+  function clearEmptyDetectorState() {
+    if (!detListEl) return;
+    var emptyRow = detListEl.querySelector(".det-row-empty");
+    if (emptyRow) emptyRow.remove();
   }
 
   function clearDetectorFieldError(fieldEl) {
@@ -689,14 +705,13 @@ window.createObsRegisterModule = function createObsRegisterModule({
     }
   }
 
-  // 등록 폼을 기본 상태로 초기화하고 감지기 행을 1개로 되돌린다.
+  // 등록 폼을 기본 상태로 초기화하고 감지기 섹션을 빈 상태 안내문으로 되돌린다.
   function resetFormState() {
     clearManualPreview();
     if (obsRegFormEl) obsRegFormEl.reset();
     applyLastOwnerDefault();
     clearAllValidationErrors();
-    if (detListEl) detListEl.innerHTML = DET_ROW_TEMPLATE;
-    ensureDetectorRowAutocomplete();
+    renderEmptyDetectorState();
     if (!latestLive.isGpsActive) {
       latestLive.lat = null;
       latestLive.lng = null;
@@ -743,8 +758,7 @@ window.createObsRegisterModule = function createObsRegisterModule({
       : [];
 
     if (normalized.length === 0) {
-      detListEl.innerHTML = DET_ROW_TEMPLATE;
-      ensureDetectorRowAutocomplete();
+      renderEmptyDetectorState();
       syncDetBtns();
       return;
     }
@@ -776,12 +790,13 @@ window.createObsRegisterModule = function createObsRegisterModule({
   function syncDetBtns() {
     var count = getDetCount();
     if (btnDetAdd) btnDetAdd.disabled = count >= MAX_DET;
-    if (btnDetRemove) btnDetRemove.disabled = count <= 1;
+    if (btnDetRemove) btnDetRemove.disabled = count <= 0;
   }
 
   // 감지기 행을 최대 개수(MAX_DET)까지 추가한다.
   function addDetRow() {
     if (!detListEl || getDetCount() >= MAX_DET) return;
+    clearEmptyDetectorState();
     var temp = document.createElement("tbody");
     temp.innerHTML = DET_ROW_TEMPLATE;
     var newRow = temp.querySelector(".det-row");
@@ -790,11 +805,14 @@ window.createObsRegisterModule = function createObsRegisterModule({
     syncDetBtns();
   }
 
-  // 마지막 감지기 행을 삭제한다(최소 1개 유지).
+  // 마지막 감지기 행을 삭제한다. 모두 삭제되면 빈 상태 안내문을 표시한다.
   function removeDetRow() {
-    if (!detListEl || getDetCount() <= 1) return;
+    if (!detListEl || getDetCount() <= 0) return;
     var rows = detListEl.querySelectorAll(".det-row");
     if (rows.length > 0) rows[rows.length - 1].remove();
+    if (getDetCount() === 0) {
+      renderEmptyDetectorState();
+    }
     syncDetBtns();
   }
 
@@ -1440,7 +1458,7 @@ window.createObsRegisterModule = function createObsRegisterModule({
   function initialize() {
     bindEvents();
     void loadBearListOptions();
-    ensureDetectorRowAutocomplete();
+    renderEmptyDetectorState();
     syncDetBtns();
     renderLiveFields();
   }
