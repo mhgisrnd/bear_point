@@ -1302,7 +1302,11 @@ window.createObsRegisterModule = function createObsRegisterModule({
   function close() {
     var shouldSuppressClose = suppressCloseCallback;
     hide(true);
-    statusEl.textContent = "� 반달가슴곰 위치추적분석";
+    if (typeof window.__bpSetDefaultStatus === "function") {
+      window.__bpSetDefaultStatus();
+    } else {
+      statusEl.textContent = "반달가슴곰 위치추적분석";
+    }
     if (!shouldSuppressClose && onClose) onClose();
   }
 

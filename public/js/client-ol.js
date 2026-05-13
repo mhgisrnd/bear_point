@@ -78,6 +78,14 @@
   // 상태 강조는 필요한 상황(메뉴 진입/예외 처리)에서만 수동 호출한다.
   window.__bpTriggerStatusHighlight = triggerStatusBlinkHighlight;
 
+  function setDefaultStatusWithIcon() {
+    if (!statusEl) return;
+    statusEl.innerHTML = '<img src="css/image/helloHiking.png" style="height:1.2em;vertical-align:middle;margin-top:-8px;"> 반달가슴곰 위치추적분석';
+  }
+
+  // 다른 모듈(목록/등록)에서도 동일한 기본 상태를 재사용하도록 전역으로 노출한다.
+  window.__bpSetDefaultStatus = setDefaultStatusWithIcon;
+
   try {
   ensureStatusBlinkStyle();
 
@@ -232,7 +240,7 @@
         if (reason === "non-native-platform") {
           await refreshBearEstimatePanel();
           await hideStartupOverlay();
-          if (statusEl) statusEl.innerHTML = '<img src="/css/image/helloHiking.png" style="height:1.2em;vertical-align:middle;margin-top:-8px;"> 반달가슴곰 위치추적분석';
+          setDefaultStatusWithIcon();
           return;
         }
         throw new Error(reason);
@@ -240,7 +248,7 @@
 
       await refreshBearEstimatePanel();
       await hideStartupOverlay();
-      if (statusEl) statusEl.innerHTML = '<img src="/css/image/helloHiking.png" style="height:1.2em;vertical-align:middle;margin-top:-8px;"> 반달가슴곰 위치추적분석';
+      setDefaultStatusWithIcon();
     } catch (error) {
       console.error("SQLite 초기화 오류:", error);
       if (statusEl) {

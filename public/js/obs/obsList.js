@@ -1307,7 +1307,11 @@ window.createObsListModule = function createObsListModule({
 
     // 메뉴를 완전히 닫을 때(목록/등록 탭 탈출) 상태 표시를 기본값으로 정리한다.
     if (tab === "none" && statusEl) {
-      statusEl.textContent = "� 반달가슴곰 위치추적분석";
+      if (typeof window.__bpSetDefaultStatus === "function") {
+        window.__bpSetDefaultStatus();
+      } else {
+        statusEl.textContent = "반달가슴곰 위치추적분석";
+      }
     }
   }
 
