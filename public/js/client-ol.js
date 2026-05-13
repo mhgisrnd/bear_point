@@ -240,11 +240,11 @@
 
       await refreshBearEstimatePanel();
       await hideStartupOverlay();
-      if (statusEl) statusEl.textContent = "🐻 반달가슴곰 위치추적분석";
+      if (statusEl) statusEl.innerHTML = '<img src="/css/image/helloHiking.png" style="height:1.2em;vertical-align:middle;margin-top:-8px;"> 반달가슴곰 위치추적분석';
     } catch (error) {
       console.error("SQLite 초기화 오류:", error);
       if (statusEl) {
-        statusEl.textContent = "🔴 SQLite 초기화 실패: " + (error && error.message ? error.message : String(error));
+        statusEl.innerHTML = "🔴 SQLite 초기화 실패: " + (error && error.message ? error.message : String(error));
       }
       showStartupOverlay("SQLite 준비 실패. 다시 시도해 주세요.", true, true);
     }
@@ -1016,7 +1016,8 @@
       overlay.style.zIndex = "23060";
       overlay.style.background = "rgba(15,23,42,0.45)";
       overlay.style.display = "flex";
-      overlay.style.alignItems = "center";
+      //overlay.style.alignItems = "center";
+      overlay.style.alignItems = "flex-start";
       overlay.style.justifyContent = "center";
       overlay.style.padding = "calc(env(safe-area-inset-top, 0px) + 18px) 18px calc(env(safe-area-inset-bottom, 0px) + 18px)";
 
@@ -1072,7 +1073,7 @@
       const body = document.createElement("pre");
       body.textContent = txtContent;
       body.style.margin = "0";
-      body.style.padding = "14px";
+      body.style.padding = "10px";
       body.style.flex = "1 1 auto";
       body.style.overflow = "auto";
       body.style.background = "#020617";
@@ -2002,6 +2003,7 @@
   let analysisOwnerInputEl = null;
   let analysisPlaceInputEl = null;
   let currentAnalysisPoint = null; // 위치분석 최근 결과 (저장 버튼용)
+  let analysisActionDragState = null;
 
   function normalizeOwnerName(value) {
     return String(value == null ? "" : value).trim();
@@ -2108,6 +2110,7 @@
 
   // 저장 시각 문자열을 한국시간으로 안전하게 표시한다.
   function formatKstTimeLabel(value) {
+    if (!value) return "-";
     const parsed = parseSavedDateTime(value);
     if (!parsed) return "-";
 
@@ -2122,6 +2125,7 @@
 
   // 목록용 날짜 라벨(YYYY-MM-DD)
   function formatKstDateLabel(value) {
+    if (!value) return "-";
     const parsed = parseSavedDateTime(value);
     if (!parsed) return "-";
 
@@ -2143,6 +2147,7 @@
 
   // 파일 출력용 날짜/시간 라벨(YYYY-MM-DD HH:mm:ss)
   function formatKstDateTimeLabel(value) {
+    if (!value) return "-";
     const parsed = parseSavedDateTime(value);
     if (!parsed) return "-";
 
@@ -2164,6 +2169,78 @@
 
     if (!map.year || !map.month || !map.day || !map.hour || !map.minute || !map.second) return "-";
     return [map.year, map.month, map.day].join("-") + " " + [map.hour, map.minute, map.second].join(":");
+  }
+
+  // 팝업 HTML에 삽입할 텍스트를 이스케이프해 XSS와 마크업 깨짐을 방지한다.
+  function escapeHtml(value) {
+    return String(value == null ? "" : value)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/\"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  }
+
+  // 팝업 표시용 위경도를 소수점 7자리 고정 문자열로 변환한다.
+  function formatPopupCoordinate(value) {
+    const n = Number(value);
+    return Number.isFinite(n) ? n.toFixed(7) : "-";
+  }
+
+  // 곰 추정위치 마커/분석 결과 마커에 공통으로 사용하는 상세 팝업 카드 HTML을 만든다.
+  function buildBearEstimatePopupHtml(item) {
+    const lat = Number(item && item.lat);
+    const lng = Number(item && item.lng);
+    const placeName = normalizePlaceName(item && item.place) || "미지정";
+    const ownerName = normalizeOwnerName(item && item.owner) || "미지정";
+    const bearCode = String(item && (item.bear_code || item.bearCode || item.id || "-"));
+    const latDms = item && item.lat_dms ? item.lat_dms : (Number.isFinite(lat) ? decimalToDMS(lat, false) : "-");
+    const lngDms = item && item.lng_dms ? item.lng_dms : (Number.isFinite(lng) ? decimalToDMS(lng, true) : "-");
+    const tmCoord = (Number.isFinite(lat) && Number.isFinite(lng)) ? legacyTmCoordFromWgs84(lat, lng) : null;
+    const mapX = Array.isArray(tmCoord) && Number.isFinite(tmCoord[0]) ? tmCoord[0].toFixed(3) : "-";
+    const mapY = Array.isArray(tmCoord) && Number.isFinite(tmCoord[1]) ? tmCoord[1].toFixed(3) : "-";
+    const createdAt = formatKstDateTimeLabel(item && (item.created_at || item.createdAt || item.ts));
+
+    return `
+      <div class="obs-popup-card">
+        <div class="obs-popup-card__eyebrow">${escapeHtml(bearCode)}</div>
+        <div class="obs-popup-card__grid">
+          <div class="obs-popup-card__row">
+            <span class="obs-popup-card__label">지명</span>
+            <span class="obs-popup-card__value">${escapeHtml(placeName)}</span>
+          </div>
+          <div class="obs-popup-card__row">
+            <span class="obs-popup-card__label">등록자</span>
+            <span class="obs-popup-card__value">${escapeHtml(ownerName)}</span>
+          </div>
+          <div class="obs-popup-card__row">
+            <span class="obs-popup-card__label">위경도</span>
+            <div class="obs-popup-card__value obs-popup-card__value--coord">
+              <span>위도: ${escapeHtml(formatPopupCoordinate(lat))}</span>
+              <span>경도: ${escapeHtml(formatPopupCoordinate(lng))}</span>
+            </div>
+          </div>
+          <div class="obs-popup-card__row">
+            <span class="obs-popup-card__label">도분초</span>
+            <div class="obs-popup-card__value obs-popup-card__value--coord">
+              <span>${escapeHtml(latDms)}</span>
+              <span>${escapeHtml(lngDms)}</span>
+            </div>
+          </div>
+          <div class="obs-popup-card__row">
+            <span class="obs-popup-card__label">TM 좌표</span>
+            <div class="obs-popup-card__value obs-popup-card__value--coord">
+              <span>X: ${escapeHtml(mapX)}</span>
+              <span>Y: ${escapeHtml(mapY)}</span>
+            </div>
+          </div>
+          <div class="obs-popup-card__row obs-popup-card__row--wide">
+            <span class="obs-popup-card__label">등록시간</span>
+            <span class="obs-popup-card__value">${escapeHtml(createdAt)}</span>
+          </div>
+        </div>
+      </div>
+    `;
   }
 
   const analysisGuideLayer = new ol.layer.Vector({
@@ -3349,18 +3426,20 @@
       return;
     }
 
-    let clickedObservation = false;
+    let clickedPopupFeature = false;
 
     map.forEachFeatureAtPixel(event.pixel, function (feature, layer) {
-      if (layer !== observationMarkerLayer) return undefined;
-      clickedObservation = true;
+      if (layer !== observationMarkerLayer && layer !== bearMarkerLayer && layer !== analysisEstimateLayer) {
+        return undefined;
+      }
+      clickedPopupFeature = true;
       openObservationPopup(feature);
       return feature;
     }, {
       hitTolerance: 8
     });
 
-    if (!clickedObservation) {
+    if (!clickedPopupFeature) {
       closeObservationPopup();
     }
   });
@@ -3699,6 +3778,7 @@
     }
   }
 
+  // 웹 환경에서 bears.json 더미 데이터를 곰 추정위치 목록 형식으로 정규화한다.
   function getWebFallbackBearEstimates() {
     if (!Array.isArray(bearsDataCache) || !bearsDataCache.length) return [];
 
@@ -3721,6 +3801,7 @@
     });
   }
 
+  // 현재 목록에 존재하지 않는 선택 id를 정리해 삭제/재조회 후 선택 상태를 동기화한다.
   function syncSelectedBearEstimateIds(items) {
     const validIds = new Set((items || []).map(function (it) { return String(it.id); }));
     Array.from(selectedBearEstimateIds).forEach(function (id) {
@@ -3728,6 +3809,7 @@
     });
   }
 
+  // 곰 추정위치 목록 개수와 선택 개수에 맞춰 상단 툴바 상태를 갱신한다.
   function updateBearEstimateToolbar(items) {
     const list = Array.isArray(items) ? items : [];
     const totalCount = list.length;
@@ -3766,11 +3848,13 @@
       return;
     }
 
-    const xlsRows = [["등록일자", "위치추적담당자", "추정위치(위도)", "추정위치(경도)", "X좌표(TM)", "Y좌표(TM)", "지명"]];
+    const xlsRows = [["등록일자", "지명", "위치추적담당자", "X좌표(TM)", "Y좌표(TM)", "추정위치(위도 DMS)", "추정위치(경도 DMS)", "추정위치(위도)", "추정위치(경도)"]];
 
     list.forEach(function (it) {
       const lat = Number(it.lat);
       const lng = Number(it.lng);
+      const latDms = it.lat_dms || decimalToDMS(lat, false);
+      const lngDms = it.lng_dms || decimalToDMS(lng, true);
       const legacyProjected = legacyTmCoordFromWgs84(lat, lng);
       const mapX = Array.isArray(legacyProjected) && Number.isFinite(legacyProjected[0]) ? legacyProjected[0].toFixed(3) : "-";
       const mapY = Array.isArray(legacyProjected) && Number.isFinite(legacyProjected[1]) ? legacyProjected[1].toFixed(3) : "-";
@@ -3778,7 +3862,7 @@
       const ownerName = normalizeOwnerName(it.owner) || "미지정";
       const placeName = normalizePlaceName(it.place) || "미지정";
 
-      xlsRows.push([timeLabel, ownerName, lat, lng, mapX, mapY, placeName]);
+      xlsRows.push([timeLabel, placeName, ownerName, mapX, mapY, latDms, lngDms, lat, lng]);
     });
 
     const nowParts = new Intl.DateTimeFormat("en-CA", {
@@ -3893,6 +3977,7 @@
     });
   }
 
+  // 체크된 곰 추정위치 행들을 사용자 확인 후 일괄 삭제한다.
   async function handleDeleteSelectedBearEstimates() {
     const targetIds = currentBearEstimateItems.filter(function (it) {
       return selectedBearEstimateIds.has(String(it.id));
@@ -3944,7 +4029,7 @@
     });
   }
 
-  // 곰 추정 좌표를 지도 마커 레이어로 렌더링한다.
+  // 저장된 곰 추정위치 목록을 지도 마커로 렌더링하고, 클릭용 상세 팝업 HTML도 함께 싣는다.
   function renderBearMarkers(items) {
     bearMarkerSource.clear();
     if (!items || !items.length) return;
@@ -3953,6 +4038,7 @@
       const feature = new ol.Feature({
         geometry: new ol.geom.Point(mapCoordFromWgs84(it.lat, it.lng))
       });
+      feature.set("popupHtml", buildBearEstimatePopupHtml(it));
 
       feature.setStyle(new ol.style.Style({
         image: new ol.style.Icon({
@@ -3962,7 +4048,7 @@
           height: 34
         }),
         text: new ol.style.Text({
-          text: String(it.bearCode || it.id || "-"),
+          text: String(it.bear_code || it.bearCode || it.id || "-"),
           offsetY: BEAR_LABEL_OFFSET_Y,
           font: "600 11px sans-serif",
           fill: new ol.style.Fill({ color: "#ffffff" }),
@@ -4110,6 +4196,7 @@
     if (!analysisActionBarEl || !analysisActionOverlay || !Array.isArray(anchorCoord)) return;
     analysisActionBarEl.style.display = "flex";
     analysisActionOverlay.setPosition(anchorCoord);
+    analysisActionDragState = null;
   }
 
   // 위치분석 관련 requestAnimationFrame 루프를 중지한다.
@@ -4380,6 +4467,70 @@
     headerText.style.padding = "9px 12px";
     headerText.style.borderBottom = "1px solid rgba(255,255,255,0.15)";
     headerText.style.letterSpacing = "0.03em";
+    headerText.style.cursor = "grab";
+    headerText.style.touchAction = "none";
+
+    function endAnalysisActionDrag(pointerId) {
+      if (!analysisActionDragState) return;
+      if (pointerId != null && analysisActionDragState.pointerId !== pointerId) return;
+      headerText.style.cursor = "grab";
+      analysisActionDragState = null;
+    }
+
+    headerText.addEventListener("pointerdown", function (event) {
+      if (!analysisActionOverlay || !map) return;
+      const currentPosition = analysisActionOverlay.getPosition();
+      if (!Array.isArray(currentPosition)) return;
+
+      const startCoord = map.getEventCoordinate(event);
+      if (!Array.isArray(startCoord)) return;
+
+      analysisActionDragState = {
+        pointerId: event.pointerId,
+        startCoord: startCoord,
+        startOverlayCoord: [currentPosition[0], currentPosition[1]]
+      };
+
+      headerText.style.cursor = "grabbing";
+      if (headerText.setPointerCapture) {
+        try {
+          headerText.setPointerCapture(event.pointerId);
+        } catch (captureError) {
+          // 일부 브라우저/웹뷰에서 setPointerCapture가 실패할 수 있어 무시.
+        }
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+    });
+
+    headerText.addEventListener("pointermove", function (event) {
+      if (!analysisActionDragState) return;
+      if (event.pointerId !== analysisActionDragState.pointerId) return;
+      if (!analysisActionOverlay || !map) return;
+
+      const currentCoord = map.getEventCoordinate(event);
+      if (!Array.isArray(currentCoord)) return;
+
+      const dx = currentCoord[0] - analysisActionDragState.startCoord[0];
+      const dy = currentCoord[1] - analysisActionDragState.startCoord[1];
+      analysisActionOverlay.setPosition([
+        analysisActionDragState.startOverlayCoord[0] + dx,
+        analysisActionDragState.startOverlayCoord[1] + dy
+      ]);
+
+      event.preventDefault();
+      event.stopPropagation();
+    });
+
+    headerText.addEventListener("pointerup", function (event) {
+      endAnalysisActionDrag(event.pointerId);
+      event.stopPropagation();
+    });
+    headerText.addEventListener("pointercancel", function (event) {
+      endAnalysisActionDrag(event.pointerId);
+      event.stopPropagation();
+    });
 
     const fieldWrap = document.createElement("div");
     fieldWrap.style.padding = "10px";
@@ -4414,7 +4565,7 @@
     analysisPlaceInputEl = placeInput;
   }
 
-  // 분석 완료 결과(추정점/가이드선/액션바)를 지도에 렌더링한다.
+  // 방금 계산한 분석 결과를 임시 추정점으로 지도에 렌더링하고 저장 액션바와 연결한다.
   function renderAnalysisEstimatePoint(point) {
     clearAnalysisEstimateVisuals();
     if (!point || !Number.isFinite(point.lat) || !Number.isFinite(point.lng)) return;
@@ -4444,6 +4595,15 @@
     const feature = new ol.Feature({
       geometry: new ol.geom.Point(estimateCoord)
     });
+    feature.set("popupHtml", buildBearEstimatePopupHtml({
+      id: point.bearCode || "추정",
+      bearCode: point.bearCode || "추정",
+      owner: resolveDefaultAnalysisOwner(point),
+      place: resolveDefaultAnalysisPlace(point),
+      lat: point.lat,
+      lng: point.lng,
+      created_at: null
+    }));
 
     feature.setStyle(new ol.style.Style({
       image: new ol.style.Icon({
@@ -4512,7 +4672,7 @@
     const bearCode = it.bear_code || it.bearCode || "-";
     const ownerName = normalizeOwnerName(it.owner) || "미지정";
     const placeName = normalizePlaceName(it.place) || "미지정";
-    const timeLabel = it.created_at || it.ts || "-";
+    const timeLabel = formatKstDateTimeLabel(it.created_at || it.ts);
     const latDms = it.lat_dms || decimalToDMS(lat, false);
     const lngDms = it.lng_dms || decimalToDMS(lng, true);
     // const projected = mapCoordFromWgs84(lat, lng); // EPSG:5179 출력(기존)
@@ -4600,7 +4760,6 @@
     lines.push("  경도(DMS) : " + lngDms);
     lines.push("  X (TM:EPSG:5181) : " + mapX);
     lines.push("  Y (TM:EPSG:5181) : " + mapY);
-    lines.push("");
     lines.push("========================================");
     if (isFallback) lines.push("* 웹 환경: 관측점 목록은 더미 데이터입니다.");
 
@@ -4683,15 +4842,21 @@
       return;
     }
 
-    const blob = new Blob([txtContent], { type: "text/plain;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = fileName;
-    document.body.appendChild(a);
-    a.click();
-    setTimeout(function () { document.body.removeChild(a); URL.revokeObjectURL(url); }, 1000);
-    if (statusEl) statusEl.textContent = "✅ TXT 다운로드 시작: " + fileName;
+    await showSavedTxtPreviewPopup({
+      fileName: fileName,
+      txtContent: txtContent,
+      onSave: async function () {
+        const blob = new Blob([txtContent], { type: "text/plain;charset=utf-8" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(function () { document.body.removeChild(a); URL.revokeObjectURL(url); }, 1000);
+        if (statusEl) statusEl.textContent = "✅ TXT 다운로드 시작: " + fileName;
+      }
+    });
   }
 
   // SheetJS 라이브러리를 동적으로 로드
@@ -4753,9 +4918,12 @@
     const fileName = "bear_estimate_" + safeCode + "_" + safeTime + ".xlsx";
 
     // 데이터 준비 (첫 번째 시트의 데이터)
+    const latDms = it.lat_dms || decimalToDMS(lat, false);
+    const lngDms = it.lng_dms || decimalToDMS(lng, true);
+
     const xlsData = [
-      ["등록일자", "위치추적담당자", "추정위치(위도)", "추정위치(경도)", "X좌표(TM)", "Y좌표(TM)", "지명"],
-      [timeLabel, ownerName, lat, lng, mapX, mapY, placeName]
+      ["등록일자", "지명", "위치추적담당자", "X좌표(TM)", "Y좌표(TM)", "추정위치(위도 DMS)", "추정위치(경도 DMS)", "추정위치(위도)", "추정위치(경도)"],
+      [timeLabel, placeName, ownerName, mapX, mapY, latDms, lngDms, lat, lng]
     ];
 
     const previewHtml = buildXlsPreviewHtml(xlsData);
@@ -4887,8 +5055,9 @@
 
       if (colCount > 0) {
         // 현재 컬럼 순서:
-        // 0 등록일자, 1 위치추적담당자, 2 위도, 3 경도, 4 X좌표, 5 Y좌표, 6 지명
-        const minWidthByColumn = [22, 16, 16, 16, 14, 14, 12];
+        // 0 등록일자, 1 지명, 2 위치추적담당자, 3 X좌표, 4 Y좌표, 5 위도 DMS, 6 경도 DMS, 7 위도, 8 경도
+        const minWidthByColumn = [22, 16, 16, 14, 14, 20, 20, 16, 16];
+        const fixedWidthByColumn = [23, null, null, null, null, null, null, null, null];
 
         worksheet["!cols"] = Array.from({ length: colCount }, function (_, colIndex) {
           const maxVisualLength = rows.reduce(function (acc, row) {
@@ -4899,7 +5068,12 @@
           const minWidth = Number.isFinite(minWidthByColumn[colIndex])
             ? minWidthByColumn[colIndex]
             : 10;
-          const widthCh = Math.max(minWidth, Math.min(64, maxVisualLength + 4));
+          const fixedWidth = Number.isFinite(fixedWidthByColumn[colIndex])
+            ? fixedWidthByColumn[colIndex]
+            : null;
+          const widthCh = Number.isFinite(fixedWidth)
+            ? fixedWidth
+            : Math.max(minWidth, Math.min(64, maxVisualLength + 4));
 
           return {
             // 일부 모바일 오피스 뷰어는 wch만으로는 폭을 무시해 wpx도 함께 지정한다.
@@ -5238,7 +5412,17 @@
 
     // renderBearMarkers는 bear_code/bearCode 모두 지원하는 구조로 변환해 전달한다.
     renderBearMarkers(items.map(function (it) {
-      return { bearCode: it.bear_code || it.bearCode, lat: it.lat, lng: it.lng };
+      return {
+        id: it.id,
+        bear_code: it.bear_code || it.bearCode,
+        owner: it.owner,
+        place: it.place,
+        lat: it.lat,
+        lng: it.lng,
+        lat_dms: it.lat_dms,
+        lng_dms: it.lng_dms,
+        created_at: it.created_at || it.ts
+      };
     }));
 
     if (!items.length) {
