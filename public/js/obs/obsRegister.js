@@ -649,7 +649,7 @@ window.createObsRegisterModule = function createObsRegisterModule({
         await onObservationSaved({ observation: observation, detectors: detectors, source: "sqlite" });
       }
 
-      statusEl.textContent = "✅ 관측점이 SQLite에 등록되었습니다.";
+      statusEl.textContent = "✅ 관측점 등록 완료";
       hide(true);
     } catch (error) {
       statusEl.textContent = "⚠️ " + (error && error.message ? error.message : String(error));

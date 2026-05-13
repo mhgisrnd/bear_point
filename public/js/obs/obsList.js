@@ -40,9 +40,12 @@ window.createObsListModule = function createObsListModule({
   const selectedObsIds = new Set();
   const observationMarkers = [];
   let observationSamples = [];
+  // 앱(SQLite) 경로는 저장 직후 재조회가 일어나므로, ID별 플래시 만료시각을 별도로 보관한다.
+  const observationFlashUntilById = new Map();
   let currentTab = "none";
   let isPeekMode = false;
   let observationKeySeed = 0;
+  const OBS_SAVE_FLASH_DURATION_MS = 3200;
   let analysisOptionsDialogState = null;
   let analysisCloseSilently = false;
   // 목록 패널 드래그 상태(헤더 포인터 기반)
@@ -55,6 +58,24 @@ window.createObsListModule = function createObsListModule({
     if (typeof window.__bpTriggerStatusHighlight === "function") {
       window.__bpTriggerStatusHighlight();
     }
+  }
+
+  function cleanupObservationFlashCache(nowTs) {
+    const now = Number.isFinite(nowTs) ? nowTs : Date.now();
+    observationFlashUntilById.forEach(function (untilTs, obsId) {
+      if (!Number.isFinite(untilTs) || untilTs <= now) {
+        observationFlashUntilById.delete(obsId);
+      }
+    });
+  }
+
+  // 저장/수정 직후 해당 관측점 ID에 2초 하이라이트 타이머를 기록한다.
+  function markObservationFlashById(obsId) {
+    const id = String(obsId == null ? "" : obsId).trim();
+    if (!id) return 0;
+    const untilTs = Date.now() + OBS_SAVE_FLASH_DURATION_MS;
+    observationFlashUntilById.set(id, untilTs);
+    return untilTs;
   }
 
   function getObservationLabel(item) {
@@ -248,6 +269,10 @@ window.createObsListModule = function createObsListModule({
       return null;
     }
 
+    const now = Date.now();
+    cleanupObservationFlashCache(now);
+    const cachedFlashUntil = Number(observationFlashUntilById.get(id));
+
     return {
       id,
       place,
@@ -258,6 +283,7 @@ window.createObsListModule = function createObsListModule({
       heading,
       createdAt: row.created_at || row.createdAt || row.created || null,
       detectors,
+      _saveFlashUntil: Number.isFinite(cachedFlashUntil) && cachedFlashUntil > now ? cachedFlashUntil : 0,
       _obsKey: `${id}::${observationKeySeed++}`
     };
   }
@@ -1246,6 +1272,7 @@ window.createObsListModule = function createObsListModule({
 
   // 목록 패널을 닫으면서 내부 상태를 초기화한다.
   function closeListPanel() {
+    if (map && typeof map.closePopup === "function") map.closePopup();
     resetList();
     setPeekMode(false);
     setActiveTab(null);
@@ -1302,6 +1329,7 @@ window.createObsListModule = function createObsListModule({
         return;
       }
 
+      if (map && typeof map.closePopup === "function") map.closePopup();
       setActiveTab(btnBear);
       setTabLayout("list");
       if (onOpenList) onOpenList();
@@ -1313,11 +1341,13 @@ window.createObsListModule = function createObsListModule({
       const analysisOk = await confirmAndEscapeAnalysis("위치분석이 진행 중입니다. 등록 화면을 여시겠습니까?");
       if (!analysisOk) return;
 
+      if (map && typeof map.closePopup === "function") map.closePopup();
       if (typeof onClearAnalysisEstimate === "function") onClearAnalysisEstimate();
       if (onOpenRegister) onOpenRegister();
     });
 
     if (btnAnalysis) btnAnalysis.addEventListener("click", () => {
+      if (map && typeof map.closePopup === "function") map.closePopup();
       void runPositionAnalysis();
     });
 
@@ -1469,6 +1499,8 @@ window.createObsListModule = function createObsListModule({
   function addObservation(item) {
     const mapped = mapObservationRow(item);
     if (!mapped) return;
+    // 등록 직후 즉시 하이라이트가 보이도록 플래시 타이머를 선반영한다.
+    mapped._saveFlashUntil = markObservationFlashById(mapped.id);
 
     observationSamples = [mapped].concat(observationSamples.filter((existing) => existing.id !== mapped.id));
     applySearch();
@@ -1482,6 +1514,18 @@ window.createObsListModule = function createObsListModule({
   function updateObservation(item) {
     const mapped = mapObservationRow(item);
     if (!mapped) return;
+    // 수정 직후 좌표 이동 애니메이션과 함께 동일하게 플래시를 보여준다.
+    mapped._saveFlashUntil = markObservationFlashById(mapped.id);
+
+    var previous = observationSamples.find(function (existing) {
+      return existing && existing.id === mapped.id;
+    });
+    var hasPreviousCoord = !!(previous && Number.isFinite(Number(previous.lat)) && Number.isFinite(Number(previous.lng)));
+    var hasNextCoord = Number.isFinite(Number(mapped.lat)) && Number.isFinite(Number(mapped.lng));
+
+    if (hasPreviousCoord && hasNextCoord) {
+      mapped._animateFromLatLng = [Number(previous.lat), Number(previous.lng)];
+    }
 
     observationSamples = observationSamples.map((existing) => {
       if (existing.id !== mapped.id) return existing;
@@ -1500,6 +1544,7 @@ window.createObsListModule = function createObsListModule({
   }
 
   function openList() {
+    if (map && typeof map.closePopup === "function") map.closePopup();
     setActiveTab(btnBear);
     setTabLayout("list");
     if (onOpenList) onOpenList();
@@ -1541,6 +1586,8 @@ window.createObsListModule = function createObsListModule({
     setTabLayout,
     deactivate: closeListPanel,
     getCurrentTab: () => currentTab,
+    // client-ol 저장 콜백에서 앱/웹 공통으로 플래시를 강제 트리거할 수 있게 노출한다.
+    markObservationFlash: markObservationFlashById,
     handleBackNavigation,
     addObservation,
     updateObservation,

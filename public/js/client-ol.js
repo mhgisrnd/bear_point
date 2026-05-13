@@ -1819,16 +1819,180 @@
   const myLocationSource = new ol.source.Vector();
   let myLocationFeature = null;
   let editOriginFeature = null;
+  let editOriginPulseStartTs = 0;
+  let editOriginPulseFrameId = null;
+  let editOriginPulseRunning = false;
+  let editOriginMoveFrameId = null;
+  let observationSaveFlashFrameId = null;
+  let observationSaveFlashRunning = false;
+  const OBS_SAVE_FLASH_DURATION_MS = 3200;
+  const EDIT_ORIGIN_MOVE_DURATION_MS = 520;
+  const EDIT_ORIGIN_MOVE_LAG_MS = 110;
   const MY_HEADING_ICON_SIZE = 48;
-  const myHeadingIconSrc = createHeadingIconDataUri(MY_HEADING_ICON_SIZE, "#2b7cff", 6);
+  const myHeadingIconSrc = createHeadingIconDataUri(MY_HEADING_ICON_SIZE, "#0e5be9", 6);
   const OBSERVATION_HEADING_ICON_SIZE = 40;
   const observationHeadingIconSrc = createHeadingIconDataUri(OBSERVATION_HEADING_ICON_SIZE, "#ea580c", 5.5);
+  const observationHeadingEditIconSrc = createHeadingIconDataUri(OBSERVATION_HEADING_ICON_SIZE, "#16a34a", 5.5);
+  const observationHeadingFlashIconSrc = createHeadingIconDataUri(OBSERVATION_HEADING_ICON_SIZE, "#fbff00", 5.8);
+  let currentEditingObservationId = null;
   const MAP_HEADING_HANDLE_LENGTH_PX = 60;
   const MAP_HEADING_HANDLE_RADIUS_PX = 10;
+
+  function setCurrentEditingObservationId(nextId) {
+    const normalized = String(nextId == null ? "" : nextId).trim();
+    const value = normalized || null;
+    if (currentEditingObservationId === value) return;
+    currentEditingObservationId = value;
+    if (observationMarkerLayer && typeof observationMarkerLayer.changed === "function") {
+      observationMarkerLayer.changed();
+    }
+  }
 
   // 좌표 드래그 인터랙션 활성 시 스타일에 추가되는 하이라이트 반경 정의
   const COORD_DRAG_HALO_RADIUS_PX = 38;
   const COORD_DRAG_RING_RADIUS_PX = 30;
+
+  function clamp01(value) {
+    if (value < 0) return 0;
+    if (value > 1) return 1;
+    return value;
+  }
+
+  function lerp(a, b, t) {
+    return a + (b - a) * t;
+  }
+
+  function stopEditOriginPulseAnimation() {
+    editOriginPulseRunning = false;
+    if (editOriginPulseFrameId !== null) {
+      window.cancelAnimationFrame(editOriginPulseFrameId);
+      editOriginPulseFrameId = null;
+    }
+  }
+
+  function stopEditOriginMoveAnimation() {
+    if (editOriginMoveFrameId !== null) {
+      window.cancelAnimationFrame(editOriginMoveFrameId);
+      editOriginMoveFrameId = null;
+    }
+  }
+
+  function hasActiveObservationSaveFlash() {
+    const now = Date.now();
+    const features = observationMarkerSource && typeof observationMarkerSource.getFeatures === "function"
+      ? observationMarkerSource.getFeatures()
+      : [];
+    for (let i = 0; i < features.length; i += 1) {
+      const flashUntil = Number(features[i] && features[i].get ? features[i].get("saveFlashUntil") : 0);
+      if (Number.isFinite(flashUntil) && flashUntil > now) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function stopObservationSaveFlashAnimation() {
+    observationSaveFlashRunning = false;
+    if (observationSaveFlashFrameId !== null) {
+      window.cancelAnimationFrame(observationSaveFlashFrameId);
+      observationSaveFlashFrameId = null;
+    }
+  }
+
+  function startObservationSaveFlashAnimation() {
+    if (observationSaveFlashRunning) return;
+    if (!hasActiveObservationSaveFlash()) return;
+    observationSaveFlashRunning = true;
+
+    function tick() {
+      if (!observationSaveFlashRunning) return;
+      if (!hasActiveObservationSaveFlash()) {
+        stopObservationSaveFlashAnimation();
+        return;
+      }
+      if (observationMarkerLayer && typeof observationMarkerLayer.changed === "function") {
+        observationMarkerLayer.changed();
+      }
+      observationSaveFlashFrameId = window.requestAnimationFrame(tick);
+    }
+
+    observationSaveFlashFrameId = window.requestAnimationFrame(tick);
+  }
+
+  function animateEditOriginTo(targetCoord) {
+    if (!editOriginFeature || !Array.isArray(targetCoord)) return;
+    const geometry = editOriginFeature.getGeometry();
+    const startCoord = geometry && geometry.getCoordinates ? geometry.getCoordinates() : null;
+
+    if (!Array.isArray(startCoord)) {
+      editOriginFeature.setGeometry(new ol.geom.Point(targetCoord));
+      editOriginFeature.changed();
+      return;
+    }
+
+    const dx = targetCoord[0] - startCoord[0];
+    const dy = targetCoord[1] - startCoord[1];
+    if (Math.abs(dx) < 0.0001 && Math.abs(dy) < 0.0001) {
+      editOriginFeature.setGeometry(new ol.geom.Point(targetCoord));
+      editOriginFeature.changed();
+      return;
+    }
+
+    stopEditOriginMoveAnimation();
+    const startedAt = Date.now();
+
+    function tick() {
+      if (!editOriginFeature) {
+        stopEditOriginMoveAnimation();
+        return;
+      }
+
+      const elapsed = Date.now() - startedAt - EDIT_ORIGIN_MOVE_LAG_MS;
+      if (elapsed < 0) {
+        editOriginMoveFrameId = window.requestAnimationFrame(tick);
+        return;
+      }
+      const progress = clamp01(elapsed / EDIT_ORIGIN_MOVE_DURATION_MS);
+      const eased = progress < 0.5
+        ? 4 * progress * progress * progress
+        : 1 - Math.pow(-2 * progress + 2, 3) / 2;
+
+      const currentCoord = [
+        lerp(startCoord[0], targetCoord[0], eased),
+        lerp(startCoord[1], targetCoord[1], eased)
+      ];
+
+      editOriginFeature.setGeometry(new ol.geom.Point(currentCoord));
+      editOriginFeature.changed();
+
+      if (progress >= 1) {
+        stopEditOriginMoveAnimation();
+        return;
+      }
+
+      editOriginMoveFrameId = window.requestAnimationFrame(tick);
+    }
+
+    editOriginMoveFrameId = window.requestAnimationFrame(tick);
+  }
+
+  function startEditOriginPulseAnimation() {
+    if (editOriginPulseRunning) return;
+    editOriginPulseRunning = true;
+    if (!editOriginPulseStartTs) editOriginPulseStartTs = Date.now();
+
+    function tick() {
+      if (!editOriginPulseRunning) return;
+      if (!editOriginFeature) {
+        stopEditOriginPulseAnimation();
+        return;
+      }
+      myLocationLayer.changed();
+      editOriginPulseFrameId = window.requestAnimationFrame(tick);
+    }
+
+    editOriginPulseFrameId = window.requestAnimationFrame(tick);
+  }
 
   function getHeadingHandleCoordinate(centerCoord, headingDeg) {
     const resolution = Number(view && view.getResolution && view.getResolution()) || 1;
@@ -1847,19 +2011,30 @@
       const centerCoord = feature && feature.getGeometry() ? feature.getGeometry().getCoordinates() : null;
 
       if (markerKind === "edit-origin" && Array.isArray(centerCoord)) {
+        const elapsed = Date.now() - (editOriginPulseStartTs || Date.now());
+        const introProgress = clamp01(elapsed / 450);
+        const introEase = 1 - Math.pow(1 - introProgress, 3);
+        const phase = ((elapsed % 1800) / 1800) * Math.PI * 2;
+        const ease = (1 - Math.cos(phase)) / 2;
+        const pulseGain = 0.35 + introEase * 0.65;
+        const outerRadius = lerp(10, 18, introEase) + ease * (10 * pulseGain);
+        const innerRadius = lerp(7, 13, introEase) + ease * (6 * pulseGain);
+        const outerAlpha = lerp(0.00, 0.26, introEase) - ease * (0.16 * pulseGain);
+        const innerAlpha = lerp(0.00, 0.18, introEase) - ease * (0.12 * pulseGain);
+
         return [
           new ol.style.Style({
             image: new ol.style.Circle({
-              radius: 13,
-              fill: new ol.style.Fill({ color: "rgba(245,158,11,0.16)" }),
-              stroke: new ol.style.Stroke({ color: "rgba(245,158,11,0.96)", width: 3 })
+              radius: outerRadius,
+              fill: new ol.style.Fill({ color: "rgba(34,197,94," + outerAlpha.toFixed(3) + ")" }),
+              stroke: new ol.style.Stroke({ color: "rgba(22,163,74,0.92)", width: lerp(1.2, 2.6, introEase) })
             })
           }),
           new ol.style.Style({
             image: new ol.style.Circle({
-              radius: 5,
-              fill: new ol.style.Fill({ color: "rgba(245,158,11,0.98)" }),
-              stroke: new ol.style.Stroke({ color: "rgba(255,255,255,0.96)", width: 2 })
+              radius: innerRadius,
+              fill: new ol.style.Fill({ color: "rgba(74,222,128," + innerAlpha.toFixed(3) + ")" }),
+              stroke: new ol.style.Stroke({ color: "rgba(255,255,255,0.86)", width: lerp(1.0, 1.8, introEase) })
             })
           })
         ];
@@ -2561,17 +2736,22 @@
       editOriginFeature = new ol.Feature(new ol.geom.Point(coord));
       editOriginFeature.set("markerKind", "edit-origin");
       myLocationSource.addFeature(editOriginFeature);
+      editOriginPulseStartTs = Date.now();
+      startEditOriginPulseAnimation();
       return;
     }
 
-    editOriginFeature.setGeometry(new ol.geom.Point(coord));
-    editOriginFeature.changed();
+    animateEditOriginTo(coord);
+    startEditOriginPulseAnimation();
   }
 
   function clearEditOriginMarker() {
     if (!editOriginFeature) return;
+    stopEditOriginMoveAnimation();
     myLocationSource.removeFeature(editOriginFeature);
     editOriginFeature = null;
+    stopEditOriginPulseAnimation();
+    editOriginPulseStartTs = 0;
   }
 
   function ensureMyLocationFeature(coord) {
@@ -3074,11 +3254,37 @@
     return function() {
       const headingDeg = getObservationHeadingDeg(obsData);
       const isSelected = !!(obsData && obsData.isSelected);
+      const obsId = String(obsData && obsData.id ? obsData.id : "").trim();
+      const isEditingTarget = !!(obsId && currentEditingObservationId && obsId === currentEditingObservationId);
+      const suppressSelectedHalo = !!editOriginFeature;
+      const flashUntil = Number(marker && marker._feature && marker._feature.get ? marker._feature.get("saveFlashUntil") : 0);
+      const flashRemainingMs = Number.isFinite(flashUntil) ? flashUntil - Date.now() : 0;
+      const isSaveFlashActive = flashRemainingMs > 0;
+      const flashElapsedMs = isSaveFlashActive ? (OBS_SAVE_FLASH_DURATION_MS - flashRemainingMs) : 0;
+      const flashProgress = isSaveFlashActive ? clamp01(flashElapsedMs / OBS_SAVE_FLASH_DURATION_MS) : 1;
+      const flashIntro = clamp01(flashElapsedMs / 560);
+      const flashIntro2 = clamp01((flashElapsedMs - 700) / 900);
+      const flashOutro = clamp01((1 - flashProgress) / 0.9);
+      const flashBreath = 0.5 - 0.5 * Math.cos((flashElapsedMs / 1200) * Math.PI * 2);
+      // 초반 점진 상승 + 중반 2차 점진 상승을 합쳐 강조감을 더 자연스럽게 올린다.
+      const flashEnvelope = (0.12 + 0.56 * flashIntro + 0.32 * flashIntro2) * flashOutro;
+      const flashPulse = 0.58 + 0.42 * flashBreath;
+      const flashOpacity = isSaveFlashActive ? clamp01(flashEnvelope * flashPulse) : 0;
       const rotation = Number.isFinite(headingDeg) ? (headingDeg * Math.PI) / 180 : 0;
 
       const styles = [];
 
-      if (isSelected) {
+      if (isEditingTarget) {
+        styles.push(new ol.style.Style({
+          image: new ol.style.Circle({
+            radius: 18,
+            fill: new ol.style.Fill({ color: "rgba(34,197,94,0.16)" }),
+            stroke: new ol.style.Stroke({ color: "rgba(22,163,74,0.94)", width: 3.2 })
+          })
+        }));
+      }
+
+      if (isSelected && !suppressSelectedHalo) {
         styles.push(new ol.style.Style({
           image: new ol.style.Circle({
             radius: 16,
@@ -3089,9 +3295,10 @@
       }
 
       
+      const baseHeadingIconSrc = isEditingTarget ? observationHeadingEditIconSrc : observationHeadingIconSrc;
       styles.push(new ol.style.Style({
           image: new ol.style.Icon({
-            src: observationHeadingIconSrc,
+            src: baseHeadingIconSrc,
             width: OBSERVATION_HEADING_ICON_SIZE,
             height: OBSERVATION_HEADING_ICON_SIZE,
             anchor: [0.5, 0.5],
@@ -3106,10 +3313,30 @@
             padding: [4, 8, 4, 8],
             font: "700 11px sans-serif",
             fill: new ol.style.Fill({ color: "rgba(255,255,255,0.95)" }),
-            backgroundFill: new ol.style.Fill({ color: isSelected ? "rgba(194,65,12,0.84)" : "rgba(194,65,12,0.58)" }),
+            backgroundFill: new ol.style.Fill({
+              color: isEditingTarget
+                ? "rgba(22,163,74,0.9)"
+                : (isSelected ? "rgba(194,65,12,0.84)" : "rgba(194,65,12,0.58)")
+            }),
             backgroundStroke: new ol.style.Stroke({ color: isSelected ? "rgba(255,255,255,0.92)" : "rgba(255,255,255,0.55)", width: isSelected ? 1.6 : 1.25 })
           })
         }));
+
+      if (flashOpacity > 0.01) {
+        styles.push(new ol.style.Style({
+          image: new ol.style.Icon({
+            src: observationHeadingFlashIconSrc,
+            width: OBSERVATION_HEADING_ICON_SIZE,
+            height: OBSERVATION_HEADING_ICON_SIZE,
+            anchor: [0.5, 0.5],
+            anchorXUnits: "fraction",
+            anchorYUnits: "fraction",
+            rotateWithView: true,
+            rotation: rotation,
+            opacity: flashOpacity
+          })
+        }));
+      }
 
       return styles;
     };
@@ -3534,7 +3761,47 @@
   };
 
   const observationMarkersLayer = {
+    animateMarkerToCoordinate: function (feature, fromLatLng, toLatLng) {
+      if (!feature || !Array.isArray(fromLatLng) || !Array.isArray(toLatLng)) return;
+      if (!Number.isFinite(Number(fromLatLng[0])) || !Number.isFinite(Number(fromLatLng[1]))) return;
+      if (!Number.isFinite(Number(toLatLng[0])) || !Number.isFinite(Number(toLatLng[1]))) return;
+
+      const fromCoord = mapCoordFromWgs84(Number(fromLatLng[0]), Number(fromLatLng[1]));
+      const toCoord = mapCoordFromWgs84(Number(toLatLng[0]), Number(toLatLng[1]));
+      const startTs = Date.now();
+      const durationMs = 560;
+      const lagMs = 90;
+
+      feature.setGeometry(new ol.geom.Point(fromCoord));
+
+      function tick() {
+        if (!feature || !feature.getGeometry || !feature.getGeometry()) return;
+        const elapsed = Date.now() - startTs - lagMs;
+        if (elapsed < 0) {
+          window.requestAnimationFrame(tick);
+          return;
+        }
+        const progress = Math.max(0, Math.min(1, elapsed / durationMs));
+        const eased = progress < 0.5
+          ? 4 * progress * progress * progress
+          : 1 - Math.pow(-2 * progress + 2, 3) / 2;
+
+        const currentCoord = [
+          fromCoord[0] + (toCoord[0] - fromCoord[0]) * eased,
+          fromCoord[1] + (toCoord[1] - fromCoord[1]) * eased
+        ];
+
+        feature.setGeometry(new ol.geom.Point(currentCoord));
+        feature.changed();
+
+        if (progress >= 1) return;
+        window.requestAnimationFrame(tick);
+      }
+
+      window.requestAnimationFrame(tick);
+    },
     clearLayers: function () {
+      stopObservationSaveFlashAnimation();
       observationMarkerSource.clear();
     },
     addLayer: function (marker) {
@@ -3544,8 +3811,18 @@
       const feature = new ol.Feature({ geometry: new ol.geom.Point(coord) });
       marker._feature = feature;
       feature.set("popupHtml", marker._popupHtml || "");
+      const saveFlashUntil = Number(marker && marker.obsData ? marker.obsData._saveFlashUntil : marker._saveFlashUntil);
+      feature.set("saveFlashUntil", Number.isFinite(saveFlashUntil) ? saveFlashUntil : 0);
       feature.setStyle(createObservationStyleFromMarker(marker));
       observationMarkerSource.addFeature(feature);
+
+      if (Number(feature.get("saveFlashUntil")) > Date.now()) {
+        startObservationSaveFlashAnimation();
+      }
+
+      if (Array.isArray(marker._animateFromLatLng)) {
+        this.animateMarkerToCoordinate(feature, marker._animateFromLatLng, marker._latlng);
+      }
     }
   };
 
@@ -3615,19 +3892,29 @@
         manualFeature.changed();
       }
 
+      if (payload.mode === "edit") {
+        setEditOriginMarker(payload.lat, payload.lng);
+      }
+
       if (payload.shouldFocus) {
         view.setCenter(centerCoord);
       }
     },
     onObservationSaved: async function (payload) {
       if (!obsListModule || !payload || !payload.observation) return;
+      // SQLite 재조회로 렌더 데이터가 교체되어도 저장 직후 하이라이트가 유지되도록 먼저 기록한다.
+      if (typeof obsListModule.markObservationFlash === "function") {
+        obsListModule.markObservationFlash(payload.observation.id);
+      }
 
       if (payload.mode === "edit") {
+        setCurrentEditingObservationId(null);
         clearEditOriginMarker();
+        if (typeof obsListModule.updateObservation === "function") {
+          obsListModule.updateObservation(payload.observation);
+        }
         if (payload.source === "sqlite") {
           await obsListModule.refreshObservationList();
-        } else {
-          obsListModule.updateObservation(payload.observation);
         }
         // 수정 완료 후 목록 패널 복원
         if (typeof obsListModule.showPanel === "function") obsListModule.showPanel();
@@ -3643,6 +3930,7 @@
       }
     },
     onClose: function () {
+      setCurrentEditingObservationId(null);
       clearEditOriginMarker();
       // X 버튼 및 취소 시 목록 패널 복원
       if (obsListModule && typeof obsListModule.showPanel === "function") obsListModule.showPanel();
@@ -5458,12 +5746,15 @@
       if (controlsManager && typeof controlsManager.deactivateMeasure === "function") {
         controlsManager.deactivateMeasure("menu");
       }
+      closeObservationPopup();
       collapseBearEstimatePanel();
     },
     onOpenRegister: function () {
       if (controlsManager && typeof controlsManager.deactivateMeasure === "function") {
         controlsManager.deactivateMeasure("menu");
       }
+      setCurrentEditingObservationId(null);
+      closeObservationPopup();
       collapseBearEstimatePanel();
       clearEditOriginMarker();
       // 등록 팝업이 열리는 동안 목록 패널을 숨긴다.
@@ -5471,6 +5762,8 @@
       if (obsRegisterModule) obsRegisterModule.open();
     },
     onEditObservation: function (item) {
+      setCurrentEditingObservationId(item && item.id ? item.id : null);
+      closeObservationPopup();
       collapseBearEstimatePanel();
       if (item && Number.isFinite(Number(item.lat)) && Number.isFinite(Number(item.lng))) {
         setEditOriginMarker(Number(item.lat), Number(item.lng));
@@ -5484,6 +5777,7 @@
       }
     },
     onCloseRegister: function () {
+      setCurrentEditingObservationId(null);
       clearEditOriginMarker();
       if (obsRegisterModule) obsRegisterModule.hide(true);
     },
