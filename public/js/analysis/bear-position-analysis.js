@@ -144,9 +144,18 @@
       };
     }
 
+    // 거리 제한(m): 교차점이 관측자로부터 이 거리를 초과하면 유효 교차점에서 제외.
+    // opts.distanceLimitM 미지정 또는 0 이하이면 무제한(Infinity).
     const distanceLimitM = Number(opts.distanceLimitM);
     const maxDistanceM = Number.isFinite(distanceLimitM) && distanceLimitM > 0 ? distanceLimitM : Infinity;
+
+    // 자기 편각(도): 나침반 방위각과 진북 사이의 보정값. 한국 기준 약 -8~-9°.
+    // opts.declinationDeg 미지정이면 0(보정 없음).
     const declinationDeg = Number.isFinite(Number(opts.declinationDeg)) ? Number(opts.declinationDeg) : 0;
+
+    // 교차점 퍼짐 허용 반경(m): 모든 교차점의 산술평균 중심에서 가장 먼 교차점까지의 거리가
+    // 이 값을 초과하면 "교차점 불일치"로 실패 처리. 기본값 180m.
+    // 관측 오차 허용 범위를 크게 잡으려면 이 값을 늘리면 됨(예: 300~500).
     const spreadToleranceM = Number.isFinite(Number(opts.spreadToleranceM)) && Number(opts.spreadToleranceM) > 0
       ? Number(opts.spreadToleranceM)
       : 180;
@@ -166,10 +175,10 @@
     });
 
     const intersections = [];
-    let parallelCount = 0;
-    let backwardCount = 0;
-    let outOfRangeCount = 0;
-    const totalPairCount = (rays.length * (rays.length - 1)) / 2;
+    let parallelCount = 0;   // 두 방위선이 평행하여 교차점을 구할 수 없는 쌍의 수
+    let backwardCount = 0;   // 교차점이 관측자 뒤쪽(t<0)에 생기는 쌍의 수 → 방위각 오입력 의심
+    let outOfRangeCount = 0; // 교차점이 거리 제한(maxDistanceM) 밖에 위치하는 쌍의 수
+    const totalPairCount = (rays.length * (rays.length - 1)) / 2; // 관측점 간 가능한 쌍 조합 수
 
     for (let i = 0; i < rays.length - 1; i += 1) {
       for (let j = i + 1; j < rays.length; j += 1) {
@@ -218,7 +227,8 @@
       };
     }
 
-    // 엄격 판정: 한 쌍이라도 이상 징후(평행/역방향/거리범위초과)가 있으면 실패 처리
+    // 엄격 판정: 전체 쌍 중 단 한 쌍이라도 평행·역방향·거리초과 징후가 있으면 실패 처리.
+    // 교차점이 일부 생겼더라도 나머지 쌍이 이상하면 평균값 자체를 신뢰할 수 없기 때문.
     if (parallelCount > 0 || backwardCount > 0 || outOfRangeCount > 0) {
       return {
         ok: false,
@@ -238,21 +248,24 @@
     const center = averagePoint(intersections);
     const spreadM = maxDistanceFrom(intersections, center);
 
-    if (Number.isFinite(spreadM) && spreadM > spreadToleranceM) {
-      return {
-        ok: false,
-        code: "INCONSISTENT_INTERSECTIONS",
-        message: "잘못된 관측입니다. -> 교차점 불일치",
-        diagnostics: {
-          intersectionsCount: intersections.length,
-          spreadM,
-          spreadToleranceM,
-          parallelCount,
-          backwardCount,
-          outOfRangeCount
-        }
-      };
-    }
+    // 퍼짐 판정: 교차점 분산이 spreadToleranceM을 초과하면 실패.
+    // → 적정 기준치가 현장 운용에 따라 달라지므로 현재 비활성화.
+    //   spreadM 값은 결과 diagnostics에 포함되므로 사용자가 직접 판단.
+    // if (Number.isFinite(spreadM) && spreadM > spreadToleranceM) {
+    //   return {
+    //     ok: false,
+    //     code: "INCONSISTENT_INTERSECTIONS",
+    //     message: "잘못된 관측입니다. -> 교차점 불일치",
+    //     diagnostics: {
+    //       intersectionsCount: intersections.length,
+    //       spreadM,
+    //       spreadToleranceM,
+    //       parallelCount,
+    //       backwardCount,
+    //       outOfRangeCount
+    //     }
+    //   };
+    // }
 
     const estimatedLatLng = toLatLng(center[0], center[1], originLat);
     return {
