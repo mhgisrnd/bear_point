@@ -61,13 +61,19 @@ window.createObsListModule = function createObsListModule({
   }
 
   function triggerLightErrorVibration() {
+    // client-ol.js에서 전역로 노출한 Haptics 함수를 사용한다.
+    // 부재 시 navigator.vibrate 폴백 (Haptics는 터치 없이도 동작하지만
+    // 이 오류는 반드시 버튼 탭 후 발생하므로 폴백도 정상 동작한다)
+    if (typeof window.__bpTriggerHapticImpact === "function") {
+      window.__bpTriggerHapticImpact("LIGHT");
+      return;
+    }
+    // 최종 폴백: Haptics 노출 전 또는 브라우저 환경
     if (typeof window.navigator !== "undefined" && window.navigator && typeof window.navigator.vibrate === "function") {
       try {
-        // 잘못된 관측 안내 시 짧은 햅틱 피드백
-        window.navigator.vibrate(22);
-      } catch (error) {
-        // 일부 WebView/브라우저는 진동 API를 제한할 수 있으므로 무시한다.
-      }
+        const vibrateMs = (window.__bpVibrateConfig && window.__bpVibrateConfig.FEEDBACK) || 22;
+        window.navigator.vibrate(vibrateMs);
+      } catch (error) {}
     }
   }
 

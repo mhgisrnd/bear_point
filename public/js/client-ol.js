@@ -37,6 +37,14 @@
   let backExitToastTextEl = null;
   let backExitToastHideTimer = null;
 
+  // navigator.vibrate() 폴백용 ms값 (브라우저 환경 전용)
+  // 실제 앱에서는 @capacitor/haptics 가 사용되므로 이 값은 무시된다.
+  // haptics 미지원 환경(PC 브라우저 등)에서만 적용된다.
+  // window.__bpVibrateConfig = {
+  //   FEEDBACK: 30,  // 입력 오류, 위치분석 실패 등
+  //   SHORT: 25      // 뒤로가기 알림
+  // };
+
   function ensureStatusBlinkStyle() {
     if (!document || document.getElementById("bp-status-blink-style")) return;
     const styleEl = document.createElement("style");
@@ -155,12 +163,15 @@
       if (!backExitToastEl) return;
       backExitToastEl.style.opacity = "0";
       backExitToastEl.style.transform = "translate(-50%, 14px)";
+      lastBackPressAt = 0;  // 토스트 사라질 때 뒤로가기 타이머도 초기화
       backExitToastHideTimer = null;
     }, 1400);
   }
 
   // 상태 강조는 필요한 상황(메뉴 진입/예외 처리)에서만 수동 호출한다.
   window.__bpTriggerStatusHighlight = triggerStatusBlinkHighlight;
+  // 햅틱 피드백을 obsList/obsRegister 등 외부 모듈에서도 쓸 수 있게 전역으로 노출한다.
+  window.__bpTriggerHapticImpact = triggerHapticImpact;
 
   function setDefaultStatusWithIcon() {
     if (!statusEl) return;
@@ -3045,6 +3056,39 @@
     return appPlugin;
   }
 
+  // Capacitor Haptics 플러그인 인스턴스를 반환한다.
+  // @capacitor/haptics 는 WebView가 아닌 네이티브 레이어에서 진동을 처리하기 때문에
+  // navigator.vibrate() 와 달리 사용자 터치 없이도 (앱 시작 직후 포함) 항상 동작한다.
+  function getCapacitorHapticsPlugin() {
+    const capacitor = window.Capacitor;
+    if (!capacitor || !capacitor.Plugins) return null;
+    return capacitor.Plugins.Haptics || null;
+  }
+
+  // 햅틱(진동) 피드백을 울린다.
+  // ─ 우선순위 1: Capacitor Haptics (네이티브 API, 터치 없이도 동작)
+  //   style 값: "LIGHT" | "MEDIUM" | "HEAVY"
+  //   LIGHT  → 짧고 가벼운 진동 (뒤로가기 알림 등 단순 안내)
+  //   MEDIUM → 중간 세기 (확인/완료 피드백)
+  //   HEAVY  → 강한 진동 (오류, 경고)
+  // ─ 우선순위 2 (폴백): navigator.vibrate()
+  //   WebView 보안 정책상 사용자가 한 번 이상 터치한 후에만 작동한다.
+  //   앱 시작 직후 하드웨어 뒤로가기처럼 터치 없이 호출되면 무시될 수 있다.
+  function triggerHapticImpact(style) {
+    const haptics = getCapacitorHapticsPlugin();
+    if (haptics && typeof haptics.impact === "function") {
+      haptics.impact({ style: style || "LIGHT" }).catch(function () {});
+      return;
+    }
+    // Haptics 플러그인을 쓸 수 없는 환경(브라우저 등)에서는 navigator.vibrate 로 대체한다.
+    if (typeof window.navigator !== "undefined" && window.navigator && typeof window.navigator.vibrate === "function") {
+      try {
+        const vibrateMs = (window.__bpVibrateConfig && window.__bpVibrateConfig.SHORT) || 18;
+        window.navigator.vibrate(vibrateMs);
+      } catch (e) {}
+    }
+  }
+
   function registerBackClosableOverlay(overlayEl, onBackClose) {
     if (!overlayEl || typeof onBackClose !== "function") {
       return function () {};
@@ -3121,7 +3165,7 @@
 
       // 4) 더 닫을 UI가 없을 때는 짧은 시간 내 2회 뒤로가기 시 앱을 종료한다.
       const now = Date.now();
-      if (now - lastBackPressAt <= BACK_EXIT_DOUBLE_PRESS_MS) {
+      if (lastBackPressAt > 0 && now - lastBackPressAt <= BACK_EXIT_DOUBLE_PRESS_MS) {
         lastBackPressAt = 0;
         appPlugin.exitApp();
         return;
@@ -3129,13 +3173,11 @@
 
       lastBackPressAt = now;
       showBackExitToast("한번 더 뒤로가면 앱이 꺼져요.");
-      if (typeof window.navigator !== "undefined" && window.navigator && typeof window.navigator.vibrate === "function") {
-        try {
-          window.navigator.vibrate(18);
-        } catch (error) {
-          // 일부 환경에서는 진동 API가 막혀 있을 수 있으므로 무시한다.
-        }
-      }
+      // 토스트 타이머 후 자동 초기화 (토스트가 사라진 후 뒤로가기는 재설정)
+      setTimeout(function () {
+        lastBackPressAt = 0;
+      }, 1500);
+      triggerHapticImpact("LIGHT");
     });
 
     if (listener && typeof listener.remove === "function") {
