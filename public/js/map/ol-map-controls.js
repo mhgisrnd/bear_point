@@ -105,12 +105,12 @@ window.createOlMapControlsManager = function createOlMapControlsManager(options)
 
   function setBaseLayer(type) {
     let nextType = type;
-    const ONLINE_TYPES = ["osm", "english", "large", "satellite", "topo"];
+    const ONLINE_TYPES = ["osm", "english", "large", "satellite"];
     if (nextType !== "mbtiles" && !ONLINE_TYPES.includes(nextType)) {
       nextType = "mbtiles";
     }
 
-    if (nextType !== "mbtiles" && nextType !== "topo" && !ngiiApiKey) {
+    if (nextType !== "mbtiles" && !ngiiApiKey) {
       if (statusEl) statusEl.textContent = "🟠 NGII API 키가 없어 오프라인 지도로 전환합니다";
       nextType = "mbtiles";
     }
@@ -123,11 +123,7 @@ window.createOlMapControlsManager = function createOlMapControlsManager(options)
     layers.englishBase.setVisible(nextType === "english");
     layers.largeBase.setVisible(nextType === "large");
     layers.satelliteBase.setVisible(nextType === "satellite");
-    layers.topoBase.setVisible(nextType === "topo");
     layers.mbtilesLayer.setVisible(nextType === "mbtiles");
-    if (nextType !== "topo") {
-      layers.hillshadeOverlay.setVisible(false);
-    }
 
     if (nextType === "mbtiles") {
       const moved = moveToOfflineInitialView() || fitMbtilesCoverage();
@@ -141,8 +137,7 @@ window.createOlMapControlsManager = function createOlMapControlsManager(options)
         osm: "🌐 국문지도",
         english: "🌐 영문지도",
         large: "🌐 큰 문자지도",
-        satellite: "🛰️ 위성지도",
-        topo: "🌐 OpenTopoMap"
+        satellite: "🛰️ 위성지도"
       };
       statusEl.textContent = labels[nextType] || "🌐 온라인 지도 사용 중";
     }
@@ -153,7 +148,7 @@ window.createOlMapControlsManager = function createOlMapControlsManager(options)
   function syncHillshadeByZoom() {
     const zoom = view.getZoom();
     if (typeof zoom !== "number") return;
-    layers.hillshadeOverlay.setOpacity(zoom >= hillshadeSafeMaxZoom ? 0 : hillshadeBaseOpacity);
+    layers.hillshadeOverlay.setOpacity(zoom > hillshadeSafeMaxZoom ? 0 : hillshadeBaseOpacity);
   }
 
   function formatMeasureDistanceText(distanceM) {
@@ -976,16 +971,35 @@ window.createOlMapControlsManager = function createOlMapControlsManager(options)
     row2.style.display = "flex";
     row2.style.alignItems = "center";
     row2.style.gap = "8px";
-    row2.style.marginTop = "4px";
+    row2.style.marginTop = "5px";
+    row2.style.marginBottom = "2px";
     row2.style.cursor = "pointer";
 
     const chk = document.createElement("input");
     chk.type = "checkbox";
-    chk.checked = false;
-    chk.disabled = true;
+    chk.checked = !!layers.hillshadeOverlay.getVisible();
+    chk.disabled = false;
+    chk.style.flex = "0 0 auto";
+    // Keep checkbox x-offset aligned with radio controls in this panel.
+    chk.style.margin = "0 0 0 5px";
     chk.addEventListener("change", function () {
       layers.hillshadeOverlay.setVisible(chk.checked);
+      syncHillshadeByZoom();
+      if (statusEl) {
+        statusEl.textContent = chk.checked ? "🗻 음영기복도 켜짐(인터넷 필요)" : "🗻 음영기복도 꺼짐";
+      }
     });
+
+    const row2Text = document.createElement("span");
+    row2Text.textContent = "음영기복도";
+    row2Text.style.fontSize = "12px";
+    row2Text.style.color = "#4b5563";
+    row2Text.style.whiteSpace = "nowrap";
+
+    tuneLayerOptionRow(row2, row2Text);
+
+    row2.appendChild(chk);
+    row2.appendChild(row2Text);
 
     let hideTimer = null;
     let isPinned = false;
@@ -1062,9 +1076,9 @@ window.createOlMapControlsManager = function createOlMapControlsManager(options)
     panel.appendChild(rowEnglish);
     panel.appendChild(rowLarge);
     panel.appendChild(rowSatellite);
+    panel.appendChild(row2);
     panel.appendChild(offlineTitle);
     panel.appendChild(rowMbtiles);
-    panel.appendChild(row2);
     root.appendChild(panel);
     mapEl.appendChild(root);
   }

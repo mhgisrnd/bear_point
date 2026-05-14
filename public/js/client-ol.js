@@ -402,14 +402,15 @@
     0.255
   ];
   const HILLSHADE_BASE_OPACITY = 0.32;
+  const HILLSHADE_HARD_MAX_ZOOM = 15;
   const PARAM_MAX_ZOOM_LIMIT = 30;
   const VIEW_MAX_ZOOM = getNumericParam("olMaxZoom", 18, 3, PARAM_MAX_ZOOM_LIMIT);
   const ONLINE_MAX_ZOOM = VIEW_MAX_ZOOM;
   const BEAR_LABEL_OFFSET_Y = 12;
   const ESTIMATE_LABEL_OFFSET_Y = 18;
-  const TOPO_MAX_ZOOM = getNumericParam("olTopoMaxZoom", 18, 3, PARAM_MAX_ZOOM_LIMIT);
-  const HILLSHADE_MAX_ZOOM = getNumericParam("olHillshadeMaxZoom", 18, 3, PARAM_MAX_ZOOM_LIMIT);
-  const HILLSHADE_SAFE_MAX_ZOOM = getNumericParam("olHillshadeSafeMaxZoom", 16, 3, PARAM_MAX_ZOOM_LIMIT);
+  // 힐셰이드는 성능/정합 이슈로 15까지만 지원한다.
+  const HILLSHADE_MAX_ZOOM = Math.min(getNumericParam("olHillshadeMaxZoom", HILLSHADE_HARD_MAX_ZOOM, 3, PARAM_MAX_ZOOM_LIMIT), HILLSHADE_HARD_MAX_ZOOM);
+  const HILLSHADE_SAFE_MAX_ZOOM = Math.min(getNumericParam("olHillshadeSafeMaxZoom", HILLSHADE_HARD_MAX_ZOOM, 3, PARAM_MAX_ZOOM_LIMIT), HILLSHADE_HARD_MAX_ZOOM);
   const HEADING_OFFSET = {
     ios: 0,
     android: 0,
@@ -1998,15 +1999,6 @@
     visible: false
   });
 
-  const topoBase = new ol.layer.Tile({
-    source: new ol.source.XYZ({
-      url: "https://{a-c}.tile.opentopomap.org/{z}/{x}/{y}.png",
-      attributions: "Map data: OpenStreetMap contributors, SRTM | Style: OpenTopoMap",
-      maxZoom: TOPO_MAX_ZOOM
-    }),
-    visible: false
-  });
-
   const hillshadeOverlay = new ol.layer.Tile({
     source: new ol.source.XYZ({
       url: "https://services.arcgisonline.com/ArcGIS/rest/services/Elevation/World_Hillshade/MapServer/tile/{z}/{y}/{x}",
@@ -2035,7 +2027,6 @@
   }
 
   bindTileErrorStatus(osmBase.getSource(), "NGII 인터넷 기본도");
-  bindTileErrorStatus(topoBase.getSource(), "OpenTopoMap");
   bindTileErrorStatus(hillshadeOverlay.getSource(), "Hillshade");
 
   function createHeadingIconDataUri(svgSize, color, circleRadius) {
@@ -2772,7 +2763,7 @@
   //맵 기능
   const map = new ol.Map({
     target: "map",
-    layers: [osmBase, englishBase, largeBase, satelliteBase, topoBase, mbtilesLayer, hillshadeOverlay, bearMarkerLayer, analysisPreviewLayer, analysisGuideLayer, analysisEstimateLayer, measureLayer, myLocationLayer],
+    layers: [osmBase, englishBase, largeBase, satelliteBase, mbtilesLayer, hillshadeOverlay, bearMarkerLayer, analysisPreviewLayer, analysisGuideLayer, analysisEstimateLayer, measureLayer, myLocationLayer],
     view: view,
     interactions: ol.interaction.defaults.defaults({
       pinchRotate: false // 이 한 줄을 주석 처리하면 손가락 회전(핀치 회전) 활성
@@ -2810,7 +2801,6 @@
       englishBase: englishBase,
       largeBase: largeBase,
       satelliteBase: satelliteBase,
-      topoBase: topoBase,
       mbtilesLayer: mbtilesLayer,
       hillshadeOverlay: hillshadeOverlay
     },
