@@ -60,6 +60,32 @@ window.createObsListModule = function createObsListModule({
     }
   }
 
+  function triggerLightErrorVibration() {
+    if (typeof window.navigator !== "undefined" && window.navigator && typeof window.navigator.vibrate === "function") {
+      try {
+        // 잘못된 관측 안내 시 짧은 햅틱 피드백
+        window.navigator.vibrate(22);
+      } catch (error) {
+        // 일부 WebView/브라우저는 진동 API를 제한할 수 있으므로 무시한다.
+      }
+    }
+  }
+
+  async function confirmWithStyledDialog(options) {
+    const opts = options || {};
+    if (typeof window.__bpShowConfirmDialog === "function") {
+      try {
+        return await window.__bpShowConfirmDialog(opts);
+      } catch (error) {
+        console.warn("[OBS] styled confirm fallback:", error);
+      }
+    }
+
+    const fallbackMessage = String(opts.message || "계속 진행할까요?");
+    const fallbackDetail = opts.detail ? "\n\n" + String(opts.detail) : "";
+    return window.confirm(fallbackMessage + fallbackDetail);
+  }
+
   function cleanupObservationFlashCache(nowTs) {
     const now = Number.isFinite(nowTs) ? nowTs : Date.now();
     observationFlashUntilById.forEach(function (untilTs, obsId) {
@@ -1133,6 +1159,7 @@ window.createObsListModule = function createObsListModule({
             dialog.errorEl.textContent = analysisResult && analysisResult.message
               ? `⚠️ ${analysisResult.message}`
               : "⚠️ 위치분석 실패";
+            triggerLightErrorVibration();
             return;
           }
         }
@@ -1362,7 +1389,14 @@ window.createObsListModule = function createObsListModule({
       // Step 1: 사용자 확인 대화
       // 사용자가 실수로 삭제하지 않도록 재확인 요청
       const count = selectedObsIds.size;
-      const confirmed = window.confirm(`${count}개 관측점을 정말 삭제하시겠습니까?\n\n이 작업은 되돌릴 수 없습니다.`);
+      const confirmed = await confirmWithStyledDialog({
+        title: "삭제 확인",
+        message: `${count}개 관측점을 정말 삭제하시겠습니까?`,
+        detail: "이 작업은 되돌릴 수 없습니다.",
+        confirmText: "삭제",
+        cancelText: "취소",
+        tone: "danger"
+      });
       if (!confirmed) {
         statusEl.textContent = "⚠️ 삭제 취소됨";
         return;

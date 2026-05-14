@@ -18,7 +18,8 @@
   const currentHeadingEl = document.getElementById("obs-current-heading");
   const searchParams = new URLSearchParams(window.location.search);
   let removeBackButtonListener = null;
-  let exitConfirmOpen = false;
+  let lastBackPressAt = 0;
+  const BACK_EXIT_DOUBLE_PRESS_MS = 2000;
   let startupOverlayEl = null;
   let startupOverlayTextEl = null;
   let startupOverlayRetryBtn = null;
@@ -31,6 +32,10 @@
   const overlayBackCloseStack = [];
   const selectedBearEstimateIds = new Set();
   let statusBlinkResetTimer = null;
+  let backExitToastEl = null;
+  let backExitToastIconEl = null;
+  let backExitToastTextEl = null;
+  let backExitToastHideTimer = null;
 
   function ensureStatusBlinkStyle() {
     if (!document || document.getElementById("bp-status-blink-style")) return;
@@ -73,6 +78,85 @@
       statusEl.classList.remove("bp-status-blink-highlight");
       statusBlinkResetTimer = null;
     }, 2000);
+  }
+
+  // 안드로이드 뒤로가기 종료 안내를 하단 토스트로 표시한다.
+  function showBackExitToast(message) {
+    const text = String(message || "한번 더 뒤로가면 앱이 꺼져요.").trim();
+    if (!text) return;
+
+    if (!backExitToastEl) {
+      const toast = document.createElement("div");
+      toast.style.position = "fixed";
+      toast.style.left = "50%";
+      toast.style.bottom = "calc(var(--safe-bottom, 0px) + 72px)";
+      toast.style.transform = "translate(-50%, 14px)";
+      toast.style.maxWidth = "calc(100vw - 28px)";
+      toast.style.padding = "10px 14px";
+      toast.style.borderRadius = "999px";
+      toast.style.background = "rgba(30, 41, 59, 0.94)";
+      toast.style.color = "#f8fafc";
+      toast.style.fontSize = "14px";
+      toast.style.fontWeight = "700";
+      toast.style.lineHeight = "1.2";
+      toast.style.display = "inline-flex";
+      toast.style.alignItems = "center";
+      toast.style.gap = "8px";
+      toast.style.textAlign = "center";
+      toast.style.whiteSpace = "nowrap";
+      toast.style.overflow = "hidden";
+      toast.style.textOverflow = "ellipsis";
+      toast.style.boxShadow = "0 12px 28px rgba(2,6,23,0.36)";
+      toast.style.opacity = "0";
+      toast.style.pointerEvents = "none";
+      toast.style.zIndex = "23150";
+      toast.style.transition = "opacity 160ms ease, transform 160ms ease";
+
+      const icon = document.createElement("img");
+      icon.src = "css/image/check.png";
+      icon.alt = "";
+      icon.style.width = "18px";
+      icon.style.height = "18px";
+      icon.style.flex = "0 0 18px";
+      icon.style.objectFit = "contain";
+
+      const textEl = document.createElement("span");
+      textEl.style.display = "block";
+      textEl.style.minWidth = "0";
+      textEl.style.whiteSpace = "nowrap";
+      textEl.style.overflow = "hidden";
+      textEl.style.textOverflow = "ellipsis";
+
+      toast.appendChild(icon);
+      toast.appendChild(textEl);
+      document.body.appendChild(toast);
+      backExitToastEl = toast;
+      backExitToastIconEl = icon;
+      backExitToastTextEl = textEl;
+    }
+
+    if (backExitToastIconEl) {
+      backExitToastIconEl.src = "css/image/check.png";
+    }
+    if (backExitToastTextEl) {
+      backExitToastTextEl.textContent = text;
+    } else {
+      backExitToastEl.textContent = text;
+    }
+    backExitToastEl.style.opacity = "1";
+    backExitToastEl.style.transform = "translate(-50%, 0)";
+
+    if (backExitToastHideTimer) {
+      window.clearTimeout(backExitToastHideTimer);
+      backExitToastHideTimer = null;
+    }
+
+    backExitToastHideTimer = window.setTimeout(function () {
+      if (!backExitToastEl) return;
+      backExitToastEl.style.opacity = "0";
+      backExitToastEl.style.transform = "translate(-50%, 14px)";
+      backExitToastHideTimer = null;
+    }, 1400);
   }
 
   // 상태 강조는 필요한 상황(메뉴 진입/예외 처리)에서만 수동 호출한다.
@@ -697,6 +781,138 @@
       document.body.appendChild(overlay);
     });
   }
+
+  // 공용 확인 팝업: 기본 confirm 대화상자 대신 디자인된 확인 UI를 제공한다.
+  function showStyledConfirmDialog(options) {
+    return new Promise(function (resolve) {
+      const titleText = options && options.title ? String(options.title) : "확인";
+      const messageText = options && options.message ? String(options.message) : "계속 진행할까요?";
+      const detailText = options && options.detail ? String(options.detail) : "";
+      const confirmText = options && options.confirmText ? String(options.confirmText) : "확인";
+      const cancelText = options && options.cancelText ? String(options.cancelText) : "취소";
+      const isDanger = !!(options && options.tone === "danger");
+
+      const overlay = document.createElement("div");
+      overlay.style.position = "fixed";
+      overlay.style.inset = "0";
+      overlay.style.zIndex = "23110";
+      overlay.style.background = "rgba(15,23,42,0.45)";
+      overlay.style.display = "flex";
+      overlay.style.alignItems = "center";
+      overlay.style.justifyContent = "center";
+      overlay.style.padding = "18px";
+
+      const card = document.createElement("div");
+      card.style.width = "min(92vw, 368px)";
+      card.style.background = "#ffffff";
+      card.style.color = "#0f172a";
+      card.style.border = "1px solid rgba(15,23,42,0.12)";
+      card.style.borderRadius = "14px";
+      card.style.boxShadow = "0 16px 36px rgba(2,6,23,0.3)";
+      card.style.overflow = "hidden";
+
+      const body = document.createElement("div");
+      body.style.padding = "16px 16px 12px";
+
+      const title = document.createElement("div");
+      title.textContent = titleText;
+      title.style.fontSize = "20px";
+      title.style.fontWeight = "700";
+      title.style.marginBottom = "8px";
+
+      const message = document.createElement("div");
+      message.textContent = messageText;
+      message.style.fontSize = "15px";
+      message.style.lineHeight = "1.55";
+      message.style.color = "#334155";
+      message.style.whiteSpace = "pre-line";
+
+      body.appendChild(title);
+      body.appendChild(message);
+
+      if (detailText) {
+        const detail = document.createElement("div");
+        detail.textContent = detailText;
+        detail.style.marginTop = "8px";
+        detail.style.fontSize = "13px";
+        detail.style.lineHeight = "1.45";
+        detail.style.color = "#64748b";
+        detail.style.whiteSpace = "pre-line";
+        body.appendChild(detail);
+      }
+
+      const footer = document.createElement("div");
+      footer.style.display = "grid";
+      footer.style.gridTemplateColumns = "1fr 1fr";
+      footer.style.gap = "8px";
+      footer.style.padding = "12px 16px 16px";
+
+      const cancelBtn = document.createElement("button");
+      cancelBtn.type = "button";
+      cancelBtn.textContent = cancelText;
+      cancelBtn.style.height = "40px";
+      cancelBtn.style.border = "1px solid rgba(148,163,184,0.34)";
+      cancelBtn.style.borderRadius = "10px";
+      cancelBtn.style.background = "#f8fafc";
+      cancelBtn.style.color = "#334155";
+      cancelBtn.style.fontWeight = "700";
+      cancelBtn.style.cursor = "pointer";
+
+      const confirmBtn = document.createElement("button");
+      confirmBtn.type = "button";
+      confirmBtn.textContent = confirmText;
+      confirmBtn.style.height = "40px";
+      confirmBtn.style.border = isDanger ? "1px solid #ef4444" : "1px solid #0ea5e9";
+      confirmBtn.style.borderRadius = "10px";
+      confirmBtn.style.background = isDanger ? "#fee2e2" : "#f0f9ff";
+      confirmBtn.style.color = isDanger ? "#991b1b" : "#075985";
+      confirmBtn.style.fontWeight = "700";
+      confirmBtn.style.cursor = "pointer";
+
+      let isClosed = false;
+      let unregisterOverlayBackClose = function () {};
+
+      function closeWith(confirmed) {
+        if (isClosed) return;
+        isClosed = true;
+        unregisterOverlayBackClose();
+        if (overlay && overlay.parentNode) overlay.parentNode.removeChild(overlay);
+        resolve(!!confirmed);
+      }
+
+      unregisterOverlayBackClose = registerBackClosableOverlay(overlay, function () {
+        closeWith(false);
+      });
+
+      overlay.addEventListener("click", function (event) {
+        if (event.target === overlay) closeWith(false);
+      });
+      cancelBtn.addEventListener("click", function () { closeWith(false); });
+      confirmBtn.addEventListener("click", function () { closeWith(true); });
+
+      card.addEventListener("keydown", function (event) {
+        if (event.key === "Escape") {
+          event.preventDefault();
+          closeWith(false);
+          return;
+        }
+        if (event.key === "Enter") {
+          event.preventDefault();
+          closeWith(true);
+        }
+      });
+
+      footer.appendChild(cancelBtn);
+      footer.appendChild(confirmBtn);
+      card.appendChild(body);
+      card.appendChild(footer);
+      overlay.appendChild(card);
+      document.body.appendChild(overlay);
+      confirmBtn.focus();
+    });
+  }
+
+  window.__bpShowConfirmDialog = showStyledConfirmDialog;
 
   async function ensureFileUriForShare(fileName, uriCandidate, txtContent) {
     if (uriCandidate && /^file:/i.test(String(uriCandidate))) {
@@ -2868,7 +3084,7 @@
   }
 
   // 안드로이드 하단 뒤로가기(하드웨어 back) 공통 처리.
-  // 우선순위: 관측점 팝업 닫기 -> 목록/등록/분석 UI 닫기 -> 분석 결과 표시 취소 -> 앱 종료 확인.
+  // 우선순위: 관측점 팝업 닫기 -> 목록/등록/분석 UI 닫기 -> 분석 결과 표시 취소 -> 2회 입력으로 앱 종료.
   async function setupAndroidBackButtonExit() {
     if (getPlatform() !== "android") return;
 
@@ -2903,15 +3119,22 @@
         }
       }
 
-      // 4) 더 닫을 UI가 없을 때만 앱 종료를 물어본다.
-      if (exitConfirmOpen) return;
-
-      exitConfirmOpen = true;
-      const shouldExit = window.confirm("앱을 종료하시겠습니까?");
-      exitConfirmOpen = false;
-
-      if (shouldExit) {
+      // 4) 더 닫을 UI가 없을 때는 짧은 시간 내 2회 뒤로가기 시 앱을 종료한다.
+      const now = Date.now();
+      if (now - lastBackPressAt <= BACK_EXIT_DOUBLE_PRESS_MS) {
+        lastBackPressAt = 0;
         appPlugin.exitApp();
+        return;
+      }
+
+      lastBackPressAt = now;
+      showBackExitToast("한번 더 뒤로가면 앱이 꺼져요.");
+      if (typeof window.navigator !== "undefined" && window.navigator && typeof window.navigator.vibrate === "function") {
+        try {
+          window.navigator.vibrate(18);
+        } catch (error) {
+          // 일부 환경에서는 진동 API가 막혀 있을 수 있으므로 무시한다.
+        }
       }
     });
 
@@ -4283,7 +4506,14 @@
 
     if (!targetIds.length) return;
 
-    const ok = window.confirm("선택한 곰 추정위치 " + targetIds.length + "건을 삭제할까요?");
+    const ok = await showStyledConfirmDialog({
+      title: "삭제 확인",
+      message: "선택한 곰 추정위치 " + targetIds.length + "건을 삭제할까요?",
+      detail: "이 작업은 되돌릴 수 없습니다.",
+      confirmText: "삭제",
+      cancelText: "취소",
+      tone: "danger"
+    });
     if (!ok) return;
 
     try {

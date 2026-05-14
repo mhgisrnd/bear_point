@@ -794,7 +794,20 @@ window.createOlMapControlsManager = function createOlMapControlsManager(options)
     panel.style.padding = "6px 10px";
     panel.style.fontSize = "13px";
     panel.style.lineHeight = "1.5";
-    panel.style.minWidth = "126px";
+    panel.style.width = "fit-content";
+    panel.style.minWidth = "220px";
+    panel.style.maxWidth = "calc(100vw - 24px - var(--safe-right))";
+
+    function tuneLayerOptionRow(rowEl, labelEl) {
+      rowEl.style.flexWrap = "nowrap";
+      rowEl.style.minWidth = "0";
+      labelEl.style.whiteSpace = "nowrap";
+      labelEl.style.display = "block";
+      labelEl.style.flex = "1 1 auto";
+      labelEl.style.minWidth = "0";
+      labelEl.style.overflow = "hidden";
+      labelEl.style.textOverflow = "ellipsis";
+    }
 
     function createSectionTitle(text, marginTop) {
       const title = document.createElement("div");
@@ -828,6 +841,7 @@ window.createOlMapControlsManager = function createOlMapControlsManager(options)
     const labelOsm = document.createElement("label");
     labelOsm.style.cursor = "pointer";
     labelOsm.textContent = "국문";
+    tuneLayerOptionRow(row1, labelOsm);
     row1.appendChild(radioOsm);
     row1.appendChild(labelOsm);
 
@@ -847,6 +861,7 @@ window.createOlMapControlsManager = function createOlMapControlsManager(options)
     const labelEnglish = document.createElement("label");
     labelEnglish.style.cursor = ngiiApiKey ? "pointer" : "default";
     labelEnglish.textContent = "영문";
+    tuneLayerOptionRow(rowEnglish, labelEnglish);
     rowEnglish.appendChild(radioEnglish);
     rowEnglish.appendChild(labelEnglish);
 
@@ -866,6 +881,7 @@ window.createOlMapControlsManager = function createOlMapControlsManager(options)
     const labelLarge = document.createElement("label");
     labelLarge.style.cursor = ngiiApiKey ? "pointer" : "default";
     labelLarge.textContent = "큰 문자";
+    tuneLayerOptionRow(rowLarge, labelLarge);
     rowLarge.appendChild(radioLarge);
     rowLarge.appendChild(labelLarge);
 
@@ -885,6 +901,7 @@ window.createOlMapControlsManager = function createOlMapControlsManager(options)
     const labelSatellite = document.createElement("label");
     labelSatellite.style.cursor = ngiiApiKey ? "pointer" : "default";
     labelSatellite.textContent = "위성";
+    tuneLayerOptionRow(rowSatellite, labelSatellite);
     rowSatellite.appendChild(radioSatellite);
     rowSatellite.appendChild(labelSatellite);
 
@@ -903,6 +920,7 @@ window.createOlMapControlsManager = function createOlMapControlsManager(options)
     const labelMbtiles = document.createElement("label");
     labelMbtiles.style.cursor = "pointer";
     labelMbtiles.textContent = "국문(지리산 일대)";
+    tuneLayerOptionRow(rowMbtiles, labelMbtiles);
     rowMbtiles.appendChild(radioMbtiles);
     rowMbtiles.appendChild(labelMbtiles);
 

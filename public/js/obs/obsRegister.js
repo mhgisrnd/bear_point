@@ -79,10 +79,20 @@ window.createObsRegisterModule = function createObsRegisterModule({
     }
   }
 
+  function triggerLightErrorVibration() {
+    if (typeof window.navigator !== "undefined" && window.navigator && typeof window.navigator.vibrate === "function") {
+      try {
+        // 입력 누락/형식 오류 등 예외 알림에 짧은 햅틱 피드백
+        window.navigator.vibrate(22);
+      } catch (error) {
+        // 일부 WebView/브라우저에서 막히는 경우가 있어 무시한다.
+      }
+    }
+  }
+
   function syncGpsToggleModeUi() {
-    var isEditMode = formMode === "edit";
     if (gpsToggleRowEl) {
-      gpsToggleRowEl.style.display = isEditMode ? "none" : "";
+      gpsToggleRowEl.style.display = "";
     }
   }
 
@@ -547,7 +557,7 @@ window.createObsRegisterModule = function createObsRegisterModule({
     regOwnerEl.value = lastOwner;
   }
 
-  // 등록 모드에서 GPS가 꺼져 있으면 수동 입력을 허용한다.
+  // GPS가 꺼져 있으면(등록/수정 공통) 수동 입력을 허용한다.
   function isManualEntryEnabled() {
     return !latestLive.isGpsActive;
   }
@@ -653,6 +663,7 @@ window.createObsRegisterModule = function createObsRegisterModule({
       hide(true);
     } catch (error) {
       statusEl.textContent = "⚠️ " + (error && error.message ? error.message : String(error));
+      triggerLightErrorVibration();
       highlightStatusOnce();
     }
   }
@@ -701,6 +712,7 @@ window.createObsRegisterModule = function createObsRegisterModule({
       hide(true);
     } catch (error) {
       statusEl.textContent = "⚠️ " + (error && error.message ? error.message : String(error));
+      triggerLightErrorVibration();
       highlightStatusOnce();
     }
   }
@@ -1230,6 +1242,7 @@ window.createObsRegisterModule = function createObsRegisterModule({
     var targetId = String(target.id || "").trim();
     if (!targetId) {
       statusEl.textContent = "⚠️ 수정할 관측점 정보가 올바르지 않습니다.";
+      triggerLightErrorVibration();
       return;
     }
 
@@ -1267,7 +1280,7 @@ window.createObsRegisterModule = function createObsRegisterModule({
     lockedHeadingDeg = null;
 
     if (btnGpsToggle) {
-      btnGpsToggle.disabled = true;
+      btnGpsToggle.disabled = false;
       syncGpsToggleUi(false);
     }
 
