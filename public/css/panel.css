@@ -78,8 +78,11 @@
 }
 
 .obs-panel-icon-btn svg,
+.obs-panel-icon-btn img,
 .obs-sheet-close svg,
-.obs-register-close svg {
+.obs-sheet-close img,
+.obs-register-close svg,
+.obs-register-close img {
   width: 16px;
   height: 16px;
 }

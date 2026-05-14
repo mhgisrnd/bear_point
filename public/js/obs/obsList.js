@@ -443,8 +443,8 @@ window.createObsListModule = function createObsListModule({
     if (obsSheetEl) obsSheetEl.classList.toggle("obs-sheet--peek", isPeekMode);
     if (btnObsListPeek) {
       btnObsListPeek.innerHTML = isPeekMode
-        ? '<svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="2" fill="none" stroke="currentColor" stroke-width="2"/></svg>'
-        : '<svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 12h12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
+        ? '<img src="css/svg/peek-expand-white.svg" alt="" aria-hidden="true" />'
+        : '<img src="css/svg/peek-collapse-white.svg" alt="" aria-hidden="true" />';
       btnObsListPeek.setAttribute("aria-label", isPeekMode ? "확장" : "최소화");
       btnObsListPeek.setAttribute("title", isPeekMode ? "확장" : "최소화");
     }

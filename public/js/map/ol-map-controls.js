@@ -373,7 +373,7 @@ window.createOlMapControlsManager = function createOlMapControlsManager(options)
       "display:flex",
       "align-items:center"
     ].join(";");
-    closeBtn.innerHTML = "<svg width='10' height='10' viewBox='0 0 10 10' aria-hidden='true'><line x1='1' y1='1' x2='9' y2='9' stroke='currentColor' stroke-width='1.8' stroke-linecap='round'/><line x1='9' y1='1' x2='1' y2='9' stroke='currentColor' stroke-width='1.8' stroke-linecap='round'/></svg>";
+    closeBtn.innerHTML = '<span aria-hidden="true" style="display:block;width:10px;height:10px;background-color:currentColor;-webkit-mask:url(\'css/svg/control-close.svg\') center / contain no-repeat;mask:url(\'css/svg/control-close.svg\') center / contain no-repeat;"></span>';
     closeBtn.addEventListener("click", function (e) {
       e.preventDefault();
       e.stopPropagation();
@@ -566,6 +566,14 @@ window.createOlMapControlsManager = function createOlMapControlsManager(options)
     measureControlGroup.style.gap = "6px";
     measureControlGroup.style.marginTop = "25px";
 
+    function createMaskIconMarkup(iconPath, sizePx) {
+      return '<span aria-hidden="true" style="display:block;width:' + sizePx + 'px;height:' + sizePx + 'px;background-color:currentColor;-webkit-mask:url(\'' + iconPath + '\') center / contain no-repeat;mask:url(\'' + iconPath + '\') center / contain no-repeat;"></span>';
+    }
+
+    function createImageIconMarkup(iconPath, widthPx, heightPx) {
+      return '<img src="' + iconPath + '" alt="" aria-hidden="true" style="display:block;width:' + widthPx + 'px;height:' + heightPx + 'px;" />';
+    }
+
     function makeBtn(className, title, innerHTML, onClick) {
       const btn = document.createElement("a");
       btn.href = "#";
@@ -593,7 +601,7 @@ window.createOlMapControlsManager = function createOlMapControlsManager(options)
     const btnJiri = makeBtn(
       "leaflet-control-jiri-btn",
       "지리산으로 이동",
-      "<svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M3 19l6.5-11L16 19H3z\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linejoin=\"round\"/><path d=\"M10.5 19l4.5-8 6 8h-10.5z\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linejoin=\"round\"/><path d=\"M9.5 8l1.2 2 1.3-2\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/></svg>",
+      createMaskIconMarkup("css/svg/control-jiri.svg", 18),
       function () {
         if (!moveToOfflineInitialView({ duration: 450 })) {
           if (!fitMbtilesCoverage()) {
@@ -606,7 +614,7 @@ window.createOlMapControlsManager = function createOlMapControlsManager(options)
     const locateBtnEl = makeBtn(
       "leaflet-control-locate-btn",
       "내 위치 토글",
-      "<svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M12 2v3\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\"/><path d=\"M12 19v3\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\"/><path d=\"M2 12h3\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\"/><path d=\"M19 12h3\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\"/><circle cx=\"12\" cy=\"12\" r=\"6\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"/><circle cx=\"12\" cy=\"12\" r=\"1.5\" fill=\"currentColor\"/></svg>",
+      createMaskIconMarkup("css/svg/control-locate.svg", 18),
       function () {
         if (typeof onToggleMyLocation === "function") {
           onToggleMyLocation();
@@ -637,7 +645,7 @@ window.createOlMapControlsManager = function createOlMapControlsManager(options)
     measureDistanceBtnEl = makeBtn(
       "ol-measure-btn",
       "거리 측정",
-      "<svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><rect x=\"3\" y=\"9\" width=\"18\" height=\"6\" rx=\"1.5\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"/><path d=\"M7 9v3M10 9v2M13 9v3M16 9v2M19 9v3\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\"/></svg>",
+      createMaskIconMarkup("css/svg/control-ruler.svg", 16),
       function () {
         const nextActive = !(measureModeActive && measureModeType === "distance");
         setMeasureMode(nextActive, "toggle", "distance");
@@ -649,7 +657,7 @@ window.createOlMapControlsManager = function createOlMapControlsManager(options)
     measureAreaBtnEl = makeBtn(
       "ol-measure-area-btn",
       "면적 측정",
-      "<svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M5 6l11-2 3 8-9 7-6-6z\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linejoin=\"round\"/><circle cx=\"5\" cy=\"6\" r=\"1.2\" fill=\"currentColor\"/><circle cx=\"16\" cy=\"4\" r=\"1.2\" fill=\"currentColor\"/><circle cx=\"19\" cy=\"12\" r=\"1.2\" fill=\"currentColor\"/><circle cx=\"10\" cy=\"19\" r=\"1.2\" fill=\"currentColor\"/></svg>",
+      createMaskIconMarkup("css/svg/control-area.svg", 16),
       function () {
         const nextActive = !(measureModeActive && measureModeType === "area");
         setMeasureMode(nextActive, "toggle", "area");
@@ -760,6 +768,10 @@ window.createOlMapControlsManager = function createOlMapControlsManager(options)
   }
 
   function mountLayerSwitcher() {
+    function createImageIconMarkup(iconPath, widthPx, heightPx) {
+      return '<img src="' + iconPath + '" alt="" aria-hidden="true" style="display:block;width:' + widthPx + 'px;height:' + heightPx + 'px;" />';
+    }
+
     const root = document.createElement("div");
     root.style.position = "absolute";
     root.style.top = "calc(12px + var(--safe-top))";
@@ -781,10 +793,9 @@ window.createOlMapControlsManager = function createOlMapControlsManager(options)
     toggleBtn.style.display = "flex";
     toggleBtn.style.alignItems = "center";
     toggleBtn.style.justifyContent = "center";
-    toggleBtn.innerHTML = "<svg width=\"22\" height=\"22\" viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M12 3L2 8l10 5 10-5-10-5z\" fill=\"#d7dbe0\" stroke=\"#9aa3ad\" stroke-width=\"0.8\"/><path d=\"M2 12l10 5 10-5\" fill=\"none\" stroke=\"#9aa3ad\" stroke-width=\"1.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/><path d=\"M2 16l10 5 10-5\" fill=\"none\" stroke=\"#9aa3ad\" stroke-width=\"1.4\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/></svg>";
+    toggleBtn.innerHTML = createImageIconMarkup("css/svg/layer-stack.svg", 22, 22);
 
     const panel = document.createElement("div");
-    panel.style.display = "none";
     panel.style.position = "absolute";
     panel.style.top = "46px";
     panel.style.right = "0";
@@ -794,11 +805,22 @@ window.createOlMapControlsManager = function createOlMapControlsManager(options)
     panel.style.padding = "6px 10px";
     panel.style.fontSize = "13px";
     panel.style.lineHeight = "1.5";
-    panel.style.width = "fit-content";
-    panel.style.minWidth = "220px";
+    panel.style.width = "min(150px, calc(100vw - 24px - var(--safe-right)))";
+    panel.style.minWidth = "150px";
     panel.style.maxWidth = "calc(100vw - 24px - var(--safe-right))";
+    panel.style.overflow = "hidden";
+    panel.style.opacity = "0";
+    panel.style.visibility = "hidden";
+    panel.style.pointerEvents = "none";
+    panel.style.transform = "translateY(-8px) scale(0.98)";
+    panel.style.transformOrigin = "top right";
+    panel.style.maxHeight = "0";
+    panel.style.boxShadow = "0 10px 24px rgba(15, 23, 42, 0.16)";
+    panel.style.transition = "opacity 180ms ease, transform 180ms ease, max-height 220ms ease";
+    panel.dataset.open = "false";
 
     function tuneLayerOptionRow(rowEl, labelEl) {
+      rowEl.style.width = "100%";
       rowEl.style.flexWrap = "nowrap";
       rowEl.style.minWidth = "0";
       labelEl.style.whiteSpace = "nowrap";
@@ -837,6 +859,7 @@ window.createOlMapControlsManager = function createOlMapControlsManager(options)
     radioOsm.name = "ol-base-layer";
     radioOsm.value = "osm";
     radioOsm.disabled = false;
+    radioOsm.style.flex = "0 0 auto";
 
     const labelOsm = document.createElement("label");
     labelOsm.style.cursor = "pointer";
@@ -857,6 +880,7 @@ window.createOlMapControlsManager = function createOlMapControlsManager(options)
     radioEnglish.value = "english";
     radioEnglish.disabled = !ngiiApiKey;
     radioEnglish.checked = currentBaseLayerType === "english";
+    radioEnglish.style.flex = "0 0 auto";
 
     const labelEnglish = document.createElement("label");
     labelEnglish.style.cursor = ngiiApiKey ? "pointer" : "default";
@@ -877,6 +901,7 @@ window.createOlMapControlsManager = function createOlMapControlsManager(options)
     radioLarge.value = "large";
     radioLarge.disabled = !ngiiApiKey;
     radioLarge.checked = currentBaseLayerType === "large";
+    radioLarge.style.flex = "0 0 auto";
 
     const labelLarge = document.createElement("label");
     labelLarge.style.cursor = ngiiApiKey ? "pointer" : "default";
@@ -897,6 +922,7 @@ window.createOlMapControlsManager = function createOlMapControlsManager(options)
     radioSatellite.value = "satellite";
     radioSatellite.disabled = !ngiiApiKey;
     radioSatellite.checked = currentBaseLayerType === "satellite";
+    radioSatellite.style.flex = "0 0 auto";
 
     const labelSatellite = document.createElement("label");
     labelSatellite.style.cursor = ngiiApiKey ? "pointer" : "default";
@@ -916,6 +942,7 @@ window.createOlMapControlsManager = function createOlMapControlsManager(options)
     radioMbtiles.name = "ol-base-layer";
     radioMbtiles.value = "mbtiles";
     radioMbtiles.checked = currentBaseLayerType === "mbtiles";
+    radioMbtiles.style.flex = "0 0 auto";
 
     const labelMbtiles = document.createElement("label");
     labelMbtiles.style.cursor = "pointer";
@@ -964,12 +991,23 @@ window.createOlMapControlsManager = function createOlMapControlsManager(options)
     let isPinned = false;
     const preferHover = !!(window.matchMedia && window.matchMedia("(hover: hover) and (pointer: fine)").matches);
 
+    function isPanelOpen() {
+      return panel.dataset.open === "true";
+    }
+
     function openPanel() {
       if (hideTimer) {
         clearTimeout(hideTimer);
         hideTimer = null;
       }
-      panel.style.display = "block";
+      panel.dataset.open = "true";
+      panel.style.visibility = "visible";
+      panel.style.pointerEvents = "auto";
+      panel.style.maxHeight = panel.scrollHeight + 20 + "px";
+      window.requestAnimationFrame(function () {
+        panel.style.opacity = "1";
+        panel.style.transform = "translateY(0) scale(1)";
+      });
       toggleBtn.setAttribute("aria-expanded", "true");
     }
 
@@ -977,7 +1015,15 @@ window.createOlMapControlsManager = function createOlMapControlsManager(options)
       if (!forceClose && isPinned) return;
       if (hideTimer) clearTimeout(hideTimer);
       hideTimer = setTimeout(function () {
-        panel.style.display = "none";
+        panel.dataset.open = "false";
+        panel.style.opacity = "0";
+        panel.style.transform = "translateY(-8px) scale(0.98)";
+        panel.style.maxHeight = "0";
+        panel.style.pointerEvents = "none";
+        window.setTimeout(function () {
+          if (isPanelOpen()) return;
+          panel.style.visibility = "hidden";
+        }, 180);
         toggleBtn.setAttribute("aria-expanded", "false");
       }, delayMs);
     }
@@ -994,7 +1040,7 @@ window.createOlMapControlsManager = function createOlMapControlsManager(options)
     toggleBtn.addEventListener("click", function (e) {
       e.preventDefault();
       e.stopPropagation();
-      if (panel.style.display === "block" && isPinned) {
+      if (isPanelOpen() && isPinned) {
         isPinned = false;
         closePanel(0, true);
       } else {
