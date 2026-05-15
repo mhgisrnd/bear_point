@@ -2640,6 +2640,11 @@
             <span class="obs-popup-card__value">${escapeHtml(createdAt)}</span>
           </div>
         </div>
+        <div class="obs-popup-card__actions">
+          <button type="button" class="obs-popup-card__action-btn obs-popup-card__action-btn--file" data-bear-action="txt">TXT</button>
+          ${!item._unsaved ? '<button type="button" class="obs-popup-card__action-btn obs-popup-card__action-btn--xls" data-bear-action="xls">XLS</button>' : ''}
+          ${!item._unsaved ? '<button type="button" class="obs-popup-card__action-btn obs-popup-card__action-btn--delete" data-bear-action="delete">삭제</button>' : ''}
+        </div>
       </div>
     `;
   }
@@ -3641,6 +3646,57 @@
   observationPopupEl.appendChild(observationPopupCloseEl);
   observationPopupEl.appendChild(observationPopupContentEl);
 
+  // 상세 팝업 내부의 수정/삭제 버튼(관측점) 및 파일/삭제 버튼(곰 추정위치) 클릭을 처리한다.
+  observationPopupContentEl.addEventListener("click", function (event) {
+    const obsActionButton = event && event.target && typeof event.target.closest === "function"
+      ? event.target.closest("[data-observation-action]")
+      : null;
+    const bearActionButton = event && event.target && typeof event.target.closest === "function"
+      ? event.target.closest("[data-bear-action]")
+      : null;
+    if (!obsActionButton && !bearActionButton) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    // ── 관측점 수정 / 삭제 ──
+    if (obsActionButton) {
+      const action = String(obsActionButton.getAttribute("data-observation-action") || "").trim();
+      const obsData = observationPopupEl._observationData || null;
+      if (!action || !obsData) return;
+
+      if (action === "edit") {
+        openObservationEdit(obsData);
+        return;
+      }
+      if (action === "delete" && obsListModule && typeof obsListModule.deleteObservation === "function") {
+        void obsListModule.deleteObservation(obsData);
+      }
+      return;
+    }
+
+    // ── 곰 추정위치 TXT 저장 / 삭제 ──
+    if (bearActionButton) {
+      const action = String(bearActionButton.getAttribute("data-bear-action") || "").trim();
+      const bearData = observationPopupEl._bearEstimateData || null;
+      if (!action || !bearData) return;
+
+      if (action === "txt") {
+        closeObservationPopup();
+        void downloadBearEstimateTxt(bearData, currentBearEstimateFallbackMode);
+        return;
+      }
+      if (action === "xls" && !bearData._unsaved) {
+        closeObservationPopup();
+        void downloadAllBearEstimatesXls([bearData]);
+        return;
+      }
+      if (action === "delete" && !bearData._unsaved) {
+        void handleDeleteSingleBearEstimate(bearData);
+      }
+    }
+  });
+
   const observationPopupOverlay = new ol.Overlay({
     element: observationPopupEl,
     positioning: "bottom-center",
@@ -3649,21 +3705,45 @@
   });
   map.addOverlay(observationPopupOverlay);
 
-  function syncObservationPopupPlacement() {
+  // 화면 하단/상단 여유 공간을 기준으로 상세 팝업이 잘리지 않게 배치한다.
+  function syncObservationPopupPlacement(coordinate) {
     const obsSheet = document.getElementById("obs-sheet");
     const isMobile = window.matchMedia && window.matchMedia("(max-width: 820px)").matches;
     const isListVisible = !!(obsSheet && !obsSheet.classList.contains("hidden"));
+    const viewportEl = map && typeof map.getViewport === "function" ? map.getViewport() : null;
+    const viewportRect = viewportEl && typeof viewportEl.getBoundingClientRect === "function"
+      ? viewportEl.getBoundingClientRect()
+      : null;
+    const popupMarginPx = 18;
+    const popupGapPx = 18;
 
-    if (isMobile && isListVisible) {
-      observationPopupOverlay.setPositioning("top-center");
-      observationPopupOverlay.setOffset([0, 18]);
-      observationPopupEl.style.maxWidth = "220px";
-      return;
+    let placement = "bottom-center";
+    let offset = [0, -popupGapPx];
+    let maxWidth = isMobile && isListVisible ? "220px" : "240px";
+    let maxHeight = isMobile && isListVisible ? "320px" : "420px";
+
+    if (viewportRect && coordinate && typeof map.getPixelFromCoordinate === "function") {
+      const pixel = map.getPixelFromCoordinate(coordinate);
+      if (Array.isArray(pixel) && Number.isFinite(pixel[1])) {
+        const availableAbove = Math.max(0, pixel[1] - popupMarginPx);
+        const availableBelow = Math.max(0, viewportRect.height - pixel[1] - popupMarginPx);
+        const showBelow = availableBelow > availableAbove;
+
+        placement = showBelow ? "top-center" : "bottom-center";
+        offset = showBelow ? [0, popupGapPx] : [0, -popupGapPx];
+
+        const availableHeight = showBelow ? availableBelow : availableAbove;
+        const cappedHeight = Math.max(140, Math.floor(availableHeight - popupMarginPx));
+        maxHeight = `${Math.min(cappedHeight, isMobile && isListVisible ? 320 : 420)}px`;
+      }
     }
 
-    observationPopupOverlay.setPositioning("bottom-center");
-    observationPopupOverlay.setOffset([0, -18]);
-    observationPopupEl.style.maxWidth = "240px";
+    observationPopupOverlay.setPositioning(placement);
+    observationPopupOverlay.setOffset(offset);
+    observationPopupEl.style.maxWidth = maxWidth;
+    observationPopupEl.style.maxHeight = maxHeight;
+    observationPopupEl.style.overflowY = "auto";
+    observationPopupEl.style.overscrollBehavior = "contain";
   }
 
   function openObservationPopup(feature) {
@@ -3671,7 +3751,9 @@
     const coordinate = feature && feature.getGeometry() ? feature.getGeometry().getCoordinates() : null;
     if (!popupHtml || !coordinate) return;
 
-    syncObservationPopupPlacement();
+    syncObservationPopupPlacement(coordinate);
+    observationPopupEl._observationData = feature ? (feature.get("observationData") || feature.get("obsData") || null) : null;
+    observationPopupEl._bearEstimateData = feature ? (feature.get("bearEstimateData") || null) : null;
     observationPopupContentEl.innerHTML = popupHtml;
     observationPopupEl.style.display = "block";
     observationPopupOverlay.setPosition(coordinate);
@@ -3680,6 +3762,8 @@
   function closeObservationPopup() {
     observationPopupEl.style.display = "none";
     observationPopupOverlay.setPosition(undefined);
+    observationPopupEl._observationData = null;
+    observationPopupEl._bearEstimateData = null;
   }
 
   observationPopupCloseEl.addEventListener("click", function () {
@@ -4074,6 +4158,8 @@
       const feature = new ol.Feature({ geometry: new ol.geom.Point(coord) });
       marker._feature = feature;
       feature.set("popupHtml", marker._popupHtml || "");
+      feature.set("observationData", marker.obsData || null);
+      feature.set("obsData", marker.obsData || null);
       const saveFlashUntil = Number(marker && marker.obsData ? marker.obsData._saveFlashUntil : marker._saveFlashUntil);
       feature.set("saveFlashUntil", Number.isFinite(saveFlashUntil) ? saveFlashUntil : 0);
       feature.setStyle(createObservationStyleFromMarker(marker));
@@ -4111,6 +4197,22 @@
       locateBtnEl.classList.remove("is-active");
       locateBtnEl.style.background = "#fff";
       locateBtnEl.style.color = "#2f2f2f";
+    }
+  }
+
+  // 목록과 팝업에서 공통으로 쓰는 관측점 수정 진입 경로를 묶는다.
+  function openObservationEdit(item) {
+    setCurrentEditingObservationId(item && item.id ? item.id : null);
+    closeObservationPopup();
+    collapseBearEstimatePanel();
+    if (item && Number.isFinite(Number(item.lat)) && Number.isFinite(Number(item.lng))) {
+      setEditOriginMarker(Number(item.lat), Number(item.lng));
+    } else {
+      clearEditOriginMarker();
+    }
+    if (obsListModule && typeof obsListModule.hidePanel === "function") obsListModule.hidePanel();
+    if (obsRegisterModule && typeof obsRegisterModule.openForEdit === "function") {
+      obsRegisterModule.openForEdit(item);
     }
   }
 
@@ -4559,6 +4661,30 @@
     }
   }
 
+  // 팝업에서 곰 추정위치 단건을 삭제한다. 확인 다이얼로그 → DB 삭제 → 목록 갱신.
+  async function handleDeleteSingleBearEstimate(item) {
+    const bearCode = item.bear_code || item.bearCode || item.id || "-";
+    const ok = await showStyledConfirmDialog({
+      title: "삭제 확인",
+      message: "곰 추정위치 [" + bearCode + "]를 삭제할까요?",
+      detail: "이 작업은 되돌릴 수 없습니다.",
+      confirmText: "삭제",
+      cancelText: "취소",
+      tone: "danger"
+    });
+    if (!ok) return;
+
+    try {
+      await deleteBearEstimateRows([String(item.id)], currentBearEstimateFallbackMode, false);
+      closeObservationPopup();
+      await refreshBearEstimatePanel();
+      if (statusEl) statusEl.textContent = "🗑️ 곰 추정위치 [" + bearCode + "]를 삭제했습니다";
+    } catch (error) {
+      console.warn("[bear_estimate] 단건 삭제 실패:", error);
+      if (statusEl) statusEl.textContent = "🔴 삭제 실패: " + (error && error.message ? error.message : String(error));
+    }
+  }
+
   if (bearsSelectAllEl) {
     bearsSelectAllEl.addEventListener("change", function () {
       selectedBearEstimateIds.clear();
@@ -4597,6 +4723,7 @@
         geometry: new ol.geom.Point(mapCoordFromWgs84(it.lat, it.lng))
       });
       feature.set("popupHtml", buildBearEstimatePopupHtml(it));
+      feature.set("bearEstimateData", it);
 
       feature.setStyle(new ol.style.Style({
         image: new ol.style.Icon({
@@ -5153,15 +5280,18 @@
     const feature = new ol.Feature({
       geometry: new ol.geom.Point(estimateCoord)
     });
-    feature.set("popupHtml", buildBearEstimatePopupHtml({
+    const _analysisItem = {
       id: point.bearCode || "추정",
       bearCode: point.bearCode || "추정",
       owner: resolveDefaultAnalysisOwner(point),
       place: resolveDefaultAnalysisPlace(point),
       lat: point.lat,
       lng: point.lng,
-      created_at: null
-    }));
+      created_at: null,
+      _unsaved: true  // 아직 저장되지 않은 임시 분석점이므로 삭제 버튼을 숨긴다
+    };
+    feature.set("popupHtml", buildBearEstimatePopupHtml(_analysisItem));
+    feature.set("bearEstimateData", _analysisItem);
 
     feature.setStyle(new ol.style.Style({
       image: new ol.style.Icon({
@@ -6032,19 +6162,7 @@
       if (obsRegisterModule) obsRegisterModule.open();
     },
     onEditObservation: function (item) {
-      setCurrentEditingObservationId(item && item.id ? item.id : null);
-      closeObservationPopup();
-      collapseBearEstimatePanel();
-      if (item && Number.isFinite(Number(item.lat)) && Number.isFinite(Number(item.lng))) {
-        setEditOriginMarker(Number(item.lat), Number(item.lng));
-      } else {
-        clearEditOriginMarker();
-      }
-      // 수정 팝업이 열리는 동안 목록 패널을 숨긴다.
-      if (obsListModule && typeof obsListModule.hidePanel === "function") obsListModule.hidePanel();
-      if (obsRegisterModule && typeof obsRegisterModule.openForEdit === "function") {
-        obsRegisterModule.openForEdit(item);
-      }
+      openObservationEdit(item);
     },
     onCloseRegister: function () {
       setCurrentEditingObservationId(null);

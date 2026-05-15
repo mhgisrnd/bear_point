@@ -252,6 +252,10 @@ window.createObsListModule = function createObsListModule({
             <span class="obs-popup-card__label">최초 등록일시</span>
             <span class="obs-popup-card__value">${createdAt}</span>
           </div>
+          <div class="obs-popup-card__row obs-popup-card__row--wide obs-popup-card__actions">
+            <button class="obs-popup-card__action-btn obs-popup-card__action-btn--edit" type="button" data-observation-action="edit">수정</button>
+            <button class="obs-popup-card__action-btn obs-popup-card__action-btn--delete" type="button" data-observation-action="delete">삭제</button>
+          </div>
         </div>
       </div>
     `;
@@ -687,6 +691,103 @@ window.createObsListModule = function createObsListModule({
 
     syncChkAll(getFilteredItems());
     syncObservationMarkerSelection();
+  }
+
+  // 단건/다건 삭제를 공용 처리하고, SQLite/메모리/UI 정리를 한 번에 수행한다.
+  async function deleteObservations(items, options) {
+    const targetItems = Array.isArray(items) ? items.filter(Boolean) : [];
+    const targetOptions = options || {};
+    if (targetItems.length < 1) {
+      return { confirmed: false, sqliteDeletedCount: 0, memoryDeletedCount: 0 };
+    }
+
+    const count = targetItems.length;
+    const confirmed = await confirmWithStyledDialog({
+      title: targetOptions.title || "삭제 확인",
+      message: targetOptions.message || (count === 1 ? "이 관측점을 삭제하시겠습니까?" : `${count}개 관측점을 정말 삭제하시겠습니까?`),
+      detail: targetOptions.detail || "이 작업은 되돌릴 수 없습니다.",
+      confirmText: targetOptions.confirmText || "삭제",
+      cancelText: targetOptions.cancelText || "취소",
+      tone: targetOptions.tone || "danger"
+    });
+
+    if (!confirmed) {
+      if (!targetOptions.silentCancel && statusEl) {
+        statusEl.textContent = "⚠️ 삭제 취소됨";
+      }
+      return { confirmed: false, sqliteDeletedCount: 0, memoryDeletedCount: 0 };
+    }
+
+    const targetIds = targetItems
+      .map((item) => String(item && item.id ? item.id : "").trim())
+      .filter(Boolean);
+    const targetKeys = new Set(
+      targetItems
+        .map((item) => String(item && item._obsKey ? item._obsKey : "").trim())
+        .filter(Boolean)
+    );
+
+    let sqliteDeletedCount = 0;
+    if (isNativePlatform()) {
+      try {
+        const sqlite = window.Capacitor && window.Capacitor.Plugins
+          ? window.Capacitor.Plugins.CapacitorSQLite
+          : null;
+        if (sqlite && typeof sqlite.execute === "function") {
+          const dbName = window.BearSQLiteConfig && window.BearSQLiteConfig.dbName
+            ? String(window.BearSQLiteConfig.dbName)
+            : "BearPointData";
+
+          for (const id of targetIds) {
+            try {
+              await sqlite.execute({
+                database: dbName,
+                statements: `DELETE FROM observations WHERE id = '${id.replace(/'/g, "''")}'`,
+                readonly: false
+              });
+              sqliteDeletedCount += 1;
+            } catch (err) {
+              console.warn(`[OBS] failed to delete observation ${id}:`, err);
+            }
+          }
+        }
+      } catch (error) {
+        console.warn("[OBS] SQLite deletion failed:", error);
+      }
+    }
+
+    const initialLength = observationSamples.length;
+    for (let i = observationSamples.length - 1; i >= 0; i -= 1) {
+      const current = observationSamples[i];
+      if (targetKeys.has(current._obsKey) || targetIds.includes(current.id)) {
+        observationSamples.splice(i, 1);
+      }
+    }
+
+    targetKeys.forEach((key) => selectedObsIds.delete(key));
+
+    if (map && typeof map.closePopup === "function") {
+      map.closePopup();
+    }
+
+    applySearch();
+    renderObservationMarkers(observationSamples);
+    updateSelectionUI();
+    updateObservationSummary();
+    updateMainStatusForList();
+
+    const memoryDeletedCount = initialLength - observationSamples.length;
+    if (!targetOptions.suppressStatus && statusEl) {
+      statusEl.textContent = memoryDeletedCount > 0
+        ? (count === 1 ? "🗑️ 관측점 1개를 삭제했습니다." : `🗑️ ${memoryDeletedCount}개 관측점을 삭제했습니다.`)
+        : "🟠 삭제할 관측점이 없습니다.";
+    }
+
+    return {
+      confirmed: true,
+      sqliteDeletedCount,
+      memoryDeletedCount
+    };
   }
 
   // 현재 필터 대상 기준으로 전체선택 체크박스 상태를 동기화한다.
@@ -1391,85 +1492,11 @@ window.createObsListModule = function createObsListModule({
     // 선택된 관측점 삭제 버튼 핸들러
     if (btnDeleteSelected) btnDeleteSelected.addEventListener("click", async () => {
       if (selectedObsIds.size < 1) return;
-
-      // Step 1: 사용자 확인 대화
-      // 사용자가 실수로 삭제하지 않도록 재확인 요청
-      const count = selectedObsIds.size;
-      const confirmed = await confirmWithStyledDialog({
-        title: "삭제 확인",
-        message: `${count}개 관측점을 정말 삭제하시겠습니까?`,
-        detail: "이 작업은 되돌릴 수 없습니다.",
-        confirmText: "삭제",
-        cancelText: "취소",
-        tone: "danger"
-      });
-      if (!confirmed) {
-        statusEl.textContent = "⚠️ 삭제 취소됨";
-        return;
-      }
-
-      // Step 2: SQLite 데이터베이스에서 삭제
-      // 네이티브 환경(모바일 앱)에서만 SQLite 삭제 수행
       const selectedItems = getSelectedObservations();
-      const selectedIds = selectedItems.map((item) => item.id);
-      const selectedKeys = new Set(selectedItems.map((item) => item._obsKey));
-      let sqliteDeletedCount = 0;
-
-      if (isNativePlatform()) {
-        try {
-          const sqlite = window.Capacitor && window.Capacitor.Plugins
-            ? window.Capacitor.Plugins.CapacitorSQLite
-            : null;
-          if (sqlite && typeof sqlite.execute === "function") {
-            const dbName = window.BearSQLiteConfig && window.BearSQLiteConfig.dbName
-              ? String(window.BearSQLiteConfig.dbName)
-              : "BearPointData";
-
-            // 각 선택된 ID마다 DELETE 쿼리 실행
-            // SQL 인젝션 방지: 싱글 쿼트를 이중 쿼트로 이스케이프
-            for (const id of selectedIds) {
-              try {
-                await sqlite.execute({
-                  database: dbName,
-                  statements: `DELETE FROM observations WHERE id = '${id.replace(/'/g, "''")}'`,
-                  readonly: false
-                });
-                sqliteDeletedCount += 1;
-              } catch (err) {
-                console.warn(`[OBS] failed to delete observation ${id}:`, err);
-              }
-            }
-          }
-        } catch (error) {
-          console.warn("[OBS] SQLite deletion failed:", error);
-        }
-      }
-
-      // Step 3: 메모리 배열에서 삭제
-      // UI 상태를 최신으로 유지하기 위해 observationSamples 배열에서도 제거
-      const initialLength = observationSamples.length;
-      for (let i = observationSamples.length - 1; i >= 0; i -= 1) {
-        if (selectedKeys.has(observationSamples[i]._obsKey)) {
-          observationSamples.splice(i, 1);
-        }
-      }
-
-      // Step 4: UI 상태 초기화
-      // 선택된 ID 집합 초기화, 검색 재적용, 마커/테이블 갱신
-      selectedObsIds.clear();
-      applySearch();
-      if (currentTab === "list") {
-        renderObservationMarkers(observationSamples);
-      }
-      updateSelectionUI();
-
-      // Step 5: 사용자에게 결과 메시지 표시
-      const memoryDeletedCount = initialLength - observationSamples.length;
-      statusEl.textContent = memoryDeletedCount > 0
-        ? `🗑️ ${memoryDeletedCount}개 관측점을 삭제했습니다.`
-        : "🟠 삭제할 관측점이 없습니다.";
-
-      updateObservationSummary();
+      await deleteObservations(selectedItems, {
+        title: "삭제 확인",
+        message: `${selectedItems.length}개 관측점을 정말 삭제하시겠습니까?`
+      });
 
     });
 
@@ -1635,6 +1662,12 @@ window.createObsListModule = function createObsListModule({
     handleBackNavigation,
     addObservation,
     updateObservation,
+    deleteObservation: function (item) {
+      return deleteObservations([item], {
+        title: "삭제 확인",
+        message: "이 관측점을 삭제하시겠습니까?"
+      });
+    },
     renderObservationMarkers,
     refreshObservationList: refreshObservationData
   };
