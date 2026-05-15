@@ -2051,7 +2051,7 @@
   let editOriginMoveFrameId = null;
   let observationSaveFlashFrameId = null;
   let observationSaveFlashRunning = false;
-  const OBS_SAVE_FLASH_DURATION_MS = 3200;
+  const OBS_SAVE_FLASH_DURATION_MS = 4600;
   const EDIT_ORIGIN_MOVE_DURATION_MS = 520;
   const EDIT_ORIGIN_MOVE_LAG_MS = 110;
   const MY_HEADING_ICON_SIZE = 48;
@@ -2059,7 +2059,9 @@
   const OBSERVATION_HEADING_ICON_SIZE = 40;
   const observationHeadingIconSrc = createHeadingIconDataUri(OBSERVATION_HEADING_ICON_SIZE, "#ea580c", 5.5);
   const observationHeadingEditIconSrc = createHeadingIconDataUri(OBSERVATION_HEADING_ICON_SIZE, "#16a34a", 5.5);
-  const observationHeadingFlashIconSrc = createHeadingIconDataUri(OBSERVATION_HEADING_ICON_SIZE, "#fbff00", 5.8);
+  const observationHeadingFlashIconSrc = createHeadingIconDataUri(OBSERVATION_HEADING_ICON_SIZE, "#a855f7", 5.8);
+  const observationHeadingRegisterFlashIconSrc = createHeadingIconDataUri(OBSERVATION_HEADING_ICON_SIZE, "#1d4ed8", 5.8);
+  const observationHeadingMoveFlashIconSrc = createHeadingIconDataUri(OBSERVATION_HEADING_ICON_SIZE, "#fbff00", 5.8);
   let currentEditingObservationId = null;
   const MAP_HEADING_HANDLE_LENGTH_PX = 60;
   const MAP_HEADING_HANDLE_RADIUS_PX = 10;
@@ -2144,6 +2146,38 @@
 
     observationSaveFlashFrameId = window.requestAnimationFrame(tick);
   }
+
+  // 등록/수정 때 쓰는 기존 플래시 모양을 관측점 이동 강조에도 그대로 재사용한다.
+  function triggerObservationSaveFlash(feature, layer, durationMs, preset) {
+    if (!feature || typeof feature.set !== "function" || typeof feature.changed !== "function") return;
+
+    const flashDurationMs = Number.isFinite(Number(durationMs)) && Number(durationMs) > 0
+      ? Number(durationMs)
+      : OBS_SAVE_FLASH_DURATION_MS;
+    const flashUntil = Date.now() + flashDurationMs;
+    feature.set("saveFlashUntil", flashUntil);
+    feature.set("saveFlashDurationMs", flashDurationMs);
+    feature.set("saveFlashPreset", preset || "default");
+
+    if (layer && typeof layer.changed === "function") {
+      layer.changed();
+    }
+
+    const tick = function () {
+      if (!feature || typeof feature.changed !== "function") return;
+      if (Date.now() >= flashUntil) {
+        feature.changed();
+        return;
+      }
+      feature.changed();
+      window.requestAnimationFrame(tick);
+    };
+
+    window.requestAnimationFrame(tick);
+  }
+
+  // obsList.js에서 관측점 이동 강조를 호출할 수 있도록 전역으로 노출한다.
+  window.__bpTriggerObservationSaveFlash = triggerObservationSaveFlash;
 
   function animateEditOriginTo(targetCoord) {
     if (!editOriginFeature || !Array.isArray(targetCoord)) return;
@@ -3526,18 +3560,31 @@
       const isEditingTarget = !!(obsId && currentEditingObservationId && obsId === currentEditingObservationId);
       const suppressSelectedHalo = !!editOriginFeature;
       const flashUntil = Number(marker && marker._feature && marker._feature.get ? marker._feature.get("saveFlashUntil") : 0);
+      const flashDurationMs = Number(marker && marker._feature && marker._feature.get ? marker._feature.get("saveFlashDurationMs") : 0) || OBS_SAVE_FLASH_DURATION_MS;
+      const flashPreset = String(marker && marker._feature && marker._feature.get ? marker._feature.get("saveFlashPreset") : "").trim() || "default";
       const flashRemainingMs = Number.isFinite(flashUntil) ? flashUntil - Date.now() : 0;
       const isSaveFlashActive = flashRemainingMs > 0;
-      const flashElapsedMs = isSaveFlashActive ? (OBS_SAVE_FLASH_DURATION_MS - flashRemainingMs) : 0;
-      const flashProgress = isSaveFlashActive ? clamp01(flashElapsedMs / OBS_SAVE_FLASH_DURATION_MS) : 1;
+      const flashElapsedMs = isSaveFlashActive ? (flashDurationMs - flashRemainingMs) : 0;
+      const flashProgress = isSaveFlashActive ? clamp01(flashElapsedMs / flashDurationMs) : 1;
       const flashIntro = clamp01(flashElapsedMs / 560);
       const flashIntro2 = clamp01((flashElapsedMs - 700) / 900);
       const flashOutro = clamp01((1 - flashProgress) / 0.9);
-      const flashBreath = 0.5 - 0.5 * Math.cos((flashElapsedMs / 1200) * Math.PI * 2);
-      // 초반 점진 상승 + 중반 2차 점진 상승을 합쳐 강조감을 더 자연스럽게 올린다.
-      const flashEnvelope = (0.12 + 0.56 * flashIntro + 0.32 * flashIntro2) * flashOutro;
-      const flashPulse = 0.58 + 0.42 * flashBreath;
-      const flashOpacity = isSaveFlashActive ? clamp01(flashEnvelope * flashPulse) : 0;
+      let flashOpacity = 0;
+      if (isSaveFlashActive) {
+        if (flashPreset === "move-double") {
+          const pulseWave = Math.pow(Math.sin(flashProgress * Math.PI * 2), 2);
+          const easeIn = clamp01(flashProgress / 0.22);
+          const easeOut = clamp01((1 - flashProgress) / 0.18);
+          const envelope = easeIn * easeOut;
+          flashOpacity = clamp01((0.18 + 0.82 * envelope) * (0.35 + 0.65 * pulseWave));
+        } else {
+          const flashBreath = 0.5 - 0.5 * Math.cos((flashElapsedMs / 1200) * Math.PI * 2);
+          // 초반 점진 상승 + 중반 2차 점진 상승을 합쳐 강조감을 더 자연스럽게 올린다.
+          const flashEnvelope = (0.12 + 0.56 * flashIntro + 0.32 * flashIntro2) * flashOutro;
+          const flashPulse = 0.58 + 0.42 * flashBreath;
+          flashOpacity = clamp01(flashEnvelope * flashPulse);
+        }
+      }
       const rotation = Number.isFinite(headingDeg) ? (headingDeg * Math.PI) / 180 : 0;
 
       const styles = [];
@@ -3564,6 +3611,10 @@
 
       
       const baseHeadingIconSrc = isEditingTarget ? observationHeadingEditIconSrc : observationHeadingIconSrc;
+      const shouldFadeBaseHeading = isSaveFlashActive && flashPreset !== "move-double";
+      const baseHeadingOpacity = shouldFadeBaseHeading
+        ? clamp01(1 - flashOpacity * 0.95)
+        : 1;
       styles.push(new ol.style.Style({
           image: new ol.style.Icon({
             src: baseHeadingIconSrc,
@@ -3573,7 +3624,8 @@
             anchorXUnits: "fraction",
             anchorYUnits: "fraction",
             rotateWithView: true,
-            rotation: rotation
+            rotation: rotation,
+            opacity: baseHeadingOpacity
           }),
           text: new ol.style.Text({
             text: labelText,
@@ -3586,14 +3638,23 @@
                 ? "rgba(22,163,74,0.9)"
                 : (isSelected ? "rgba(194,65,12,0.84)" : "rgba(194,65,12,0.58)")
             }),
-            backgroundStroke: new ol.style.Stroke({ color: isSelected ? "rgba(255,255,255,0.92)" : "rgba(255,255,255,0.55)", width: isSelected ? 1.6 : 1.25 })
+            backgroundStroke: new ol.style.Stroke({
+              color: isSelected ? "rgba(255,255,255,0.92)" : "rgba(255,255,255,0.55)",
+              width: isSelected ? 1.6 : 1.25
+            })
           })
         }));
 
-      if (flashOpacity > 0.01) {
+      if (isSaveFlashActive && flashOpacity > 0.01) {
+        let flashIconSrc = observationHeadingFlashIconSrc;
+        if (flashPreset === "move-double") {
+          flashIconSrc = observationHeadingMoveFlashIconSrc;
+        } else if (flashPreset === "register") {
+          flashIconSrc = observationHeadingRegisterFlashIconSrc;
+        }
         styles.push(new ol.style.Style({
           image: new ol.style.Icon({
-            src: observationHeadingFlashIconSrc,
+            src: flashIconSrc,
             width: OBSERVATION_HEADING_ICON_SIZE,
             height: OBSERVATION_HEADING_ICON_SIZE,
             anchor: [0.5, 0.5],
@@ -3719,8 +3780,8 @@
 
     let placement = "bottom-center";
     let offset = [0, -popupGapPx];
-    let maxWidth = isMobile && isListVisible ? "220px" : "240px";
-    let maxHeight = isMobile && isListVisible ? "320px" : "420px";
+    let maxWidth = isMobile && isListVisible ? "200px" : "220px";
+    let maxHeight = isMobile && isListVisible ? "280px" : "360px";
 
     if (viewportRect && coordinate && typeof map.getPixelFromCoordinate === "function") {
       const pixel = map.getPixelFromCoordinate(coordinate);
@@ -3734,7 +3795,7 @@
 
         const availableHeight = showBelow ? availableBelow : availableAbove;
         const cappedHeight = Math.max(140, Math.floor(availableHeight - popupMarginPx));
-        maxHeight = `${Math.min(cappedHeight, isMobile && isListVisible ? 320 : 420)}px`;
+        maxHeight = `${Math.min(cappedHeight, isMobile && isListVisible ? 280 : 360)}px`;
       }
     }
 
@@ -4161,7 +4222,10 @@
       feature.set("observationData", marker.obsData || null);
       feature.set("obsData", marker.obsData || null);
       const saveFlashUntil = Number(marker && marker.obsData ? marker.obsData._saveFlashUntil : marker._saveFlashUntil);
+      const saveFlashPreset = String(marker && marker.obsData ? marker.obsData._saveFlashPreset : marker._saveFlashPreset || "").trim();
       feature.set("saveFlashUntil", Number.isFinite(saveFlashUntil) ? saveFlashUntil : 0);
+      feature.set("saveFlashDurationMs", OBS_SAVE_FLASH_DURATION_MS);
+      feature.set("saveFlashPreset", saveFlashPreset || "default");
       feature.setStyle(createObservationStyleFromMarker(marker));
       observationMarkerSource.addFeature(feature);
 

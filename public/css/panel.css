@@ -333,6 +333,63 @@
   background: rgba(219, 234, 254, 0.7) !important;
 }
 
+@keyframes obsRowFlash {
+  0% {
+    background: rgba(59, 130, 246, 0.14);
+    box-shadow: inset 0 0 0 1px rgba(59, 130, 246, 0.22);
+  }
+  45% {
+    background: rgba(59, 130, 246, 0.32);
+    box-shadow: inset 0 0 0 1px rgba(37, 99, 235, 0.34);
+  }
+  100% {
+    background: transparent;
+    box-shadow: inset 0 0 0 0 rgba(0, 0, 0, 0);
+  }
+}
+
+.obs-table tbody tr.is-flashing td {
+  animation: obsRowFlash 0.9s ease-out;
+}
+
+@keyframes obsMarkerBadgePulse {
+  0% {
+    transform: scale(1);
+    box-shadow: 0 10px 24px rgba(194, 65, 12, 0.32);
+  }
+  45% {
+    transform: scale(1.08);
+    box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.18), 0 12px 28px rgba(37, 99, 235, 0.34);
+  }
+  100% {
+    transform: scale(1);
+    box-shadow: 0 10px 24px rgba(194, 65, 12, 0.32);
+  }
+}
+
+@keyframes obsMarkerPointerPulse {
+  0% {
+    border-top-color: #c2410c;
+    filter: none;
+  }
+  45% {
+    border-top-color: #60a5fa;
+    filter: drop-shadow(0 0 7px rgba(96, 165, 250, 0.9));
+  }
+  100% {
+    border-top-color: #c2410c;
+    filter: none;
+  }
+}
+
+.observation-pin-icon__badge.is-pulsing {
+  animation: obsMarkerBadgePulse 0.85s ease-out;
+}
+
+.observation-pin-icon__pointer.is-pulsing {
+  animation: obsMarkerPointerPulse 0.85s ease-out;
+}
+
 /* 선택 카운트 배지 */
 .sel-count-badge {
   display: inline-flex;

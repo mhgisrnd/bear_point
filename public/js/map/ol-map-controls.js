@@ -992,6 +992,7 @@ window.createOlMapControlsManager = function createOlMapControlsManager(options)
 
     const row2Text = document.createElement("span");
     row2Text.textContent = "음영기복도";
+    row2Text.style.marginLeft = "3px";
     row2Text.style.fontSize = "12px";
     row2Text.style.color = "#4b5563";
     row2Text.style.whiteSpace = "nowrap";

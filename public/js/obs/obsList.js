@@ -42,10 +42,11 @@ window.createObsListModule = function createObsListModule({
   let observationSamples = [];
   // 앱(SQLite) 경로는 저장 직후 재조회가 일어나므로, ID별 플래시 만료시각을 별도로 보관한다.
   const observationFlashUntilById = new Map();
+  const observationFlashPresetById = new Map();
   let currentTab = "none";
   let isPeekMode = false;
   let observationKeySeed = 0;
-  const OBS_SAVE_FLASH_DURATION_MS = 3200;
+  const OBS_SAVE_FLASH_DURATION_MS = 4600;
   let analysisOptionsDialogState = null;
   let analysisCloseSilently = false;
   // 목록 패널 드래그 상태(헤더 포인터 기반)
@@ -97,16 +98,18 @@ window.createObsListModule = function createObsListModule({
     observationFlashUntilById.forEach(function (untilTs, obsId) {
       if (!Number.isFinite(untilTs) || untilTs <= now) {
         observationFlashUntilById.delete(obsId);
+        observationFlashPresetById.delete(obsId);
       }
     });
   }
 
   // 저장/수정 직후 해당 관측점 ID에 2초 하이라이트 타이머를 기록한다.
-  function markObservationFlashById(obsId) {
+  function markObservationFlashById(obsId, preset) {
     const id = String(obsId == null ? "" : obsId).trim();
     if (!id) return 0;
     const untilTs = Date.now() + OBS_SAVE_FLASH_DURATION_MS;
     observationFlashUntilById.set(id, untilTs);
+    observationFlashPresetById.set(id, String(preset || "default").trim() || "default");
     return untilTs;
   }
 
@@ -308,6 +311,8 @@ window.createObsListModule = function createObsListModule({
     const now = Date.now();
     cleanupObservationFlashCache(now);
     const cachedFlashUntil = Number(observationFlashUntilById.get(id));
+    const cachedFlashPreset = String(observationFlashPresetById.get(id) || "").trim();
+    const hasActiveFlash = Number.isFinite(cachedFlashUntil) && cachedFlashUntil > now;
 
     return {
       id,
@@ -319,7 +324,8 @@ window.createObsListModule = function createObsListModule({
       heading,
       createdAt: row.created_at || row.createdAt || row.created || null,
       detectors,
-      _saveFlashUntil: Number.isFinite(cachedFlashUntil) && cachedFlashUntil > now ? cachedFlashUntil : 0,
+      _saveFlashUntil: hasActiveFlash ? cachedFlashUntil : 0,
+      _saveFlashPreset: hasActiveFlash ? (cachedFlashPreset || "default") : "default",
       _obsKey: `${id}::${observationKeySeed++}`
     };
   }
@@ -582,9 +588,32 @@ window.createObsListModule = function createObsListModule({
   }
 
   // 관측점 행 클릭 시 해당 좌표로 지도를 이동한다.
-  function moveToObservation(item) {
+  function moveToObservation(item, row) {
     if (!item) return;
-    flyToLatLng([item.lat, item.lng], 17);
+    const currentZoom = map && typeof map.getZoom === "function" ? map.getZoom() : undefined;
+    flyToLatLng([item.lat, item.lng], currentZoom);
+
+    if (row && row.classList) {
+      row.classList.remove("is-flashing");
+      void row.offsetWidth;
+      row.classList.add("is-flashing");
+      window.setTimeout(function () {
+        row.classList.remove("is-flashing");
+      }, 900);
+    }
+
+    const marker = observationMarkers.find(function (entry) {
+      return entry && entry.obsData && String(entry.obsData._obsKey) === String(item._obsKey);
+    });
+    const feature = marker && marker._feature;
+    // 기존 등록/수정 플래시를 그대로 재사용해 선택된 점만 부드럽게 강조한다.
+    const triggerFlash = window.__bpTriggerObservationSaveFlash;
+    if (typeof triggerFlash === "function") {
+      window.setTimeout(function () {
+        triggerFlash(feature, observationMarkersLayer, 2400, "move-double");
+      }, 720);
+    }
+
   }
 
   // 지도 줌 변경 시 기존 마커 아이콘 스케일을 재계산해 갱신한다.
@@ -645,7 +674,7 @@ window.createObsListModule = function createObsListModule({
       });
 
       row.addEventListener("click", () => {
-        moveToObservation(item);
+        moveToObservation(item, row);
       });
 
       obsListBodyEl.appendChild(row);
@@ -1571,7 +1600,8 @@ window.createObsListModule = function createObsListModule({
     const mapped = mapObservationRow(item);
     if (!mapped) return;
     // 등록 직후 즉시 하이라이트가 보이도록 플래시 타이머를 선반영한다.
-    mapped._saveFlashUntil = markObservationFlashById(mapped.id);
+    mapped._saveFlashUntil = markObservationFlashById(mapped.id, "register");
+    mapped._saveFlashPreset = "register";
 
     observationSamples = [mapped].concat(observationSamples.filter((existing) => existing.id !== mapped.id));
     applySearch();
@@ -1586,7 +1616,8 @@ window.createObsListModule = function createObsListModule({
     const mapped = mapObservationRow(item);
     if (!mapped) return;
     // 수정 직후 좌표 이동 애니메이션과 함께 동일하게 플래시를 보여준다.
-    mapped._saveFlashUntil = markObservationFlashById(mapped.id);
+    mapped._saveFlashUntil = markObservationFlashById(mapped.id, "default");
+    mapped._saveFlashPreset = "default";
 
     var previous = observationSamples.find(function (existing) {
       return existing && existing.id === mapped.id;

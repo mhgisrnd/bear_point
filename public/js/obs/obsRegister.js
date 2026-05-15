@@ -658,14 +658,28 @@ window.createObsRegisterModule = function createObsRegisterModule({
       clearAllValidationErrors();
       var observation = buildObservationPayload();
       var detectors = collectDetectorRows();
-      await saveObservationToSQLite(observation, detectors);
+      var source = "demo";
+      if (window.Capacitor && typeof window.Capacitor.isNativePlatform === "function" && window.Capacitor.isNativePlatform()) {
+        await saveObservationToSQLite(observation, detectors);
+        source = "sqlite";
+      }
       saveLastOwner(observation.owner);
 
       if (onObservationSaved) {
-        await onObservationSaved({ observation: observation, detectors: detectors, source: "sqlite" });
+        await onObservationSaved({
+          observation: {
+            ...observation,
+            detectors: detectors,
+            createdAt: new Date().toISOString()
+          },
+          detectors: detectors,
+          source: source
+        });
       }
 
-      statusEl.textContent = "✅ 관측점 등록 완료";
+      statusEl.textContent = source === "sqlite"
+        ? "✅ 관측점 등록 완료"
+        : "✅ 웹 더미 관측점이 등록되었습니다.";
       hide(true);
     } catch (error) {
       statusEl.textContent = "⚠️ " + (error && error.message ? error.message : String(error));
@@ -742,7 +756,7 @@ window.createObsRegisterModule = function createObsRegisterModule({
     editingObservationId = null;
     suppressCloseCallback = false;
     if (chkRegHeadingLock) chkRegHeadingLock.checked = false;
-    if (registerTitleEl) registerTitleEl.textContent = "등록";
+    if (registerTitleEl) registerTitleEl.textContent = "관측점 등록";
     if (btnRegSubmit) btnRegSubmit.textContent = "등록";
     if (btnRegCancel) btnRegCancel.textContent = "취소";
     if (btnGpsToggle) btnGpsToggle.disabled = false;
