@@ -2059,8 +2059,8 @@
   const OBSERVATION_HEADING_ICON_SIZE = 40;
   const observationHeadingIconSrc = createHeadingIconDataUri(OBSERVATION_HEADING_ICON_SIZE, "#ea580c", 5.5);
   const observationHeadingEditIconSrc = createHeadingIconDataUri(OBSERVATION_HEADING_ICON_SIZE, "#16a34a", 5.5);
-  const observationHeadingFlashIconSrc = createHeadingIconDataUri(OBSERVATION_HEADING_ICON_SIZE, "#a855f7", 5.8);
-  const observationHeadingRegisterFlashIconSrc = createHeadingIconDataUri(OBSERVATION_HEADING_ICON_SIZE, "#1d4ed8", 5.8);
+  const observationHeadingFlashIconSrc = createHeadingIconDataUri(OBSERVATION_HEADING_ICON_SIZE, "#fbff00", 5.8);
+  const observationHeadingRegisterFlashIconSrc = createHeadingIconDataUri(OBSERVATION_HEADING_ICON_SIZE, "#fbff00", 5.8);
   const observationHeadingMoveFlashIconSrc = createHeadingIconDataUri(OBSERVATION_HEADING_ICON_SIZE, "#fbff00", 5.8);
   let currentEditingObservationId = null;
   const MAP_HEADING_HANDLE_LENGTH_PX = 60;
