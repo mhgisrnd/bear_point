@@ -415,7 +415,7 @@
   overscroll-behavior: contain;
   touch-action: pan-x pan-y;
   -webkit-overflow-scrolling: touch;
-  background: linear-gradient(180deg, rgba(255,255,255,0.78), rgba(248,250,252,0.72));
+  /* background: linear-gradient(180deg, rgba(255,255,255,0.78), rgba(248,250,252,0.72)); */
   padding: var(--obs-table-wrap-padding, 0px 10px 4px);
   isolation: isolate;
 }
@@ -586,30 +586,254 @@
   bottom: calc(3px + var(--safe-bottom));
 }
 
-@media (min-width: 900px) and (max-width: 1400px) and (orientation: landscape) {
+/* 기본: 사이드바 배경 숨김 */
+#bp-tablet-sidebar {
+  display: none;
+}
+
+/* 기본: 태블릿 사이드바 토글 버튼 숨김 */
+#btn-sidebar-toggle {
+  display: none;
+}
+
+@media (min-width: 900px) and (orientation: landscape) {
   :root {
-    --bp-half-panel-height: calc((100dvh - var(--safe-top, 0px) - var(--safe-bottom, 0px) - 24px) / 2);
+    --bp-sidebar-w: 420px;
+    --bp-sidebar-h: calc(100dvh - var(--safe-top, 0px) - var(--safe-bottom, 0px));
+    --bp-half-panel-height: calc(var(--bp-sidebar-h) / 2);
   }
 
+  /* ── 사이드바 배경 ── */
+  #bp-tablet-sidebar {
+    display: block;
+    position: fixed;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: var(--bp-sidebar-w);
+    padding-right: 6px;
+    box-sizing: border-box;
+    overflow: hidden;
+    background: rgba(245, 248, 252, 0.97);
+    border-right: 1px solid rgba(148, 163, 184, 0.28);
+    box-shadow: 3px 0 18px rgba(15, 23, 42, 0.10);
+    z-index: 9990;
+    transition: transform 0.2s ease, opacity 0.2s ease;
+  }
+
+  #btn-sidebar-toggle {
+    display: inline-flex;
+    position: fixed;
+    left: calc(var(--bp-sidebar-w) + 3px);
+    top: 50%;
+    min-width: 30px;
+    width: 30px;
+    height: 62px;
+    padding: 0;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid rgba(30, 64, 175, 0.42);
+    border-radius: 999px;
+    background: rgba(30, 58, 138, 0.95);
+    color: #ffffff;
+    font-size: 18px;
+    font-weight: 800;
+    line-height: 1;
+    box-shadow: 0 8px 18px rgba(15, 23, 42, 0.28);
+    cursor: pointer;
+    z-index: 10040;
+    transform: translateY(-50%);
+    transition: left 0.2s ease, background 0.12s ease, box-shadow 0.12s ease;
+  }
+
+  #btn-sidebar-toggle:hover {
+    background: rgba(29, 78, 216, 0.98);
+    box-shadow: 0 10px 22px rgba(15, 23, 42, 0.34);
+  }
+
+  body.bp-sidebar-collapsed #btn-sidebar-toggle {
+    left: 8px;
+  }
+
+  body.bp-sidebar-collapsed #bp-tablet-sidebar {
+    transform: translateX(calc(-1 * var(--bp-sidebar-w)));
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  body.bp-sidebar-collapsed .obs-sheet,
+  body.bp-sidebar-collapsed .panel-stack.panel-bottom-left {
+    display: none !important;
+  }
+
+  /* 사이드바 접힘 + 등록/수정 상태: 폰 버전 팝업 스타일을 그대로 사용 */
+  body.bp-sidebar-collapsed .obs-register-popup {
+    top: calc(8px + var(--safe-top));
+    left: 12px;
+    right: auto;
+    width: min(390px, calc(100vw - 92px));
+    max-width: min(390px, calc(100vw - 92px));
+    max-height: calc(100dvh - 16px);
+    border-radius: 14px;
+    border: 1px solid rgba(148, 163, 184, 0.32);
+    box-shadow: 0 18px 36px rgba(15, 23, 42, 0.18);
+    backdrop-filter: blur(8px);
+  }
+
+  body.bp-sidebar-collapsed .obs-register-header {
+    padding: 5px 12px;
+  }
+
+  body.bp-sidebar-collapsed .obs-register-header h2 {
+    font-size: 14px;
+  }
+
+  body.bp-sidebar-collapsed .obs-register-body {
+    max-height: calc(100dvh - 150px);
+    padding: 4px 8px 4px;
+  }
+
+  /* ── 관측점 목록: 열렸을 때만 상단 절반 ── */
   .obs-sheet {
+    left: 8px;
+    top: var(--safe-top, 0px);
+    right: auto;
+    width: calc(var(--bp-sidebar-w) - 16px);
+    max-width: calc(var(--bp-sidebar-w) - 16px);
     max-height: var(--bp-half-panel-height);
+    box-sizing: border-box;
+    z-index: 10005;
+    border-top-right-radius: 18px;
+    border-bottom-right-radius: 18px;
+    border-top-left-radius: 18px;
+    border-bottom-left-radius: 18px;
+    border: none;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.22);
+    background: transparent;
+    box-shadow: none;
+    backdrop-filter: none;
+    cursor: default;
+  }
+
+  .obs-sheet .obs-sheet-header {
+    cursor: default;
+    touch-action: auto;
+  }
+
+  /* 등록/수정 팝업도 관측점 목록과 동일한 상단 슬롯에 배치 */
+  .obs-register-popup {
+    left: 8px;
+    top: var(--safe-top, 0px);
+    right: auto;
+    width: calc(var(--bp-sidebar-w) - 16px);
+    max-width: calc(var(--bp-sidebar-w) - 16px);
+    max-height: var(--bp-half-panel-height);
+    border-top-right-radius: 18px;
+    border-bottom-right-radius: 18px;
+    border-top-left-radius: 0;
+    border-bottom-left-radius: 0;
+    border: 1px solid rgba(148, 163, 184, 0.24);
+    box-shadow: none;
+    backdrop-filter: none;
+    z-index: 10030;
+  }
+
+  .obs-register-header {
+    cursor: default;
+    user-select: auto;
+  }
+
+  .obs-register-body {
+    max-height: calc(var(--bp-half-panel-height) - 62px);
+    overflow-y: auto;
+  }
+
+  /* 태블릿 사이드바에서는 등록 팝업 최소화 버튼 불필요 */
+  .obs-register-peek {
+    display: none;
+  }
+
+  /* peek(최소화) 버튼은 사이드바에서 불필요 */
+  .obs-sheet .obs-panel-icon-btn {
+    display: none !important;
+  }
+
+  /* 태블릿 사이드바에서 peek 동작 무력화 — 너비 고정, 내용 숨김 방지 */
+  .obs-sheet.obs-sheet--peek {
+    width: calc(var(--bp-sidebar-w) - 16px);
+    backdrop-filter: none;
+  }
+
+  .obs-sheet.obs-sheet--peek .analysis-btn,
+  .obs-sheet.obs-sheet--peek .obs-list-status,
+  .obs-sheet.obs-sheet--peek .obs-search-bar,
+  .obs-sheet.obs-sheet--peek .obs-table-wrap {
+    display: revert;
   }
 
   .obs-table tbody {
-    max-height: max(120px, calc(var(--bp-half-panel-height) - 188px));
+    max-height: max(100px, calc(var(--bp-half-panel-height) - 190px));
   }
 
+  /* ── 곰 추정위치: 기본은 사이드바 전체 높이 ── */
   .panel-stack.panel-bottom-left {
-    max-height: var(--bp-half-panel-height);
+    left: 8px;
+    right: auto;
+    top: var(--safe-top, 0px);
+    bottom: 0;
+    width: calc(var(--bp-sidebar-w) - 16px);
+    max-width: calc(var(--bp-sidebar-w) - 16px);
+    max-height: var(--bp-sidebar-h);
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    z-index: 9991;
+    padding: 0;
+    gap: 0;
+  }
+
+  /* 상태문구 + ▼ 토글은 태블릿 사이드바에서 숨김 */
+  .panel-stack.panel-bottom-left .panel-header {
+    display: none;
+  }
+
+  /* 관측점 버튼은 초기 진입용으로는 보여야 함 */
+  .panel-stack.panel-bottom-left .panel-tabs {
+    display: flex;
+    padding: 8px 0 10px;
+  }
+
+  /* 관측점 목록이 열렸을 때만 버튼을 숨겨 중복을 제거 */
+  body:has(.obs-sheet:not(.hidden)) .panel-stack.panel-bottom-left .panel-tabs {
+    display: none;
   }
 
   .panel-stack.panel-bottom-left .panel {
-    max-height: var(--bp-half-panel-height);
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    max-height: none;
+    width: 100%;
+    box-sizing: border-box;
+    border-top-right-radius: 18px;
+    border-bottom-right-radius: 18px;
+    /* border-top-left-radius: 0; */
+    /* border-bottom-left-radius: 0; */
+    border: 1px solid rgba(148, 163, 184, 0.24);
+    /* border-right: 0; */
+    box-shadow: none;
+    background: linear-gradient(180deg, rgba(255,255,255,0.94), rgba(248,250,252,0.92));
+    margin-top: 0;
+    margin-right: 0px;
   }
 
   .panel-stack.panel-bottom-left .panel-body {
-    max-height: calc(var(--bp-half-panel-height) - 56px);
-    overflow: hidden;
+    flex: 1 1 auto;
+    max-height: none;
+    overflow-y: auto;
+    overflow-x: hidden;
     display: flex;
     flex-direction: column;
     min-height: 0;
@@ -620,6 +844,11 @@
     flex-direction: column;
     flex: 1 1 auto;
     min-height: 0;
+    margin-top: 0;
+    border-radius: 0;
+    box-shadow: none;
+    background: transparent;
+    box-shadow: inset 0 0 0 1px rgba(0,0,0,0.06);
   }
 
   .panel-stack.panel-bottom-left .bears-list {
@@ -629,6 +858,28 @@
     overflow-y: auto;
     overscroll-behavior: contain;
     -webkit-overflow-scrolling: touch;
+  }
+
+  /* ── obs-sheet 열렸을 때: 패널스택이 obs-sheet 실제 높이 바로 아래로 자동 위치 ── */
+  body:has(.obs-sheet:not(.hidden)) .panel-stack.panel-bottom-left {
+    top: calc(var(--safe-top, 0px) + var(--bp-obs-sheet-actual-h, var(--bp-half-panel-height)));
+    max-height: calc(var(--bp-sidebar-h) - var(--bp-obs-sheet-actual-h, var(--bp-half-panel-height)));
+  }
+
+  /* 등록/수정 팝업이 열려도 하단 패널은 동일한 하단 슬롯을 유지 */
+  body:has(.obs-register-popup:not(.hidden)) .panel-stack.panel-bottom-left {
+    top: calc(var(--safe-top, 0px) + var(--bp-half-panel-height));
+    max-height: calc(var(--bp-sidebar-h) - var(--bp-half-panel-height));
+  }
+
+  /* 등록/수정 팝업 열림 시에도 초기 진입 버튼 중복 노출 제거 */
+  body:has(.obs-register-popup:not(.hidden)) .panel-stack.panel-bottom-left .panel-tabs {
+    display: none;
+  }
+
+  /* 등록/수정 중에는 사이드바 열기/접기 버튼 비노출 (실수 조작 방지) */
+  body:has(.obs-register-popup:not(.hidden)) #btn-sidebar-toggle {
+    display: none;
   }
 }
 
@@ -1411,7 +1662,7 @@
   }
 }
 
-@media (max-width: 820px){
+@media (max-width: 899px){
   .obs-sheet {
     top: calc(8px + var(--safe-top));
     left: 12px;
@@ -2028,7 +2279,7 @@
   }
 }
 
-@media (max-width: 820px) {
+@media (max-width: 899px) {
   .obs-register-popup {
     top: calc(8px + var(--safe-top));
     left: 12px;

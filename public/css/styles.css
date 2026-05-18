@@ -41,6 +41,17 @@ body::after {
   height: 100%;
 }
 
+/* 태블릿 가로: 사이드바만큼 지도 왼쪽 여백 */
+@media (min-width: 900px) and (orientation: landscape) {
+  #map {
+    margin-left: 420px;
+  }
+
+  body.bp-sidebar-collapsed #map {
+    margin-left: 0;
+  }
+}
+
 #status{
   display: block;
   gap: 5px;

@@ -55,6 +55,37 @@ window.createObsListModule = function createObsListModule({
   let dragOffsetX = 0;
   let dragOffsetY = 0;
 
+  // 태블릿 가로에서 obs-sheet 실제 높이를 CSS 변수로 동기화하는 ResizeObserver
+  var _tabletLandscapeMq = window.matchMedia(
+    "(min-width: 900px) and (orientation: landscape)"
+  );
+  var _obsSheetResizeObserver = null;
+
+  // 태블릿 가로에서 관측점 목록 실제 높이를 읽어 하단 패널 배치용 CSS 변수로 반영한다.
+  function _startObsSheetResize() {
+    if (!obsSheetEl || typeof ResizeObserver === "undefined") return;
+    if (_obsSheetResizeObserver) _obsSheetResizeObserver.disconnect();
+    _obsSheetResizeObserver = new ResizeObserver(function (entries) {
+      if (!_tabletLandscapeMq.matches) return;
+      var entry = entries[0];
+      if (!entry) return;
+      var h = Math.round(
+        entry.borderBoxSize ? entry.borderBoxSize[0].blockSize : entry.contentRect.height
+      );
+      document.documentElement.style.setProperty("--bp-obs-sheet-actual-h", h + "px");
+    });
+    _obsSheetResizeObserver.observe(obsSheetEl);
+  }
+
+  // 태블릿 높이 동기화를 중단하고, 관련 CSS 변수를 정리한다.
+  function _stopObsSheetResize() {
+    if (_obsSheetResizeObserver) {
+      _obsSheetResizeObserver.disconnect();
+      _obsSheetResizeObserver = null;
+    }
+    document.documentElement.style.removeProperty("--bp-obs-sheet-actual-h");
+  }
+
   function highlightStatusOnce() {
     if (typeof window.__bpTriggerStatusHighlight === "function") {
       window.__bpTriggerStatusHighlight();
@@ -1424,6 +1455,12 @@ window.createObsListModule = function createObsListModule({
   function hidePanel() {
     if (obsSheetEl) obsSheetEl.classList.add("hidden");
     if (obsListPanelEl) obsListPanelEl.classList.add("hidden");
+    _stopObsSheetResize();
+  }
+
+  function isRegisterPopupOpen() {
+    var registerBox = document.getElementById("register-box");
+    return !!(registerBox && !registerBox.classList.contains("hidden"));
   }
 
   // 등록 팝업이 닫힌 후 목록 패널을 다시 표시한다 (currentTab 이 "list" 일 때만).
@@ -1431,18 +1468,20 @@ window.createObsListModule = function createObsListModule({
     if (currentTab !== "list") return;
     if (obsSheetEl) obsSheetEl.classList.remove("hidden");
     if (obsListPanelEl) obsListPanelEl.classList.remove("hidden");
+    if (_tabletLandscapeMq.matches) _startObsSheetResize();
   }
 
   // 목록 패널을 닫으면서 내부 상태를 초기화한다.
   function closeListPanel() {
+    _stopObsSheetResize();
     if (map && typeof map.closePopup === "function") map.closePopup();
     resetList();
     setPeekMode(false);
     setActiveTab(null);
     setTabLayout("none");
     if (typeof onClearAnalysisEstimate === "function") onClearAnalysisEstimate();
-    // 목록 닫힐 때 등록 팝업도 함께 종료한다.
-    if (typeof onCloseRegister === "function") onCloseRegister();
+    // 등록 팝업이 실제로 열려 있을 때만 종료 콜백을 호출한다.
+    if (isRegisterPopupOpen() && typeof onCloseRegister === "function") onCloseRegister();
   }
 
   // 현재 탭 상태(list/add/none)에 맞게 레이아웃과 마커를 제어한다.
@@ -1457,6 +1496,13 @@ window.createObsListModule = function createObsListModule({
 
     if (obsSheetEl) obsSheetEl.classList.toggle("hidden", !isList);
     if (obsListPanelEl) obsListPanelEl.classList.toggle("hidden", !isList);
+
+    if (isList && _tabletLandscapeMq.matches) {
+      // 태블릿에서 obs-sheet가 보일 때 ResizeObserver 시작
+      _startObsSheetResize();
+    } else if (!isList) {
+      _stopObsSheetResize();
+    }
 
     if (isList) {
       setPeekMode(false);
@@ -1497,10 +1543,10 @@ window.createObsListModule = function createObsListModule({
       }
 
       if (map && typeof map.closePopup === "function") map.closePopup();
+      if (onOpenList) onOpenList();
       setActiveTab(btnBear);
       setTabLayout("list");
-      if (onOpenList) onOpenList();
-      if (onCloseRegister) onCloseRegister();
+      if (isRegisterPopupOpen() && onCloseRegister) onCloseRegister();
     });
 
     if (btnObsAdd) btnObsAdd.addEventListener("click", async () => {
@@ -1650,7 +1696,7 @@ window.createObsListModule = function createObsListModule({
     setActiveTab(btnBear);
     setTabLayout("list");
     if (onOpenList) onOpenList();
-    if (onCloseRegister) onCloseRegister();
+    if (isRegisterPopupOpen() && onCloseRegister) onCloseRegister();
   }
 
   // 안드로이드 하드웨어 뒤로가기 시, 앱 종료 전에 닫아야 할 UI를 우선 정리한다.

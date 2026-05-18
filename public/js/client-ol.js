@@ -7,6 +7,7 @@
   const compassNeedleFixedEl = document.getElementById("compass-needle");
   const panelEl = document.getElementById("panel");
   const btnPanelToggle = document.getElementById("btn-panel-toggle");
+  const btnSidebarToggle = document.getElementById("btn-sidebar-toggle");
   const bearsListEl = document.getElementById("bears-list");
   const bearsToolbarEl = document.getElementById("bears-toolbar");
   const bearsToolbarSummaryEl = document.getElementById("bears-toolbar-summary");
@@ -2817,6 +2818,26 @@
   window.__olMap = map;
   window.__olView = view;
 
+  // 태블릿 가로 사이드바 진입/이탈 시 맵 크기 재계산
+  (function () {
+    var _sidebarMq = window.matchMedia(
+      "(min-width: 900px) and (orientation: landscape)"
+    );
+    function _onSidebarMqChange() {
+      // CSS transition 완료 후 updateSize (약 80ms 여유)
+      setTimeout(function () {
+        if (window.__olMap) window.__olMap.updateSize();
+      }, 80);
+    }
+    if (_sidebarMq.addEventListener) {
+      _sidebarMq.addEventListener("change", _onSidebarMqChange);
+    } else if (_sidebarMq.addListener) {
+      _sidebarMq.addListener(_onSidebarMqChange);
+    }
+    // 초기 진입 시도 적용
+    _onSidebarMqChange();
+  })();
+
   const controlsManager = window.createOlMapControlsManager ? window.createOlMapControlsManager({
     ol: ol,
     map: map,
@@ -2849,7 +2870,10 @@
       stopManualMapGesture();
       clearAnalysisEstimateVisuals();
       closeObservationPopup();
-      if (obsListModule && typeof obsListModule.deactivate === "function") {
+      if (isCompactPhoneMeasureLayout() && obsListModule && typeof obsListModule.deactivate === "function") {
+        obsListModule.deactivate();
+      }
+      if (isCompactPhoneMeasureLayout() && obsListModule && typeof obsListModule.deactivate === "function") {
         obsListModule.deactivate();
       }
       if (obsRegisterModule) {
@@ -2857,7 +2881,7 @@
       }
       clearManualRegistrationPreview();
       if (statusEl) {
-        statusEl.textContent = "📏 측정 모드 활성화 (등록 기능 일시 종료)";
+        statusEl.textContent = "📏 측정 모드 활성화 (등록/수정 기능 일시 종료)";
       }
     },
     onLocateButtonReady: function (buttonEl) {
@@ -3769,7 +3793,7 @@
   // 화면 하단/상단 여유 공간을 기준으로 상세 팝업이 잘리지 않게 배치한다.
   function syncObservationPopupPlacement(coordinate) {
     const obsSheet = document.getElementById("obs-sheet");
-    const isMobile = window.matchMedia && window.matchMedia("(max-width: 820px)").matches;
+    const isMobile = window.matchMedia && window.matchMedia("(max-width: 899px)").matches;
     const isListVisible = !!(obsSheet && !obsSheet.classList.contains("hidden"));
     const viewportEl = map && typeof map.getViewport === "function" ? map.getViewport() : null;
     const viewportRect = viewportEl && typeof viewportEl.getBoundingClientRect === "function"
@@ -4251,6 +4275,45 @@
     btnPanelToggle.setAttribute("aria-expanded", "false");
   }
 
+  function expandBearEstimatePanel() {
+    if (!panelEl || !btnPanelToggle) return;
+    panelEl.classList.remove("collapsed");
+    btnPanelToggle.textContent = "▼";
+    btnPanelToggle.setAttribute("aria-expanded", "true");
+  }
+
+  // 태블릿 전용 2단 사이드바 UI를 적용할 가로 화면 조건을 판별한다.
+  function isTabletLandscapeSidebarMode() {
+    return window.matchMedia(
+      "(min-width: 900px) and (orientation: landscape)"
+    ).matches;
+  }
+
+  // 태블릿 전용 레이아웃이 아닌, 소형 기기용 측정/목록 상호배타 규칙 대상을 판별한다.
+  function isCompactPhoneMeasureLayout() {
+    return !isTabletLandscapeSidebarMode() && window.matchMedia("(max-width: 899px)").matches;
+  }
+
+  // 태블릿 가로에서만 좌측 사이드바의 접힘 상태와 토글 버튼 표시를 동기화한다.
+  function setTabletSidebarCollapsed(collapsed) {
+    if (!document || !document.body) return;
+
+    const isTablet = isTabletLandscapeSidebarMode();
+    if (!isTablet) {
+      document.body.classList.remove("bp-sidebar-collapsed");
+    } else {
+      document.body.classList.toggle("bp-sidebar-collapsed", !!collapsed);
+    }
+
+    if (btnSidebarToggle) {
+      const isCollapsed = !!(document.body && document.body.classList.contains("bp-sidebar-collapsed"));
+      btnSidebarToggle.textContent = isCollapsed ? "▶" : "◀";
+      btnSidebarToggle.setAttribute("aria-expanded", isCollapsed ? "false" : "true");
+      btnSidebarToggle.setAttribute("aria-label", isCollapsed ? "사이드바 펼치기" : "사이드바 접기");
+      btnSidebarToggle.setAttribute("title", isCollapsed ? "사이드바 펼치기" : "사이드바 접기");
+    }
+  }
+
   function setLocateButtonActive(active) {
     if (!locateBtnEl) return;
     if (active) {
@@ -4266,9 +4329,17 @@
 
   // 목록과 팝업에서 공통으로 쓰는 관측점 수정 진입 경로를 묶는다.
   function openObservationEdit(item) {
+    if (controlsManager && typeof controlsManager.deactivateMeasure === "function") {
+      controlsManager.deactivateMeasure("menu");
+    }
     setCurrentEditingObservationId(item && item.id ? item.id : null);
     closeObservationPopup();
-    collapseBearEstimatePanel();
+    if (isTabletLandscapeSidebarMode()) {
+      setTabletSidebarCollapsed(true);
+      expandBearEstimatePanel();
+    } else {
+      collapseBearEstimatePanel();
+    }
     if (item && Number.isFinite(Number(item.lat)) && Number.isFinite(Number(item.lng))) {
       setEditOriginMarker(Number(item.lat), Number(item.lng));
     } else {
@@ -4345,12 +4416,14 @@
         if (payload.source === "sqlite") {
           await obsListModule.refreshObservationList();
         }
+        setTabletSidebarCollapsed(false);
         // 수정 완료 후 목록 패널 복원
         if (typeof obsListModule.showPanel === "function") obsListModule.showPanel();
         return;
       }
 
       // 등록 완료 후 목록 패널 복원 및 새 데이터 반영
+      setTabletSidebarCollapsed(false);
       obsListModule.openList();
       if (payload.source === "sqlite") {
         await obsListModule.refreshObservationList();
@@ -4361,6 +4434,7 @@
     onClose: function () {
       setCurrentEditingObservationId(null);
       clearEditOriginMarker();
+      setTabletSidebarCollapsed(false);
       // X 버튼 및 취소 시 목록 패널 복원
       if (obsListModule && typeof obsListModule.showPanel === "function") obsListModule.showPanel();
     }
@@ -6200,6 +6274,49 @@
   if (panelEl) panelEl.addEventListener("touchstart", function (e) { e.stopPropagation(); }, { passive: true });
   if (panelEl) panelEl.addEventListener("wheel", function (e) { e.stopPropagation(); }, { passive: true });
 
+  if (btnSidebarToggle) {
+    btnSidebarToggle.addEventListener("click", function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+      if (!isTabletLandscapeSidebarMode()) return;
+      const isCollapsed = document.body && document.body.classList.contains("bp-sidebar-collapsed");
+      setTabletSidebarCollapsed(!isCollapsed);
+    });
+  }
+
+  // 화면 폭/회전이 바뀔 때 태블릿 사이드바와 패널 상태를 현재 UI에 맞게 재정렬한다.
+  var tabletSidebarMq = window.matchMedia("(min-width: 900px) and (orientation: landscape)");
+  var onTabletSidebarMqChange = function () {
+    var isTablet = !!tabletSidebarMq.matches;
+    var registerBox = document.getElementById("register-box");
+    var isRegisterOpen = !!(registerBox && !registerBox.classList.contains("hidden"));
+
+    if (isTablet) {
+      // 폰에서 접힌 상태로 넘어오면 태블릿에서 목록 패널이 통째로 안 보일 수 있어 강제 확장한다.
+      expandBearEstimatePanel();
+      // 등록/수정이 열려 있으면 접힘 유지, 아니면 펼침 복귀.
+      setTabletSidebarCollapsed(isRegisterOpen);
+
+      // 목록 탭 상태인데 이전에 숨김 처리되어 있었다면 태블릿 진입 시 복원한다.
+      if (!isRegisterOpen && obsListModule && typeof obsListModule.showPanel === "function") {
+        obsListModule.showPanel();
+      }
+    } else {
+      // 태블릿 범위를 벗어나면 사이드바 접힘 상태를 정리한다.
+      setTabletSidebarCollapsed(false);
+    }
+
+    if (map && typeof map.updateSize === "function") {
+      map.updateSize();
+    }
+  };
+  if (typeof tabletSidebarMq.addEventListener === "function") {
+    tabletSidebarMq.addEventListener("change", onTabletSidebarMqChange);
+  } else if (typeof tabletSidebarMq.addListener === "function") {
+    tabletSidebarMq.addListener(onTabletSidebarMqChange);
+  }
+  setTabletSidebarCollapsed(false);
+
   obsListModule = window.createObsListModule ? window.createObsListModule({
     map: olMapAdapter,
     statusEl: statusEl,
@@ -6207,11 +6324,18 @@
     fitToPoints: fitToPoints,
     observationMarkersLayer: observationMarkersLayer,
     onOpenList: function () {
-      if (controlsManager && typeof controlsManager.deactivateMeasure === "function") {
+      if (isCompactPhoneMeasureLayout() && controlsManager && typeof controlsManager.deactivateMeasure === "function") {
         controlsManager.deactivateMeasure("menu");
       }
       closeObservationPopup();
-      collapseBearEstimatePanel();
+      setTabletSidebarCollapsed(false);
+      // 태블릿 가로에서는 obs-sheet 아래에 곰 패널이 자동 표시되므로 접지 않고 확장유지
+      var _isTablet = window.matchMedia("(min-width: 900px) and (orientation: landscape)").matches;
+      if (_isTablet) {
+        expandBearEstimatePanel();
+      } else {
+        collapseBearEstimatePanel();
+      }
     },
     onOpenRegister: function () {
       if (controlsManager && typeof controlsManager.deactivateMeasure === "function") {
@@ -6219,7 +6343,12 @@
       }
       setCurrentEditingObservationId(null);
       closeObservationPopup();
-      collapseBearEstimatePanel();
+      if (isTabletLandscapeSidebarMode()) {
+        setTabletSidebarCollapsed(true);
+        expandBearEstimatePanel();
+      } else {
+        collapseBearEstimatePanel();
+      }
       clearEditOriginMarker();
       // 등록 팝업이 열리는 동안 목록 패널을 숨긴다.
       if (obsListModule && typeof obsListModule.hidePanel === "function") obsListModule.hidePanel();
@@ -6231,6 +6360,7 @@
     onCloseRegister: function () {
       setCurrentEditingObservationId(null);
       clearEditOriginMarker();
+      setTabletSidebarCollapsed(false);
       if (obsRegisterModule) obsRegisterModule.hide(true);
     },
     onAnalysisResult: function (analysisPoint) {

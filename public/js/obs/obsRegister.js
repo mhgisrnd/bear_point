@@ -1007,7 +1007,7 @@ window.createObsRegisterModule = function createObsRegisterModule({
   // 모바일에서 키보드 표시 시 visualViewport 기준으로 팝업/본문 높이를 보정한다.
   function applyMobileViewportSizing() {
     if (!registerBoxEl) return;
-    var isMobile = window.matchMedia && window.matchMedia("(max-width: 820px)").matches;
+    var isMobile = window.matchMedia && window.matchMedia("(max-width: 899px)").matches;
 
     if (!isMobile) {
       registerBoxEl.style.maxHeight = "";
@@ -1039,7 +1039,7 @@ window.createObsRegisterModule = function createObsRegisterModule({
   function keepPopupInViewport(resetOnMobile) {
     if (!registerBoxEl) return;
 
-    var isMobile = window.matchMedia && window.matchMedia("(max-width: 820px)").matches;
+    var isMobile = window.matchMedia && window.matchMedia("(max-width: 899px)").matches;
     if (isMobile) {
       // 모바일 기본 위치는 CSS를 따르도록 inline 좌표 제거
       clearInlinePosition();

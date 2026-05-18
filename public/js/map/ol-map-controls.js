@@ -239,6 +239,59 @@ window.createOlMapControlsManager = function createOlMapControlsManager(options)
     setMeasureActionPanelVisible(true);
   }
 
+  // 태블릿 가로에서 측정 액션 패널을 지도 우하단으로 띄울 조건을 판별한다.
+  function isTabletLandscapeMeasureLayout() {
+    return window.matchMedia(
+      "(min-width: 900px) and (orientation: landscape)"
+    ).matches;
+  }
+
+  // 측정 액션 패널을 태블릿에서는 지도 위로, 그 외에는 기존 패널 내부로 되돌린다.
+  function syncMeasureActionPanelContainer() {
+    if (!measureActionPanelEl) return;
+
+    const isTablet = isTabletLandscapeMeasureLayout();
+    const panelStackEl = document.querySelector(".panel-stack.panel-bottom-left");
+    const panelTabsEl = document.querySelector(".panel-tabs.panel-tabs-floating");
+
+    if (isTablet) {
+      if (measureActionPanelEl.parentElement !== mapEl) {
+        mapEl.appendChild(measureActionPanelEl);
+      }
+
+      measureActionPanelEl.style.position = "absolute";
+      measureActionPanelEl.style.right = "calc(48px + var(--safe-right))";
+      measureActionPanelEl.style.bottom = "calc(20px + var(--safe-bottom))";
+      measureActionPanelEl.style.left = "auto";
+      measureActionPanelEl.style.top = "auto";
+      measureActionPanelEl.style.marginBottom = "0";
+      measureActionPanelEl.style.alignSelf = "auto";
+      measureActionPanelEl.style.maxWidth = "min(240px, calc(100vw - 120px))";
+      return;
+    }
+
+    if (panelStackEl && panelTabsEl && panelTabsEl.parentElement === panelStackEl) {
+      if (measureActionPanelEl.parentElement !== panelStackEl) {
+        panelStackEl.insertBefore(measureActionPanelEl, panelTabsEl);
+      }
+    } else if (panelStackEl) {
+      if (measureActionPanelEl.parentElement !== panelStackEl) {
+        panelStackEl.insertBefore(measureActionPanelEl, panelStackEl.firstChild || null);
+      }
+    } else if (measureActionPanelEl.parentElement !== mapEl) {
+      mapEl.appendChild(measureActionPanelEl);
+    }
+
+    measureActionPanelEl.style.position = "static";
+    measureActionPanelEl.style.right = "";
+    measureActionPanelEl.style.bottom = "";
+    measureActionPanelEl.style.left = "";
+    measureActionPanelEl.style.top = "";
+    measureActionPanelEl.style.marginBottom = "-2px";
+    measureActionPanelEl.style.alignSelf = "flex-start";
+    measureActionPanelEl.style.maxWidth = "78%";
+  }
+
   function clearMeasureVisuals() {
     measureSource.clear();
     measureDraftPoints = [];
@@ -745,19 +798,22 @@ window.createOlMapControlsManager = function createOlMapControlsManager(options)
     root.appendChild(mainControlGroup);
     root.appendChild(measureControlGroup);
 
-    const panelStackEl = document.querySelector(".panel-stack.panel-bottom-left");
-    const panelTabsEl = document.querySelector(".panel-tabs.panel-tabs-floating");
-    if (panelStackEl && panelTabsEl && panelTabsEl.parentElement === panelStackEl) {
-      panelStackEl.insertBefore(measureActionPanelEl, panelTabsEl);
-    } else if (panelStackEl) {
-      panelStackEl.insertBefore(measureActionPanelEl, panelStackEl.firstChild || null);
-    } else {
-      mapEl.appendChild(measureActionPanelEl);
-    }
+    syncMeasureActionPanelContainer();
 
     root.addEventListener("pointerdown", function (e) { e.stopPropagation(); });
     root.addEventListener("touchstart", function (e) { e.stopPropagation(); }, { passive: true });
     root.addEventListener("wheel", function (e) { e.stopPropagation(); }, { passive: true });
+
+    const measureLayoutMq = window.matchMedia("(min-width: 900px) and (orientation: landscape)");
+    const onMeasureLayoutChange = function () {
+      syncMeasureActionPanelContainer();
+    };
+    if (typeof measureLayoutMq.addEventListener === "function") {
+      measureLayoutMq.addEventListener("change", onMeasureLayoutChange);
+    } else if (typeof measureLayoutMq.addListener === "function") {
+      measureLayoutMq.addListener(onMeasureLayoutChange);
+    }
+    window.addEventListener("resize", onMeasureLayoutChange);
 
     mapEl.appendChild(root);
   }
@@ -1093,7 +1149,7 @@ window.createOlMapControlsManager = function createOlMapControlsManager(options)
       if (measureAreaBtnEl && measureAreaBtnEl.contains(target)) return;
 
       const shouldDeactivate = !!target.closest(
-        "#btn-obs-add-inline, #btn-obs-list, #btn-analysis, #btn-delete-selected, #btn-obs-list-close, #btn-obs-list-peek, .obs-action-btn, #btn-panel-toggle"
+        "#btn-obs-add-inline, #btn-analysis, #btn-delete-selected, .obs-action-btn, #btn-panel-toggle"
       );
       if (shouldDeactivate) {
         setMeasureMode(false, "menu");
