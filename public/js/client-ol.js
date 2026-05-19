@@ -3827,7 +3827,7 @@
     let placement = "bottom-center";
     let offset = [0, -popupGapPx];
     let maxWidth = isMobile && isListVisible ? "200px" : "220px";
-    let maxHeight = isMobile && isListVisible ? "280px" : "360px";
+    let maxHeight = isMobile && isListVisible ? "340px" : "360px";
 
     if (viewportRect && coordinate && typeof map.getPixelFromCoordinate === "function") {
       const pixel = map.getPixelFromCoordinate(coordinate);
@@ -3841,7 +3841,7 @@
 
         const availableHeight = showBelow ? availableBelow : availableAbove;
         const cappedHeight = Math.max(140, Math.floor(availableHeight - popupMarginPx));
-        maxHeight = `${Math.min(cappedHeight, isMobile && isListVisible ? 280 : 360)}px`;
+        maxHeight = `${Math.min(cappedHeight, isMobile && isListVisible ? 340 : 360)}px`;
       }
     }
 
