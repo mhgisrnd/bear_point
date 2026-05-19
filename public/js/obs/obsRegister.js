@@ -705,7 +705,14 @@ window.createObsRegisterModule = function createObsRegisterModule({
       var editedObservation = buildObservationEditPayload(baseObservation);
       var detectors = collectDetectorRows();
 
-      var confirmed = window.confirm("수정 내용을 저장하시겠습니까?");
+      var confirmed = (typeof window.__bpShowConfirmDialog === "function")
+        ? await window.__bpShowConfirmDialog({
+            title: "관측점 수정",
+            message: "수정 내용을 저장하시겠습니까?",
+            confirmText: "저장",
+            cancelText: "취소"
+          })
+        : window.confirm("수정 내용을 저장하시겠습니까?");
       if (!confirmed) {
         statusEl.textContent = "⚠️ 수정 저장이 취소되었습니다.";
         return;

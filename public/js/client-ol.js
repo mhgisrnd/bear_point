@@ -233,14 +233,14 @@
     card.style.boxShadow = "0 16px 36px rgba(0,0,0,0.34)";
 
     const title = document.createElement("div");
-    title.textContent = "앱 준비 중";
+    title.textContent = "잠시만 기다려 주세요";
     title.style.color = "#ffffff";
     title.style.fontWeight = "700";
     title.style.fontSize = "15px";
     title.style.marginBottom = "8px";
 
     const text = document.createElement("div");
-    text.textContent = "SQLite 연결 준비 중...";
+    text.textContent = "데이터를 불러오는 중입니다...";
     text.style.color = "rgba(255,255,255,0.88)";
     text.style.fontSize = "13px";
     text.style.marginBottom = "10px";
@@ -346,7 +346,7 @@
   }
 
   async function bootWithSQLiteGate() {
-    showStartupOverlay("SQLite 연결 준비 중...", false);
+    showStartupOverlay("데이터를 불러오는 중입니다...", false);
 
     try {
       const initState = await initializeEmbeddedDatabase();
@@ -997,6 +997,7 @@
         if (statusEl) statusEl.textContent = "✅ 공유 창을 열었습니다: " + fileName;
         return true;
       } catch (shareError) {
+        if (shareError && /cancel/i.test(shareError.message || "")) { return false; }
         console.warn("TXT 공유 실패:", shareError);
         if (statusEl) {
           statusEl.textContent = "🔴 공유 실패: " + (shareError && shareError.message ? shareError.message : String(shareError));
@@ -1020,6 +1021,7 @@
       if (statusEl) statusEl.textContent = "✅ 공유 창을 열었습니다: " + fileName;
       return true;
     } catch (shareError) {
+      if (shareError && /cancel/i.test(shareError.message || "")) { return false; }
       console.warn("TXT 공유 실패:", shareError);
       if (statusEl) {
         statusEl.textContent = "🔴 공유 실패: " + (shareError && shareError.message ? shareError.message : String(shareError));
@@ -6067,6 +6069,7 @@
         if (statusEl) statusEl.textContent = "✅ 공유 창을 열었습니다: " + fileName;
         return true;
       } catch (shareError) {
+        if (shareError && /cancel/i.test(shareError.message || "")) { return false; }
         console.warn("XLS 공유 실패:", shareError);
         if (statusEl) {
           statusEl.textContent = "🔴 공유 실패: " + (shareError && shareError.message ? shareError.message : String(shareError));
