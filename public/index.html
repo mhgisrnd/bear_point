@@ -186,7 +186,7 @@
   <!-- 하단 좌측 패널 -->
   <div class="panel-stack panel-bottom-left">
     <div class="panel-tabs panel-tabs-floating">
-      <button class="tab-btn" id="btn-obs-list">관측점</button>
+      <button class="tab-btn" id="btn-obs-list">관측점 목록</button>
     </div>
 
     <div class="panel" id="panel">
@@ -220,7 +220,13 @@
             </div>
           </div>
           <div class="bears-list" id="bears-list">
-            <div class="bears-empty">아직 목록이 없습니다.</div>
+            <div class="bears-empty" role="status" aria-live="polite">
+              <div class="bears-empty__icon" aria-hidden="true">🐻</div>
+              <div class="bears-empty__title">곰 추정위치 목록이 비어 있습니다</div>
+              <div class="bears-empty__desc">관측점 위치분석 결과를 저장하면 목록이 표시됩니다.</div>
+              <div class="bears-empty__hint">관측점 목록에서 2개 이상 선택 후 위치분석을 실행해보세요.</div>
+              <button class="bears-empty__action" type="button">관측점 목록 열기</button>
+            </div>
           </div>
         </div>
       </div>

@@ -575,8 +575,10 @@ window.createOlMapControlsManager = function createOlMapControlsManager(options)
     if (!next) {
       clearMeasureVisuals();
       setMeasureActionPanelVisible(false);
-      if (reason === "menu" && statusEl) {
-        statusEl.textContent = "ℹ️ 측정을 종료했습니다.";
+      if (typeof window.__bpSetDefaultStatus === "function") {
+        window.__bpSetDefaultStatus();
+      } else if (statusEl) {
+        statusEl.textContent = "반달가슴곰 위치추적분석";
       }
       return;
     }

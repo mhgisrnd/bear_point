@@ -7,8 +7,28 @@
   const compassNeedleFixedEl = document.getElementById("compass-needle");
   const panelEl = document.getElementById("panel");
   const btnPanelToggle = document.getElementById("btn-panel-toggle");
+  const btnObsList = document.getElementById("btn-obs-list");
   const btnSidebarToggle = document.getElementById("btn-sidebar-toggle");
   const bearsListEl = document.getElementById("bears-list");
+    if (bearsListEl) {
+      // 빈 상태 카드의 버튼을 눌렀을 때 기존 관측점 버튼 동작을 그대로 재사용한다.
+      bearsListEl.addEventListener("click", function (event) {
+        const actionButton = event && event.target && typeof event.target.closest === "function"
+          ? event.target.closest(".bears-empty__action")
+          : null;
+        if (!actionButton) return;
+
+        event.preventDefault();
+        event.stopPropagation();
+        // 이미 관측점 목록이 열려 있으면 닫지 않고 무시한다 (open-only)
+        const obsSheet = document.getElementById("obs-sheet");
+        if (obsSheet && !obsSheet.classList.contains("hidden")) return;
+        if (btnObsList && typeof btnObsList.click === "function") {
+          btnObsList.click();
+        }
+      });
+    }
+
   const bearsToolbarEl = document.getElementById("bears-toolbar");
   const bearsToolbarSummaryEl = document.getElementById("bears-toolbar-summary");
   const bearsSelectAllEl = document.getElementById("bears-select-all");
@@ -1902,7 +1922,7 @@
     tilePixelRatio: 1,
     tileUrlFunction: mbtilesUrlFn,
     tileLoadFunction: mbtilesTileLoadFn,
-    attributions: "지리산 오프라인 타일"
+    // attributions: "지리산 오프라인 타일"
   });
   mbtilesSource.on("tileloaderror", function (event) {
     event.tile.getImage().src = TRANSPARENT_PIXEL;
@@ -2003,7 +2023,7 @@
   const hillshadeOverlay = new ol.layer.Tile({
     source: new ol.source.XYZ({
       url: "https://services.arcgisonline.com/ArcGIS/rest/services/Elevation/World_Hillshade/MapServer/tile/{z}/{y}/{x}",
-      attributions: "Hillshade Esri",
+      //attributions: "Hillshade Esri",
       maxZoom: HILLSHADE_MAX_ZOOM
     }),
     opacity: HILLSHADE_BASE_OPACITY,
@@ -3211,7 +3231,7 @@
         const estimateFeatures = analysisEstimateSource.getFeatures();
         if (Array.isArray(estimateFeatures) && estimateFeatures.length > 0) {
           clearAnalysisEstimateVisuals();
-          if (statusEl) statusEl.textContent = "ℹ️ 위치분석 표시를 취소했습니다.";
+          setDefaultStatusWithIcon();
           return;
         }
       }
@@ -4312,6 +4332,16 @@
       btnSidebarToggle.setAttribute("aria-label", isCollapsed ? "사이드바 펼치기" : "사이드바 접기");
       btnSidebarToggle.setAttribute("title", isCollapsed ? "사이드바 펼치기" : "사이드바 접기");
     }
+
+    // 사이드바 전환 중/완료 시점에 지도 크기를 재계산해 끊김을 줄인다.
+    if (map && typeof map.updateSize === "function") {
+      window.requestAnimationFrame(function () {
+        map.updateSize();
+      });
+      window.setTimeout(function () {
+        map.updateSize();
+      }, 280);
+    }
   }
 
   function setLocateButtonActive(active) {
@@ -4513,8 +4543,21 @@
     }
   }
 
+  // 캡처/시연용 고정 위치 모드.
+  // true 로 바꾸면 "실시간 위치" 버튼이 GPS 대신 아래 좌표를 사용한다.
+  const USE_CAPTURE_MOCK_LOCATION = false;
+  const CAPTURE_MOCK_LAT_LNG = [35.323541, 127.636556]; // 지리산 샘플 좌표
+
   // 위치 추적 시작: 빠른 1회 획득 + watchPosition 지속 추적.
   async function startMyLocationTracking() {
+    if (USE_CAPTURE_MOCK_LOCATION) {
+      updateMyLocation(CAPTURE_MOCK_LAT_LNG[0], CAPTURE_MOCK_LAT_LNG[1]);
+      isMyVisible = true;
+      setLocateButtonActive(true);
+      if (statusEl) statusEl.textContent = "✅ 내 위치 ON (캡처용 고정 위치)";
+      return;
+    }
+
     if (!navigator.geolocation) {
       if (statusEl) statusEl.textContent = "🔴 위치 기능 미지원 브라우저";
       return;
@@ -4884,7 +4927,7 @@
     });
   }
 
-  // 관측점 heading 문자열/숫자를 프리뷰 계산용 각도로 정규화한다.
+  // CAPTURE_MOCK_LAT_LNGheading 문자열/숫자를 프리뷰 계산용 각도로 정규화한다.
   function parseHeadingDegForPreview(value) {
     const analyzer = window.BearPositionAnalysis;
     if (analyzer && typeof analyzer.parseHeadingDegrees === "function") {
@@ -5268,7 +5311,7 @@
 
     cancelBtn.addEventListener("click", function () {
       clearAnalysisEstimateVisuals();
-      if (statusEl) statusEl.textContent = "ℹ️ 위치분석 표시를 취소했습니다.";
+      setDefaultStatusWithIcon();
     });
 
     root.addEventListener("pointerdown", function (e) { e.stopPropagation(); });
@@ -6038,7 +6081,15 @@
     bearsListEl.innerHTML = "";
 
     if (!items || items.length === 0) {
-      bearsListEl.innerHTML = '<div class="bears-empty">아직 목록이 없습니다.</div>';
+      bearsListEl.innerHTML = [
+        '<div class="bears-empty" role="status" aria-live="polite">',
+        '  <div class="bears-empty__icon" aria-hidden="true">🐻</div>',
+        '  <div class="bears-empty__title">곰 추정위치 목록이 비어 있습니다</div>',
+        '  <div class="bears-empty__desc">관측점 위치분석 결과를 저장하면 목록이 표시됩니다.</div>',
+        '  <div class="bears-empty__hint">관측점 목록에서 2개 이상 선택 후 위치분석을 실행해보세요.</div>',
+        '  <button class="bears-empty__action" type="button">관측점 목록 열기</button>',
+        '</div>'
+      ].join('');
       if (bearsToolbarSummaryEl) {
         bearsToolbarSummaryEl.hidden = true;
         bearsToolbarSummaryEl.textContent = "";

@@ -7,11 +7,37 @@ npx forever stop 0
 #일반 시작
 npm run dev
 
+웹앱 개발
+HTML / CSS / JS
+        ↓
+Capacitor 설치(웹/앱 패키징을 위한 설치, 네이티브 기능 사용)
+npm install @capacitor/core @capacitor/cli
+        ↓
+Capacitor 초기 설정
+npx cap init
+        ↓
+capacitor.config.json 또는 capacitor.config.ts 생성됨
+        ↓
+Android 플랫폼 추가
+npx cap add android
+        ↓
+android/ 폴더 생성됨
+        ↓
+웹 소스 변경 / 빌드
+예: npm run build
+        ↓
+Android 쪽으로 동기화
+npx cap sync android
+        ↓
+Android Studio에서 APK 빌드
+npx cap open android
+
+
 
 앱 배포
-
 웹 변경 반영(프로젝트 루트에서 실행)
 npx cap sync android
+안드로이드 스튜디오 열기
 npx cap open android
 
 배포

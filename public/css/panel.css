@@ -596,6 +596,7 @@
   display: none;
 }
 
+/* [Tablet Landscape Sidebar] 900px 이상 가로 전용 2단 사이드바 레이아웃 */
 @media (min-width: 900px) and (orientation: landscape) {
   :root {
     --bp-sidebar-w: 420px;
@@ -618,7 +619,8 @@
     border-right: 1px solid rgba(148, 163, 184, 0.28);
     box-shadow: 3px 0 18px rgba(15, 23, 42, 0.10);
     z-index: 9990;
-    transition: transform 0.2s ease, opacity 0.2s ease;
+    transition: transform 0.34s cubic-bezier(0.22, 0.61, 0.36, 1), opacity 0.34s ease;
+    will-change: transform, opacity;
   }
 
   #btn-sidebar-toggle {
@@ -643,7 +645,7 @@
     cursor: pointer;
     z-index: 10040;
     transform: translateY(-50%);
-    transition: left 0.2s ease, background 0.12s ease, box-shadow 0.12s ease;
+    transition: left 0.34s cubic-bezier(0.22, 0.61, 0.36, 1), background 0.12s ease, box-shadow 0.12s ease;
   }
 
   #btn-sidebar-toggle:hover {
@@ -661,9 +663,23 @@
     pointer-events: none;
   }
 
+  .obs-sheet,
+  .panel-stack.panel-bottom-left {
+    transition: opacity 0.28s ease, transform 0.28s ease;
+    will-change: opacity, transform;
+  }
+
+  body:not(.bp-sidebar-collapsed) .obs-sheet,
+  body:not(.bp-sidebar-collapsed) .panel-stack.panel-bottom-left {
+    transition-delay: 0.10s;
+  }
+
   body.bp-sidebar-collapsed .obs-sheet,
   body.bp-sidebar-collapsed .panel-stack.panel-bottom-left {
-    display: none !important;
+    transition-delay: 0s;
+    opacity: 0;
+    transform: translateX(-28px);
+    pointer-events: none;
   }
 
   /* 사이드바 접힘 + 등록/수정 상태: 폰 버전 팝업 스타일을 그대로 사용 */
@@ -703,16 +719,35 @@
     max-height: var(--bp-half-panel-height);
     box-sizing: border-box;
     z-index: 10005;
-    border-top-right-radius: 18px;
-    border-bottom-right-radius: 18px;
-    border-top-left-radius: 18px;
-    border-bottom-left-radius: 18px;
+    border-radius: 0;
     border: none;
     border-bottom: 1px solid rgba(148, 163, 184, 0.22);
     background: transparent;
     box-shadow: none;
     backdrop-filter: none;
     cursor: default;
+  }
+
+  /* 태블릿 사이드바: 관측점 목록 열기/닫기를 부드럽게 전환한다. */
+  .obs-sheet:not(.hidden),
+  #obs-list-panel:not(.hidden) {
+    transition: opacity 0.19s ease, transform 0.19s ease;
+    will-change: opacity, transform;
+  }
+
+  .obs-sheet.bp-tablet-panel-open,
+  #obs-list-panel.bp-tablet-panel-open {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  .obs-sheet:not(.hidden):not(.bp-tablet-panel-open),
+  #obs-list-panel:not(.hidden):not(.bp-tablet-panel-open),
+  .obs-sheet.bp-tablet-panel-closing,
+  #obs-list-panel.bp-tablet-panel-closing {
+    opacity: 0;
+    transform: translateY(-8px);
+    pointer-events: none;
   }
 
   .obs-sheet .obs-sheet-header {
@@ -775,6 +810,14 @@
     max-height: max(100px, calc(var(--bp-half-panel-height) - 190px));
   }
 
+  /* 태블릿 가로 2단에서는 상하 패널 경계를 평평하게 맞춰 이질감(둥근 모서리)을 줄인다. */
+  .obs-table th:first-child,
+  .obs-table th:last-child,
+  .obs-table tbody tr:last-child td:first-child,
+  .obs-table tbody tr:last-child td:last-child {
+    border-radius: 0;
+  }
+
   /* ── 곰 추정위치: 기본은 사이드바 전체 높이 ── */
   .panel-stack.panel-bottom-left {
     left: 8px;
@@ -791,10 +834,16 @@
     z-index: 9991;
     padding: 0;
     gap: 0;
+    transition: top 0.22s ease, max-height 0.22s ease;
+    will-change: top, max-height;
   }
 
-  /* 상태문구 + ▼ 토글은 태블릿 사이드바에서 숨김 */
+  /* 태블릿 사이드바에서는 상태문구는 유지하고 ▼ 토글만 숨긴다. */
   .panel-stack.panel-bottom-left .panel-header {
+    display: flex;
+  }
+
+  .panel-stack.panel-bottom-left .panel-toggle {
     display: none;
   }
 
@@ -817,9 +866,9 @@
     max-height: none;
     width: 100%;
     box-sizing: border-box;
-    border-top-right-radius: 18px;
+    border-top-left-radius: 0;
+    border-top-right-radius: 0;
     border-bottom-right-radius: 18px;
-    /* border-top-left-radius: 0; */
     /* border-bottom-left-radius: 0; */
     border: 1px solid rgba(148, 163, 184, 0.24);
     /* border-right: 0; */
@@ -1450,10 +1499,74 @@
 }
 
 .bears-empty{
-  color: rgba(0,0,0,0.55);
-  padding: 6px 2px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 4px 2px;
+  padding: 14px 12px;
+  border: 1px dashed rgba(148, 163, 184, 0.5);
+  border-radius: 12px;
+  background: linear-gradient(180deg, rgba(255,255,255,0.78), rgba(248,250,252,0.9));
+  color: #334155;
 }
 
+.bears-empty__icon {
+  width: 30px;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: rgba(59, 130, 246, 0.12);
+  border: 1px solid rgba(59, 130, 246, 0.2);
+  font-size: 16px;
+}
+
+.bears-empty__title {
+  font-size: 13px;
+  font-weight: 800;
+  color: #0f172a;
+  line-height: 1.3;
+}
+
+.bears-empty__desc {
+  font-size: 12px;
+  line-height: 1.45;
+  color: #334155;
+}
+
+.bears-empty__hint {
+  font-size: 11px;
+  line-height: 1.35;
+  color: #475569;
+  background: rgba(241, 245, 249, 0.85);
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 8px;
+  padding: 6px 8px;
+}
+
+.bears-empty__action {
+  border: 1px solid rgba(37, 99, 235, 0.24);
+  border-radius: 10px;
+  background: #2f5bd3;
+  color: #ffffff;
+  min-height: 32px;
+  padding: 0 12px;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+  box-shadow: 0 6px 14px rgba(37, 99, 235, 0.18);
+  transition: transform 0.12s ease, box-shadow 0.16s ease, background 0.16s ease;
+}
+
+.bears-empty__action:hover {
+  transform: translateY(-1px);
+  background: #2851c2;
+  box-shadow: 0 8px 16px rgba(37, 99, 235, 0.22);
+}
+
+/* [Phone Narrow] 480px 이하: 관측점/곰 목록 요소 크기 축소 */
 @media (max-width: 480px) {
   .obs-sheet {
     left: 8px;
@@ -1662,6 +1775,7 @@
   }
 }
 
+/* [Phone/Small Tablet] 899px 이하: 관측점 목록 패널/하단 패널 배치 */
 @media (max-width: 899px){
   .obs-sheet {
     top: calc(8px + var(--safe-top));
@@ -2217,6 +2331,7 @@
   color: #fff;
 }
 
+/* [Phone XS] 360px 이하: 등록 팝업 초소형 화면 대응 */
 @media (max-width: 360px) {
   .obs-register-popup {
     left: 6px !important;
@@ -2279,6 +2394,8 @@
   }
 }
 
+/* [Phone/Small Tablet - Register] 899px 이하: 등록 팝업/폼 전용 조정
+   위의 899px 블록(관측점 목록/패널 배치)과 대상이 달라 분리 유지 */
 @media (max-width: 899px) {
   .obs-register-popup {
     top: calc(8px + var(--safe-top));

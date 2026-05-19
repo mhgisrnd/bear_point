@@ -60,6 +60,82 @@ window.createObsListModule = function createObsListModule({
     "(min-width: 900px) and (orientation: landscape)"
   );
   var _obsSheetResizeObserver = null;
+  var _tabletPanelHideTimer = null;
+  var TABLET_PANEL_TRANSITION_MS = 190;
+
+  function _isTabletLandscape() {
+    return !!(_tabletLandscapeMq && _tabletLandscapeMq.matches);
+  }
+
+  function _clearTabletPanelHideTimer() {
+    if (_tabletPanelHideTimer) {
+      window.clearTimeout(_tabletPanelHideTimer);
+      _tabletPanelHideTimer = null;
+    }
+  }
+
+  function _setTabletPanelVisualState(isOpen) {
+    const targets = [obsSheetEl, obsListPanelEl].filter(Boolean);
+    if (targets.length < 1) return;
+
+    if (!_isTabletLandscape()) {
+      targets.forEach((el) => {
+        el.classList.remove("bp-tablet-panel-open");
+        el.classList.remove("bp-tablet-panel-closing");
+      });
+      return;
+    }
+
+    targets.forEach((el) => {
+      el.classList.remove("bp-tablet-panel-closing");
+      if (isOpen) {
+        el.classList.add("bp-tablet-panel-open");
+      } else {
+        el.classList.remove("bp-tablet-panel-open");
+      }
+    });
+  }
+
+  function _showListPanels() {
+    _clearTabletPanelHideTimer();
+    if (obsSheetEl) obsSheetEl.classList.remove("hidden");
+    if (obsListPanelEl) obsListPanelEl.classList.remove("hidden");
+
+    if (!_isTabletLandscape()) return;
+
+    _setTabletPanelVisualState(false);
+    window.requestAnimationFrame(function () {
+      _setTabletPanelVisualState(true);
+    });
+  }
+
+  function _hideListPanels() {
+    _clearTabletPanelHideTimer();
+
+    if (!_isTabletLandscape()) {
+      if (obsSheetEl) obsSheetEl.classList.add("hidden");
+      if (obsListPanelEl) obsListPanelEl.classList.add("hidden");
+      _setTabletPanelVisualState(false);
+      return;
+    }
+
+    const targets = [obsSheetEl, obsListPanelEl].filter(Boolean);
+    if (targets.length < 1) return;
+
+    targets.forEach((el) => {
+      el.classList.add("bp-tablet-panel-closing");
+      el.classList.remove("bp-tablet-panel-open");
+    });
+
+    _tabletPanelHideTimer = window.setTimeout(function () {
+      if (obsSheetEl) obsSheetEl.classList.add("hidden");
+      if (obsListPanelEl) obsListPanelEl.classList.add("hidden");
+      targets.forEach((el) => {
+        el.classList.remove("bp-tablet-panel-closing");
+      });
+      _tabletPanelHideTimer = null;
+    }, TABLET_PANEL_TRANSITION_MS);
+  }
 
   // 태블릿 가로에서 관측점 목록 실제 높이를 읽어 하단 패널 배치용 CSS 변수로 반영한다.
   function _startObsSheetResize() {
@@ -461,10 +537,11 @@ window.createObsListModule = function createObsListModule({
 
   function updateMainStatusForList() {
     if (!statusEl || currentTab !== "list") return;
-    const count = observationSamples.length;
-    statusEl.textContent = count > 0
-      ? `📋 관측점 목록 ${count}건을 불러왔습니다.`
-      : "🟠 관측점 목록이 비어있습니다.";
+    if (typeof window.__bpSetDefaultStatus === "function") {
+      window.__bpSetDefaultStatus();
+    } else {
+      statusEl.textContent = "반달가슴곰 위치추적분석";
+    }
   }
 
   async function refreshObservationData() {
@@ -1466,8 +1543,7 @@ window.createObsListModule = function createObsListModule({
   // 등록 팝업이 닫힌 후 목록 패널을 다시 표시한다 (currentTab 이 "list" 일 때만).
   function showPanel() {
     if (currentTab !== "list") return;
-    if (obsSheetEl) obsSheetEl.classList.remove("hidden");
-    if (obsListPanelEl) obsListPanelEl.classList.remove("hidden");
+    _showListPanels();
     if (_tabletLandscapeMq.matches) _startObsSheetResize();
   }
 
@@ -1494,8 +1570,11 @@ window.createObsListModule = function createObsListModule({
       observationMarkersLayer.clearLayers();
     }
 
-    if (obsSheetEl) obsSheetEl.classList.toggle("hidden", !isList);
-    if (obsListPanelEl) obsListPanelEl.classList.toggle("hidden", !isList);
+    if (isList) {
+      _showListPanels();
+    } else {
+      _hideListPanels();
+    }
 
     if (isList && _tabletLandscapeMq.matches) {
       // 태블릿에서 obs-sheet가 보일 때 ResizeObserver 시작
@@ -1508,7 +1587,6 @@ window.createObsListModule = function createObsListModule({
       setPeekMode(false);
       if (statusEl) {
         statusEl.textContent = "📋 관측점 목록을 불러오는 중...";
-        highlightStatusOnce();
       }
       void refreshObservationData();
       return;
@@ -1533,7 +1611,12 @@ window.createObsListModule = function createObsListModule({
     });
 
     if (btnBear) btnBear.addEventListener("click", async () => {
-      const willClose = currentTab === "list";
+      const isListVisible = !!(
+        obsSheetEl &&
+        !obsSheetEl.classList.contains("hidden") &&
+        !obsSheetEl.classList.contains("bp-tablet-panel-closing")
+      );
+      const willClose = currentTab === "list" && isListVisible;
 
       if (willClose) {
         const ok = await confirmAndEscapeAnalysis();
