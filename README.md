@@ -33,6 +33,14 @@ Android Studio에서 APK 빌드
 npx cap open android
 
 
+- 프로젝트 루트 cmd에서 실행 시, 
+
+기기 목록 확인
+npx cap run android --list
+
+특정 기기/에뮬레이터 지정 실행
+npx cap run android --target 기기ID
+
 
 앱 배포
 웹 변경 반영(프로젝트 루트에서 실행)
