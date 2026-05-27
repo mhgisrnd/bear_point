@@ -2461,7 +2461,10 @@
   let analysisOwnerInputEl = null;
   let analysisPlaceInputEl = null;
   let currentAnalysisPoint = null; // 위치분석 최근 결과 (저장 버튼용)
-  let analysisActionDragState = null;
+  let analysisActionAnchorCoord = null;
+  let analysisActionLayoutBound = false;
+  let analysisActionLayoutRafId = null;
+  let analysisActionObsSheetObserver = null;
 
   function normalizeOwnerName(value) {
     return String(value == null ? "" : value).trim();
@@ -5057,14 +5060,93 @@
     if (!analysisActionBarEl || !analysisActionOverlay) return;
     analysisActionBarEl.style.display = "none";
     analysisActionOverlay.setPosition(undefined);
+    analysisActionAnchorCoord = null;
+    document.body.classList.remove("analysis-action-active");
   }
 
   // 추정 좌표에 맞춰 액션바 오버레이를 표시한다.
   function showAnalysisActionBar(anchorCoord) {
     if (!analysisActionBarEl || !analysisActionOverlay || !Array.isArray(anchorCoord)) return;
     analysisActionBarEl.style.display = "flex";
-    analysisActionOverlay.setPosition(anchorCoord);
-    analysisActionDragState = null;
+    document.body.classList.add("analysis-action-active");
+    analysisActionAnchorCoord = [anchorCoord[0], anchorCoord[1]];
+    analysisActionOverlay.setPosition(analysisActionAnchorCoord);
+    scheduleAnalysisActionBarLayoutUpdate();
+  }
+
+  function parseCssPx(value) {
+    const num = Number.parseFloat(String(value || "0").replace("px", ""));
+    return Number.isFinite(num) ? num : 0;
+  }
+
+  // 지도 앵커를 유지한 상태로 상단 패널/화면 경계와 겹치지 않도록 오프셋을 동적으로 조정한다.
+  function updateAnalysisActionBarLayout() {
+    if (!analysisActionBarEl || !analysisActionOverlay || analysisActionBarEl.style.display === "none") return;
+    if (!map || !Array.isArray(analysisActionAnchorCoord)) return;
+
+    const anchorPixel = map.getPixelFromCoordinate(analysisActionAnchorCoord);
+    if (!Array.isArray(anchorPixel) || anchorPixel.length < 2) return;
+
+    const rootStyles = window.getComputedStyle(document.documentElement);
+    const safeTop = parseCssPx(rootStyles.getPropertyValue("--safe-top"));
+    const safeBottom = parseCssPx(rootStyles.getPropertyValue("--safe-bottom"));
+    const safeLeft = parseCssPx(rootStyles.getPropertyValue("--safe-left"));
+    const safeRight = parseCssPx(rootStyles.getPropertyValue("--safe-right"));
+    const edgeGap = 10;
+    const baseOffsetY = 35;
+
+    const rootRect = analysisActionBarEl.getBoundingClientRect();
+    const overlayWidth = rootRect.width || 260;
+    const overlayHeight = rootRect.height || 186;
+    const halfWidth = overlayWidth / 2;
+
+    const minTop = safeTop + edgeGap;
+    const maxTop = Math.max(minTop, window.innerHeight - safeBottom - overlayHeight - edgeGap);
+    const top = Math.min(Math.max(anchorPixel[1] + baseOffsetY, minTop), maxTop);
+
+    const minCenterX = safeLeft + halfWidth + edgeGap;
+    const maxCenterX = window.innerWidth - safeRight - halfWidth - edgeGap;
+    const centerX = Math.min(Math.max(anchorPixel[0], minCenterX), maxCenterX);
+
+    const offsetX = Math.round(centerX - anchorPixel[0]);
+    const offsetY = Math.round(top - anchorPixel[1]);
+    analysisActionOverlay.setOffset([offsetX, offsetY]);
+    analysisActionOverlay.setPosition(analysisActionAnchorCoord);
+  }
+
+  function scheduleAnalysisActionBarLayoutUpdate() {
+    if (analysisActionLayoutRafId !== null) return;
+    analysisActionLayoutRafId = window.requestAnimationFrame(function () {
+      analysisActionLayoutRafId = null;
+      updateAnalysisActionBarLayout();
+    });
+  }
+
+  function bindAnalysisActionBarLayoutListeners() {
+    if (analysisActionLayoutBound) return;
+
+    window.addEventListener("resize", scheduleAnalysisActionBarLayoutUpdate, { passive: true });
+    window.addEventListener("orientationchange", scheduleAnalysisActionBarLayoutUpdate, { passive: true });
+    document.addEventListener("visibilitychange", function () {
+      if (document.visibilityState === "visible") scheduleAnalysisActionBarLayoutUpdate();
+    });
+
+    map.on("moveend", scheduleAnalysisActionBarLayoutUpdate);
+    view.on("change:center", scheduleAnalysisActionBarLayoutUpdate);
+    view.on("change:resolution", scheduleAnalysisActionBarLayoutUpdate);
+
+    const obsSheetEl = document.getElementById("obs-sheet");
+    if (obsSheetEl && typeof MutationObserver === "function") {
+      analysisActionObsSheetObserver = new MutationObserver(function () {
+        scheduleAnalysisActionBarLayoutUpdate();
+      });
+      analysisActionObsSheetObserver.observe(obsSheetEl, {
+        attributes: true,
+        attributeFilter: ["class", "style"]
+      });
+    }
+
+    analysisActionLayoutBound = true;
   }
 
   // 위치분석 관련 requestAnimationFrame 루프를 중지한다.
@@ -5105,7 +5187,8 @@
     root.style.alignItems = "center";
     root.style.gap = "8px";
     root.style.width = "min(90vw, 260px)";
-    root.style.zIndex = "1600";
+    root.style.position = "relative";
+    root.style.zIndex = "11060";
     root.style.pointerEvents = "auto";
 
     const inputCard = document.createElement("div");
@@ -5335,70 +5418,6 @@
     headerText.style.padding = "9px 12px";
     headerText.style.borderBottom = "1px solid rgba(255,255,255,0.15)";
     headerText.style.letterSpacing = "0.03em";
-    headerText.style.cursor = "grab";
-    headerText.style.touchAction = "none";
-
-    function endAnalysisActionDrag(pointerId) {
-      if (!analysisActionDragState) return;
-      if (pointerId != null && analysisActionDragState.pointerId !== pointerId) return;
-      headerText.style.cursor = "grab";
-      analysisActionDragState = null;
-    }
-
-    headerText.addEventListener("pointerdown", function (event) {
-      if (!analysisActionOverlay || !map) return;
-      const currentPosition = analysisActionOverlay.getPosition();
-      if (!Array.isArray(currentPosition)) return;
-
-      const startCoord = map.getEventCoordinate(event);
-      if (!Array.isArray(startCoord)) return;
-
-      analysisActionDragState = {
-        pointerId: event.pointerId,
-        startCoord: startCoord,
-        startOverlayCoord: [currentPosition[0], currentPosition[1]]
-      };
-
-      headerText.style.cursor = "grabbing";
-      if (headerText.setPointerCapture) {
-        try {
-          headerText.setPointerCapture(event.pointerId);
-        } catch (captureError) {
-          // 일부 브라우저/웹뷰에서 setPointerCapture가 실패할 수 있어 무시.
-        }
-      }
-
-      event.preventDefault();
-      event.stopPropagation();
-    });
-
-    headerText.addEventListener("pointermove", function (event) {
-      if (!analysisActionDragState) return;
-      if (event.pointerId !== analysisActionDragState.pointerId) return;
-      if (!analysisActionOverlay || !map) return;
-
-      const currentCoord = map.getEventCoordinate(event);
-      if (!Array.isArray(currentCoord)) return;
-
-      const dx = currentCoord[0] - analysisActionDragState.startCoord[0];
-      const dy = currentCoord[1] - analysisActionDragState.startCoord[1];
-      analysisActionOverlay.setPosition([
-        analysisActionDragState.startOverlayCoord[0] + dx,
-        analysisActionDragState.startOverlayCoord[1] + dy
-      ]);
-
-      event.preventDefault();
-      event.stopPropagation();
-    });
-
-    headerText.addEventListener("pointerup", function (event) {
-      endAnalysisActionDrag(event.pointerId);
-      event.stopPropagation();
-    });
-    headerText.addEventListener("pointercancel", function (event) {
-      endAnalysisActionDrag(event.pointerId);
-      event.stopPropagation();
-    });
 
     const fieldWrap = document.createElement("div");
     fieldWrap.style.padding = "10px";
@@ -5415,9 +5434,10 @@
     root.appendChild(inputCard);
     root.appendChild(buttonRow);
 
-    //분석 시 저장, 취소 버튼 위치 지정
+    // 분석 결과 입력 UI는 지도 좌표에 앵커링된 오버레이로 유지한다.
     analysisActionOverlay = new ol.Overlay({
       element: root,
+      className: "analysis-action-overlay",
       positioning: "top-center",
       offset: [0, 35],
       stopEvent: true,
@@ -5427,6 +5447,20 @@
       }
     });
     map.addOverlay(analysisActionOverlay);
+
+    const overlayContainerEl = root.parentElement;
+    if (overlayContainerEl) {
+      overlayContainerEl.classList.add("analysis-action-overlay-container");
+      overlayContainerEl.style.zIndex = "2147483000";
+    }
+
+    const mapTargetEl = typeof map.getTargetElement === "function" ? map.getTargetElement() : null;
+    const stopEventContainerEl = mapTargetEl ? mapTargetEl.querySelector(".ol-overlaycontainer-stopevent") : null;
+    if (stopEventContainerEl) {
+      stopEventContainerEl.style.zIndex = "2147483000";
+    }
+
+    bindAnalysisActionBarLayoutListeners();
 
     analysisActionBarEl = root;
     analysisOwnerInputEl = ownerInput;

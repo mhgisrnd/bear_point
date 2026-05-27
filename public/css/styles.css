@@ -65,6 +65,18 @@ body::after {
   height: 100%;
 }
 
+/* 위치분석 추가정보 오버레이를 관측점 목록 패널 위 계층으로 유지 */
+#map .analysis-action-overlay,
+#map .analysis-action-overlay-container,
+#map .ol-overlaycontainer-stopevent {
+  z-index: 2147483000 !important;
+}
+
+/* 분석 입력란 노출 중에는 상단 관측점 목록 패널을 한 단계 아래로 내려 가림을 방지 */
+body.analysis-action-active .obs-sheet {
+  z-index: 1200 !important;
+}
+
 /* 태블릿 가로: 사이드바만큼 지도 왼쪽 여백 */
 @media (min-width: 900px) and (orientation: landscape) {
   #map {
