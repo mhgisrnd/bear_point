@@ -6136,7 +6136,7 @@
     }
 
     if (bearsToolbarSummaryEl) {
-      bearsToolbarSummaryEl.innerHTML = '<img src="assets/icons/icon_bear_real.png" style="height:16px;vertical-align:middle;margin-right:4px;" alt="곰"/> ' + items.length + '건 표시됨' + (isFallback ? ' <span style="font-size:11px;opacity:.6">(샘플)</span>' : '');
+      bearsToolbarSummaryEl.innerHTML = '<img src="assets/icons/icon_bear.png" style="height:16px;vertical-align:middle;margin-right:4px;" alt="곰"/> ' + items.length + '건 표시됨' + (isFallback ? ' <span style="font-size:11px;opacity:.6">(샘플)</span>' : '');
       bearsToolbarSummaryEl.hidden = false;
     }
 
