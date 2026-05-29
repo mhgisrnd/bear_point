@@ -34,6 +34,7 @@
   const bearsSelectAllEl = document.getElementById("bears-select-all");
   const bearsSelectionCountEl = document.getElementById("bears-selection-count");
   const btnBearsDownloadAllXlsEl = document.getElementById("btn-bears-download-all-xls");
+  const btnBearsUploadSelectedEl = document.getElementById("btn-bears-upload-selected");
   const btnBearsDeleteSelectedEl = document.getElementById("btn-bears-delete-selected");
   const currentCoordEl = document.getElementById("obs-current-coord");
   const currentHeadingEl = document.getElementById("obs-current-heading");
@@ -57,6 +58,67 @@
   let backExitToastIconEl = null;
   let backExitToastTextEl = null;
   let backExitToastHideTimer = null;
+
+  function mapBearMarkerItems(items, isRealtime) {
+    return (Array.isArray(items) ? items : []).map(function (it) {
+      return {
+        id: it && it.id,
+        isRealtime: !!isRealtime,
+        bear_code: isRealtime ? (it && (it.bearCode || it.bear_code)) : (it && (it.bear_code || it.bearCode)),
+        owner: it && it.owner,
+        place: it && it.place,
+        lat: Number(it && it.lat),
+        lng: Number(it && (it.lng != null ? it.lng : it.lon)),
+        lat_dms: it && (it.lat_dms || it.latDms),
+        lng_dms: it && (it.lng_dms || it.lon_dms || it.lonDms),
+        created_at: it && (it.created_at || it.source_created_at || it.timestamp || it.ts)
+      };
+    }).filter(function (it) {
+      return Number.isFinite(it.lat) && Number.isFinite(it.lng);
+    });
+  }
+
+  function syncBearMarkersForActiveTab(realtimeItemsOverride) {
+    if (!realtimeListModule || typeof realtimeListModule.getActiveTab !== "function") {
+      renderBearMarkers(mapBearMarkerItems(currentBearEstimateItems, false));
+      return;
+    }
+
+    const activeTab = realtimeListModule.getActiveTab();
+    if (activeTab === "realtime") {
+      const realtimeItems = Array.isArray(realtimeItemsOverride)
+        ? realtimeItemsOverride
+        : typeof realtimeListModule.getItems === "function"
+          ? realtimeListModule.getItems()
+          : [];
+      renderBearMarkers(mapBearMarkerItems(realtimeItems, true));
+      return;
+    }
+
+    renderBearMarkers(mapBearMarkerItems(currentBearEstimateItems, false));
+  }
+
+  const realtimeListModule = window.createRealtimeListModule ? window.createRealtimeListModule({
+    onStatus: function (message) {
+      if (statusEl) statusEl.textContent = String(message || "");
+    },
+    onTabActivated: function () {
+      // 목록 패널이 접힌 상태에서 탭을 눌러도 실제 목록이 보이도록 강제로 펼친다.
+      ensureBearEstimatePanelVisible();
+      syncBearMarkersForActiveTab();
+    },
+    onItemsChanged: function (items, activeTab) {
+      if (activeTab === "realtime") {
+        syncBearMarkersForActiveTab(items);
+      }
+    },
+    onFocusItem: function (item) {
+      const lat = Number(item && item.lat);
+      const lng = Number(item && item.lng);
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
+      flyToLatLng([lat, lng], 16);
+    }
+  }) : null;
 
   // navigator.vibrate() 폴백용 ms값 (브라우저 환경 전용)
   // 실제 앱에서는 @capacitor/haptics 가 사용되므로 이 값은 무시된다.
@@ -347,6 +409,7 @@
 
   async function bootWithSQLiteGate() {
     showStartupOverlay("데이터를 불러오는 중입니다...", false);
+    let bootPhase = "sqlite-init";
 
     try {
       const initState = await initializeEmbeddedDatabase();
@@ -362,15 +425,23 @@
         throw new Error(reason);
       }
 
+      bootPhase = "panel-render";
       await refreshBearEstimatePanel();
       await hideStartupOverlay();
       setDefaultStatusWithIcon();
     } catch (error) {
-      console.error("SQLite 초기화 오류:", error);
+      const isSqlitePhase = bootPhase === "sqlite-init";
+      console.error(isSqlitePhase ? "SQLite 초기화 오류:" : "초기 화면 렌더링 오류:", error);
       if (statusEl) {
-        statusEl.innerHTML = "🔴 SQLite 초기화 실패: " + (error && error.message ? error.message : String(error));
+        statusEl.innerHTML =
+          (isSqlitePhase ? "🔴 SQLite 초기화 실패: " : "🔴 초기 화면 렌더링 실패: ") +
+          (error && error.message ? error.message : String(error));
       }
-      showStartupOverlay("SQLite 준비 실패. 다시 시도해 주세요.", true, true);
+      showStartupOverlay(
+        isSqlitePhase ? "SQLite 준비 실패. 다시 시도해 주세요." : "초기 화면 구성 중 오류가 발생했습니다. 다시 시도해 주세요.",
+        true,
+        true
+      );
     }
   }
 
@@ -429,6 +500,8 @@
   const ONLINE_MAX_ZOOM = VIEW_MAX_ZOOM;
   const BEAR_LABEL_OFFSET_Y = 12;
   const ESTIMATE_LABEL_OFFSET_Y = 18;
+  const REALTIME_BEAR_PULSE_COLOR = "rgba(52, 199, 89, 0.92)";
+  const REALTIME_BEAR_LABEL_COLOR = "rgba(22, 163, 74, 0.94)";
   // 힐셰이드는 성능/정합 이슈로 15까지만 지원한다.
   const HILLSHADE_MAX_ZOOM = Math.min(getNumericParam("olHillshadeMaxZoom", HILLSHADE_HARD_MAX_ZOOM, 3, PARAM_MAX_ZOOM_LIMIT), HILLSHADE_HARD_MAX_ZOOM);
   const HILLSHADE_SAFE_MAX_ZOOM = Math.min(getNumericParam("olHillshadeSafeMaxZoom", HILLSHADE_HARD_MAX_ZOOM, 3, PARAM_MAX_ZOOM_LIMIT), HILLSHADE_HARD_MAX_ZOOM);
@@ -2390,6 +2463,42 @@
 
   const bearMarkerSource = new ol.source.Vector();
   const bearMarkerLayer = new ol.layer.Vector({ source: bearMarkerSource });
+  let bearMarkerAnimationFrameId = 0;
+  let bearMarkerAnimationRunning = false;
+  let bearMarkerAnimationStartTs = 0;
+  let realtimeBearMarkerPulse = 0;
+  let realtimeBearMarkerScale = 1;
+
+  function stopBearMarkerAnimation() {
+    bearMarkerAnimationRunning = false;
+    bearMarkerAnimationStartTs = 0;
+    realtimeBearMarkerPulse = 0;
+    realtimeBearMarkerScale = 1;
+    if (bearMarkerAnimationFrameId) {
+      window.cancelAnimationFrame(bearMarkerAnimationFrameId);
+      bearMarkerAnimationFrameId = 0;
+    }
+    bearMarkerLayer.changed();
+  }
+
+  function animateBearMarkers(timestamp) {
+    if (!bearMarkerAnimationRunning) return;
+    if (!bearMarkerAnimationStartTs) bearMarkerAnimationStartTs = timestamp;
+
+    const elapsedSec = (timestamp - bearMarkerAnimationStartTs) / 1000;
+    realtimeBearMarkerPulse = (Math.sin(elapsedSec * Math.PI * 1.9) + 1) / 2;
+    realtimeBearMarkerScale = 1 + Math.sin(elapsedSec * Math.PI * 2.2) * 0.035;
+
+    bearMarkerLayer.changed();
+    bearMarkerAnimationFrameId = window.requestAnimationFrame(animateBearMarkers);
+  }
+
+  function startBearMarkerAnimation() {
+    if (bearMarkerAnimationRunning) return;
+    bearMarkerAnimationRunning = true;
+    bearMarkerAnimationStartTs = 0;
+    bearMarkerAnimationFrameId = window.requestAnimationFrame(animateBearMarkers);
+  }
 
   const analysisPreviewSource = new ol.source.Vector();
   let previewDashOffset = 0;
@@ -4307,6 +4416,18 @@
     btnPanelToggle.setAttribute("aria-expanded", "true");
   }
 
+  function ensureBearEstimatePanelVisible() {
+    if (typeof expandBearEstimatePanel === "function") {
+      expandBearEstimatePanel();
+      return;
+    }
+
+    if (!panelEl || !btnPanelToggle) return;
+    panelEl.classList.remove("collapsed");
+    btnPanelToggle.textContent = "▼";
+    btnPanelToggle.setAttribute("aria-expanded", "true");
+  }
+
   // 태블릿 전용 2단 사이드바 UI를 적용할 가로 화면 조건을 판별한다.
   function isTabletLandscapeSidebarMode() {
     return window.matchMedia(
@@ -4674,7 +4795,50 @@
       btnBearsDownloadAllXlsEl.disabled = totalCount === 0;
     }
 
+    if (btnBearsUploadSelectedEl) {
+      btnBearsUploadSelectedEl.disabled = selectedCount === 0;
+    }
+
     if (btnBearsDeleteSelectedEl) btnBearsDeleteSelectedEl.disabled = selectedCount === 0;
+  }
+
+  async function confirmRealtimeUpload(message, detail) {
+    const ok = await showStyledConfirmDialog({
+      title: "실시간 목록 업로드",
+      message: String(message || "실시간 목록에 업로드 하시겠습니까?"),
+      detail: String(detail || ""),
+      confirmText: "업로드",
+      cancelText: "취소"
+    });
+
+    return !!ok;
+  }
+
+  async function handleUploadSelectedBearEstimates() {
+    const targets = currentBearEstimateItems.filter(function (it) {
+      return selectedBearEstimateIds.has(String(it.id));
+    });
+
+    if (!targets.length) {
+      if (statusEl) statusEl.textContent = "⚠️ 선택된 곰 추정위치가 없습니다.";
+      return;
+    }
+
+    const ok = await confirmRealtimeUpload(
+      "선택한 " + targets.length + "건을 실시간 목록에 업로드 하시겠습니까?",
+      "업로드 후 실시간 목록 탭에서 바로 확인할 수 있습니다."
+    );
+    if (!ok) return;
+
+    if (!realtimeListModule || typeof realtimeListModule.sendEstimates !== "function") {
+      if (statusEl) statusEl.textContent = "⚠️ 실시간 목록 모듈을 사용할 수 없습니다.";
+      return;
+    }
+
+    const sendResult = await realtimeListModule.sendEstimates(targets);
+    if (sendResult && sendResult.ok && typeof realtimeListModule.openRealtimeTab === "function") {
+      realtimeListModule.openRealtimeTab();
+    }
   }
 
   async function downloadAllBearEstimatesXls(items) {
@@ -4899,37 +5063,85 @@
     });
   }
 
+  if (btnBearsUploadSelectedEl) {
+    btnBearsUploadSelectedEl.addEventListener("click", function (event) {
+      event.preventDefault();
+      event.stopPropagation();
+      handleUploadSelectedBearEstimates();
+    });
+  }
+
   // 저장된 곰 추정위치 목록을 지도 마커로 렌더링하고, 클릭용 상세 팝업 HTML도 함께 싣는다.
   function renderBearMarkers(items) {
     bearMarkerSource.clear();
-    if (!items || !items.length) return;
+    if (!items || !items.length) {
+      stopBearMarkerAnimation();
+      return;
+    }
+
+    let hasRealtimeMarker = false;
 
     items.forEach(function (it) {
+      const isRealtimeMarker = !!(it && it.isRealtime);
+      if (isRealtimeMarker) hasRealtimeMarker = true;
+
       const feature = new ol.Feature({
         geometry: new ol.geom.Point(mapCoordFromWgs84(it.lat, it.lng))
       });
       feature.set("popupHtml", buildBearEstimatePopupHtml(it));
       feature.set("bearEstimateData", it);
+      feature.set("isRealtimeMarker", isRealtimeMarker);
 
-      feature.setStyle(new ol.style.Style({
-        image: new ol.style.Icon({
-          src: "assets/icons/bear_marker_point.svg",
-          anchor: [0.5, 1],
-          width: 34,
-          height: 34
-        }),
-        text: new ol.style.Text({
-          text: String(it.bear_code || it.bearCode || it.id || "-"),
-          offsetY: BEAR_LABEL_OFFSET_Y,
-          font: "600 11px sans-serif",
-          fill: new ol.style.Fill({ color: "#ffffff" }),
-          backgroundFill: new ol.style.Fill({ color: "rgba(43,124,255,0.95)" }),
-          padding: [2, 5, 2, 5]
-        })
-      }));
+      feature.setStyle(function (styledFeature) {
+        const data = styledFeature && styledFeature.get ? (styledFeature.get("bearEstimateData") || {}) : {};
+        const markerText = String(data.bear_code || data.bearCode || data.id || "-");
+        const realtime = !!(styledFeature && styledFeature.get && styledFeature.get("isRealtimeMarker"));
+        const labelColor = realtime ? REALTIME_BEAR_LABEL_COLOR : "rgba(43,124,255,0.95)";
+        const styles = [];
+
+        if (realtime) {
+          styles.push(new ol.style.Style({
+            image: new ol.style.Circle({
+              radius: 17 + realtimeBearMarkerPulse * 8,
+              fill: new ol.style.Fill({ color: `rgba(52, 199, 89, ${0.08 + realtimeBearMarkerPulse * 0.16})` }),
+              stroke: new ol.style.Stroke({ color: `rgba(52, 199, 89, ${0.32 + realtimeBearMarkerPulse * 0.28})`, width: 2 })
+            })
+          }));
+
+          styles.push(new ol.style.Style({
+            image: new ol.style.Circle({
+              radius: 12,
+              fill: new ol.style.Fill({ color: "rgba(255,255,255,0.18)" }),
+              stroke: new ol.style.Stroke({ color: REALTIME_BEAR_PULSE_COLOR, width: 2.5 })
+            })
+          }));
+        }
+
+        styles.push(new ol.style.Style({
+          image: new ol.style.Icon({
+            src: "css/svg/bear_marker_point.svg",
+            anchor: [0.5, 1],
+            width: 34,
+            height: 34
+          }),
+          text: new ol.style.Text({
+            text: markerText,
+            offsetY: BEAR_LABEL_OFFSET_Y,
+            font: "600 11px sans-serif",
+            fill: new ol.style.Fill({ color: "#ffffff" }),
+            backgroundFill: new ol.style.Fill({ color: labelColor }),
+            padding: [2, 5, 2, 5]
+          })
+        }));
+
+        return styles;
+      });
 
       bearMarkerSource.addFeature(feature);
     });
+
+    if (hasRealtimeMarker) startBearMarkerAnimation();
+    else stopBearMarkerAnimation();
   }
 
   // CAPTURE_MOCK_LAT_LNGheading 문자열/숫자를 프리뷰 계산용 각도로 정규화한다.
@@ -5512,7 +5724,7 @@
 
     feature.setStyle(new ol.style.Style({
       image: new ol.style.Icon({
-        src: "assets/icons/bear_marker_point.svg",
+        src: "css/svg/bear_marker_point.svg",
         anchor: [0.5, 1],
         width: 40,
         height: 40
@@ -6115,6 +6327,9 @@
   function renderBears(items, isFallback) {
     if (!bearsListEl) return;
     syncSelectedBearEstimateIds(items);
+    if (realtimeListModule && typeof realtimeListModule.bindEstimateItems === "function") {
+      realtimeListModule.bindEstimateItems(items);
+    }
     bearsListEl.innerHTML = "";
 
     if (!items || items.length === 0) {
@@ -6136,7 +6351,7 @@
     }
 
     if (bearsToolbarSummaryEl) {
-      bearsToolbarSummaryEl.innerHTML = '<img src="assets/icons/icon_bear.png" style="height:16px;vertical-align:middle;margin-right:4px;" alt="곰"/> ' + items.length + '건 표시됨' + (isFallback ? ' <span style="font-size:11px;opacity:.6">(샘플)</span>' : '');
+      bearsToolbarSummaryEl.innerHTML = '<img src="css/image/icon_bear.png" style="height:16px;vertical-align:middle;margin-right:4px;" alt="곰"/> ' + items.length + '건 표시됨' + (isFallback ? ' <span style="font-size:11px;opacity:.6">(샘플)</span>' : '');
       bearsToolbarSummaryEl.hidden = false;
     }
 
@@ -6170,10 +6385,11 @@
           '<div class="bears-item__line bears-item__line--sub">' + latDms + ' ' + lngDms + '</div>' +
           '<div class="bears-item__line bears-item__line--sub">X: ' + mapX + ' / Y: ' + mapY + '</div>' +
         '</div>' +
-        '<div class="bears-item__meta">' +
-          '<div class="bears-item__buttons">' +
+        '<div class="bears-item__meta bears-item__meta--send">' +
+          '<div class="bears-item__buttons bears-item__buttons--triple">' +
             '<button class="bears-txt-dl-btn" type="button" aria-label="TXT 다운로드"><span class="bears-txt-dl-btn__label">TXT 다운로드</span></button>' +
             '<button class="bears-xls-dl-btn" type="button" aria-label="XLS 다운로드"><span class="bears-xls-dl-btn__label">XLS 다운로드</span></button>' +
+            '<button class="bears-send-btn" type="button" aria-label="실시간 전송"><span class="bears-send-btn__label">실시간 전송</span></button>' +
           '</div>' +
           '<div class="bears-item__date">' + dateLabel + '</div>' +
           '<div class="bears-item__time">' + timeLabel + '</div>' +
@@ -6196,6 +6412,28 @@
         xlsBtn.addEventListener("click", function (e) {
           e.stopPropagation();
           downloadBearEstimateXls(it, !!isFallback);
+        });
+      }
+
+      const sendBtn = el.querySelector(".bears-send-btn");
+      if (sendBtn) {
+        sendBtn.addEventListener("click", async function (e) {
+          e.stopPropagation();
+          const ok = await confirmRealtimeUpload(
+            "[" + bearCode + "] 항목을 실시간 목록에 업로드 하시겠습니까?",
+            "업로드 후 실시간 목록 탭에서 바로 확인할 수 있습니다."
+          );
+          if (!ok) return;
+
+          if (!realtimeListModule || typeof realtimeListModule.sendEstimate !== "function") {
+            if (statusEl) statusEl.textContent = "⚠️ 실시간 목록 모듈을 사용할 수 없습니다.";
+            return;
+          }
+
+          const sendResult = await realtimeListModule.sendEstimate(it);
+          if (sendResult && sendResult.ok && typeof realtimeListModule.openRealtimeTab === "function") {
+            realtimeListModule.openRealtimeTab();
+          }
         });
       }
 
@@ -6324,20 +6562,7 @@
 
     renderBears(items, usedFallback);
 
-    // renderBearMarkers는 bear_code/bearCode 모두 지원하는 구조로 변환해 전달한다.
-    renderBearMarkers(items.map(function (it) {
-      return {
-        id: it.id,
-        bear_code: it.bear_code || it.bearCode,
-        owner: it.owner,
-        place: it.place,
-        lat: it.lat,
-        lng: it.lng,
-        lat_dms: it.lat_dms,
-        lng_dms: it.lng_dms,
-        created_at: it.created_at || it.ts
-      };
-    }));
+    syncBearMarkersForActiveTab();
 
     if (!items.length) {
       if (!hasQueryError && statusEl) statusEl.textContent = "🟠 표시할 곰 추정위치가 없습니다";

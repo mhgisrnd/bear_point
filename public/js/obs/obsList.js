@@ -142,7 +142,6 @@ window.createObsListModule = function createObsListModule({
     if (!obsSheetEl || typeof ResizeObserver === "undefined") return;
     if (_obsSheetResizeObserver) _obsSheetResizeObserver.disconnect();
     _obsSheetResizeObserver = new ResizeObserver(function (entries) {
-      if (!_tabletLandscapeMq.matches) return;
       var entry = entries[0];
       if (!entry) return;
       var h = Math.round(

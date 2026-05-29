@@ -186,7 +186,12 @@
   <!-- 하단 좌측 패널 -->
   <div class="panel-stack panel-bottom-left">
     <div class="panel-tabs panel-tabs-floating">
-      <button class="tab-btn" id="btn-obs-list">관측점 목록</button>
+      <button class="tab-btn tab-active" id="btn-obs-list" type="button">관측점 목록</button>
+      <button class="tab-btn list-toggle list-toggle--local" id="btn-realtime-list" type="button" aria-label="로컬 목록에서 실시간 목록으로 전환" aria-pressed="false">
+        <span class="list-toggle__label list-toggle__label--left">로컬</span>
+        <span class="list-toggle__track" aria-hidden="true"><span class="list-toggle__thumb"></span></span>
+        <span class="list-toggle__label list-toggle__label--right">실시간</span>
+      </button>
     </div>
 
     <div class="panel" id="panel">
@@ -202,10 +207,16 @@
             <div class="bears-toolbar" id="bears-toolbar">
               <div class="bears-toolbar__row bears-toolbar__row--top">
                 <span class="bears-toolbar__summary" id="bears-toolbar-summary" aria-live="polite" hidden></span>
-                <button class="bears-toolbar-btn bears-toolbar-btn--ghost bears-toolbar-btn--excel-all" id="btn-bears-download-all-xls" type="button" aria-label="엑셀 일괄 다운로드" disabled>
-                  <span class="bears-toolbar-btn__excel-icon" aria-hidden="true"></span>
-                  <span>일괄 다운로드</span>
-                </button>
+                <div class="bears-toolbar__top-actions">
+                  <button class="bears-toolbar-btn bears-toolbar-btn--ghost bears-toolbar-btn--excel-all" id="btn-bears-download-all-xls" type="button" aria-label="엑셀 일괄 다운로드" disabled>
+                    <span class="bears-toolbar-btn__excel-icon" aria-hidden="true"></span>
+                    <span>일괄 다운로드</span>
+                  </button>
+                  <button class="bears-toolbar-btn bears-toolbar-btn--ghost bears-toolbar-btn--realtime-upload" id="btn-bears-upload-selected" type="button" aria-label="실시간 선택 업로드" disabled>
+                    <span class="bears-toolbar-btn__upload-icon" aria-hidden="true"></span>
+                    <span>선택 업로드</span>
+                  </button>
+                </div>
               </div>
               <div class="bears-toolbar__row bears-toolbar__row--bottom">
                 <label class="bears-select-all" for="bears-select-all">
@@ -226,6 +237,38 @@
               <div class="bears-empty__desc">관측점 위치분석 결과를 저장하면 목록이 표시됩니다.</div>
               <div class="bears-empty__hint">관측점 목록에서 2개 이상 선택 후 위치분석을 실행해보세요.</div>
               <button class="bears-empty__action" type="button">관측점 목록 열기</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="realtime-box bears-box hidden" id="realtime-box" aria-label="실시간 목록 패널">
+          <div class="bears-title">
+            <span id="realtime-title-label">실시간 목록</span>
+            <div class="bears-toolbar" id="realtime-toolbar">
+              <div class="bears-toolbar__row bears-toolbar__row--top">
+                <span class="bears-toolbar__summary" id="realtime-toolbar-summary" aria-live="polite">0건 표시됨</span>
+                <div class="bears-toolbar__top-actions">
+                  <button class="bears-toolbar-btn bears-toolbar-btn--ghost bears-toolbar-btn--excel-all" id="btn-realtime-download-selected-xls" type="button" aria-label="실시간 선택 엑셀 다운로드" disabled>
+                    <span class="bears-toolbar-btn__excel-icon" aria-hidden="true"></span>
+                    <span>일괄 다운로드</span>
+                  </button>
+                </div>
+              </div>
+              <div class="bears-toolbar__row bears-toolbar__row--bottom">
+                <label class="bears-select-all" for="realtime-select-all">
+                  <input type="checkbox" id="realtime-select-all" />
+                  <span>일괄 선택</span>
+                </label>
+                <div class="bears-toolbar__actions" id="realtime-toolbar-actions">
+                  <span class="bears-selection-count" id="realtime-selection-count">0개 선택</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="realtime-list bears-list" id="realtime-list">
+            <div class="realtime-empty" id="realtime-empty" role="status" aria-live="polite">
+              <div class="realtime-empty__title">아직 전송된 실시간 항목이 없습니다</div>
+              <div class="realtime-empty__desc">곰 추정위치 목록에서 전송 버튼을 누르면 여기에 표시됩니다.</div>
             </div>
           </div>
         </div>
@@ -252,6 +295,7 @@
   <!-- SQLite 자산 복사/내부 연결 초기화 모듈 -->
   <script src="js/db/sqlite-init.js"></script>
   <script src="js/analysis/bear-position-analysis.js"></script>
+  <script src="js/realtime/realtimeList.js"></script>
   <script src="js/obs/obsList.js"></script>
   <script src="js/obs/obsRegister.js"></script>
   <script src="js/map/ol-map-controls.js"></script>

@@ -21,9 +21,11 @@
     "@capacitor/haptics": "^7.0.0",
     "@capacitor/share": "^7.0.4",
     "better-sqlite3": "^12.9.0",
+    "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "forever": "^4.0.3",
     "ol": "^10.6.1",
+    "pg": "^8.21.0",
     "proj4": "^2.20.8",
     "socket.io": "^4.8.3"
   },

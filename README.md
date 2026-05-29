@@ -107,3 +107,24 @@ mbtiles는 용량이 크기 때문에  git에 x , 별도로 올릴 것!
 
 경로 예시
 mbtiles\korea-selection2-z7-z17-webp.mbtiles
+
+
+PostgreSQL 실시간 목록 DB 연동
+- .env에 PostgreSQL 값 설정
+        - PG_HOST=172.30.6.100
+        - PG_PORT=5432
+        - PG_USER=postgres
+        - PG_PASSWORD=postgres
+        - PG_DATABASE=postgres
+- 서버 실행
+        - npm run dev
+- 연결 확인
+        - GET /api/db/postgres/health
+
+생성 테이블
+- bear_estimates_realtime
+        - 컬럼: id, bear_estimate_id, bear_code, owner, place, lat, lng, lat_dms, lng_dms, intersections_count, source_created_at, uploaded_at, payload
+
+실시간 업로드 API
+- 저장: POST /api/realtime/bear-estimates
+- 목록: GET /api/realtime/bear-estimates?limit=100

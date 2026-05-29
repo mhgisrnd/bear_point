@@ -853,8 +853,12 @@
     padding: 8px 0 10px;
   }
 
-  /* 관측점 목록이 열렸을 때만 버튼을 숨겨 중복을 제거 */
+  /* 관측점 목록이 열려도 토글은 유지하고, 중복되는 관측점 버튼만 숨긴다. */
   body:has(.obs-sheet:not(.hidden)) .panel-stack.panel-bottom-left .panel-tabs {
+    display: flex;
+  }
+
+  body:has(.obs-sheet:not(.hidden)) .panel-stack.panel-bottom-left #btn-obs-list {
     display: none;
   }
 
@@ -1075,6 +1079,106 @@
   filter: drop-shadow(0 1px 0 rgba(255, 255, 255, 0.85));
 }
 
+#btn-realtime-list::before {
+  content: "";
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+  background-image: url("image/icon_bear_real.png");
+  background-size: contain;
+  background-position: center;
+  background-repeat: no-repeat;
+  filter: drop-shadow(0 1px 0 rgba(255, 255, 255, 0.85));
+}
+
+#btn-realtime-list.list-toggle::before {
+  display: none;
+}
+
+.list-toggle {
+  flex: 0 0 auto;
+  min-width: 168px;
+  padding: 0 10px;
+  gap: 8px;
+}
+
+.list-toggle__label {
+  font-size: 12px;
+  font-weight: 900;
+  line-height: 1;
+  letter-spacing: -0.01em;
+  color: #64748b;
+  transition: color 0.16s ease, opacity 0.16s ease;
+}
+
+.list-toggle__track {
+  position: relative;
+  width: 44px;
+  height: 22px;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.35);
+  border: 1px solid rgba(100, 116, 139, 0.35);
+  box-sizing: border-box;
+}
+
+.list-toggle__thumb {
+  position: absolute;
+  top: 1px;
+  left: 1px;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: #ffffff;
+  box-shadow: 0 2px 5px rgba(15, 23, 42, 0.28);
+  transition: transform 0.18s ease;
+}
+
+.list-toggle.list-toggle--local {
+  background: linear-gradient(180deg, rgba(255,255,255,0.98), rgba(248,250,252,0.94));
+  border-color: rgba(148, 163, 184, 0.42);
+}
+
+.list-toggle.list-toggle--local .list-toggle__label--left {
+  color: #1d4ed8;
+  opacity: 1;
+}
+
+.list-toggle.list-toggle--local .list-toggle__label--right {
+  color: #64748b;
+  opacity: 0.82;
+}
+
+.list-toggle.list-toggle--realtime .list-toggle__thumb {
+  transform: translateX(22px);
+}
+
+.list-toggle.list-toggle--realtime .list-toggle__track {
+  background: rgba(187, 247, 208, 0.35);
+  border-color: rgba(74, 222, 128, 0.52);
+}
+
+.list-toggle.list-toggle--local .list-toggle__track {
+  background: rgba(148, 163, 184, 0.32);
+}
+
+.list-toggle.list-toggle--realtime .list-toggle__label--left {
+  color: #94a3b8;
+  opacity: 0.82;
+}
+
+.list-toggle.list-toggle--realtime .list-toggle__label--right {
+  color: #15803d;
+  opacity: 1;
+  text-shadow: none;
+}
+
+.list-toggle.tab-active {
+  background: linear-gradient(180deg, rgba(255,255,255,0.98), rgba(248,250,252,0.94));
+  border-color: rgba(148,163,184,0.42);
+  color: #1f2937;
+  box-shadow: 0 7px 16px rgba(11, 64, 102, 0.12);
+}
+
 .tab-btn:hover {
   background: linear-gradient(180deg, #ffffff, #edf7ff);
   border-color: rgba(22, 151, 232, 0.38);
@@ -1090,6 +1194,24 @@
 
 .tab-btn.tab-active::before {
   filter: saturate(0) brightness(3) drop-shadow(0 1px 0 rgba(0, 0, 0, 0.12));
+}
+
+/* list-toggle는 tab-active여도 파란 배경을 쓰지 않고, 글자색만 상태 강조한다. */
+.tab-btn.list-toggle.tab-active {
+  background: linear-gradient(180deg, rgba(255,255,255,0.98), rgba(248,250,252,0.94));
+  border-color: rgba(148,163,184,0.42);
+  color: #1f2937;
+  box-shadow: 0 7px 16px rgba(11, 64, 102, 0.12);
+}
+
+.tab-btn.list-toggle.tab-active::before {
+  filter: none;
+}
+
+.tab-btn.list-toggle.tab-active:hover {
+  background: linear-gradient(180deg, #ffffff, #f1f5f9);
+  border-color: rgba(100, 116, 139, 0.45);
+  box-shadow: 0 9px 16px rgba(15, 23, 42, 0.14);
 }
 
 .register-box {
@@ -1176,6 +1298,12 @@
   justify-content: space-between;
   padding-bottom: 3px;
   border-bottom: 1px solid rgba(148, 163, 184, 0.28);
+}
+
+.bears-toolbar__top-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .bears-toolbar__row--bottom {
@@ -1293,6 +1421,24 @@
   background-size: 14px 14px;
 }
 
+.bears-toolbar-btn--realtime-upload {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 11px;
+  min-height: 30px;
+}
+
+.bears-toolbar-btn__upload-icon {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 14px;
+  background-image: url("image/real_send.png");
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: 14px 14px;
+}
+
 .bears-hint{
   font-size: 12px;
   padding: 4px 10px;
@@ -1394,6 +1540,10 @@
   min-width: 82px;
 }
 
+.bears-item__meta.bears-item__meta--send {
+  min-width: 116px;
+}
+
 .bears-item__buttons {
   display: flex;
   gap: 7px;
@@ -1402,6 +1552,11 @@
   border: 1px solid rgba(148, 163, 184, 0.45);
   border-radius: 8px;
   background: rgba(248, 250, 252, 0.85);
+}
+
+.bears-item__buttons.bears-item__buttons--triple {
+  gap: 5px;
+  padding: 4px 5px;
 }
 
 .bears-txt-dl-btn {
@@ -1471,6 +1626,45 @@
 }
 
 .bears-xls-dl-btn__label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.bears-send-btn {
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  border: 1px solid rgba(14, 116, 144, 0.5);
+  border-radius: 7px;
+  background-color: rgba(255, 255, 255, 0.95);
+  background-image: url("image/real_send.png");
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: 23px 23px;
+  cursor: pointer;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,0.64);
+  transition: opacity 0.16s ease, border-color 0.16s ease, background-color 0.16s ease;
+}
+
+.bears-send-btn:hover,
+.bears-send-btn:focus-visible {
+  border-color: rgba(14, 116, 144, 0.72);
+  background-color: #ffffff;
+  opacity: 0.88;
+}
+
+.bears-send-btn:active {
+  opacity: 0.72;
+}
+
+.bears-send-btn__label {
   position: absolute;
   width: 1px;
   height: 1px;
@@ -1566,6 +1760,116 @@
   box-shadow: 0 8px 16px rgba(37, 99, 235, 0.22);
 }
 
+.realtime-box {
+  display: block;
+}
+
+.realtime-title__actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.realtime-box .bears-toolbar {
+  margin-bottom: 0;
+}
+
+.realtime-count {
+  font-size: 12px;
+  color: #0d80d8;
+  font-weight: 800;
+  background: rgba(22, 151, 232, 0.12);
+  border: 1px solid rgba(22, 151, 232, 0.28);
+  border-radius: 999px;
+  padding: 2px 10px;
+}
+
+.realtime-list {
+  max-height: 180px;
+  overflow-y: scroll;
+  overflow-x: hidden;
+  padding-right: 4px;
+  padding-bottom: 12px;
+  box-sizing: border-box;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.realtime-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(15, 23, 42, 0.14);
+  background: rgba(255, 255, 255, 0.95);
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08);
+  margin-bottom: 6px;
+  cursor: pointer;
+}
+
+.realtime-item:hover {
+  border-color: rgba(37, 99, 235, 0.32);
+}
+
+.realtime-item__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.realtime-item__code {
+  font-size: 13px;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.realtime-item__badge {
+  font-size: 10px;
+  font-weight: 800;
+  color: #075985;
+  background: rgba(14, 165, 233, 0.16);
+  border: 1px solid rgba(14, 165, 233, 0.34);
+  border-radius: 999px;
+  padding: 1px 8px;
+}
+
+.realtime-item__line {
+  font-size: 11px;
+  color: rgba(30, 41, 59, 0.9);
+  line-height: 1.3;
+}
+
+.realtime-item__line--sub {
+  color: rgba(51, 65, 85, 0.92);
+}
+
+.realtime-empty {
+  margin: 4px 2px;
+  padding: 14px 12px;
+  border: 1px dashed rgba(148, 163, 184, 0.5);
+  border-radius: 12px;
+  background: linear-gradient(180deg, rgba(255,255,255,0.78), rgba(248,250,252,0.9));
+  color: #334155;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.realtime-empty__title {
+  font-size: 13px;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.realtime-empty__desc {
+  font-size: 12px;
+  line-height: 1.45;
+  color: #334155;
+}
+
 /* [Phone Narrow] 480px 이하: 관측점/곰 목록 요소 크기 축소 */
 @media (max-width: 480px) {
   .obs-sheet {
@@ -1632,6 +1936,10 @@
     padding-bottom: 5px;
   }
 
+  .bears-toolbar__top-actions {
+    gap: 4px;
+  }
+
   .bears-toolbar__row--bottom {
     justify-content: space-between;
     padding-top: 1px;
@@ -1649,11 +1957,29 @@
     font-size: 10px;
   }
 
+  .bears-toolbar-btn--realtime-upload {
+    gap: 4px;
+    padding: 0 8px;
+    min-height: 28px;
+    font-size: 10px;
+  }
+
   .bears-toolbar-btn__excel-icon {
     width: 12px;
     height: 12px;
     flex: 0 0 12px;
     background-size: 12px 12px;
+  }
+
+  .bears-toolbar-btn__upload-icon {
+    width: 12px;
+    height: 12px;
+    flex: 0 0 12px;
+    background-size: 12px 12px;
+  }
+
+  .realtime-title__actions {
+    gap: 4px;
   }
 
   .bears-item {
@@ -1692,6 +2018,14 @@
     width: 34px;
     height: 34px;
     background-size: 24px 24px;
+    border-radius: 6px;
+    border-width: 1px;
+  }
+
+  .bears-send-btn {
+    width: 34px;
+    height: 34px;
+    background-size: 21px 21px;
     border-radius: 6px;
     border-width: 1px;
   }
