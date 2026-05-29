@@ -5,6 +5,7 @@ const { createMbtilesStore } = require("./services/mbtilesStore");
 const { createMbtilesRouter } = require("./routes/mbtilesRoutes");
 const { createPostgresRouter } = require("./routes/postgresRoutes");
 const { createRealtimeRouter } = require("./routes/realtimeRoutes");
+const { createAdminAuthRouter } = require("./routes/adminAuthRoutes");
 
 // 앱 공통 미들웨어와 라우터를 조립해 Express 인스턴스를 생성한다.
 function createApp(rootDir) {
@@ -23,6 +24,7 @@ function createApp(rootDir) {
   app.use(createMbtilesRouter(mbtilesStore));
   app.use("/api/db/postgres", createPostgresRouter());
   app.use("/api/realtime", createRealtimeRouter());
+  app.use("/api/admin/auth", createAdminAuthRouter());
 
   app.get("/login", (req, res) => {
     res.sendFile(path.join(rootDir, "public", "pages", "login.html"));
