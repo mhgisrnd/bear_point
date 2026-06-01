@@ -70,6 +70,16 @@ body {
   background: rgba(255, 255, 255, 0.96);
 }
 
+.sidebar-brand-link {
+  text-decoration: none;
+  color: inherit;
+  transition: transform 0.16s ease, box-shadow 0.16s ease;
+}
+
+.sidebar-brand-link:hover {
+  transform: translateX(2px);
+}
+
 .sidebar-brand img {
   width: 42px;
   height: 42px;

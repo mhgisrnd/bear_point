@@ -7,6 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=Noto+Sans+KR:wght@400;500;700;900&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../vendor/ol/ol.css" />
   <link rel="stylesheet" href="../css/admin-layout.css" />
   <link rel="stylesheet" href="../css/admin-dashboard.css" />
 </head>
@@ -28,23 +29,23 @@
         <section class="stats-grid" aria-label="핵심 통계">
       <article class="stat-card accent-blue">
         <p class="stat-label">등록 개체수</p>
-        <strong class="stat-value">17</strong>
+        <strong class="stat-value">145 마리</strong>
         <span class="stat-foot">관측 대상 등록 기준</span>
       </article>
       <article class="stat-card accent-green">
         <p class="stat-label">활성 추적 개체</p>
-        <strong class="stat-value">9</strong>
-        <span class="stat-foot">최근 24시간 위치 수신</span>
+        <strong class="stat-value">13 마리</strong>
+        <span class="stat-foot">전체 추적위치 건수</span>
       </article>
       <article class="stat-card accent-amber">
-        <p class="stat-label">금일 이상징후</p>
-        <strong class="stat-value">3</strong>
-        <span class="stat-foot">이동 반경 급변 및 신호 누락</span>
+        <p class="stat-label">금일 등록건수</p>
+        <strong class="stat-value">3 건</strong>
+        <span class="stat-foot">추적위치 금일 등록 건수</span>
       </article>
       <article class="stat-card accent-slate">
-        <p class="stat-label">최근 수신</p>
-        <strong class="stat-value">08:42</strong>
-        <span class="stat-foot">반달곰 K-07 / 세석평전</span>
+        <p class="stat-label">금일 접속 건수</p>
+        <strong class="stat-value">준비중</strong>
+        <span class="stat-foot">금일 모바일 접속 건수</span>
       </article>
         </section>
 
@@ -53,27 +54,19 @@
         <div class="panel-head">
           <div>
             <p class="panel-kicker">Population Map</p>
-            <h3>개체 분포 지도</h3>
+            <h3>실시간 곰 목록 지도 조회</h3>
           </div>
-          <button class="ghost-button" type="button" id="refreshDashboardBtn">실시간 새로고침</button>
+          <button class="ghost-button" type="button" id="btnDashboardRealtimeRefresh">실시간 새로고침</button>
         </div>
 
-        <div class="map-stage" aria-label="곰 개체수 분포 지도 초안">
-          <div class="map-overlay map-zone north">북부 4개체</div>
-          <div class="map-overlay map-zone central">중부 7개체</div>
-          <div class="map-overlay map-zone south">남부 6개체</div>
-
-          <button class="map-marker marker-a" type="button">K-03</button>
-          <button class="map-marker marker-b" type="button">K-07</button>
-          <button class="map-marker marker-c" type="button">K-11</button>
-          <button class="map-marker marker-d" type="button">K-14</button>
-          <button class="map-marker marker-e" type="button">K-17</button>
+        <div class="map-stage map-stage--realtime" aria-label="실시간 곰 목록 지도 조회 화면">
+          <div class="admin-realtime-map" id="adminRealtimeMap"></div>
+          <div class="admin-realtime-map-empty" id="adminRealtimeMapEmpty" hidden>실시간 좌표 데이터가 없습니다.</div>
         </div>
 
         <div class="map-legend">
-          <span><i class="legend-dot live"></i>실시간 수신 중</span>
-          <span><i class="legend-dot caution"></i>이상징후 감지</span>
-          <span><i class="legend-dot stable"></i>안정 구간</span>
+          <span><i class="legend-dot live"></i>실시간 수신 위치</span>
+          <span><i class="legend-dot stable"></i>최근 등록 좌표</span>
         </div>
       </article>
 
@@ -81,16 +74,14 @@
         <article class="side-card">
           <div class="panel-head compact">
             <div>
-              <p class="panel-kicker">Region Snapshot</p>
-              <h3>권역별 현황</h3>
+              <p class="panel-kicker">최근 등록 건수</p>
+              <!-- <h3>최근 등록 건수</h3> -->
             </div>
+            <!-- <span class="panel-badge">최대 10건</span> -->
+            <span class="stat-foot">최대 10건까지 확인 가능합니다.</span> 
           </div>
-          <ul class="region-list">
-            <li><span>세석평전</span><strong>4개체</strong></li>
-            <li><span>반야봉 능선</span><strong>3개체</strong></li>
-            <li><span>노고단 권역</span><strong>5개체</strong></li>
-            <li><span>중산리 계곡</span><strong>2개체</strong></li>
-            <li><span>백무동 권역</span><strong>3개체</strong></li>
+          <ul class="recent-registration-list" id="recentRegistrationList" aria-label="최근 등록 건수 10건">
+            <li><span>로딩 중...</span><strong>-</strong></li>
           </ul>
         </article>
       </aside>
@@ -101,6 +92,7 @@
     <footer class="admin-footer" id="adminFooter"></footer>
   </div>
 
+  <script src="../vendor/ol/ol.js"></script>
   <script src="../js/admin/admin-layout.js"></script>
   <script src="../js/admin/admin-dashboard.js"></script>
 </body>

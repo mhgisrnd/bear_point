@@ -39,6 +39,7 @@
   const currentCoordEl = document.getElementById("obs-current-coord");
   const currentHeadingEl = document.getElementById("obs-current-heading");
   const searchParams = new URLSearchParams(window.location.search);
+  const defaultTabParam = String(searchParams.get("defaultTab") || "").trim().toLowerCase();
   let removeBackButtonListener = null;
   let lastBackPressAt = 0;
   const BACK_EXIT_DOUBLE_PRESS_MS = 2000;
@@ -418,6 +419,7 @@
         // 웹(non-native)에서는 JSON 폴백 목록을 렌더링한 뒤 화면을 연다.
         if (reason === "non-native-platform") {
           await refreshBearEstimatePanel();
+          applyInitialTabFromQuery();
           await hideStartupOverlay();
           setDefaultStatusWithIcon();
           return;
@@ -427,6 +429,7 @@
 
       bootPhase = "panel-render";
       await refreshBearEstimatePanel();
+      applyInitialTabFromQuery();
       await hideStartupOverlay();
       setDefaultStatusWithIcon();
     } catch (error) {
@@ -443,6 +446,13 @@
         true
       );
     }
+  }
+
+  // URL 파라미터로 전달된 기본 탭 요청(defaultTab=realtime)을 적용한다.
+  function applyInitialTabFromQuery() {
+    if (defaultTabParam !== "realtime") return;
+    if (!realtimeListModule || typeof realtimeListModule.openRealtimeTab !== "function") return;
+    realtimeListModule.openRealtimeTab();
   }
 
   // URL 쿼리 파라미터를 숫자로 읽고 범위를 벗어나면 기본값으로 되돌린다.
