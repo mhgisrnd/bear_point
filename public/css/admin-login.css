@@ -220,6 +220,20 @@ input:focus {
 
 .notice.show { opacity: 1; }
 
+.caps-lock-notice {
+  min-height: 16px;
+  margin: 2px 0 0;
+  color: #b45309;
+  font-size: 12px;
+  font-weight: 700;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.caps-lock-notice.show {
+  opacity: 1;
+}
+
 .foot {
   display: flex;
   justify-content: space-between;
