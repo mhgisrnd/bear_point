@@ -128,3 +128,10 @@ PostgreSQL 실시간 목록 DB 연동
 실시간 업로드 API
 - 저장: POST /api/realtime/bear-estimates
 - 목록: GET /api/realtime/bear-estimates?limit=100
+
+
+비밀번호 해시타입으로 선언 시 확인 api
+http://localhost:3000/api/admin/auth/debug/hash?password=admin1234!
+
+로그인 암호화 시, bcrypt 기반 단방향 salt 암호화 사용
+admin/admin1234! > 관리자 세팅

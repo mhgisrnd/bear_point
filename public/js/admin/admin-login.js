@@ -22,5 +22,5 @@ form.addEventListener("submit", (event) => {
   }
 
   notice.classList.remove("show");
-  alert("관리자 로그인 UI 확인용입니다. 실제 인증 API를 연결해 주세요.");
+  window.location.href = "/admin/dashboard";
 });

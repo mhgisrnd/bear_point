@@ -34,6 +34,10 @@ function createApp(rootDir) {
     res.sendFile(path.join(rootDir, "public", "pages", "admin-login.html"));
   });
 
+  app.get("/admin/dashboard", (req, res) => {
+    res.sendFile(path.join(rootDir, "public", "pages", "admin-dashboard.html"));
+  });
+
   return { app, mbtilesStore };
 }
 

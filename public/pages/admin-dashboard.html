@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>지리산 곰 위치추적 - 관리자 대시보드</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=Noto+Sans+KR:wght@400;500;700;900&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../css/admin-layout.css" />
+  <link rel="stylesheet" href="../css/admin-dashboard.css" />
+</head>
+<body data-admin-page="dashboard" data-admin-title="관리자 대시보드" data-admin-subtitle="곰 개체 추적 현황과 경보를 한 눈에 보는 관리 첫 화면">
+  <div class="admin-app">
+    <main class="admin-shell">
+      <aside class="admin-sidebar" id="adminSidebar"></aside>
+
+      <div class="admin-main">
+        <header class="admin-header" id="adminHeader"></header>
+
+        <section class="dashboard-shell">
+        <section class="dashboard-page-head" aria-label="페이지 제목">
+          <p class="dashboard-page-kicker">Admin Workspace</p>
+          <h1 id="adminHeaderTitle">관리자 대시보드</h1>
+          <p class="dashboard-page-subtitle" id="adminHeaderSubtitle">곰 개체 추적 현황과 경보를 한 눈에 보는 관리 첫 화면</p>
+        </section>
+
+        <section class="stats-grid" aria-label="핵심 통계">
+      <article class="stat-card accent-blue">
+        <p class="stat-label">등록 개체수</p>
+        <strong class="stat-value">17</strong>
+        <span class="stat-foot">관측 대상 등록 기준</span>
+      </article>
+      <article class="stat-card accent-green">
+        <p class="stat-label">활성 추적 개체</p>
+        <strong class="stat-value">9</strong>
+        <span class="stat-foot">최근 24시간 위치 수신</span>
+      </article>
+      <article class="stat-card accent-amber">
+        <p class="stat-label">금일 이상징후</p>
+        <strong class="stat-value">3</strong>
+        <span class="stat-foot">이동 반경 급변 및 신호 누락</span>
+      </article>
+      <article class="stat-card accent-slate">
+        <p class="stat-label">최근 수신</p>
+        <strong class="stat-value">08:42</strong>
+        <span class="stat-foot">반달곰 K-07 / 세석평전</span>
+      </article>
+        </section>
+
+        <section class="content-grid">
+      <article class="map-panel">
+        <div class="panel-head">
+          <div>
+            <p class="panel-kicker">Population Map</p>
+            <h3>개체 분포 지도</h3>
+          </div>
+          <button class="ghost-button" type="button" id="refreshDashboardBtn">실시간 새로고침</button>
+        </div>
+
+        <div class="map-stage" aria-label="곰 개체수 분포 지도 초안">
+          <div class="map-overlay map-zone north">북부 4개체</div>
+          <div class="map-overlay map-zone central">중부 7개체</div>
+          <div class="map-overlay map-zone south">남부 6개체</div>
+
+          <button class="map-marker marker-a" type="button">K-03</button>
+          <button class="map-marker marker-b" type="button">K-07</button>
+          <button class="map-marker marker-c" type="button">K-11</button>
+          <button class="map-marker marker-d" type="button">K-14</button>
+          <button class="map-marker marker-e" type="button">K-17</button>
+        </div>
+
+        <div class="map-legend">
+          <span><i class="legend-dot live"></i>실시간 수신 중</span>
+          <span><i class="legend-dot caution"></i>이상징후 감지</span>
+          <span><i class="legend-dot stable"></i>안정 구간</span>
+        </div>
+      </article>
+
+      <aside class="side-stack">
+        <article class="side-card">
+          <div class="panel-head compact">
+            <div>
+              <p class="panel-kicker">Region Snapshot</p>
+              <h3>권역별 현황</h3>
+            </div>
+          </div>
+          <ul class="region-list">
+            <li><span>세석평전</span><strong>4개체</strong></li>
+            <li><span>반야봉 능선</span><strong>3개체</strong></li>
+            <li><span>노고단 권역</span><strong>5개체</strong></li>
+            <li><span>중산리 계곡</span><strong>2개체</strong></li>
+            <li><span>백무동 권역</span><strong>3개체</strong></li>
+          </ul>
+        </article>
+      </aside>
+        </section>
+      </div>
+    </main>
+
+    <footer class="admin-footer" id="adminFooter"></footer>
+  </div>
+
+  <script src="../js/admin/admin-layout.js"></script>
+  <script src="../js/admin/admin-dashboard.js"></script>
+</body>
+</html>
