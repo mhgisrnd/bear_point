@@ -199,8 +199,26 @@
       return API_BASE + pathname;
     }
 
+    function buildNetworkErrorMessage() {
+      if (typeof navigator !== "undefined" && navigator && navigator.onLine === false) {
+        return "인터넷 연결이 끊어졌습니다. 네트워크 상태를 확인해 주세요.";
+      }
+
+      return "인터넷 연결이 원활하지 않습니다. 잠시 후 다시 시도해 주세요.";
+    }
+
     async function requestJson(pathname, requestOptions) {
-      const response = await fetch(buildApiUrl(pathname), requestOptions || {});
+      let response;
+      try {
+        response = await fetch(buildApiUrl(pathname), requestOptions || {});
+      } catch (networkError) {
+        const error = new Error(buildNetworkErrorMessage());
+        error.statusCode = 0;
+        error.isNetworkError = true;
+        error.detail = networkError && networkError.message ? networkError.message : undefined;
+        throw error;
+      }
+
       let data = null;
       try {
         data = await response.json();
@@ -244,7 +262,12 @@
         items = [];
         notifyItemsChanged();
         if (!silent) {
-          setStatus(error && error.message ? error.message : "실시간 목록 조회에 실패했습니다.", "error");
+          const message = error && error.isNetworkError
+            ? error.message
+            : error && error.message
+              ? error.message
+              : "실시간 목록 조회에 실패했습니다.";
+          setStatus(message, "error");
         }
         return {
           ok: false,

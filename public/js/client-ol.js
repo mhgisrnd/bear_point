@@ -5094,6 +5094,8 @@
     items.forEach(function (it) {
       const isRealtimeMarker = !!(it && it.isRealtime);
       if (isRealtimeMarker) hasRealtimeMarker = true;
+      const markerText = String(it && (it.bear_code || it.bearCode || it.id) || "-");
+      const labelColor = isRealtimeMarker ? REALTIME_BEAR_LABEL_COLOR : "rgba(43,124,255,0.95)";
 
       const feature = new ol.Feature({
         geometry: new ol.geom.Point(mapCoordFromWgs84(it.lat, it.lng))
@@ -5102,50 +5104,52 @@
       feature.set("bearEstimateData", it);
       feature.set("isRealtimeMarker", isRealtimeMarker);
 
-      feature.setStyle(function (styledFeature) {
-        const data = styledFeature && styledFeature.get ? (styledFeature.get("bearEstimateData") || {}) : {};
-        const markerText = String(data.bear_code || data.bearCode || data.id || "-");
-        const realtime = !!(styledFeature && styledFeature.get && styledFeature.get("isRealtimeMarker"));
-        const labelColor = realtime ? REALTIME_BEAR_LABEL_COLOR : "rgba(43,124,255,0.95)";
-        const styles = [];
-
-        if (realtime) {
-          styles.push(new ol.style.Style({
-            image: new ol.style.Circle({
-              radius: 17 + realtimeBearMarkerPulse * 8,
-              fill: new ol.style.Fill({ color: `rgba(52, 199, 89, ${0.08 + realtimeBearMarkerPulse * 0.16})` }),
-              stroke: new ol.style.Stroke({ color: `rgba(52, 199, 89, ${0.32 + realtimeBearMarkerPulse * 0.28})`, width: 2 })
-            })
-          }));
-
-          styles.push(new ol.style.Style({
-            image: new ol.style.Circle({
-              radius: 12,
-              fill: new ol.style.Fill({ color: "rgba(255,255,255,0.18)" }),
-              stroke: new ol.style.Stroke({ color: REALTIME_BEAR_PULSE_COLOR, width: 2.5 })
-            })
-          }));
-        }
-
-        styles.push(new ol.style.Style({
-          image: new ol.style.Icon({
-            src: "css/svg/bear_marker_point.svg",
-            anchor: [0.5, 1],
-            width: 34,
-            height: 34
-          }),
-          text: new ol.style.Text({
-            text: markerText,
-            offsetY: BEAR_LABEL_OFFSET_Y,
-            font: "600 11px sans-serif",
-            fill: new ol.style.Fill({ color: "#ffffff" }),
-            backgroundFill: new ol.style.Fill({ color: labelColor }),
-            padding: [2, 5, 2, 5]
-          })
-        }));
-
-        return styles;
+      const markerIconStyle = new ol.style.Style({
+        image: new ol.style.Icon({
+          src: "css/svg/bear_marker_point.svg",
+          anchor: [0.5, 1],
+          width: 34,
+          height: 34
+        }),
+        text: new ol.style.Text({
+          text: markerText,
+          offsetY: BEAR_LABEL_OFFSET_Y,
+          font: "600 11px sans-serif",
+          fill: new ol.style.Fill({ color: "#ffffff" }),
+          backgroundFill: new ol.style.Fill({ color: labelColor }),
+          padding: [2, 5, 2, 5]
+        })
       });
+
+      if (isRealtimeMarker) {
+        const pulseOuterStyle = new ol.style.Style({
+          image: new ol.style.Circle({
+            radius: 17,
+            fill: new ol.style.Fill({ color: "rgba(52, 199, 89, 0.08)" }),
+            stroke: new ol.style.Stroke({ color: "rgba(52, 199, 89, 0.32)", width: 2 })
+          })
+        });
+
+        const pulseInnerStyle = new ol.style.Style({
+          image: new ol.style.Circle({
+            radius: 12,
+            fill: new ol.style.Fill({ color: "rgba(255,255,255,0.18)" }),
+            stroke: new ol.style.Stroke({ color: REALTIME_BEAR_PULSE_COLOR, width: 2.5 })
+          })
+        });
+
+        feature.setStyle(function () {
+          pulseOuterStyle.setImage(new ol.style.Circle({
+            radius: 17 + realtimeBearMarkerPulse * 8,
+            fill: new ol.style.Fill({ color: `rgba(52, 199, 89, ${0.08 + realtimeBearMarkerPulse * 0.16})` }),
+            stroke: new ol.style.Stroke({ color: `rgba(52, 199, 89, ${0.32 + realtimeBearMarkerPulse * 0.28})`, width: 2 })
+          }));
+
+          return [pulseOuterStyle, pulseInnerStyle, markerIconStyle];
+        });
+      } else {
+        feature.setStyle(markerIconStyle);
+      }
 
       bearMarkerSource.addFeature(feature);
     });
