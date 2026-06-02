@@ -42,10 +42,57 @@
       return null;
     }
 
-    const API_BASE =
-      typeof options.apiBase === "string" && options.apiBase.trim()
-        ? options.apiBase.trim().replace(/\/$/, "")
-        : "/api/realtime";
+    const DEFAULT_LOCAL_API_BASE = "/api/realtime";
+    const DEFAULT_DEV_API_BASE = "https://bearmap.duckdns.org/api/realtime";
+
+    function normalizeApiBase(value) {
+      if (typeof value !== "string") return "";
+      const normalized = value.trim().replace(/\/$/, "");
+      return normalized;
+    }
+
+    function isNativeCapacitorRuntime() {
+      if (!window || !window.Capacitor) return false;
+
+      try {
+        if (typeof window.Capacitor.isNativePlatform === "function") {
+          return !!window.Capacitor.isNativePlatform();
+        }
+
+        if (typeof window.Capacitor.getPlatform === "function") {
+          const platform = window.Capacitor.getPlatform();
+          return platform === "android" || platform === "ios";
+        }
+      } catch (_) {
+        return false;
+      }
+
+      return false;
+    }
+
+    function resolveApiBase() {
+      const optionBase = normalizeApiBase(options.apiBase);
+      if (optionBase) return optionBase;
+
+      const runtimeConfig =
+        window && window.BEAR_RUNTIME_CONFIG && typeof window.BEAR_RUNTIME_CONFIG === "object"
+          ? window.BEAR_RUNTIME_CONFIG
+          : null;
+
+      const runtimeBase = normalizeApiBase(runtimeConfig && runtimeConfig.realtimeApiBase);
+      if (runtimeBase) return runtimeBase;
+
+      const globalBase = normalizeApiBase(window && window.BEAR_API_BASE);
+      if (globalBase) return globalBase;
+
+      if (isNativeCapacitorRuntime()) {
+        return DEFAULT_DEV_API_BASE;
+      }
+
+      return DEFAULT_LOCAL_API_BASE;
+    }
+
+    const API_BASE = resolveApiBase();
     const MAX_ITEMS = 200;
 
     let items = [];

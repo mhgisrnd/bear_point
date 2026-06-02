@@ -14,6 +14,27 @@ function createApp(rootDir) {
   const mbtilesStore = createMbtilesStore(rootDir);
   const adminSessionStore = createAdminSessionStore();
 
+  function applyApiCors(req, res, next) {
+    const requestOrigin = req.headers.origin;
+
+    if (requestOrigin) {
+      res.setHeader("Access-Control-Allow-Origin", requestOrigin);
+      res.setHeader("Vary", "Origin");
+    } else {
+      res.setHeader("Access-Control-Allow-Origin", "*");
+    }
+
+    res.setHeader("Access-Control-Allow-Methods", "GET,POST,PATCH,DELETE,OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Accept, Authorization");
+    res.setHeader("Access-Control-Max-Age", "600");
+
+    if (req.method === "OPTIONS") {
+      return res.status(204).end();
+    }
+
+    next();
+  }
+
   app.use((req, res, next) => {
     res.setHeader("ngrok-skip-browser-warning", "true");
     next();
@@ -22,6 +43,7 @@ function createApp(rootDir) {
   app.use(express.static(path.join(rootDir, "public")));
   app.use("/node_modules", express.static(path.join(rootDir, "node_modules")));
   app.use(express.json({ limit: "1mb" }));
+  app.use("/api", applyApiCors);
 
   // 관리자 페이지 공통 세션을 요청 단위로 읽어 둔다.
   app.use((req, res, next) => {
@@ -53,6 +75,14 @@ function createApp(rootDir) {
     }
 
     res.sendFile(path.join(rootDir, "public", "pages", "admin-dashboard.html"));
+  });
+
+  app.get("/admin/tracking", (req, res) => {
+    if (!req.adminSession) {
+      return res.redirect("/admin/login");
+    }
+
+    res.sendFile(path.join(rootDir, "public", "pages", "admin-tracking.html"));
   });
 
   return { app, mbtilesStore };

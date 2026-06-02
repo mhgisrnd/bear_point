@@ -28,12 +28,14 @@ body {
 .admin-shell {
   display: grid;
   grid-template-columns: 264px minmax(0, 1fr);
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 .admin-app {
   min-height: 100vh;
-  display: grid;
-  grid-template-rows: auto auto;
+  display: flex;
+  flex-direction: column;
 }
 
 .admin-sidebar {
@@ -224,6 +226,12 @@ body {
 .admin-main {
   min-width: 0;
   padding: 0 12px 10px;
+  display: flex;
+  flex-direction: column;
+}
+
+.admin-main > section {
+  flex: 1 1 auto;
 }
 
 .admin-header {

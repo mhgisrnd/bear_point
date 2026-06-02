@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>지리산 곰 위치추적 - 관리자 로그인</title>
+  <title>관리자 로그인</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=Noto+Sans+KR:wght@400;500;700;900&display=swap" rel="stylesheet" />
@@ -14,7 +14,7 @@
     <section class="wrap" aria-label="관리자 로그인">
       <aside class="hero">
         <div class="badge"><span class="dot" aria-hidden="true"></span>Admin Only</div>
-        <h1>관리자 콘솔 로그인</h1>
+        <h1>반달가슴곰 위치추적 분석</h1>
         <p>
           관측점 등록, 수정, 삭제 기능은 관리자 계정으로만 접근 가능합니다.
           보안 인증 후 관리 콘솔로 이동합니다.
@@ -31,13 +31,15 @@
         <form id="adminLoginForm" novalidate>
           <label for="adminId">
             관리자 아이디
-            <input id="adminId" name="adminId" type="text" autocomplete="username" placeholder="admin id" required />
+            <!-- <input id="adminId" name="adminId" type="text" autocomplete="username" placeholder="admin id" required /> -->
+             <input id="adminId" name="adminId" type="text" autocomplete="username" placeholder="admin id" value="admin" required />
           </label>
 
           <label for="adminPassword">
             비밀번호
             <div class="password-wrap">
-              <input id="adminPassword" name="adminPassword" type="password" autocomplete="current-password" placeholder="password" required />
+              <!-- <input id="adminPassword" name="adminPassword" type="password" autocomplete="current-password" placeholder="password" required /> -->
+              <input id="adminPassword" name="adminPassword" type="password" autocomplete="current-password" placeholder="password" value="admin1234!" required />
               <button class="toggle-visibility" type="button" id="togglePwd" aria-label="비밀번호 보기 전환">보기</button>
             </div>
             <p class="caps-lock-notice" id="capsLockNotice" role="status" aria-live="polite"></p>
@@ -47,8 +49,8 @@
           <p class="notice" id="notice" role="alert" aria-live="polite"></p>
 
           <div class="foot">
-            <span>테스트 UI 페이지입니다.</span>
-            <a href="login.html">일반 로그인으로 이동</a>
+            <span>관리자 페이지입니다.</span>
+            <!-- <a href="login.html">일반 로그인으로 이동</a> -->
           </div>
         </form>
       </div>
