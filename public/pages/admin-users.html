@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>지리산 곰 위치추적 - 관리자 사용자 관리</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=Noto+Sans+KR:wght@400;500;700;900&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../css/admin-layout.css" />
+  <link rel="stylesheet" href="../css/admin-tracking.css" />
+</head>
+<body
+  data-admin-page="users"
+  data-admin-title="사용자 관리"
+  data-admin-subtitle="관리자 계정과 권한 상태를 조회하고 검색하는 화면"
+>
+  <div class="admin-app">
+    <main class="admin-shell">
+      <aside class="admin-sidebar" id="adminSidebar"></aside>
+
+      <div class="admin-main">
+        <header class="admin-header" id="adminHeader"></header>
+
+        <section class="tracking-shell" aria-label="사용자 관리">
+          <section class="tracking-page-head" aria-label="페이지 제목">
+            <p class="tracking-page-kicker">User Board</p>
+            <h1 id="adminHeaderTitle">사용자 관리</h1>
+            <p class="tracking-page-subtitle" id="adminHeaderSubtitle">관리자 계정과 권한 상태를 조회하고 검색하는 화면</p>
+          </section>
+
+          <article class="tracking-board">
+            <header class="tracking-board-head">
+              <div>
+                <p class="tracking-board-kicker">Admin Accounts</p>
+                <h2>사용자 목록</h2>
+              </div>
+
+              <div class="tracking-board-actions">
+                <button type="button" class="ghost-button" id="btnUserRefresh">목록 새로고침</button>
+                <!-- <button type="button" class="secondary-button" id="btnUserInvite">사용자 초대</button> -->
+                <button type="button" class="secondary-button" id="btnUserDeleteSelected" disabled>선택 삭제</button>
+              </div>
+            </header>
+
+            <div class="tracking-search-row" aria-label="사용자 검색">
+              <input
+                type="search"
+                id="userSearchInput"
+                class="tracking-search-input"
+                placeholder="아이디, 이름, 권한으로 검색"
+                autocomplete="off"
+              />
+              <button type="button" class="ghost-button" id="btnUserSearchClear">검색 초기화</button>
+            </div>
+
+            <p class="tracking-board-status" id="userBoardStatus" aria-live="polite">사용자 목록을 불러오는 중입니다...</p>
+
+            <div class="tracking-table-wrap">
+              <table class="tracking-table" aria-label="사용자 목록 테이블">
+                <thead>
+                  <tr>
+                    <th class="tracking-col-select">
+                      <input type="checkbox" id="userSelectAll" aria-label="현재 페이지 전체 선택" />
+                    </th>
+                    <th>아이디</th>
+                    <th>이름</th>
+                    <th>권한</th>
+                    <th>상태</th>
+                    <th>최근 로그인</th>
+                    <th>생성일</th>
+                    <th>수정일</th>
+                    <th class="tracking-col-actions">관리</th>
+                  </tr>
+                </thead>
+                <tbody id="userTableBody">
+                  <tr>
+                    <td colspan="9" class="tracking-empty">사용자 목록을 불러오는 중입니다.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div class="tracking-pagination" aria-label="페이지 이동">
+              <div class="tracking-pagination-left">
+                <button type="button" class="ghost-button" id="btnUserPrevPage">이전</button>
+                <button type="button" class="ghost-button" id="btnUserNextPage">다음</button>
+              </div>
+
+              <div class="tracking-pagination-right">
+                <label for="userPageSizeSelect">페이지 크기</label>
+                <select id="userPageSizeSelect" class="tracking-page-size-select">
+                  <option value="10">10</option>
+                  <option value="20">20</option>
+                  <option value="50">50</option>
+                </select>
+                <span id="userPaginationInfo">1 / 1</span>
+              </div>
+            </div>
+          </article>
+        </section>
+      </div>
+    </main>
+
+    <footer class="admin-footer" id="adminFooter"></footer>
+  </div>
+
+  <script src="../js/admin/admin-layout.js"></script>
+  <script src="../js/admin/admin-users.js"></script>
+</body>
+</html>
