@@ -198,8 +198,30 @@ body {
   line-height: 1.1;
 }
 
+.sidebar-link-status {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 6px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 191, 102, 0.28);
+  background: rgba(255, 191, 102, 0.12);
+  color: #ffd48c;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  vertical-align: middle;
+}
+
 .sidebar-link.is-active .sidebar-link-text small {
   color: rgba(247, 252, 255, 0.82);
+}
+
+.sidebar-link.is-active .sidebar-link-status,
+.sidebar-link:hover .sidebar-link-status {
+  border-color: rgba(255, 206, 128, 0.4);
+  background: rgba(255, 206, 128, 0.18);
+  color: #ffe2a9;
 }
 
 .sidebar-link-arrow {
