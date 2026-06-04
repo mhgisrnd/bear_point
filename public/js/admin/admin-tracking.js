@@ -33,7 +33,7 @@ function renderTrackingTable(items, tableBody, rowStartNumber) {
   if (!items.length) {
     tableBody.innerHTML = [
       '<tr>',
-      '  <td colspan="9" class="tracking-empty">등록된 추적위치 데이터가 없습니다.</td>',
+      '  <td colspan="8" class="tracking-empty">등록된 추적위치 데이터가 없습니다.</td>',
       '</tr>'
     ].join("\n");
     return;
@@ -44,7 +44,6 @@ function renderTrackingTable(items, tableBody, rowStartNumber) {
   tableBody.innerHTML = items.map(function (item, index) {
     return [
       '<tr>',
-      '  <td class="tracking-col-num">' + String(startNumber + index) + '</td>',
       '  <td class="tracking-cell-select"><input type="checkbox" class="tracking-row-check" data-id="' + escapeHtml(item.id) + '" /></td>',
       '  <td>' + escapeHtml(item.bearCode) + '</td>',
       '  <td>' + escapeHtml(item.owner) + '</td>',

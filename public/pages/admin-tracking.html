@@ -34,7 +34,7 @@
 
               <div class="tracking-board-actions">
                 <button type="button" class="ghost-button" id="btnTrackingRefresh">목록 새로고침</button>
-                <button type="button" class="secondary-button" disabled>등록</button>
+                <!-- <button type="button" class="secondary-button" disabled>등록</button> -->
                 <button type="button" class="secondary-button" id="btnTrackingDeleteSelected" disabled>선택 삭제</button>
               </div>
             </header>
@@ -56,7 +56,6 @@
               <table class="tracking-table" aria-label="추적위치 목록 테이블">
                 <thead>
                   <tr>
-                    <th>index</th>
                     <th class="tracking-col-select">
                       <input type="checkbox" id="trackingSelectAll" aria-label="현재 페이지 전체 선택" />
                     </th>
@@ -71,7 +70,7 @@
                 </thead>
                 <tbody id="trackingTableBody">
                   <tr>
-                    <td colspan="9" class="tracking-empty">데이터를 불러오는 중입니다.</td>
+                    <td colspan="8" class="tracking-empty">데이터를 불러오는 중입니다.</td>
                   </tr>
                 </tbody>
               </table>
