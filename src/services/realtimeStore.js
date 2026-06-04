@@ -1,7 +1,9 @@
 const { pgQuery } = require("../db/postgres");
 
 const KST_TIMESTAMP_SQL = "YYYY-MM-DD HH24:MI:SS";
-// 추적위치 목록 조회용 공통 SELECT 절.
+const KST_NOW_SQL = "(NOW() AT TIME ZONE 'Asia/Seoul')";
+
+// 추적위치 목록 조회용 공통 SELECT 문
 // 라우트: GET /api/realtime/bear-estimates -> listRealtimeBearEstimates(options)
 const BEAR_ESTIMATE_SELECT_SQL = `
   SELECT
@@ -17,11 +19,13 @@ const BEAR_ESTIMATE_SELECT_SQL = `
     intersections_count,
     TO_CHAR(source_created_at, '${KST_TIMESTAMP_SQL}') AS source_created_at,
     TO_CHAR(uploaded_at, '${KST_TIMESTAMP_SQL}') AS uploaded_at,
+    update_id,
+    TO_CHAR(update_at, '${KST_TIMESTAMP_SQL}') AS update_at,
     payload
   FROM bear_estimates_realtime
 `;
 
-// 클라이언트 입력을 DB INSERT 포맷으로 정규화하고 필수 좌표를 검증한다.
+// 클라이언트 입력을 DB INSERT 형태로 정규화하고 필수 좌표를 검증한다.
 function normalizeInsertPayload(body) {
   const data = body || {};
   const lat = Number(data.lat);
@@ -112,7 +116,7 @@ function normalizeUpdatePayload(body) {
 }
 
 function buildRealtimeSearchWhereClause(keyword, bindParams) {
-  // 관리자 추적조회 화면의 검색 입력(q)을 SQL WHERE 절로 변환한다.
+  // 관리자 추적조회 화면의 검색어(q)를 SQL WHERE 절로 변환한다.
   // 검색 대상: 곰 코드, 담당자, 명칭, 추정ID
   const search = String(keyword || "").trim();
   if (!search) {
@@ -135,7 +139,7 @@ function buildRealtimeSearchWhereClause(keyword, bindParams) {
 // 실시간 목록을 최신 업로드 순으로 조회한다.
 // options 사용 방식:
 // - 대시보드 요약 조회: { limit }
-// - 관리자 추적조회(검색/페이징): { page, pageSize, q }
+// - 관리자 추적조회(검색/페이지): { page, pageSize, q }
 async function listRealtimeBearEstimates(options) {
   const queryOptions = typeof options === "object" && options !== null ? options : { limit: options };
   const hasPaging = queryOptions.page != null || queryOptions.pageSize != null;
@@ -245,6 +249,8 @@ async function insertRealtimeBearEstimate(body) {
         intersections_count,
         TO_CHAR(source_created_at, '${KST_TIMESTAMP_SQL}') AS source_created_at,
         TO_CHAR(uploaded_at, '${KST_TIMESTAMP_SQL}') AS uploaded_at,
+        update_id,
+        TO_CHAR(update_at, '${KST_TIMESTAMP_SQL}') AS update_at,
         payload
     `,
     [
@@ -266,7 +272,7 @@ async function insertRealtimeBearEstimate(body) {
 }
 
 // 실시간 항목의 곰코드/담당자/명칭을 수정한다.
-async function updateRealtimeBearEstimateById(id, body) {
+async function updateRealtimeBearEstimateById(id, body, options = {}) {
   const numericId = Number(id);
   if (!Number.isInteger(numericId) || numericId <= 0) {
     const error = new Error("유효한 id가 필요합니다.");
@@ -275,6 +281,7 @@ async function updateRealtimeBearEstimateById(id, body) {
   }
 
   const payload = normalizeUpdatePayload(body);
+  const actorId = options.actorId != null ? String(options.actorId).trim() || null : null;
 
   const result = await pgQuery(
     `
@@ -282,7 +289,9 @@ async function updateRealtimeBearEstimateById(id, body) {
       SET
         bear_code = $2,
         owner = $3,
-        place = $4
+        place = $4,
+        update_id = $5,
+        update_at = ${KST_NOW_SQL}
       WHERE id = $1
         AND COALESCE(use_yn, TRUE) = TRUE
       RETURNING
@@ -298,9 +307,11 @@ async function updateRealtimeBearEstimateById(id, body) {
         intersections_count,
         TO_CHAR(source_created_at, '${KST_TIMESTAMP_SQL}') AS source_created_at,
         TO_CHAR(uploaded_at, '${KST_TIMESTAMP_SQL}') AS uploaded_at,
+        update_id,
+        TO_CHAR(update_at, '${KST_TIMESTAMP_SQL}') AS update_at,
         payload
     `,
-    [numericId, payload.bearCode, payload.owner, payload.place]
+    [numericId, payload.bearCode, payload.owner, payload.place, actorId]
   );
 
   if (!result.rows.length) {
@@ -312,17 +323,21 @@ async function updateRealtimeBearEstimateById(id, body) {
   return result.rows[0];
 }
 
-// ids 배열에 포함된 실시간 항목들을 use_yn=false로 소프트삭제한다.
-async function deleteRealtimeBearEstimatesByIds(ids) {
+// ids 배열에 포함된 실시간 항목들을 use_yn=false로 소프트 삭제한다.
+async function deleteRealtimeBearEstimatesByIds(ids, options = {}) {
   const normalizedIds = normalizeBulkDeleteIds(ids);
+  const actorId = options.actorId != null ? String(options.actorId).trim() || null : null;
   const result = await pgQuery(
     `
       UPDATE bear_estimates_realtime
-      SET use_yn = FALSE
+      SET
+        use_yn = FALSE,
+        update_id = $2,
+        update_at = ${KST_NOW_SQL}
       WHERE id = ANY($1::int[])
         AND COALESCE(use_yn, TRUE) = TRUE
     `,
-    [normalizedIds]
+    [normalizedIds, actorId]
   );
 
   return {
