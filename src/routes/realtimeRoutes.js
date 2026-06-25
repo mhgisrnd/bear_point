@@ -6,7 +6,7 @@ const {
   deleteRealtimeBearEstimatesByIds,
 } = require("../services/realtimeStore");
 
-// 실시간 곰 추정위치 저장/조회 API 라우터를 생성한다.
+// 실시간 곰 추적위치 목록 조회 API 라우터를 생성한다.
 function createRealtimeRouter() {
   const router = express.Router();
 
@@ -39,7 +39,37 @@ function createRealtimeRouter() {
       res.json({ ok: true, item });
     } catch (error) {
       const statusCode = Number(error && error.statusCode) || 500;
-      const message = statusCode === 400 ? error.message : "실시간 항목 저장 실패";
+      const message = statusCode === 400 ? error.message : "실시간 항목 등록 실패";
+      res.status(statusCode).json({ ok: false, message, detail: statusCode === 500 ? error.message : undefined });
+    }
+  });
+
+  router.patch("/bear-estimates/:id", async (req, res) => {
+    try {
+      const actorId =
+        req.adminSession?.adminAccount?.userId
+        || req.adminSession?.adminAccount?.userName
+        || null;
+      const item = await updateRealtimeBearEstimateById(req.params.id, req.body, { actorId });
+      res.json({ ok: true, item });
+    } catch (error) {
+      const statusCode = Number(error && error.statusCode) || 500;
+      const message = statusCode === 400 || statusCode === 404 ? error.message : "실시간 항목 수정 실패";
+      res.status(statusCode).json({ ok: false, message, detail: statusCode === 500 ? error.message : undefined });
+    }
+  });
+
+  router.delete("/bear-estimates", async (req, res) => {
+    try {
+      const actorId =
+        req.adminSession?.adminAccount?.userId
+        || req.adminSession?.adminAccount?.userName
+        || null;
+      const result = await deleteRealtimeBearEstimatesByIds((req.body || {}).ids, { actorId });
+      res.json({ ok: true, deletedCount: result.deletedCount });
+    } catch (error) {
+      const statusCode = Number(error && error.statusCode) || 500;
+      const message = statusCode === 400 ? error.message : "실시간 항목 삭제 실패";
       res.status(statusCode).json({ ok: false, message, detail: statusCode === 500 ? error.message : undefined });
     }
   });

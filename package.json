@@ -4,8 +4,9 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "dev": "nodemon server.js",
-    "start": "node server.js",
+    "gen:runtime-config": "node scripts/generate-runtime-config.js",
+    "dev": "npm run gen:runtime-config && nodemon server.js",
+    "start": "npm run gen:runtime-config && node server.js",
     "prepare:mbtiles-assets": "node scripts/sync-mbtiles-assets.js"
   },
   "keywords": [],
