@@ -3,7 +3,6 @@ let realtimeMarkerAnimationFrameId = 0;
 let realtimeMarkerAnimationRunning = false;
 let realtimeMarkerAnimationStartTs = 0;
 let realtimeBearMarkerPulse = 0;
-let realtimeBearMarkerScale = 1;
 
 const JIRISAN_CENTER_LONLAT = [127.72, 35.33];
 const REALTIME_BEAR_PULSE_COLOR = "rgba(52, 199, 89, 0.92)";
@@ -13,7 +12,6 @@ function stopRealtimeMarkerAnimation(mapLayer) {
   realtimeMarkerAnimationRunning = false;
   realtimeMarkerAnimationStartTs = 0;
   realtimeBearMarkerPulse = 0;
-  realtimeBearMarkerScale = 1;
 
   if (realtimeMarkerAnimationFrameId) {
     window.cancelAnimationFrame(realtimeMarkerAnimationFrameId);
@@ -36,7 +34,6 @@ function animateRealtimeMarkers(timestamp, mapLayer) {
 
   const elapsedSec = (timestamp - realtimeMarkerAnimationStartTs) / 1000;
   realtimeBearMarkerPulse = (Math.sin(elapsedSec * Math.PI * 1.9) + 1) / 2;
-  realtimeBearMarkerScale = 1 + Math.sin(elapsedSec * Math.PI * 2.2) * 0.035;
 
   if (mapLayer) {
     mapLayer.changed();
@@ -79,45 +76,51 @@ function normalizeRealtimeItem(rawItem) {
 }
 
 function createRealtimeBearStyle(item) {
-  return function (styledFeature) {
-    const data = styledFeature && styledFeature.get ? (styledFeature.get("bearEstimateData") || item || {}) : (item || {});
-    const markerText = String(data.bearCode || data.bear_code || data.id || "-");
-    const styles = [];
+  const data = item || {};
+  const markerText = String(data.bearCode || data.bear_code || data.id || "-");
 
-    styles.push(new ol.style.Style({
-      image: new ol.style.Circle({
-        radius: 17 + realtimeBearMarkerPulse * 8,
-        fill: new ol.style.Fill({ color: `rgba(52, 199, 89, ${0.08 + realtimeBearMarkerPulse * 0.16})` }),
-        stroke: new ol.style.Stroke({ color: `rgba(52, 199, 89, ${0.32 + realtimeBearMarkerPulse * 0.28})`, width: 2 })
-      })
+  const pulseOuterStyle = new ol.style.Style({
+    image: new ol.style.Circle({
+      radius: 17,
+      fill: new ol.style.Fill({ color: "rgba(52, 199, 89, 0.08)" }),
+      stroke: new ol.style.Stroke({ color: "rgba(52, 199, 89, 0.32)", width: 2 })
+    })
+  });
+
+  const pulseInnerStyle = new ol.style.Style({
+    image: new ol.style.Circle({
+      radius: 12,
+      fill: new ol.style.Fill({ color: "rgba(255,255,255,0.18)" }),
+      stroke: new ol.style.Stroke({ color: REALTIME_BEAR_PULSE_COLOR, width: 2.5 })
+    })
+  });
+
+  // 아이콘/라벨은 고정 스타일로 재사용해 프레임별 깜빡임을 줄인다.
+  const markerIconStyle = new ol.style.Style({
+    image: new ol.style.Icon({
+      src: "/css/svg/bear_marker_point.svg",
+      anchor: [0.5, 1],
+      width: 34,
+      height: 34,
+    }),
+    text: new ol.style.Text({
+      text: markerText,
+      offsetY: 14,
+      font: "600 11px sans-serif",
+      fill: new ol.style.Fill({ color: "#ffffff" }),
+      backgroundFill: new ol.style.Fill({ color: REALTIME_BEAR_LABEL_COLOR }),
+      padding: [2, 5, 2, 5]
+    })
+  });
+
+  return function () {
+    pulseOuterStyle.setImage(new ol.style.Circle({
+      radius: 17 + realtimeBearMarkerPulse * 8,
+      fill: new ol.style.Fill({ color: `rgba(52, 199, 89, ${0.08 + realtimeBearMarkerPulse * 0.16})` }),
+      stroke: new ol.style.Stroke({ color: `rgba(52, 199, 89, ${0.32 + realtimeBearMarkerPulse * 0.28})`, width: 2 })
     }));
 
-    styles.push(new ol.style.Style({
-      image: new ol.style.Circle({
-        radius: 12,
-        fill: new ol.style.Fill({ color: "rgba(255,255,255,0.18)" }),
-        stroke: new ol.style.Stroke({ color: REALTIME_BEAR_PULSE_COLOR, width: 2.5 })
-      })
-    }));
-
-    styles.push(new ol.style.Style({
-      image: new ol.style.Icon({
-        src: "/css/svg/bear_marker_point.svg",
-        anchor: [0.5, 1],
-        width: 34,
-        height: 34,
-      }),
-      text: new ol.style.Text({
-        text: markerText,
-        offsetY: 14,
-        font: "600 11px sans-serif",
-        fill: new ol.style.Fill({ color: "#ffffff" }),
-        backgroundFill: new ol.style.Fill({ color: REALTIME_BEAR_LABEL_COLOR }),
-        padding: [2, 5, 2, 5]
-      })
-    }));
-
-    return styles;
+    return [pulseOuterStyle, pulseInnerStyle, markerIconStyle];
   };
 }
 
@@ -145,22 +148,40 @@ function renderRecentRegistrationList(items, registrationListEl, onRowClick) {
   const topTen = items.slice(0, 10);
 
   if (!topTen.length) {
-    registrationListEl.innerHTML = '<li><span>최근 등록 데이터 없음</span><strong>-</strong></li>';
+    registrationListEl.innerHTML = [
+      '<li class="recent-registration-head" aria-hidden="true">',
+      '  <span>코드</span>',
+      '  <span>담당자</span>',
+      '  <span>명칭</span>',
+      '  <span>시간</span>',
+      '</li>',
+      '<li class="recent-registration-empty"><span>최근 등록 데이터 없음</span></li>',
+    ].join("\n");
     return;
   }
 
-  registrationListEl.innerHTML = topTen
-    .map(function (item, index) {
-      return [
-        '<li data-row-index="' + String(index) + '" tabindex="0" role="button" aria-label="' + item.bearCode + ' 위치로 이동">',
-        '  <span>' + escapeHtml(item.bearCode) + ' 등록</span>',
-        '  <strong>' + escapeHtml(item.uploadedAt) + '</strong>',
-        '</li>',
-      ].join("\n");
-    })
-    .join("\n");
+  registrationListEl.innerHTML = [
+    '<li class="recent-registration-head" aria-hidden="true">',
+    '  <span>코드</span>',
+    '  <span>담당자</span>',
+    '  <span>명칭</span>',
+    '  <span>시간</span>',
+    '</li>',
+    topTen
+      .map(function (item, index) {
+        return [
+          '<li class="recent-registration-row" data-row-index="' + String(index) + '" tabindex="0" role="button" aria-label="' + item.bearCode + ' 위치로 이동">',
+          '  <span class="col-code">' + escapeHtml(item.bearCode) + '</span>',
+          '  <span class="col-owner">' + escapeHtml(item.owner) + '</span>',
+          '  <span class="col-place">' + escapeHtml(item.place) + '</span>',
+          '  <span class="col-time">' + escapeHtml(item.uploadedAt) + '</span>',
+          '</li>',
+        ].join("\n");
+      })
+      .join("\n"),
+  ].join("\n");
 
-  registrationListEl.querySelectorAll("li[data-row-index]").forEach(function (rowEl) {
+  registrationListEl.querySelectorAll(".recent-registration-row[data-row-index]").forEach(function (rowEl) {
     const index = Number(rowEl.getAttribute("data-row-index"));
     if (!Number.isFinite(index) || !topTen[index]) return;
 
@@ -200,6 +221,7 @@ function initializeDashboardRealtimeMap() {
 
   const markerSource = new ol.source.Vector();
   const markerLayer = new ol.layer.Vector({ source: markerSource });
+  let isLoadingRealtimeData = false;
 
   const map = new ol.Map({
     target: mapContainer,
@@ -220,6 +242,8 @@ function initializeDashboardRealtimeMap() {
   });
 
   async function loadRealtimeMapData() {
+    if (isLoadingRealtimeData) return;
+    isLoadingRealtimeData = true;
     refreshButton.disabled = true;
 
     try {
@@ -274,6 +298,7 @@ function initializeDashboardRealtimeMap() {
       renderRecentRegistrationList([], registrationListEl, function () {});
     } finally {
       refreshButton.disabled = false;
+      isLoadingRealtimeData = false;
     }
   }
 

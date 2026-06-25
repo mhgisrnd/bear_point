@@ -12,6 +12,7 @@
 
 .dashboard-shell {
   padding-bottom: 12px;
+  min-height: 0;
 }
 
 .dashboard-page-head {
@@ -73,12 +74,12 @@
 .stats-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 10px;
-  margin: 0 0 12px;
+  gap: 8px;
+  margin: 0 0 20px;
 }
 
 .stat-card {
-  padding: 16px 18px;
+  padding: 14px 16px;
   border-radius: 18px;
   border: 1px solid var(--line);
   background: var(--card);
@@ -94,8 +95,8 @@
 
 .stat-value {
   display: block;
-  margin-top: 8px;
-  font-size: clamp(24px, 2.4vw, 34px);
+  margin-top: 6px;
+  font-size: clamp(22px, 2.2vw, 31px);
   letter-spacing: -0.04em;
 }
 
@@ -113,8 +114,9 @@
 
 .content-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.6fr) minmax(320px, 0.9fr);
-  gap: 12px;
+  grid-template-columns: minmax(0, 1.0fr) minmax(320px, 0.9fr);
+  gap: 10px;
+  align-items: start;
 }
 
 .map-panel,
@@ -126,7 +128,7 @@
 }
 
 .map-panel {
-  padding: 16px;
+  padding: 14px;
 }
 
 .panel-head {
@@ -167,7 +169,7 @@
 }
 
 .map-stage--realtime {
-  min-height: 520px;
+  min-height: clamp(340px, 44vh, 500px);
   padding: 0;
   background: #dce7df;
 }
@@ -328,12 +330,10 @@
 
 .recent-registration-list li {
   display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 9px 0;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
   border-bottom: 1px solid var(--line);
-  cursor: pointer;
-  transition: background-color 0.14s ease;
 }
 
 .recent-registration-list li:last-child {
@@ -341,24 +341,59 @@
   padding-bottom: 0;
 }
 
-.recent-registration-list li:hover {
+.recent-registration-head {
+  display: grid !important;
+  grid-template-columns: 62px 84px minmax(0, 1fr) 128px;
+  padding: 6px 0 8px !important;
+  text-align: center;
+  color: #5b7264;
+  font-size: 11px;
+  font-weight: 800;
+  border-bottom: 1px solid var(--line);
+}
+
+.recent-registration-row {
+  display: grid !important;
+  grid-template-columns: 62px 84px minmax(0, 1fr) 128px;
+  text-align: center;
+  cursor: pointer;
+  transition: background-color 0.14s ease;
+}
+
+.recent-registration-row:hover {
   background: rgba(35, 95, 59, 0.06);
 }
 
-.recent-registration-list li:focus-visible {
+.recent-registration-row:focus-visible {
   outline: 2px solid rgba(49, 111, 187, 0.5);
   outline-offset: 2px;
 }
 
-.recent-registration-list span {
+.recent-registration-row .col-code {
   font-weight: 800;
   color: var(--ink);
 }
 
-.recent-registration-list strong {
+.recent-registration-row .col-owner,
+.recent-registration-row .col-place {
+  color: #355646;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.recent-registration-row .col-time {
+  text-align: center;
   font-size: 12px;
   font-weight: 700;
   color: #5e6f63;
+}
+
+.recent-registration-empty {
+  justify-content: center;
+  padding: 12px 0;
+  color: #5e6f63;
+  font-size: 12px;
 }
 
 .alert-list li {
@@ -392,6 +427,6 @@
   }
 
   .map-stage--realtime {
-    min-height: 440px;
+    min-height: clamp(300px, 42vh, 420px);
   }
 }

@@ -42,10 +42,57 @@
       return null;
     }
 
-    const API_BASE =
-      typeof options.apiBase === "string" && options.apiBase.trim()
-        ? options.apiBase.trim().replace(/\/$/, "")
-        : "/api/realtime";
+    const DEFAULT_LOCAL_API_BASE = "/api/realtime";
+    const DEFAULT_DEV_API_BASE = "https://bearmap.duckdns.org/api/realtime";
+
+    function normalizeApiBase(value) {
+      if (typeof value !== "string") return "";
+      const normalized = value.trim().replace(/\/$/, "");
+      return normalized;
+    }
+
+    function isNativeCapacitorRuntime() {
+      if (!window || !window.Capacitor) return false;
+
+      try {
+        if (typeof window.Capacitor.isNativePlatform === "function") {
+          return !!window.Capacitor.isNativePlatform();
+        }
+
+        if (typeof window.Capacitor.getPlatform === "function") {
+          const platform = window.Capacitor.getPlatform();
+          return platform === "android" || platform === "ios";
+        }
+      } catch (_) {
+        return false;
+      }
+
+      return false;
+    }
+
+    function resolveApiBase() {
+      const optionBase = normalizeApiBase(options.apiBase);
+      if (optionBase) return optionBase;
+
+      const runtimeConfig =
+        window && window.BEAR_RUNTIME_CONFIG && typeof window.BEAR_RUNTIME_CONFIG === "object"
+          ? window.BEAR_RUNTIME_CONFIG
+          : null;
+
+      const runtimeBase = normalizeApiBase(runtimeConfig && runtimeConfig.realtimeApiBase);
+      if (runtimeBase) return runtimeBase;
+
+      const globalBase = normalizeApiBase(window && window.BEAR_API_BASE);
+      if (globalBase) return globalBase;
+
+      if (isNativeCapacitorRuntime()) {
+        return DEFAULT_DEV_API_BASE;
+      }
+
+      return DEFAULT_LOCAL_API_BASE;
+    }
+
+    const API_BASE = resolveApiBase();
     const MAX_ITEMS = 200;
 
     let items = [];
@@ -152,8 +199,26 @@
       return API_BASE + pathname;
     }
 
+    function buildNetworkErrorMessage() {
+      if (typeof navigator !== "undefined" && navigator && navigator.onLine === false) {
+        return "인터넷 연결이 끊어졌습니다. 네트워크 상태를 확인해 주세요.";
+      }
+
+      return "인터넷 연결이 원활하지 않습니다. 잠시 후 다시 시도해 주세요.";
+    }
+
     async function requestJson(pathname, requestOptions) {
-      const response = await fetch(buildApiUrl(pathname), requestOptions || {});
+      let response;
+      try {
+        response = await fetch(buildApiUrl(pathname), requestOptions || {});
+      } catch (networkError) {
+        const error = new Error(buildNetworkErrorMessage());
+        error.statusCode = 0;
+        error.isNetworkError = true;
+        error.detail = networkError && networkError.message ? networkError.message : undefined;
+        throw error;
+      }
+
       let data = null;
       try {
         data = await response.json();
@@ -197,7 +262,12 @@
         items = [];
         notifyItemsChanged();
         if (!silent) {
-          setStatus(error && error.message ? error.message : "실시간 목록 조회에 실패했습니다.", "error");
+          const message = error && error.isNetworkError
+            ? error.message
+            : error && error.message
+              ? error.message
+              : "실시간 목록 조회에 실패했습니다.";
+          setStatus(message, "error");
         }
         return {
           ok: false,
@@ -573,7 +643,7 @@
         if (activeTab === "realtime") {
           setStatus("실시간 목록을 확인합니다.", "ok");
         } else {
-          setStatus("로컬 곰 추정위치 목록으로 돌아왔습니다.", "ok");
+          setStatus("로컬 곰 추적위치 목록으로 돌아왔습니다.", "ok");
         }
       }
 

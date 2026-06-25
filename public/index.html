@@ -203,7 +203,7 @@
       <div class="panel-body" id="panel-body">
         <div class="bears-box" id="bears-box">
           <div class="bears-title">
-            <span>곰 추정위치 목록</span>
+            <span>곰 추적위치 목록</span>
             <div class="bears-toolbar" id="bears-toolbar">
               <div class="bears-toolbar__row bears-toolbar__row--top">
                 <span class="bears-toolbar__summary" id="bears-toolbar-summary" aria-live="polite" hidden></span>
@@ -233,7 +233,7 @@
           <div class="bears-list" id="bears-list">
             <div class="bears-empty" role="status" aria-live="polite">
               <div class="bears-empty__icon" aria-hidden="true">🐻</div>
-              <div class="bears-empty__title">곰 추정위치 목록이 비어 있습니다</div>
+              <div class="bears-empty__title">곰 추적위치 목록이 비어 있습니다</div>
               <div class="bears-empty__desc">관측점 위치분석 결과를 저장하면 목록이 표시됩니다.</div>
               <div class="bears-empty__hint">관측점 목록에서 2개 이상 선택 후 위치분석을 실행해보세요.</div>
               <button class="bears-empty__action" type="button">관측점 목록 열기</button>
@@ -268,7 +268,7 @@
           <div class="realtime-list bears-list" id="realtime-list">
             <div class="realtime-empty" id="realtime-empty" role="status" aria-live="polite">
               <div class="realtime-empty__title">아직 전송된 실시간 항목이 없습니다</div>
-              <div class="realtime-empty__desc">곰 추정위치 목록에서 전송 버튼을 누르면 여기에 표시됩니다.</div>
+              <div class="realtime-empty__desc">곰 추적위치 목록에서 전송 버튼을 누르면 여기에 표시됩니다.</div>
             </div>
           </div>
         </div>
@@ -294,6 +294,7 @@
   <script src="js/db/sqlite-migrations.js"></script>
   <!-- SQLite 자산 복사/내부 연결 초기화 모듈 -->
   <script src="js/db/sqlite-init.js"></script>
+  <script src="runtime-config.js"></script>
   <script src="js/analysis/bear-position-analysis.js"></script>
   <script src="js/realtime/realtimeList.js"></script>
   <script src="js/obs/obsList.js"></script>

@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>지리산 곰 위치추적 - 관리자 추적위치 조회</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=Noto+Sans+KR:wght@400;500;700;900&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="../css/admin-layout.css" />
+  <link rel="stylesheet" href="../css/admin-tracking.css" />
+</head>
+<body data-admin-page="tracking" data-admin-title="추적위치 조회" data-admin-subtitle="실시간 추적위치 목록과 이력 데이터를 조회하는 화면">
+  <div class="admin-app">
+    <main class="admin-shell">
+      <aside class="admin-sidebar" id="adminSidebar"></aside>
+
+      <div class="admin-main">
+        <header class="admin-header" id="adminHeader"></header>
+
+        <section class="tracking-shell" aria-label="추적위치 조회">
+          <section class="tracking-page-head" aria-label="페이지 제목">
+            <p class="tracking-page-kicker">Tracking Board</p>
+            <h1 id="adminHeaderTitle">추적위치 조회</h1>
+            <p class="tracking-page-subtitle" id="adminHeaderSubtitle">실시간 추적위치 목록과 이력 데이터를 조회하는 화면</p>
+          </section>
+
+          <article class="tracking-board">
+            <header class="tracking-board-head">
+              <div>
+                <p class="tracking-board-kicker">Realtime Positions</p>
+                <h2>추적위치 목록</h2>
+              </div>
+
+              <div class="tracking-board-actions">
+                <button type="button" class="ghost-button" id="btnTrackingRefresh">목록 새로고침</button>
+                <!-- <button type="button" class="secondary-button" disabled>등록</button> -->
+                <button type="button" class="secondary-button" id="btnTrackingDeleteSelected" disabled>선택 삭제</button>
+              </div>
+            </header>
+
+            <div class="tracking-search-row" aria-label="추적위치 검색">
+              <input
+                type="search"
+                id="trackingSearchInput"
+                class="tracking-search-input"
+                placeholder="곰 코드, 담당자, 명칭으로 검색"
+                autocomplete="off"
+              />
+              <button type="button" class="ghost-button" id="btnTrackingSearchClear">검색 초기화</button>
+            </div>
+
+            <p class="tracking-board-status" id="trackingBoardStatus" aria-live="polite">로딩 중...</p>
+
+            <div class="tracking-table-wrap">
+              <table class="tracking-table" aria-label="추적위치 목록 테이블">
+                <thead>
+                  <tr>
+                    <th class="tracking-col-select">
+                      <input type="checkbox" id="trackingSelectAll" aria-label="현재 페이지 전체 선택" />
+                    </th>
+                    <th>곰 코드</th>
+                    <th>담당자</th>
+                    <th>명칭</th>
+                    <th>위도</th>
+                    <th>경도</th>
+                    <th>업로드 시각</th>
+                    <th class="tracking-col-actions">관리</th>
+                  </tr>
+                </thead>
+                <tbody id="trackingTableBody">
+                  <tr>
+                    <td colspan="8" class="tracking-empty">데이터를 불러오는 중입니다.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div class="tracking-pagination" aria-label="페이지 이동">
+              <div class="tracking-pagination-left">
+                <button type="button" class="ghost-button" id="btnTrackingPrevPage">이전</button>
+                <button type="button" class="ghost-button" id="btnTrackingNextPage">다음</button>
+              </div>
+
+              <div class="tracking-pagination-right">
+                <label for="trackingPageSizeSelect">페이지 크기</label>
+                <select id="trackingPageSizeSelect" class="tracking-page-size-select">
+                  <option value="10">10</option>
+                  <option value="20">20</option>
+                  <option value="50">50</option>
+                </select>
+                <span id="trackingPaginationInfo">1 / 1</span>
+              </div>
+            </div>
+          </article>
+
+          <div class="tracking-modal" id="trackingEditModal" aria-hidden="true">
+            <div class="tracking-modal-backdrop" data-modal-close="tracking-edit"></div>
+            <div class="tracking-modal-dialog" role="dialog" aria-modal="true" aria-labelledby="trackingEditTitle">
+              <div class="tracking-modal-head">
+                <h3 id="trackingEditTitle">추적위치 정보 수정</h3>
+                <button type="button" class="tracking-modal-close" id="btnTrackingEditClose" aria-label="수정 모달 닫기">닫기</button>
+              </div>
+
+              <form id="trackingEditForm" class="tracking-edit-form">
+                <input type="hidden" id="trackingEditId" />
+
+                <label class="tracking-edit-field" for="trackingEditBearCode">
+                  <span>곰 코드</span>
+                  <input type="text" id="trackingEditBearCode" required maxlength="40" />
+                </label>
+
+                <label class="tracking-edit-field" for="trackingEditOwner">
+                  <span>담당자</span>
+                  <input type="text" id="trackingEditOwner" maxlength="100" />
+                </label>
+
+                <label class="tracking-edit-field" for="trackingEditPlace">
+                  <span>명칭</span>
+                  <input type="text" id="trackingEditPlace" maxlength="150" />
+                </label>
+
+                <p class="tracking-edit-status" id="trackingEditStatus" aria-live="polite"></p>
+
+                <div class="tracking-edit-actions">
+                  <button type="button" class="ghost-button" id="btnTrackingEditCancel">취소</button>
+                  <button type="submit" class="primary-link" id="btnTrackingEditSave">저장</button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </section>
+      </div>
+    </main>
+
+    <footer class="admin-footer" id="adminFooter"></footer>
+  </div>
+
+  <script src="../js/admin/admin-layout.js"></script>
+  <script src="../js/admin/admin-tracking.js"></script>
+</body>
+</html>
