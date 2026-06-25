@@ -6,7 +6,7 @@ const {
   deleteRealtimeBearEstimatesByIds,
 } = require("../services/realtimeStore");
 
-// 실시간 곰 추정위치 목록 조회 API 라우터를 생성한다.
+// 실시간 곰 추적위치 목록 조회 API 라우터를 생성한다.
 function createRealtimeRouter() {
   const router = express.Router();
 

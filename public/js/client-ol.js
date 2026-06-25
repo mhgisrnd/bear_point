@@ -4748,7 +4748,7 @@
     }
   }
 
-  // 웹 환경에서 bears.json 더미 데이터를 곰 추정위치 목록 형식으로 정규화한다.
+  // 웹 환경에서 bears.json 더미 데이터를 곰 추적위치 목록 형식으로 정규화한다.
   function getWebFallbackBearEstimates() {
     if (!Array.isArray(bearsDataCache) || !bearsDataCache.length) return [];
 
@@ -4779,7 +4779,7 @@
     });
   }
 
-  // 곰 추정위치 목록 개수와 선택 개수에 맞춰 상단 툴바 상태를 갱신한다.
+  // 곰 추적위치 목록 개수와 선택 개수에 맞춰 상단 툴바 상태를 갱신한다.
   function updateBearEstimateToolbar(items) {
     const list = Array.isArray(items) ? items : [];
     const totalCount = list.length;
@@ -4857,11 +4857,11 @@
     });
 
     if (!list.length) {
-      if (statusEl) statusEl.textContent = "🟠 다운로드할 곰 추정위치 목록이 없습니다";
+      if (statusEl) statusEl.textContent = "🟠 다운로드할 곰 추적위치 목록이 없습니다";
       return;
     }
 
-    const xlsRows = [["등록일자", "지명", "위치추적담당자", "X좌표(TM)", "Y좌표(TM)", "추정위치(위도 DMS)", "추정위치(경도 DMS)", "추정위치(위도)", "추정위치(경도)"]];
+    const xlsRows = [["등록일자", "지명", "위치추적담당자", "X좌표(TM)", "Y좌표(TM)", "추적위치(위도 DMS)", "추적위치(경도 DMS)", "추적위치(위도)", "추적위치(경도)"]];
 
     list.forEach(function (it) {
       const lat = Number(it.lat);
@@ -5081,7 +5081,7 @@
     });
   }
 
-  // 저장된 곰 추정위치 목록을 지도 마커로 렌더링하고, 클릭용 상세 팝업 HTML도 함께 싣는다.
+  // 저장된 곰 추적위치 목록을 지도 마커로 렌더링하고, 클릭용 상세 팝업 HTML도 함께 싣는다.
   function renderBearMarkers(items) {
     bearMarkerSource.clear();
     if (!items || !items.length) {
@@ -6350,7 +6350,7 @@
       bearsListEl.innerHTML = [
         '<div class="bears-empty" role="status" aria-live="polite">',
         '  <div class="bears-empty__icon" aria-hidden="true">🐻</div>',
-        '  <div class="bears-empty__title">곰 추정위치 목록이 비어 있습니다</div>',
+        '  <div class="bears-empty__title">곰 추적위치 목록이 비어 있습니다</div>',
         '  <div class="bears-empty__desc">관측점 위치분석 결과를 저장하면 목록이 표시됩니다.</div>',
         '  <div class="bears-empty__hint">관측점 목록에서 2개 이상 선택 후 위치분석을 실행해보세요.</div>',
         '  <button class="bears-empty__action" type="button">관측점 목록 열기</button>',

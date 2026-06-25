@@ -643,7 +643,7 @@
         if (activeTab === "realtime") {
           setStatus("실시간 목록을 확인합니다.", "ok");
         } else {
-          setStatus("로컬 곰 추정위치 목록으로 돌아왔습니다.", "ok");
+          setStatus("로컬 곰 추적위치 목록으로 돌아왔습니다.", "ok");
         }
       }
 
