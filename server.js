@@ -1,10 +1,11 @@
 // server.js
 require("dotenv").config();
 const { createApp } = require("./src/app");
+const { getRuntimeConfig } = require("./src/config/runtime-config");
 
-const PORT = process.env.PORT || 3000;
-const { app } = createApp(__dirname);
+const { port, host, serverUrl, contextRoot } = getRuntimeConfig(process.env);
+const { app } = createApp(__dirname, { contextRoot });
 
-app.listen(PORT, "0.0.0.0", () => {
-  console.log(`✅ Server running: http://localhost:${PORT}`);
+app.listen(port, host, () => {
+  console.log(`✅ Server running: ${serverUrl}`);
 });

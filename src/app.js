@@ -8,12 +8,19 @@ const { createRealtimeRouter } = require("./routes/realtimeRoutes");
 const { createAdminAuthRouter } = require("./routes/adminAuthRoutes");
 const { createAdminUserRouter } = require("./routes/adminUserRoutes");
 const { createAdminSessionStore } = require("./services/adminSessionStore");
+const { normalizeContextRoot } = require("./config/runtime-config");
 
 // 앱 공통 미들웨어와 라우터를 조립해 Express 인스턴스를 생성한다.
-function createApp(rootDir) {
+function createApp(rootDir, options = {}) {
   const app = express();
+  const contextRoot = normalizeContextRoot(options.contextRoot || "/");
+  const rootRouter = express.Router();
   const mbtilesStore = createMbtilesStore(rootDir);
   const adminSessionStore = createAdminSessionStore();
+
+  function withBase(urlPath) {
+    return contextRoot === "/" ? urlPath : `${contextRoot}${urlPath}`;
+  }
 
   function applyApiCors(req, res, next) {
     const requestOrigin = req.headers.origin;
@@ -36,64 +43,70 @@ function createApp(rootDir) {
     next();
   }
 
-  app.use((req, res, next) => {
+  rootRouter.use((req, res, next) => {
     res.setHeader("ngrok-skip-browser-warning", "true");
     next();
   });
 
-  app.use(express.static(path.join(rootDir, "public")));
-  app.use("/node_modules", express.static(path.join(rootDir, "node_modules")));
-  app.use(express.json({ limit: "1mb" }));
-  app.use("/api", applyApiCors);
+  rootRouter.use(express.static(path.join(rootDir, "public")));
+  rootRouter.use("/node_modules", express.static(path.join(rootDir, "node_modules")));
+  rootRouter.use(express.json({ limit: "1mb" }));
+  rootRouter.use("/api", applyApiCors);
 
   // 관리자 페이지 공통 세션을 요청 단위로 읽어 둔다.
-  app.use((req, res, next) => {
+  rootRouter.use((req, res, next) => {
     req.adminSession = adminSessionStore.getSessionFromRequest(req);
     res.locals.adminSession = req.adminSession;
     next();
   });
 
-  app.use(createMbtilesRouter(mbtilesStore));
-  app.use("/api/db/postgres", createPostgresRouter());
-  app.use("/api/realtime", createRealtimeRouter());
-  app.use("/api/admin/auth", createAdminAuthRouter({ adminSessionStore }));
-  app.use("/api/admin/users", createAdminUserRouter());
+  rootRouter.use(createMbtilesRouter(mbtilesStore));
+  rootRouter.use("/api/db/postgres", createPostgresRouter());
+  rootRouter.use("/api/realtime", createRealtimeRouter());
+  rootRouter.use("/api/admin/auth", createAdminAuthRouter({ adminSessionStore }));
+  rootRouter.use("/api/admin/users", createAdminUserRouter());
 
-  app.get("/login", (req, res) => {
+  rootRouter.get("/login", (req, res) => {
     res.sendFile(path.join(rootDir, "public", "pages", "login.html"));
   });
 
-  app.get("/admin/login", (req, res) => {
+  rootRouter.get("/admin/login", (req, res) => {
     if (req.adminSession) {
-      return res.redirect("/admin/dashboard");
+      return res.redirect(withBase("/admin/dashboard"));
     }
 
     res.sendFile(path.join(rootDir, "public", "pages", "admin-login.html"));
   });
 
-  app.get("/admin/dashboard", (req, res) => {
+  rootRouter.get("/admin/dashboard", (req, res) => {
     if (!req.adminSession) {
-      return res.redirect("/admin/login");
+      return res.redirect(withBase("/admin/login"));
     }
 
     res.sendFile(path.join(rootDir, "public", "pages", "admin-dashboard.html"));
   });
 
-  app.get("/admin/tracking", (req, res) => {
+  rootRouter.get("/admin/tracking", (req, res) => {
     if (!req.adminSession) {
-      return res.redirect("/admin/login");
+      return res.redirect(withBase("/admin/login"));
     }
 
     res.sendFile(path.join(rootDir, "public", "pages", "admin-tracking.html"));
   });
 
-  app.get("/admin/users", (req, res) => {
+  rootRouter.get("/admin/users", (req, res) => {
     if (!req.adminSession) {
-      return res.redirect("/admin/login");
+      return res.redirect(withBase("/admin/login"));
     }
 
     res.sendFile(path.join(rootDir, "public", "pages", "admin-users.html"));
   });
+
+  if (contextRoot === "/") {
+    app.use(rootRouter);
+  } else {
+    app.use(contextRoot, rootRouter);
+  }
 
   return { app, mbtilesStore };
 }
