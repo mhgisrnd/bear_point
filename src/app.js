@@ -66,8 +66,9 @@ function createApp(rootDir, options = {}) {
   rootRouter.use("/api/admin/auth", createAdminAuthRouter({ adminSessionStore }));
   rootRouter.use("/api/admin/users", createAdminUserRouter());
 
+  // 웹 배포에서는 단일 관리자 로그인 경로만 사용한다.
   rootRouter.get("/login", (req, res) => {
-    res.sendFile(path.join(rootDir, "public", "pages", "login.html"));
+    res.redirect(withBase("/admin/login"));
   });
 
   rootRouter.get("/admin/login", (req, res) => {
