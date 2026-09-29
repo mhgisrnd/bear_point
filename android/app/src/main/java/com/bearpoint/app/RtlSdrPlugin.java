@@ -13,6 +13,9 @@ import android.net.Uri;
 import android.os.Handler;
 import android.os.Looper;
 import androidx.core.content.ContextCompat;
+import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowInsetsCompat;
+import android.view.View;
 import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
@@ -36,6 +39,7 @@ public class RtlSdrPlugin extends Plugin {
     private PendingIntent permissionIntent;
     private boolean registered;
     private boolean destroyed;
+    private boolean paused;
     private String lastError;
     private final Runnable timeout = () -> {
         reconcilePermission();
@@ -135,8 +139,28 @@ public class RtlSdrPlugin extends Plugin {
         result.put("rfReady", "receiving".equals(sdr.state));
         result.put("receptionState", sdr.state);
         result.put("reception", sdr.metrics);
+        result.put("scan", sdr.scan);
+        result.put("scanResumeAvailable", sdr.hasScanSession());
         result.put("receptionError", sdr.error);
         result.put("audio", sdr.audio.snapshot());
+        result.put("viewportInsets", viewportInsets());
+        return result;
+    }
+
+    private JSObject viewportInsets() {
+        JSObject result = new JSObject();
+        View content = getBridge().getWebView(), window = getActivity().getWindow().getDecorView();
+        WindowInsetsCompat rootInsets = ViewCompat.getRootWindowInsets(content);
+        if (rootInsets == null) return result;
+        androidx.core.graphics.Insets bars = rootInsets.getInsets(WindowInsetsCompat.Type.systemBars() | WindowInsetsCompat.Type.displayCutout());
+        int[] origin = new int[2], webOrigin = new int[2];
+        window.getLocationInWindow(origin); content.getLocationInWindow(webOrigin);
+        double[] overlap = SdrViewport.overlap(
+            new int[]{origin[0], origin[1], origin[0] + window.getWidth(), origin[1] + window.getHeight()},
+            new int[]{webOrigin[0], webOrigin[1], webOrigin[0] + content.getWidth(), webOrigin[1] + content.getHeight()},
+            new int[]{bars.left, bars.top, bars.right, bars.bottom}, getContext().getResources().getDisplayMetrics().density);
+        String[] sides = {"left", "top", "right", "bottom"};
+        for (int i = 0; i < sides.length; i++) result.put(sides[i], overlap[i]);
         return result;
     }
 
@@ -231,6 +255,7 @@ public class RtlSdrPlugin extends Plugin {
 
     @PluginMethod public void startReception(PluginCall call) {
         execute(call, () -> {
+            if (paused) { call.reject("앱 화면에서 수신을 시작하세요."); return; }
             if (connection == null) { call.reject("USB 연결을 먼저 확인하세요."); return; }
             int hz = call.getInt("frequencyHz", 150000000);
             int rate = call.getInt("sampleRate", 1024000);
@@ -249,7 +274,24 @@ public class RtlSdrPlugin extends Plugin {
     }
 
     @PluginMethod public void stopReception(PluginCall call) {
-        execute(call, () -> { sdr.stop(); call.resolve(snapshot()); publish(); });
+        execute(call, () -> { sdr.stop(() -> call.resolve(snapshot())); publish(); });
+    }
+
+    @PluginMethod public void startScan(PluginCall call) {
+        execute(call, () -> {
+            if (paused) { call.reject("앱 화면에서 탐색을 시작하세요."); return; }
+            if (connection == null) { call.reject("USB 연결을 먼저 확인하세요."); return; }
+            int gain = call.getInt("gainTenthsDb", 100), ppm = call.getInt("ppm", 0);
+            if (gain < -100 || gain > 500 || ppm < -100 || ppm > 100) {
+                call.reject("Gain·PPM 설정 범위를 확인하세요."); return;
+            }
+            SdrScan plan = new SdrScan(call.getString("band", "vhf"), call.getInt("startHz", 148000000),
+                call.getInt("endHz", 174000000), call.getInt("sampleRate", 1024000),
+                call.getInt("dwellMs", 1000), call.getDouble("thresholdDb", 10d));
+            if (Boolean.TRUE.equals(call.getBoolean("resume", false))) sdr.resumeScan(connection, plan, gain, ppm);
+            else sdr.startScan(connection, plan, gain, ppm);
+            call.resolve(snapshot()); publish();
+        });
     }
 
     @PluginMethod public void setAudio(PluginCall call) {
@@ -261,7 +303,8 @@ public class RtlSdrPlugin extends Plugin {
 
     @Override protected void handleOnPause() {
         main.post(() -> {
-            if (!destroyed && ("receiving".equals(sdr.state) || "starting".equals(sdr.state))) {
+            paused = true;
+            if (!destroyed && ("receiving".equals(sdr.state) || "starting".equals(sdr.state) || "scanning".equals(sdr.state))) {
                 sdr.stop(); publish();
             }
         });
@@ -308,6 +351,7 @@ public class RtlSdrPlugin extends Plugin {
     @Override protected void handleOnResume() {
         main.post(() -> {
             if (destroyed) return;
+            paused = false;
             reconcilePermission();
             publish();
         });

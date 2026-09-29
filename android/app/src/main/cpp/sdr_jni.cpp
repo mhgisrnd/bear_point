@@ -78,6 +78,14 @@ Java_com_bearpoint_app_SdrNative_read(JNIEnv *env, jclass, jlong handle, jboolea
     jmethodID ctor = env->GetMethodID(block, "<init>", "([D[S)V");
     return ctor ? env->NewObject(block, ctor, result, audio) : nullptr;
 }
+extern "C" JNIEXPORT void JNICALL
+Java_com_bearpoint_app_SdrNative_tune(JNIEnv *env, jclass, jlong handle, jint hz) {
+    auto *dev = reinterpret_cast<rtlsdr_dev_t *>(handle);
+    int r = rtlsdr_set_center_freq(dev, hz);
+    if (r < 0) { error(env, "Scan frequency", r); return; }
+    r = rtlsdr_reset_buffer(dev);
+    if (r < 0) error(env, "Scan buffer reset", r);
+}
 extern "C" JNIEXPORT jlong JNICALL
 Java_com_bearpoint_app_SdrNative_createDemodulator(JNIEnv *env, jclass, jstring mode, jint rate, jint offset, jint tau) {
     const char *name = env->GetStringUTFChars(mode, nullptr);

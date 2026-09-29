@@ -243,14 +243,22 @@
       backExitToastHideTimer = null;
     }
 
-    backExitToastHideTimer = window.setTimeout(function () {
-      if (!backExitToastEl) return;
+    backExitToastHideTimer = window.setTimeout(resetBackExitState, BACK_EXIT_DOUBLE_PRESS_MS);
+  }
+
+  function resetBackExitState() {
+    lastBackPressAt = 0;
+    if (backExitToastHideTimer !== null) {
+      window.clearTimeout(backExitToastHideTimer);
+      backExitToastHideTimer = null;
+    }
+    if (backExitToastEl) {
       backExitToastEl.style.opacity = "0";
       backExitToastEl.style.transform = "translate(-50%, 14px)";
-      lastBackPressAt = 0;  // 토스트 사라질 때 뒤로가기 타이머도 초기화
-      backExitToastHideTimer = null;
-    }, 1400);
+    }
   }
+
+  window.__bpResetBackExit = resetBackExitState;
 
   // 상태 강조는 필요한 상황(메뉴 진입/예외 처리)에서만 수동 호출한다.
   window.__bpTriggerStatusHighlight = triggerStatusBlinkHighlight;
@@ -3333,21 +3341,27 @@
     if (!appPlugin || removeBackButtonListener) return;
 
     const listener = await appPlugin.addListener("backButton", function () {
+      if (window.SdrDiagnostics && window.SdrDiagnostics.handleBackNavigation()) {
+        resetBackExitState();
+        return;
+      }
       // 최상단 저장/미리보기 팝업이 열려 있으면 우선 닫는다.
       if (closeTopBackClosableOverlay()) {
+        resetBackExitState();
         return;
       }
 
       // 1) 지도 위 관측점 상세 팝업이 열려 있으면 먼저 닫는다.
       if (observationPopupEl && observationPopupEl.style.display !== "none") {
         closeObservationPopup();
+        resetBackExitState();
         return;
       }
 
       // 2) 목록/등록/분석 다이얼로그 등 메뉴성 UI는 obsList 모듈에서 우선 닫는다.
       if (obsListModule && typeof obsListModule.handleBackNavigation === "function") {
         const handled = obsListModule.handleBackNavigation();
-        if (handled) return;
+        if (handled) { resetBackExitState(); return; }
       }
 
       // 3) 메뉴가 없다면 지도 위 분석 결과(추정 위치 표시)만 취소한다.
@@ -3356,6 +3370,7 @@
         if (Array.isArray(estimateFeatures) && estimateFeatures.length > 0) {
           clearAnalysisEstimateVisuals();
           setDefaultStatusWithIcon();
+          resetBackExitState();
           return;
         }
       }
@@ -3363,17 +3378,13 @@
       // 4) 더 닫을 UI가 없을 때는 짧은 시간 내 2회 뒤로가기 시 앱을 종료한다.
       const now = Date.now();
       if (lastBackPressAt > 0 && now - lastBackPressAt <= BACK_EXIT_DOUBLE_PRESS_MS) {
-        lastBackPressAt = 0;
+        resetBackExitState();
         appPlugin.exitApp();
         return;
       }
 
       lastBackPressAt = now;
       showBackExitToast("한번 더 뒤로가면 앱이 꺼져요.");
-      // 토스트 타이머 후 자동 초기화 (토스트가 사라진 후 뒤로가기는 재설정)
-      setTimeout(function () {
-        lastBackPressAt = 0;
-      }, 1500);
       triggerHapticImpact("LIGHT");
     });
 

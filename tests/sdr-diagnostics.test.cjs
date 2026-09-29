@@ -7,7 +7,7 @@ const spectrumSource = fs.readFileSync(require('node:path').join(__dirname, '../
 
 // Small DOM stand-in to exercise asynchronous UI/bridge behavior, not USB hardware.
 class Element {
-  constructor() { this.children = []; this.events = {}; this.nodes = {}; this.disabled = false; this.value = ''; }
+  constructor() { this.children = []; this.events = {}; this.nodes = {}; this.dataset = {}; this.disabled = false; this.value = ''; this.style = { setProperty(name,value) { this[name]=value; } }; }
   setAttribute() {}
   querySelector(key) { return this.nodes[key] ||= new Element(); }
   addEventListener(name, callback) { this.events[name] = callback; }
@@ -27,47 +27,54 @@ function setup(android = true, bridgeMode = 'injected') {
   const state = { hostSupported: true, state: 'idle', devices: [device] };
   let callback, permission, openCount = 0, permissionCount = 0;
   const plugin = {
-    starts: [], audios: [],
+    starts: [], scans: [], audios: [],
     async setAudio(options) {
       this.audios.push(options); state.audio ||= { enabled: false, volume: .25 };
       if (options.enabled != null) state.audio.enabled = options.enabled;
       if (options.volume != null) state.audio.volume = options.volume;
-      callback(state);
+      callback(structuredClone(state));
     },
-    async startReception(options) { this.starts.push(options); state.receptionState = 'starting'; callback(state); },
-    async stopReception() { state.receptionState = 'idle'; callback(state); },
-    getStatus: async () => state,
+    async startReception(options) { this.starts.push(options); state.receptionState = 'starting'; callback(structuredClone(state)); },
+    async startScan(options) {
+      if (options.resume && !state.scanResumeAvailable) throw new Error('이어갈 탐색 없음');
+      this.scans.push(options); state.receptionState = 'starting';
+      if (!options.resume) state.scan = {};
+      state.scanResumeAvailable = true; state.audio = {enabled:false}; callback(structuredClone(state));
+    },
+    async stopReception() { state.receptionState = 'idle'; callback(structuredClone(state)); },
+    getStatus: async () => structuredClone(state),
     addListener: async (_, fn) => { callback = fn; return { remove() {} }; },
     requestDevicePermission() {
       permissionCount++;
-      state.state = 'permissionPending'; callback(state);
+      state.state = 'permissionPending'; callback(structuredClone(state));
       return new Promise((resolve, reject) => { permission = { resolve, reject }; });
     },
-    async openDevice() { openCount++; device.connected = true; state.state = 'connected'; callback(state); },
+    async openDevice() { openCount++; device.connected = true; state.state = 'connected'; callback(structuredClone(state)); },
     async closeDevice() {
       permission?.reject(new Error('요청 취소')); permission = null;
-      device.connected = false; state.state = 'idle'; callback?.(state);
+      device.connected = false; state.state = 'idle'; state.receptionState = 'idle'; state.scan = {}; state.scanResumeAvailable = false; callback?.(structuredClone(state));
     }
   };
   const capacitor = android ? { getPlatform: () => 'android' } : undefined;
   if (android && bridgeMode === 'injected') capacitor.Plugins = { RtlSdr: plugin };
   if (android && bridgeMode === 'registered') capacitor.registerPlugin = () => plugin;
   if (android && bridgeMode === 'throws') capacitor.registerPlugin = () => { throw new Error('bridge init failure'); };
+  const appWindow = { Capacitor: capacitor };
   vm.runInNewContext(spectrumSource + '\n' + source, {
     document: { getElementById: () => trigger, createElement: () => new Element(), body },
-    window: { Capacitor: capacitor }, console
+    window: appWindow, console
   });
   const dialog = body.children[0];
   for (const [key, value] of Object.entries({band: 'vhf', frequency: '150.000', rate: '1024000', gain: '10', ppm: '0'})) {
     dialog.querySelector(`[data-${key}]`).value = value;
   }
   return {
-    trigger, dialog, state, device, capacitor, plugin,
-    emit: () => callback(state),
+    trigger, dialog, state, device, capacitor, plugin, window: appWindow,
+    emit: () => callback(structuredClone(state)),
     button: () => dialog.querySelector('[data-devices]').children[0].children[2],
     counts: () => ({ openCount, permissionCount }),
-    approve() { device.hasPermission = true; state.state = 'idle'; permission.resolve(device); permission = null; callback(state); },
-    deny() { state.state = 'idle'; permission.reject(new Error('권한 거부')); permission = null; callback(state); },
+    approve() { device.hasPermission = true; state.state = 'idle'; permission.resolve(device); permission = null; callback(structuredClone(state)); },
+    deny() { state.state = 'idle'; permission.reject(new Error('권한 거부')); permission = null; callback(structuredClone(state)); },
   };
 }
 
@@ -371,4 +378,326 @@ test('direct frequency input validates range, returns to digits, and reaches the
   assert.equal(edit.disabled, false);
   await ui.dialog.querySelector('[data-freq-up="1000"]').click();
   assert.equal(frequency.value, '151.126');
+});
+
+async function scanningUi() {
+  const ui = setup(); ui.device.hasPermission = true;
+  await ui.trigger.click(); await ui.button().click(); await tick();
+  await ui.dialog.querySelector('[data-band]').change('fm');
+  await ui.dialog.querySelector('[data-task-scan]').click();
+  ui.dialog.querySelector('[data-scan-start]').value = '103.000';
+  ui.dialog.querySelector('[data-scan-end]').value = '104.000';
+  await ui.dialog.querySelector('[data-start]').click(); await tick();
+  ui.state.receptionState = 'scanning';
+  ui.state.scan = { band: 'fm', centerHz: 103300000, segment: 2, segments: 4, cycle: 1, cycleSeconds: 4.8,
+    elapsedSeconds: 2, candidates: [{id:1,frequencyHz:103505000,powerDbfs:-53,snrDb:21,lastSeenSeconds:1.9}] };
+  ui.emit(); return ui;
+}
+
+test('band scan sends explicit options, stays silent, opens candidates and locks tuning', async () => {
+  const ui = await scanningUi();
+  assert.deepEqual(JSON.parse(JSON.stringify(ui.plugin.scans[0])), {band:'fm',startHz:103000000,endHz:104000000,
+    sampleRate:1024000,gainTenthsDb:100,ppm:0,dwellMs:1000,thresholdDb:10});
+  assert.equal(ui.plugin.starts.length,0); assert.equal(ui.plugin.audios.length,0);
+  assert.equal(ui.dialog.querySelector('[data-audio-panel]').hidden,true);
+  assert.equal(ui.dialog.querySelector('[data-result]').open,true);
+  assert.equal(ui.dialog.querySelector('[data-settings-section]').open,false);
+  assert.equal(ui.dialog.querySelector('[data-task-fixed]').disabled,true);
+  assert.equal(ui.dialog.querySelector('[data-candidate-heading]').textContent,'FM 방송 후보');
+  assert.match(ui.dialog.querySelector('[data-scan-progress]').textContent,/103.300 MHz.*\n.*2\/4/);
+  const found = ui.dialog.querySelector('[data-candidates]'), button = found.children[0];
+  ui.state.scan.candidates[0].frequencyHz = 103506000; ui.emit();
+  assert.equal(found.children[0],button);
+  assert.match(button.children[0].textContent,/103.506/);
+  ui.dialog.querySelector('[data-result]').open=false; ui.emit();
+  assert.equal(ui.dialog.querySelector('[data-result]').open,false);
+});
+
+test('candidate waits for native stop, then fixed WFM can resume original scan settings', async () => {
+  const ui = await scanningUi();
+  const originalStop = ui.plugin.stopReception; let release;
+  ui.plugin.stopReception = () => new Promise(resolve => { release=async()=>{await originalStop();resolve();}; });
+  void ui.dialog.querySelector('[data-candidates]').children[0].click(); await tick();
+  assert.equal(ui.plugin.starts.length,0);
+  await release(); await tick();
+  assert.equal(ui.plugin.starts[0].frequencyHz,103505000);
+  assert.equal(ui.plugin.starts[0].mode,'wfm');
+  assert.equal(ui.dialog.querySelector('[data-scan-results]').hidden,true);
+  assert.equal(ui.dialog.querySelector('[data-resume]').hidden,false);
+  ui.state.receptionState='receiving'; ui.state.reception=ui.plugin.starts[0]; ui.emit();
+  ui.plugin.stopReception=originalStop;
+  ui.dialog.querySelector('[data-gain]').value='30';
+  await ui.dialog.querySelector('[data-resume]').click(); await tick();
+  assert.equal(ui.plugin.scans.length,2);
+  assert.deepEqual(JSON.parse(JSON.stringify(ui.plugin.scans[1])),JSON.parse(JSON.stringify({...ui.plugin.scans[0],resume:true})));
+  assert.equal(ui.dialog.querySelector('[data-gain]').value,'10');
+  assert.equal(ui.dialog.querySelector('[data-start]').textContent,'탐색 중');
+});
+
+test('closing or disconnecting during candidate handoff prevents reception restart', async () => {
+  for (const action of ['close','disconnect']) {
+    const ui=await scanningUi(); let release;
+    ui.plugin.stopReception=()=>new Promise(resolve=>{release=resolve;});
+    void ui.dialog.querySelector('[data-candidates]').children[0].click(); await tick();
+    if(action==='close') await ui.dialog.close();
+    else await ui.dialog.querySelector('[data-disconnect]').click();
+    release(); await tick();
+    assert.equal(ui.plugin.starts.length,0);
+  }
+});
+
+test('scan validates range and retains each bands inputs including WFM-to-scan switching', async () => {
+  const ui=setup(); ui.device.hasPermission=true;
+  await ui.trigger.click(); await ui.button().click(); await tick();
+  await ui.dialog.querySelector('[data-mode]').change('wfm');
+  await ui.dialog.querySelector('[data-task-scan]').click();
+  assert.equal(ui.dialog.querySelector('[data-scan-start]').value,'88.000');
+  for (const [start,end] of [['104','103'],['103','103.05'],['87','103'],['103','109'],['','104']]) {
+    ui.dialog.querySelector('[data-scan-start]').value=start; ui.dialog.querySelector('[data-scan-end]').value=end;
+    await ui.dialog.querySelector('[data-start]').click(); await tick();
+    assert.equal(ui.plugin.scans.length,0);
+  }
+  ui.dialog.querySelector('[data-scan-start]').value='103'; ui.dialog.querySelector('[data-scan-end]').value='104';
+  await ui.dialog.querySelector('[data-band]').change('vhf');
+  assert.equal(ui.dialog.querySelector('[data-scan-start]').value,'148.000');
+  await ui.dialog.querySelector('[data-band]').change('fm');
+  assert.equal(ui.dialog.querySelector('[data-scan-start]').value,'103');
+  await ui.dialog.querySelector('[data-start]').click(); await tick();
+  assert.equal(ui.plugin.scans.length,1);
+});
+
+test('candidate list ranks recent power and selects the right frequency after ranking changes', async () => {
+  const ui=await scanningUi();
+  ui.state.scan.candidates=[
+    {id:1,frequencyHz:103100000,powerDbfs:-81,snrDb:12,lastSeenSeconds:1},
+    {id:2,frequencyHz:103800000,powerDbfs:-55,snrDb:25,lastSeenSeconds:1.9}
+  ]; ui.emit();
+  const found=ui.dialog.querySelector('[data-candidates]');
+  assert.equal(found.children[0].frequencyHz,103800000);
+  assert.equal(found.children[0].signalIcon.dataset.level,'3');
+  assert.equal(found.children[1].signalIcon.dataset.level,'1');
+  assert.equal(ui.state.scan.candidates[0].id,1);
+  ui.state.scan.candidates[0].powerDbfs=-45; ui.emit();
+  assert.equal(found.children[0].frequencyHz,103100000);
+  await found.children[0].click(); await tick();
+  assert.equal(ui.plugin.starts[0].frequencyHz,103100000);
+});
+
+test('fresh candidates outrank old strong measurements without changing their power and can recover', async () => {
+  const ui=await scanningUi();
+  ui.state.scan.cycle=3; ui.state.scan.elapsedSeconds=20;
+  ui.state.scan.candidates=[
+    {id:1,frequencyHz:103100000,powerDbfs:-35,snrDb:35,lastSeenSeconds:1,lastSeenCycle:1},
+    {id:2,frequencyHz:103800000,powerDbfs:-68,snrDb:12,lastSeenSeconds:18,lastSeenCycle:2,confirmedCycle:2}
+  ]; ui.emit();
+  const found=ui.dialog.querySelector('[data-candidates]');
+  assert.equal(found.children[0].frequencyHz,103800000);
+  assert.match(found.children[1].className,/stale/);
+  assert.match(found.children[1].children[1].children[0].textContent,/-35.0/);
+  assert.match(found.children[1].children[1].children[2].textContent,/최근 미감지/);
+  assert.equal(ui.dialog.querySelector('[data-candidate-count]').textContent,'1/2개 최근 감지');
+  ui.state.scan.candidates[0].lastSeenCycle=3; ui.state.scan.candidates[0].lastSeenSeconds=20; ui.emit();
+  assert.equal(found.children[0].frequencyHz,103100000);
+  assert.doesNotMatch(found.children[0].className,/stale/);
+  await ui.dialog.querySelector('[data-stop]').click(); await tick();
+  assert.match(found.children[0].className,/paused/);
+  assert.match(found.children[0].children[1].children[2].textContent,/마지막 측정/);
+  assert.equal(ui.plugin.starts.length,0);
+});
+
+test('a new signal in the configured range appears without changing receiver frequency automatically', async () => {
+  const ui=await scanningUi();
+  ui.state.scan.cycle=2; ui.state.scan.candidates[0].lastSeenCycle=1;
+  ui.state.scan.candidates.push({id:2,frequencyHz:103900000,powerDbfs:-42,snrDb:30,
+    lastSeenSeconds:2,lastSeenCycle:2,confirmedCycle:2}); ui.emit();
+  const found=ui.dialog.querySelector('[data-candidates]');
+  assert.equal(found.children[0].frequencyHz,103900000);
+  assert.equal(found.children[0].children[1].children[3].hidden,false);
+  assert.equal(ui.plugin.starts.length,0); assert.equal(ui.plugin.scans.length,1);
+  ui.state.scan.cycle=3; ui.emit();
+  assert.equal(found.children[0].children[1].children[3].hidden,true);
+  assert.equal(found.children[0].frequencyHz,103900000);
+  assert.equal(ui.plugin.starts.length,0);
+});
+
+test('pause and resume retain the current interval, pass and candidate list', async () => {
+  const ui=await scanningUi();
+  ui.state.scan.segment=3; ui.state.scan.cycle=4; ui.state.scan.totalBytes=12000000; ui.emit();
+  assert.equal(ui.dialog.querySelector('[data-stop]').textContent,'일시정지');
+  await ui.dialog.querySelector('[data-stop]').click(); await tick();
+  assert.equal(ui.dialog.querySelector('[data-start]').textContent,'탐색 재개');
+  assert.match(ui.dialog.querySelector('[data-scan-progress]').textContent,/탐색 일시정지.*\n.*3\/4.*4회차/);
+  const history=structuredClone(ui.state.scan);
+  await ui.dialog.querySelector('[data-start]').click(); await tick();
+  assert.equal(ui.plugin.scans[1].resume,true);
+  assert.deepEqual(ui.state.scan,history);
+  assert.equal(ui.dialog.querySelector('[data-candidates]').children[0].frequencyHz,103505000);
+});
+
+test('listening and stopping audio preserve the scan checkpoint for resumption', async () => {
+  const ui=await scanningUi(); ui.state.scan.segment=3; ui.state.scan.cycle=5; ui.emit();
+  const history=structuredClone(ui.state.scan);
+  await ui.dialog.querySelector('[data-candidates]').children[0].click(); await tick();
+  assert.deepEqual(ui.state.scan,history);
+  ui.state.receptionState='receiving'; ui.state.reception=ui.plugin.starts[0]; ui.emit();
+  assert.equal(ui.dialog.querySelector('[data-stop]').textContent,'정지');
+  await ui.dialog.querySelector('[data-stop]').click(); await tick();
+  await ui.dialog.querySelector('[data-resume]').click(); await tick();
+  assert.equal(ui.plugin.scans[1].resume,true); assert.deepEqual(ui.state.scan,history);
+});
+
+test('changed scan settings start a new session rather than reuse incompatible history', async () => {
+  const ui=await scanningUi();
+  await ui.dialog.querySelector('[data-stop]').click(); await tick();
+  ui.dialog.querySelector('[data-threshold]').value='15'; ui.emit();
+  assert.equal(ui.dialog.querySelector('[data-start]').textContent,'탐색 시작');
+  await ui.dialog.querySelector('[data-start]').click(); await tick();
+  assert.equal(ui.plugin.scans[1].resume,undefined); assert.equal(ui.plugin.scans[1].thresholdDb,15);
+  assert.deepEqual(ui.state.scan,{});
+});
+
+test('closing or disconnecting while resuming cannot launch a new scan', async () => {
+  for (const action of ['close','disconnect']) {
+    const ui=await scanningUi();
+    await ui.dialog.querySelector('[data-candidates]').children[0].click(); await tick();
+    ui.state.receptionState='receiving'; ui.state.reception=ui.plugin.starts[0]; ui.emit();
+    let release; ui.plugin.stopReception=()=>new Promise(resolve=>{release=resolve;});
+    void ui.dialog.querySelector('[data-resume]').click(); await tick();
+    if(action==='close') await ui.dialog.close();
+    else await ui.dialog.querySelector('[data-disconnect]').click();
+    release(); await tick();
+    assert.equal(ui.plugin.scans.length,1);
+    assert.equal(ui.state.scanResumeAvailable,false);
+    assert.equal(ui.dialog.querySelector('[data-resume]').hidden,true);
+  }
+});
+
+test('Android shared back handler resumes from listening without closing SDR or exiting the app', async () => {
+  const ui=await scanningUi(); ui.state.scan.segment=3; ui.state.scan.cycle=4; ui.emit();
+  const history=structuredClone(ui.state.scan);
+  await ui.dialog.querySelector('[data-candidates]').children[0].click(); await tick();
+  const mapSource=fs.readFileSync(require('node:path').join(__dirname,'../public/js/client-ol.js'),'utf8');
+  const start=mapSource.indexOf('const listener = await appPlugin.addListener("backButton", function () {');
+  const bodyStart=mapSource.indexOf('{',start)+1, bodyEnd=mapSource.indexOf('\n    });',bodyStart);
+  let exits=0, overlays=0;
+  const context={window:ui.window,lastBackPressAt:Date.now(),appPlugin:{exitApp(){exits++;}},
+    closeTopBackClosableOverlay(){overlays++;return false;},observationPopupEl:null,obsListModule:null,
+    analysisEstimateSource:null,BACK_EXIT_DOUBLE_PRESS_MS:1500,showBackExitToast(){},triggerHapticImpact(){},setTimeout,
+    resetBackExitState(){context.lastBackPressAt=0;}};
+  const handler='(function(){'+mapSource.slice(bodyStart,bodyEnd)+'})()';
+  vm.runInNewContext(handler,context);
+  vm.runInNewContext(handler,context); // A second press during handoff is consumed.
+  await tick();
+  assert.equal(ui.dialog.open,true); assert.equal(ui.plugin.scans.length,2);
+  assert.equal(ui.plugin.scans[1].resume,true); assert.deepEqual(ui.state.scan,history);
+  assert.equal(exits,0); assert.equal(overlays,0); assert.equal(context.lastBackPressAt,0);
+});
+
+function attachExitFlow(ui) {
+  const mapSource=fs.readFileSync(require('node:path').join(__dirname,'../public/js/client-ol.js'),'utf8');
+  const toastStart=mapSource.indexOf('  function showBackExitToast(message) {');
+  const toastEnd=mapSource.indexOf('  // 상태 강조',toastStart);
+  const listenerStart=mapSource.indexOf('const listener = await appPlugin.addListener("backButton", function () {');
+  const bodyStart=mapSource.indexOf('{',listenerStart)+1, bodyEnd=mapSource.indexOf('\n    });',bodyStart);
+  let now=10000, exits=0, nextId=0;
+  const timers=new Map(), toasts=[];
+  ui.window.setTimeout=(callback,delay)=>{const id=++nextId; timers.set(id,{callback,delay}); return id;};
+  ui.window.clearTimeout=id=>timers.delete(id);
+  const context=vm.createContext({window:ui.window,
+    document:{createElement:()=>new Element(),body:{appendChild:element=>toasts.push(element)}},
+    lastBackPressAt:0,backExitToastEl:null,backExitToastIconEl:null,backExitToastTextEl:null,backExitToastHideTimer:null,
+    BACK_EXIT_DOUBLE_PRESS_MS:2000,Date:{now:()=>now},appPlugin:{exitApp(){exits++;}},
+    closeTopBackClosableOverlay:()=>false,observationPopupEl:null,obsListModule:null,analysisEstimateSource:null,
+    triggerHapticImpact(){}});
+  vm.runInContext(mapSource.slice(toastStart,toastEnd),context);
+  return {context,toasts,timers,exits:()=>exits,
+    back(){vm.runInContext('(function(){'+mapSource.slice(bodyStart,bodyEnd)+'})()',context);},
+    advance(ms){now+=ms;}};
+}
+
+test('opening SDR cancels the map exit prompt; closing it requires two fresh map back presses', async () => {
+  const ui=setup(), flow=attachExitFlow(ui);
+  flow.back();
+  assert.equal(flow.toasts[0].style.opacity,'1');
+  assert.equal(flow.timers.size,1);
+  await ui.trigger.click();
+  assert.equal(flow.toasts[0].style.opacity,'0');
+  assert.equal(flow.context.lastBackPressAt,0);
+  assert.equal(flow.timers.size,0);
+  flow.back(); await tick();
+  assert.equal(ui.dialog.open,false);
+  assert.equal(flow.exits(),0);
+  flow.back();
+  assert.equal(flow.toasts[0].style.opacity,'1');
+  assert.equal(flow.exits(),0);
+  flow.advance(100); flow.back();
+  assert.equal(flow.exits(),1);
+  assert.equal(flow.toasts[0].style.opacity,'0');
+  assert.equal(flow.timers.size,0);
+});
+
+test('map exit eligibility lasts exactly as long as its visible prompt', () => {
+  const flow=attachExitFlow(setup());
+  flow.back();
+  const timer=[...flow.timers.values()][0];
+  assert.equal(timer.delay,flow.context.BACK_EXIT_DOUBLE_PRESS_MS);
+  flow.advance(timer.delay); timer.callback();
+  assert.equal(flow.toasts[0].style.opacity,'0');
+  assert.equal(flow.context.lastBackPressAt,0);
+  assert.equal(flow.timers.size,0);
+  flow.back();
+  assert.equal(flow.exits(),0);
+  assert.equal(flow.toasts[0].style.opacity,'1');
+});
+
+test('header back arrow and dialog cancel resume the saved scan through the same path', async () => {
+  for(const action of ['arrow','cancel']) {
+    const ui=await scanningUi();
+    await ui.dialog.querySelector('[data-candidates]').children[0].click(); await tick();
+    assert.equal(ui.dialog.querySelector('[data-back]').hidden,false);
+    if(action==='arrow') await ui.dialog.querySelector('[data-back]').click();
+    else {
+      let prevented=false;
+      ui.dialog.events.cancel({preventDefault(){prevented=true;}});
+      assert.equal(prevented,true);
+    }
+    await tick();
+    assert.equal(ui.plugin.scans[1].resume,true); assert.equal(ui.dialog.open,true);
+    assert.equal(ui.dialog.querySelector('[data-back]').hidden,true);
+  }
+});
+
+test('back first leaves direct entry without committing invalid input or losing the scan', async () => {
+  const ui=await scanningUi();
+  await ui.dialog.querySelector('[data-candidates]').children[0].click(); await tick();
+  await ui.dialog.querySelector('[data-stop]').click(); await tick();
+  await ui.dialog.querySelector('[data-frequency-edit]').click();
+  ui.dialog.querySelector('[data-frequency]').value='invalid';
+  assert.equal(ui.window.SdrDiagnostics.handleBackNavigation(),true);
+  assert.equal(ui.dialog.querySelector('[data-frequency-entry]').hidden,true);
+  assert.equal(ui.dialog.querySelector('[data-frequency]').value,'103.505');
+  assert.equal(ui.plugin.scans.length,1); assert.equal(ui.dialog.open,true);
+  ui.window.SdrDiagnostics.handleBackNavigation(); await tick();
+  assert.equal(ui.plugin.scans[1].resume,true);
+});
+
+test('back on the scan screen closes SDR and a closed dialog leaves shared navigation alone', async () => {
+  const ui=await scanningUi();
+  assert.equal(ui.window.SdrDiagnostics.handleBackNavigation(),true); await tick();
+  assert.equal(ui.dialog.open,false); assert.equal(ui.state.scanResumeAvailable,false);
+  assert.equal(ui.window.SdrDiagnostics.handleBackNavigation(),false);
+});
+
+test('dialog receives only actual system-bar overlap and follows the visible keyboard viewport', async () => {
+  const ui=await scanningUi(); ui.window.innerHeight=800;
+  ui.state.viewportInsets={top:24,bottom:48,left:0,right:0}; ui.emit();
+  assert.equal(ui.dialog.style['--sdr-native-safe-top'],'24px');
+  assert.equal(ui.dialog.style['--sdr-native-safe-bottom'],'48px');
+  assert.equal(ui.dialog.style['--sdr-viewport-height'],'800px');
+  ui.window.visualViewport={height:400,offsetTop:80}; ui.emit();
+  assert.equal(ui.dialog.style['--sdr-viewport-height'],'400px');
+  assert.equal(ui.dialog.style['--sdr-viewport-top'],'80px');
+  ui.state.viewportInsets={top:-1,bottom:'bad'}; ui.emit();
+  assert.equal(ui.dialog.style['--sdr-native-safe-top'],'0px');
+  assert.equal(ui.dialog.style['--sdr-native-safe-bottom'],'0px');
 });
