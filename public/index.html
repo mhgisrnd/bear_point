@@ -188,7 +188,6 @@
   <div class="panel-stack panel-bottom-left">
     <div class="panel-tabs panel-tabs-floating">
       <button class="tab-btn tab-active" id="btn-obs-list" type="button">관측점 목록</button>
-      <button class="tab-btn" id="btn-sdr-diagnostics" type="button">SDR 연결</button>
       <button class="tab-btn list-toggle list-toggle--local" id="btn-realtime-list" type="button" aria-label="로컬 목록에서 실시간 목록으로 전환" aria-pressed="false">
         <span class="list-toggle__label list-toggle__label--left">로컬</span>
         <span class="list-toggle__track" aria-hidden="true"><span class="list-toggle__thumb"></span></span>
@@ -282,7 +281,9 @@
   <div id="bp-tablet-sidebar" aria-hidden="true"></div>
   <button id="btn-sidebar-toggle" type="button" aria-label="사이드바 접기" aria-expanded="true" title="사이드바 접기">◀</button>
 
-  <div id="map"></div>
+  <div id="map">
+    <button id="btn-sdr-diagnostics" type="button" aria-label="SDR 설정" title="SDR 설정">SDR</button>
+  </div>
   <div id="compass">
     <div id="compass-needle">
       <span class="needle red"></span>
@@ -303,6 +304,7 @@
   <script src="js/obs/obsRegister.js"></script>
   <script src="js/map/ol-map-controls.js"></script>
   <script src="js/client-ol.js"></script>
+  <script src="js/sdr/spectrum.js"></script>
   <script src="js/sdr/diagnostics.js"></script>
 </body>
 </html>

@@ -21,11 +21,12 @@ import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
 import java.util.UUID;
 
-/** USB access diagnostics only. No tuner initialization or RF streaming yet. */
+/** USB permissions and foreground single-frequency IQ diagnostics. */
 @CapacitorPlugin(name = "RtlSdr")
 public class RtlSdrPlugin extends Plugin {
     private final Handler main = new Handler(Looper.getMainLooper());
     private UsbManager usb;
+    private final SdrReceiver sdr = new SdrReceiver(main, () -> publish());
     private String permissionAction;
     private UsbDeviceConnection connection;
     private String connectedId;
@@ -71,6 +72,7 @@ public class RtlSdrPlugin extends Plugin {
     };
 
     @Override public void load() {
+        sdr.audio = new SdrAudioOutput(getContext(), main, () -> publish());
         usb = (UsbManager) getContext().getSystemService(Context.USB_SERVICE);
         permissionAction = getContext().getPackageName() + ".RTL_USB_PERMISSION";
         // USB system broadcasts originate in system_server; permission replies use our PendingIntent.
@@ -130,7 +132,11 @@ public class RtlSdrPlugin extends Plugin {
         result.put("state", !hostSupported() ? "unsupported" : permissionCall != null ? "permissionPending" : connection != null ? "connected" : "idle");
         result.put("connectedDeviceId", connectedId == null ? "" : connectedId);
         result.put("lastError", lastError == null ? "" : lastError);
-        result.put("rfReady", false);
+        result.put("rfReady", "receiving".equals(sdr.state));
+        result.put("receptionState", sdr.state);
+        result.put("reception", sdr.metrics);
+        result.put("receptionError", sdr.error);
+        result.put("audio", sdr.audio.snapshot());
         return result;
     }
 
@@ -218,9 +224,47 @@ public class RtlSdrPlugin extends Plugin {
     }
 
     private void closeConnection() {
-        if (connection != null) connection.close();
+        sdr.closeUsb(connection);
         connection = null;
         connectedId = null;
+    }
+
+    @PluginMethod public void startReception(PluginCall call) {
+        execute(call, () -> {
+            if (connection == null) { call.reject("USB 연결을 먼저 확인하세요."); return; }
+            int hz = call.getInt("frequencyHz", 150000000);
+            int rate = call.getInt("sampleRate", 1024000);
+            int gain = call.getInt("gainTenthsDb", 100);
+            int ppm = call.getInt("ppm", 0);
+            String mode = call.getString("mode", "iq"), band = call.getString("band", "vhf");
+            int listen = call.getInt("listenFrequencyHz", hz), deemphasis = call.getInt("deemphasisUs", 75);
+            if (!SdrSettings.validFrequency(call.getString("band", "vhf"), hz) || !SdrSettings.validRate(rate)
+                || gain < -100 || gain > 500 || ppm < -100 || ppm > 100
+                || !SdrSettings.validDemodulation(mode, band, hz, listen, rate, deemphasis)) {
+                call.reject("수신 설정 범위를 확인하세요."); return;
+            }
+            sdr.start(connection, hz, rate, gain, ppm, mode, listen, deemphasis);
+            call.resolve(snapshot()); publish();
+        });
+    }
+
+    @PluginMethod public void stopReception(PluginCall call) {
+        execute(call, () -> { sdr.stop(); call.resolve(snapshot()); publish(); });
+    }
+
+    @PluginMethod public void setAudio(PluginCall call) {
+        execute(call, () -> {
+            sdr.setAudio(call.getBoolean("enabled"), call.getDouble("volume"));
+            call.resolve(snapshot()); publish();
+        });
+    }
+
+    @Override protected void handleOnPause() {
+        main.post(() -> {
+            if (!destroyed && ("receiving".equals(sdr.state) || "starting".equals(sdr.state))) {
+                sdr.stop(); publish();
+            }
+        });
     }
 
     private void clearPermission() {
@@ -276,6 +320,7 @@ public class RtlSdrPlugin extends Plugin {
             closeConnection();
             if (registered) getContext().unregisterReceiver(receiver);
             registered = false;
+            sdr.shutdown();
         });
     }
 }
