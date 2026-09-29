@@ -1,0 +1,16 @@
+.sdr-dialog { width: min(560px, calc(100vw - 32px)); max-height: 85vh; box-sizing: border-box; padding: 22px; border: 1px solid #cbd5e1; border-radius: 18px; background: #f8fafc; color: #172b3a; box-shadow: 0 20px 60px #0005; font: 15px/1.6 system-ui, sans-serif; overflow-y: auto; }
+.sdr-dialog::backdrop { background: #10203499; }
+.sdr-dialog h2 { margin: 0; font-size: 21px; }
+.sdr-header, .sdr-actions { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.sdr-dialog button { min-height: 44px; padding: 8px 14px; border: 1px solid #94a3b8; border-radius: 9px; background: white; color: #172b3a; cursor: pointer; font: inherit; }
+.sdr-dialog button:focus-visible { outline: 3px solid #2563eb; outline-offset: 2px; }
+.sdr-dialog button:disabled { opacity: .5; cursor: default; }
+.sdr-dialog .sdr-primary { background: #145d75; color: white; border-color: #145d75; }
+.sdr-note { color: #526477; font-size: 14px; }
+.sdr-status { padding: 10px 12px; background: #e2e8f0; border-radius: 9px; font-weight: 650; }
+.sdr-message { min-height: 1.6em; overflow-wrap: anywhere; color: #9b3617; }
+.sdr-device { padding: 14px; margin: 12px 0; border: 1px solid #cbd5e1; border-radius: 12px; background: white; }
+.sdr-device strong, .sdr-device small { display: block; overflow-wrap: anywhere; }
+.sdr-device small { color: #526477; margin: 4px 0 12px; }
+#btn-sdr-diagnostics { white-space: nowrap; }
+.panel-tabs-floating:has(#btn-sdr-diagnostics) { max-width: 100%; flex-wrap: wrap; }

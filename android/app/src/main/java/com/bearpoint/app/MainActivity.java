@@ -13,6 +13,7 @@ public class MainActivity extends BridgeActivity {
 	public void onCreate(Bundle savedInstanceState) {
 		Log.d(TAG, "onCreate start");
 		registerPlugin(NativeTxtSharePlugin.class);
+		registerPlugin(RtlSdrPlugin.class);
 		Log.d(TAG, "registerPlugin NativeTxtSharePlugin called");
 
 		try {
