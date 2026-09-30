@@ -7,7 +7,8 @@ const spectrumSource = fs.readFileSync(require('node:path').join(__dirname, '../
 
 // Small DOM stand-in to exercise asynchronous UI/bridge behavior, not USB hardware.
 class Element {
-  constructor() { this.children = []; this.events = {}; this.nodes = {}; this.dataset = {}; this.disabled = false; this.value = ''; this.style = { setProperty(name,value) { this[name]=value; } }; }
+  constructor() { this.children = []; this.events = {}; this.nodes = {}; this.dataset = {}; this.disabled = false; this.value = ''; this.style = { setProperty(name,value) { this[name]=value; } }; this.classList = { toggle() {} }; }
+  getBoundingClientRect() { return { left: 0, top: 0, width: this.clientWidth || 320, height: 240 }; }
   setAttribute() {}
   querySelector(key) { return this.nodes[key] ||= new Element(); }
   addEventListener(name, callback) { this.events[name] = callback; }
@@ -21,7 +22,7 @@ class Element {
 }
 const tick = () => new Promise(resolve => setImmediate(resolve));
 
-function setup(android = true, bridgeMode = 'injected') {
+function setup(android = true, bridgeMode = 'injected', listenerAsync = false) {
   const trigger = new Element(), body = new Element();
   const device = { deviceId: '/usb/1', name: 'RTL2832U', vendorId: 3034, productId: 10290, candidate: true, hasPermission: false, connected: false };
   const state = { hostSupported: true, state: 'idle', devices: [device] };
@@ -34,16 +35,26 @@ function setup(android = true, bridgeMode = 'injected') {
       if (options.volume != null) state.audio.volume = options.volume;
       callback(structuredClone(state));
     },
-    async startReception(options) { this.starts.push(options); state.receptionState = 'starting'; callback(structuredClone(state)); },
+    async startReception(options) { this.starts.push(options); state.receptionState = 'starting'; state.fixedResultAvailable = true; callback(structuredClone(state)); },
     async startScan(options) {
       if (options.resume && !state.scanResumeAvailable) throw new Error('이어갈 탐색 없음');
       this.scans.push(options); state.receptionState = 'starting';
+      state.fixedResultAvailable = false;
       if (!options.resume) state.scan = {};
       state.scanResumeAvailable = true; state.audio = {enabled:false}; callback(structuredClone(state));
     },
     async stopReception() { state.receptionState = 'idle'; callback(structuredClone(state)); },
+    async clearScanHistory() {
+      if (state.receptionState !== 'idle') throw new Error('Stop reception first');
+      state.scan = {}; state.scanResumeAvailable = false; callback(structuredClone(state));
+    },
+    async clearReceptionResult() {
+      if (state.receptionState !== 'idle' && state.receptionState !== 'error') throw new Error('Stop reception first');
+      state.reception = {}; state.receptionError = ''; state.fixedResultAvailable = false;
+      callback(structuredClone(state));
+    },
     getStatus: async () => structuredClone(state),
-    addListener: async (_, fn) => { callback = fn; return { remove() {} }; },
+    addListener: (_, fn) => { callback = fn; const handle = { remove() {} }; return listenerAsync ? Promise.resolve(handle) : handle; },
     requestDevicePermission() {
       permissionCount++;
       state.state = 'permissionPending'; callback(structuredClone(state));
@@ -52,7 +63,7 @@ function setup(android = true, bridgeMode = 'injected') {
     async openDevice() { openCount++; device.connected = true; state.state = 'connected'; callback(structuredClone(state)); },
     async closeDevice() {
       permission?.reject(new Error('요청 취소')); permission = null;
-      device.connected = false; state.state = 'idle'; state.receptionState = 'idle'; state.scan = {}; state.scanResumeAvailable = false; callback?.(structuredClone(state));
+      device.connected = false; state.state = 'idle'; state.receptionState = 'idle'; state.scan = {}; state.scanResumeAvailable = false; state.fixedResultAvailable = false; callback?.(structuredClone(state));
     }
   };
   const capacitor = android ? { getPlatform: () => 'android' } : undefined;
@@ -91,11 +102,39 @@ test('permission approval automatically opens USB once without a second click', 
   assert.equal(ui.button().textContent, '연결됨');
   assert.equal(ui.button().className, 'sdr-connected-badge');
   assert.match(ui.dialog.querySelector('.sdr-status').textContent, /USB 연결됨/);
-  await ui.dialog.close(); assert.equal(ui.state.state, 'idle');
+  await ui.dialog.close(); assert.equal(ui.state.state, 'connected');
+  await ui.trigger.click(); assert.equal(ui.counts().openCount, 1);
 });
 
 test('registerPlugin API remains supported when supplied by a bundled runtime', async () => {
   const ui = setup(true, 'registered'); await ui.trigger.click();
+  assert.equal(ui.dialog.open, true);
+  assert.equal(ui.button().disabled, false);
+});
+
+test('receiver settings and results appear after USB connection and hide again on disconnect', async () => {
+  const ui = setup(); ui.device.hasPermission = true;
+  await ui.trigger.click();
+  const settings = ui.dialog.querySelector('[data-settings-section]');
+  const result = ui.dialog.querySelector('[data-result]');
+  const footer = ui.dialog.querySelector('.sdr-footer');
+  const help = ui.dialog.querySelector('[data-general-help]');
+  for (const section of [settings, result, footer, help]) assert.equal(section.hidden, true);
+  await ui.button().click(); await tick();
+  for (const section of [settings, result, footer, help]) assert.equal(section.hidden, false);
+  await ui.dialog.querySelector('[data-task-scan]').click();
+  await ui.dialog.querySelector('[data-disconnect]').click(); await tick();
+  for (const section of [settings, result, footer, help]) assert.equal(section.hidden, true);
+  await ui.button().click(); await tick();
+  assert.equal(settings.hidden, false);
+  assert.equal(settings.open, true);
+  assert.equal(result.open, false);
+  assert.equal(ui.dialog.querySelector('[data-frequency-field]').hidden, false);
+});
+
+test('asynchronous listener registration remains supported', async () => {
+  const ui = setup(true, 'injected', true);
+  await ui.trigger.click();
   assert.equal(ui.dialog.open, true);
   assert.equal(ui.button().disabled, false);
 });
@@ -336,6 +375,61 @@ test('switching back to VHF removes audio controls and restores IQ analysis', as
   assert.equal(ui.plugin.starts[0].mode, 'iq');
 });
 
+test('stopped spectrum drag selects a frequency for the next fixed reception only', async () => {
+  const ui = setup(); ui.device.hasPermission = true;
+  await ui.trigger.click(); await ui.button().click(); await tick();
+  await ui.dialog.querySelector('[data-band]').change('fm');
+  const canvas = ui.dialog.querySelector('[data-spectrum]');
+  canvas.clientWidth = 320;
+  ui.state.fixedResultAvailable = true;
+  ui.state.receptionState = 'receiving';
+  ui.state.reception = { frequencyHz: 103500000, sampleRate: 1024000, spectrumDbfs: Array(1024).fill(-80) };
+  ui.emit();
+  canvas.events.pointerdown({ pointerId: 1, clientX: 241.5, clientY: 100 });
+  assert.equal(ui.dialog.querySelector('[data-frequency]').value, '103.500');
+  const reset = ui.dialog.querySelector('[data-spectrum-reset]');
+  assert.equal(reset.hidden, true);
+  ui.state.receptionState = 'idle'; ui.emit();
+  ui.dialog.querySelector('[data-frequency]').value = '103.600';
+  ui.dialog.querySelector('[data-frequency]').events.input();
+  canvas.events.pointerdown({ pointerId: 1, clientX: 241.5, clientY: 100 });
+  assert.equal(ui.dialog.querySelector('[data-frequency]').value, '103.756');
+  assert.equal(reset.hidden, false);
+  assert.match(ui.dialog.querySelector('[data-spectrum-tune]').textContent, /103.756 MHz/);
+  canvas.events.pointermove({ pointerId: 1, clientX: 177, clientY: 100 });
+  canvas.events.pointerup({ pointerId: 1 });
+  assert.equal(ui.dialog.querySelector('[data-frequency]').value, '103.500');
+  await reset.click();
+  assert.equal(ui.dialog.querySelector('[data-frequency]').value, '103.600');
+  assert.equal(reset.hidden, true);
+  await ui.dialog.querySelector('[data-start]').click(); await tick();
+  assert.equal(ui.plugin.starts[0].frequencyHz, 103600000);
+});
+
+test('fixed reception stop becomes result reset without losing USB or tuning', async () => {
+  const ui = setup(); ui.device.hasPermission = true;
+  await ui.trigger.click(); await ui.button().click();
+  await ui.dialog.querySelector('[data-start]').click();
+  ui.state.receptionState = 'receiving';
+  ui.state.reception = { frequencyHz: 150000000, sampleRate: 1024000,
+    totalBytes: 2048000, bytesPerSecond: 2048000, powerDbfs: -45,
+    clippingPercent: 0, elapsedSeconds: 1, hasSamples: true };
+  ui.emit();
+  const stop = ui.dialog.querySelector('[data-stop]');
+  assert.equal(stop.textContent, '정지');
+  await stop.click();
+  await ui.dialog.querySelector('[data-close]').click();
+  await ui.trigger.click();
+  assert.equal(stop.textContent, '초기화');
+  assert.equal(stop.disabled, false);
+  await stop.click();
+  assert.equal(ui.dialog.querySelector('[data-throughput]').textContent, '—');
+  assert.equal(ui.dialog.querySelector('[data-frequency]').value, '150.000');
+  assert.equal(ui.state.state, 'connected');
+  assert.equal(ui.counts().openCount, 1);
+  assert.equal(stop.disabled, true);
+});
+
 test('digit tuning carries exactly and stops at selected-band boundaries', async () => {
   const ui = setup(); await ui.trigger.click();
   const frequency = ui.dialog.querySelector('[data-frequency]');
@@ -394,6 +488,115 @@ async function scanningUi() {
   ui.emit(); return ui;
 }
 
+test('closing the settings dialog leaves an active background scan and USB connection intact', async () => {
+  const ui=await scanningUi();
+  ui.state.backgroundScanning=true; ui.emit();
+  assert.equal(ui.trigger.dataset.status,'scanning');
+  assert.equal(ui.trigger.dataset.statusLabel,'탐색 중');
+  const history=structuredClone(ui.state.scan);
+  await ui.dialog.querySelector('[data-close]').click(); await tick();
+  assert.equal(ui.dialog.open,false);
+  assert.equal(ui.trigger.dataset.status,'scanning');
+  assert.equal(ui.state.state,'connected');
+  assert.equal(ui.state.receptionState,'scanning');
+  assert.deepEqual(ui.state.scan,history);
+  ui.state.scan.cycle=2; ui.emit();
+  assert.match(ui.trigger.title,/2회차/);
+  await ui.trigger.click();
+  assert.equal(ui.dialog.open,true);
+  assert.equal(ui.dialog.querySelector('[data-candidates]').children[0].frequencyHz,103505000);
+});
+
+test('closing or stopping fixed reception keeps USB available for the next check', async () => {
+  const ui = setup();
+  ui.device.hasPermission = true;
+  await ui.trigger.click();
+  await ui.button().click();
+  ui.state.receptionState = 'receiving';
+  ui.state.backgroundReceiving = true;
+  ui.emit();
+  await ui.dialog.querySelector('[data-close]').click();
+  assert.equal(ui.state.state, 'connected');
+  assert.equal(ui.state.receptionState, 'receiving');
+  await ui.trigger.click();
+  await ui.dialog.querySelector('[data-stop]').click();
+  assert.equal(ui.state.state, 'connected');
+  assert.equal(ui.counts().openCount, 1);
+});
+
+test('recreated settings restore an active background fixed frequency', async () => {
+  const ui = setup();
+  ui.device.connected = true;
+  ui.state.state = 'connected';
+  ui.state.backgroundReceiving = true;
+  ui.state.receptionState = 'receiving';
+  ui.state.reception = { mode: 'wfm', frequencyHz: 103500000, sampleRate: 1024000, gainDb: 7.1, ppm: 0 };
+  await ui.trigger.click();
+  assert.equal(ui.dialog.querySelector('[data-band]').value, 'fm');
+  assert.equal(ui.dialog.querySelector('[data-mode]').value, 'wfm');
+  assert.equal(ui.dialog.querySelector('[data-frequency]').value, '103.500');
+  assert.equal(ui.dialog.querySelector('[data-audio-panel]').hidden, false);
+});
+
+test('recreated settings expose paused scan history and its reset action', async () => {
+  const ui = setup();
+  ui.device.connected = true;
+  ui.state.state = 'connected';
+  ui.state.scanResumeAvailable = true;
+  ui.state.receptionState = 'idle';
+  ui.state.scan = { band: 'fm', startHz: 103000000, endHz: 104000000,
+    requestedSampleRate: 1024000, requestedGainTenthsDb: 100, ppm: 0,
+    dwellMs: 1000, thresholdDb: 10, centerHz: 103300000, segment: 2,
+    segments: 4, cycle: 3, cycleSeconds: 4.8, elapsedSeconds: 14, candidates: [] };
+  await ui.trigger.click();
+  assert.equal(ui.dialog.querySelector('[data-scan-results]').hidden, false);
+  assert.equal(ui.dialog.querySelector('[data-stop]').textContent, '초기화');
+  assert.equal(ui.dialog.querySelector('[data-stop]').disabled, false);
+  assert.equal(ui.dialog.querySelector('[data-start]').textContent, '탐색 재개');
+});
+
+test('map SDR button changes state for pause, fixed reception and disconnect', async () => {
+  const ui=await scanningUi();
+  ui.state.backgroundScanning=true; ui.emit();
+  assert.equal(ui.trigger.dataset.status,'scanning');
+  ui.state.backgroundScanning=false; ui.state.receptionState='idle'; ui.emit();
+  assert.equal(ui.trigger.dataset.status,'paused');
+  ui.state.receptionState='receiving'; ui.emit();
+  assert.equal(ui.trigger.dataset.status,'receiving');
+  ui.state.receptionState='error'; ui.state.receptionError='USB read failed'; ui.emit();
+  assert.equal(ui.trigger.dataset.status,'error');
+  ui.state.receptionError=''; ui.state.receptionState='idle'; ui.state.scanResumeAvailable=false;
+  ui.state.state='idle'; ui.emit();
+  assert.equal(ui.trigger.dataset.status,undefined);
+  assert.equal(ui.trigger.title,'SDR 설정');
+});
+
+test('running scan is visible on the map after a WebView reload without opening settings', async () => {
+  const ui=setup();
+  ui.state.state='connected'; ui.state.backgroundScanning=true;
+  ui.state.receptionState='scanning'; ui.state.scan={cycle:7};
+  await tick(); ui.emit();
+  assert.equal(ui.dialog.open,undefined);
+  assert.equal(ui.trigger.dataset.status,'scanning');
+  assert.match(ui.trigger.title,/7회차/);
+});
+
+test('a recreated screen restores the running scan settings from native state', async () => {
+  const ui=setup();
+  ui.device.hasPermission=true; ui.device.connected=true;
+  ui.state.state='connected'; ui.state.receptionState='scanning';
+  ui.state.backgroundScanning=true; ui.state.scanResumeAvailable=true;
+  ui.state.scan={band:'fm',startHz:103000000,endHz:104000000,centerHz:103300000,
+    requestedSampleRate:1024000,requestedGainTenthsDb:100,ppm:0,dwellMs:1000,thresholdDb:10,
+    segment:2,segments:4,cycle:3,cycleSeconds:4.8,elapsedSeconds:14,candidates:[]};
+  await ui.trigger.click();
+  assert.equal(ui.dialog.querySelector('[data-band]').value,'fm');
+  assert.equal(ui.dialog.querySelector('[data-scan-start]').value,'103.000');
+  assert.equal(ui.dialog.querySelector('[data-scan-end]').value,'104.000');
+  assert.equal(ui.dialog.querySelector('[data-scan-results]').hidden,false);
+  assert.equal(ui.dialog.querySelector('[data-start]').disabled,true);
+});
+
 test('band scan sends explicit options, stays silent, opens candidates and locks tuning', async () => {
   const ui = await scanningUi();
   assert.deepEqual(JSON.parse(JSON.stringify(ui.plugin.scans[0])), {band:'fm',startHz:103000000,endHz:104000000,
@@ -423,15 +626,31 @@ test('candidate waits for native stop, then fixed WFM can resume original scan s
   assert.equal(ui.plugin.starts[0].frequencyHz,103505000);
   assert.equal(ui.plugin.starts[0].mode,'wfm');
   assert.equal(ui.dialog.querySelector('[data-scan-results]').hidden,true);
-  assert.equal(ui.dialog.querySelector('[data-resume]').hidden,false);
+  assert.equal(ui.dialog.querySelector('[data-back]').hidden,false);
   ui.state.receptionState='receiving'; ui.state.reception=ui.plugin.starts[0]; ui.emit();
   ui.plugin.stopReception=originalStop;
   ui.dialog.querySelector('[data-gain]').value='30';
-  await ui.dialog.querySelector('[data-resume]').click(); await tick();
+  await ui.dialog.querySelector('[data-back]').click(); await tick();
   assert.equal(ui.plugin.scans.length,2);
   assert.deepEqual(JSON.parse(JSON.stringify(ui.plugin.scans[1])),JSON.parse(JSON.stringify({...ui.plugin.scans[0],resume:true})));
   assert.equal(ui.dialog.querySelector('[data-gain]').value,'10');
   assert.equal(ui.dialog.querySelector('[data-start]').textContent,'탐색 중');
+});
+
+test('manual fixed to scan to fixed switching has one footer action and no candidate return', async () => {
+  const ui = setup(); ui.device.hasPermission = true;
+  await ui.trigger.click(); await ui.button().click();
+  await ui.dialog.querySelector('[data-start]').click();
+  ui.state.receptionState = 'receiving'; ui.emit();
+  await ui.dialog.querySelector('[data-stop]').click();
+  await ui.dialog.querySelector('[data-task-scan]').click();
+  await ui.dialog.querySelector('[data-start]').click();
+  ui.state.receptionState = 'scanning'; ui.emit();
+  await ui.dialog.querySelector('[data-stop]').click();
+  await ui.dialog.querySelector('[data-task-fixed]').click();
+  assert.equal(ui.dialog.querySelector('[data-start]').textContent, '수신 시작');
+  assert.equal(ui.dialog.querySelector('[data-back]').hidden, true);
+  assert.equal(ui.dialog.innerHTML.includes('data-resume'), false);
 });
 
 test('closing or disconnecting during candidate handoff prevents reception restart', async () => {
@@ -534,6 +753,26 @@ test('pause and resume retain the current interval, pass and candidate list', as
   assert.equal(ui.dialog.querySelector('[data-candidates]').children[0].frequencyHz,103505000);
 });
 
+test('paused scan history can be cleared after reopening without disconnecting USB', async () => {
+  const ui = await scanningUi();
+  const stop = ui.dialog.querySelector('[data-stop]');
+  assert.equal(stop.textContent, '일시정지');
+  await stop.click();
+  await ui.dialog.querySelector('[data-close]').click();
+  await ui.trigger.click();
+  assert.equal(stop.textContent, '초기화');
+  assert.equal(stop.disabled, false);
+  await stop.click();
+  assert.equal(ui.state.scanResumeAvailable, false);
+  assert.deepEqual(ui.state.scan, {});
+  assert.equal(ui.state.state, 'connected');
+  assert.equal(ui.counts().openCount, 1);
+  assert.equal(stop.disabled, true);
+  assert.equal(ui.dialog.querySelector('[data-start]').textContent, '탐색 시작');
+  await ui.dialog.querySelector('[data-start]').click();
+  assert.equal(ui.plugin.scans[1].resume, undefined);
+});
+
 test('listening and stopping audio preserve the scan checkpoint for resumption', async () => {
   const ui=await scanningUi(); ui.state.scan.segment=3; ui.state.scan.cycle=5; ui.emit();
   const history=structuredClone(ui.state.scan);
@@ -542,7 +781,7 @@ test('listening and stopping audio preserve the scan checkpoint for resumption',
   ui.state.receptionState='receiving'; ui.state.reception=ui.plugin.starts[0]; ui.emit();
   assert.equal(ui.dialog.querySelector('[data-stop]').textContent,'정지');
   await ui.dialog.querySelector('[data-stop]').click(); await tick();
-  await ui.dialog.querySelector('[data-resume]').click(); await tick();
+  await ui.dialog.querySelector('[data-back]').click(); await tick();
   assert.equal(ui.plugin.scans[1].resume,true); assert.deepEqual(ui.state.scan,history);
 });
 
@@ -562,13 +801,14 @@ test('closing or disconnecting while resuming cannot launch a new scan', async (
     await ui.dialog.querySelector('[data-candidates]').children[0].click(); await tick();
     ui.state.receptionState='receiving'; ui.state.reception=ui.plugin.starts[0]; ui.emit();
     let release; ui.plugin.stopReception=()=>new Promise(resolve=>{release=resolve;});
-    void ui.dialog.querySelector('[data-resume]').click(); await tick();
+    void ui.dialog.querySelector('[data-back]').click(); await tick();
     if(action==='close') await ui.dialog.close();
     else await ui.dialog.querySelector('[data-disconnect]').click();
     release(); await tick();
     assert.equal(ui.plugin.scans.length,1);
-    assert.equal(ui.state.scanResumeAvailable,false);
-    assert.equal(ui.dialog.querySelector('[data-resume]').hidden,true);
+    assert.equal(ui.state.scanResumeAvailable,action==='close');
+    if(action==='close') await ui.trigger.click();
+    assert.equal(ui.dialog.querySelector('[data-back]').hidden,action!=='close');
   }
 });
 
@@ -662,7 +902,7 @@ test('header back arrow and dialog cancel resume the saved scan through the same
       assert.equal(prevented,true);
     }
     await tick();
-    assert.equal(ui.plugin.scans[1].resume,true); assert.equal(ui.dialog.open,true);
+    assert.equal(ui.plugin.scans[1]?.resume,true, action); assert.equal(ui.dialog.open,true);
     assert.equal(ui.dialog.querySelector('[data-back]').hidden,true);
   }
 });
@@ -684,7 +924,7 @@ test('back first leaves direct entry without committing invalid input or losing 
 test('back on the scan screen closes SDR and a closed dialog leaves shared navigation alone', async () => {
   const ui=await scanningUi();
   assert.equal(ui.window.SdrDiagnostics.handleBackNavigation(),true); await tick();
-  assert.equal(ui.dialog.open,false); assert.equal(ui.state.scanResumeAvailable,false);
+  assert.equal(ui.dialog.open,false); assert.equal(ui.state.scanResumeAvailable,true);
   assert.equal(ui.window.SdrDiagnostics.handleBackNavigation(),false);
 });
 

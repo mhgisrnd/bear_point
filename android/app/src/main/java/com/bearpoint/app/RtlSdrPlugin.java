@@ -1,6 +1,7 @@
 package com.bearpoint.app;
 
 import android.app.PendingIntent;
+import android.Manifest;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
@@ -12,7 +13,10 @@ import android.hardware.usb.UsbManager;
 import android.net.Uri;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.Build;
 import androidx.core.content.ContextCompat;
+import com.getcapacitor.annotation.Permission;
+import com.getcapacitor.annotation.PermissionCallback;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
 import android.view.View;
@@ -25,15 +29,19 @@ import com.getcapacitor.annotation.CapacitorPlugin;
 import java.util.UUID;
 
 /** USB permissions and foreground single-frequency IQ diagnostics. */
-@CapacitorPlugin(name = "RtlSdr")
+@CapacitorPlugin(name = "RtlSdr", permissions = {
+    @Permission(strings = { Manifest.permission.POST_NOTIFICATIONS }, alias = "notifications")
+})
 public class RtlSdrPlugin extends Plugin {
     private final Handler main = new Handler(Looper.getMainLooper());
     private UsbManager usb;
-    private final SdrReceiver sdr = new SdrReceiver(main, () -> publish());
+    private SdrRuntime runtime;
+    private SdrReceiver sdr;
+    private final Runnable runtimeListener = this::publish;
     private String permissionAction;
-    private UsbDeviceConnection connection;
-    private String connectedId;
     private PluginCall permissionCall;
+    private PluginCall pendingScanCall;
+    private PluginCall pendingReceptionCall;
     private String requestedId;
     private String requestToken;
     private PendingIntent permissionIntent;
@@ -64,7 +72,7 @@ public class RtlSdrPlugin extends Plugin {
                 // The event identifies the old device even if a new one has appeared.
                 UsbDevice removed = intent.getParcelableExtra(UsbManager.EXTRA_DEVICE);
                 String id = removed == null ? null : removed.getDeviceName();
-                if (connectedId != null && (connectedId.equals(id) || find(connectedId) == null)) closeConnection();
+                if (runtime.connectedId != null && (runtime.connectedId.equals(id) || find(runtime.connectedId) == null)) closeConnection();
                 if (requestedId != null && (requestedId.equals(id) || find(requestedId) == null)) {
                     failPermission("USB_DEVICE_DETACHED", "권한 요청 중 장치가 분리되었습니다.");
                 }
@@ -76,8 +84,10 @@ public class RtlSdrPlugin extends Plugin {
     };
 
     @Override public void load() {
-        sdr.audio = new SdrAudioOutput(getContext(), main, () -> publish());
-        usb = (UsbManager) getContext().getSystemService(Context.USB_SERVICE);
+        runtime = SdrRuntime.get(getContext());
+        sdr = runtime.sdr;
+        runtime.listener = runtimeListener;
+        usb = runtime.usb;
         permissionAction = getContext().getPackageName() + ".RTL_USB_PERMISSION";
         // USB system broadcasts originate in system_server; permission replies use our PendingIntent.
         // A filter without a data scheme cannot receive our URI-bearing permission Intent.
@@ -120,28 +130,31 @@ public class RtlSdrPlugin extends Plugin {
         result.put("name", device.getProductName() == null ? "USB 장치" : device.getProductName());
         result.put("candidate", candidate(device));
         result.put("hasPermission", usb.hasPermission(device));
-        result.put("connected", device.getDeviceName().equals(connectedId));
+        result.put("connected", device.getDeviceName().equals(runtime.connectedId));
         result.put("tuner", "unverified");
         // Do not read serial numbers before permission, or expose native file descriptors.
         return result;
     }
 
     private JSObject snapshot() {
-        if (connectedId != null && find(connectedId) == null) closeConnection();
+        if (runtime.connectedId != null && find(runtime.connectedId) == null) closeConnection();
         JSObject result = new JSObject();
         JSArray devices = new JSArray();
         if (usb != null) for (UsbDevice device : usb.getDeviceList().values()) devices.put(deviceInfo(device));
         result.put("hostSupported", hostSupported());
         result.put("devices", devices);
-        result.put("state", !hostSupported() ? "unsupported" : permissionCall != null ? "permissionPending" : connection != null ? "connected" : "idle");
-        result.put("connectedDeviceId", connectedId == null ? "" : connectedId);
+        result.put("state", !hostSupported() ? "unsupported" : permissionCall != null ? "permissionPending" : runtime.connection != null ? "connected" : "idle");
+        result.put("connectedDeviceId", runtime.connectedId == null ? "" : runtime.connectedId);
+        result.put("backgroundScanning", SdrScanService.isScanning());
+        result.put("backgroundReceiving", SdrScanService.isReceiving());
         result.put("lastError", lastError == null ? "" : lastError);
         result.put("rfReady", "receiving".equals(sdr.state));
         result.put("receptionState", sdr.state);
+        result.put("fixedResultAvailable", sdr.fixedResultAvailable);
         result.put("reception", sdr.metrics);
         result.put("scan", sdr.scan);
         result.put("scanResumeAvailable", sdr.hasScanSession());
-        result.put("receptionError", sdr.error);
+        result.put("receptionError", runtime.serviceError.isEmpty() ? sdr.error : runtime.serviceError);
         result.put("audio", sdr.audio.snapshot());
         result.put("viewportInsets", viewportInsets());
         return result;
@@ -149,6 +162,7 @@ public class RtlSdrPlugin extends Plugin {
 
     private JSObject viewportInsets() {
         JSObject result = new JSObject();
+        if (getBridge() == null || getActivity() == null || getBridge().getWebView() == null) return result;
         View content = getBridge().getWebView(), window = getActivity().getWindow().getDecorView();
         WindowInsetsCompat rootInsets = ViewCompat.getRootWindowInsets(content);
         if (rootInsets == null) return result;
@@ -216,22 +230,26 @@ public class RtlSdrPlugin extends Plugin {
 
     @PluginMethod public void openDevice(PluginCall call) {
         execute(call, () -> {
+            if (SdrScanService.isRunning() && !call.getString("deviceId", "").equals(runtime.connectedId)) {
+                call.reject("탐색을 정지한 뒤 다른 USB 장치를 연결하세요."); return;
+            }
             if (permissionCall != null) { call.reject("권한 요청이 진행 중입니다.", "USB_BUSY"); return; }
             UsbDevice device = selected(call);
             if (device == null) return;
             if (!usb.hasPermission(device)) { call.reject("USB 권한을 먼저 요청하세요.", "USB_PERMISSION_REQUIRED"); return; }
-            if (!device.getDeviceName().equals(connectedId)) {
+            if (!device.getDeviceName().equals(runtime.connectedId)) {
                 closeConnection();
-                connection = usb.openDevice(device);
-                if (connection == null) {
+                runtime.connection = usb.openDevice(device);
+                if (runtime.connection == null) {
                     lastError = "USB_OPEN_FAILED";
                     call.reject("USB 연결을 열지 못했습니다. 장치와 다른 수신 앱을 확인하세요.", lastError);
                     publish();
                     return;
                 }
-                connectedId = device.getDeviceName();
+                runtime.connectedId = device.getDeviceName();
             }
             lastError = null;
+            runtime.serviceError = "";
             call.resolve(snapshot());
             publish();
         });
@@ -240,6 +258,7 @@ public class RtlSdrPlugin extends Plugin {
     @PluginMethod public void closeDevice(PluginCall call) {
         execute(call, () -> {
             failPermission("USB_CANCELLED", "권한 요청을 취소했습니다.");
+            SdrScanService.release();
             closeConnection();
             lastError = null;
             call.resolve(snapshot());
@@ -248,15 +267,34 @@ public class RtlSdrPlugin extends Plugin {
     }
 
     private void closeConnection() {
-        sdr.closeUsb(connection);
-        connection = null;
-        connectedId = null;
+        runtime.closeUsb();
     }
 
     @PluginMethod public void startReception(PluginCall call) {
+        if (Build.VERSION.SDK_INT >= 33 &&
+            ContextCompat.checkSelfPermission(getContext(), Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissionForAlias("notifications", call, "onReceptionNotificationPermission");
+            return;
+        }
+        beginReception(call);
+    }
+
+    @PermissionCallback private void onReceptionNotificationPermission(PluginCall call) {
+        if (ContextCompat.checkSelfPermission(getContext(), Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            call.reject("Background reception requires notification permission.");
+            return;
+        }
+        main.post(() -> {
+            if (destroyed) { call.reject("Plugin has been destroyed."); return; }
+            if (paused) pendingReceptionCall = call;
+            else beginReception(call);
+        });
+    }
+
+    private void beginReception(PluginCall call) {
         execute(call, () -> {
             if (paused) { call.reject("앱 화면에서 수신을 시작하세요."); return; }
-            if (connection == null) { call.reject("USB 연결을 먼저 확인하세요."); return; }
+            if (runtime.connection == null) { call.reject("USB 연결을 먼저 확인하세요."); return; }
             int hz = call.getInt("frequencyHz", 150000000);
             int rate = call.getInt("sampleRate", 1024000);
             int gain = call.getInt("gainTenthsDb", 100);
@@ -268,19 +306,62 @@ public class RtlSdrPlugin extends Plugin {
                 || !SdrSettings.validDemodulation(mode, band, hz, listen, rate, deemphasis)) {
                 call.reject("수신 설정 범위를 확인하세요."); return;
             }
-            sdr.start(connection, hz, rate, gain, ppm, mode, listen, deemphasis);
+            sdr.start(runtime.connection, hz, rate, gain, ppm, mode, listen, deemphasis);
+            try { SdrScanService.launch(getContext(), "fixed"); }
+            catch (RuntimeException failure) { sdr.stop(); throw failure; }
             call.resolve(snapshot()); publish();
         });
     }
 
     @PluginMethod public void stopReception(PluginCall call) {
-        execute(call, () -> { sdr.stop(() -> call.resolve(snapshot())); publish(); });
+        execute(call, () -> {
+            SdrScanService.release();
+            sdr.stop(() -> call.resolve(snapshot())); publish();
+        });
+    }
+
+    @PluginMethod public void clearScanHistory(PluginCall call) {
+        execute(call, () -> {
+            sdr.clearScanHistory();
+            call.resolve(snapshot());
+            publish();
+        });
+    }
+
+    @PluginMethod public void clearReceptionResult(PluginCall call) {
+        execute(call, () -> {
+            sdr.clearReceptionResult();
+            runtime.serviceError = "";
+            call.resolve(snapshot());
+            publish();
+        });
     }
 
     @PluginMethod public void startScan(PluginCall call) {
+        if (Build.VERSION.SDK_INT >= 33 &&
+            ContextCompat.checkSelfPermission(getContext(), Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissionForAlias("notifications", call, "onNotificationPermission");
+            return;
+        }
+        beginScan(call);
+    }
+
+    @PermissionCallback private void onNotificationPermission(PluginCall call) {
+        if (ContextCompat.checkSelfPermission(getContext(), Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            call.reject("백그라운드 탐색 알림 권한을 허용하세요.");
+            return;
+        }
+        main.post(() -> {
+            if (destroyed) { call.reject("플러그인이 종료되었습니다."); return; }
+            if (paused) pendingScanCall = call;
+            else beginScan(call);
+        });
+    }
+
+    private void beginScan(PluginCall call) {
         execute(call, () -> {
             if (paused) { call.reject("앱 화면에서 탐색을 시작하세요."); return; }
-            if (connection == null) { call.reject("USB 연결을 먼저 확인하세요."); return; }
+            if (runtime.connection == null) { call.reject("USB 연결을 먼저 확인하세요."); return; }
             int gain = call.getInt("gainTenthsDb", 100), ppm = call.getInt("ppm", 0);
             if (gain < -100 || gain > 500 || ppm < -100 || ppm > 100) {
                 call.reject("Gain·PPM 설정 범위를 확인하세요."); return;
@@ -288,8 +369,10 @@ public class RtlSdrPlugin extends Plugin {
             SdrScan plan = new SdrScan(call.getString("band", "vhf"), call.getInt("startHz", 148000000),
                 call.getInt("endHz", 174000000), call.getInt("sampleRate", 1024000),
                 call.getInt("dwellMs", 1000), call.getDouble("thresholdDb", 10d));
-            if (Boolean.TRUE.equals(call.getBoolean("resume", false))) sdr.resumeScan(connection, plan, gain, ppm);
-            else sdr.startScan(connection, plan, gain, ppm);
+            if (Boolean.TRUE.equals(call.getBoolean("resume", false))) sdr.resumeScan(runtime.connection, plan, gain, ppm);
+            else sdr.startScan(runtime.connection, plan, gain, ppm);
+            try { SdrScanService.launch(getContext(), "scan"); }
+            catch (RuntimeException failure) { sdr.stop(); throw failure; }
             call.resolve(snapshot()); publish();
         });
     }
@@ -304,7 +387,8 @@ public class RtlSdrPlugin extends Plugin {
     @Override protected void handleOnPause() {
         main.post(() -> {
             paused = true;
-            if (!destroyed && ("receiving".equals(sdr.state) || "starting".equals(sdr.state) || "scanning".equals(sdr.state))) {
+            if (!destroyed && !SdrScanService.isRunning() &&
+                ("receiving".equals(sdr.state) || "starting".equals(sdr.state) || "scanning".equals(sdr.state))) {
                 sdr.stop(); publish();
             }
         });
@@ -353,6 +437,16 @@ public class RtlSdrPlugin extends Plugin {
             if (destroyed) return;
             paused = false;
             reconcilePermission();
+            if (pendingScanCall != null) {
+                PluginCall scanCall = pendingScanCall;
+                pendingScanCall = null;
+                beginScan(scanCall);
+            }
+            if (pendingReceptionCall != null) {
+                PluginCall receptionCall = pendingReceptionCall;
+                pendingReceptionCall = null;
+                beginReception(receptionCall);
+            }
             publish();
         });
     }
@@ -360,11 +454,13 @@ public class RtlSdrPlugin extends Plugin {
     @Override protected void handleOnDestroy() {
         main.post(() -> {
             destroyed = true;
+            if (pendingReceptionCall != null) { pendingReceptionCall.reject("Plugin has been destroyed."); pendingReceptionCall = null; }
+            if (pendingScanCall != null) { pendingScanCall.reject("앱이 종료되어 탐색을 시작하지 않았습니다."); pendingScanCall = null; }
             failPermission("USB_CLOSED", "플러그인이 종료되었습니다.");
-            closeConnection();
+            if (!SdrScanService.isRunning()) closeConnection();
             if (registered) getContext().unregisterReceiver(receiver);
             registered = false;
-            sdr.shutdown();
+            if (runtime.listener == runtimeListener) runtime.listener = null;
         });
     }
 }

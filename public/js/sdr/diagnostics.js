@@ -6,12 +6,12 @@
   dialog.className = "sdr-dialog";
   dialog.setAttribute("aria-labelledby", "sdr-title");
   dialog.innerHTML = `
-    <div class="sdr-header"><div class="sdr-title-group"><button type="button" data-back hidden aria-label="탐색 목록으로 돌아가기">‹</button><div><span class="sdr-eyebrow">SDR · 수신 테스트</span><h2 id="sdr-title">수신기 설정</h2></div></div><button type="button" data-close>닫기</button></div>
+    <div class="sdr-header"><div class="sdr-title-group"><button type="button" data-back hidden aria-label="탐색 재개">‹ 탐색</button><div><span class="sdr-eyebrow">SDR · 수신 테스트</span><h2 id="sdr-title">수신기 설정</h2></div></div><button type="button" data-close>닫기</button></div>
     <div class="sdr-body">
     <p class="sdr-status" role="status">연결 상태 확인 전</p>
     <p class="sdr-message" role="alert"></p>
-    <details data-usb-section class="sdr-section sdr-usb-section" open><summary><span>USB 장치</span><span class="sdr-chevron" aria-hidden="true">⌄</span></summary><div data-devices></div><div class="sdr-actions sdr-usb-tools"><button type="button" data-refresh>장치 새로고침</button><button type="button" data-disconnect>연결 해제 / 취소</button></div></details>
-    <details data-settings-section class="sdr-section" open><summary>수신 설정</summary>
+    <details data-usb-section class="sdr-section sdr-usb-section" open><summary><span>USB 장치</span><span class="sdr-chevron" aria-hidden="true">⌄</span></summary><div data-devices></div><div class="sdr-actions sdr-usb-tools"><button type="button" data-refresh>목록 새로고침</button><button type="button" data-disconnect>연결 해제 / 취소</button></div></details>
+    <details data-settings-section class="sdr-section" open hidden><summary>수신 설정</summary>
       <fieldset data-settings class="sdr-settings" disabled>
         <div class="sdr-operation" role="group" aria-label="수신 방식"><button type="button" data-task-scan aria-pressed="false">대역 탐색</button><button type="button" data-task-fixed aria-pressed="true">주파수 고정</button></div>
         <div class="sdr-fields">
@@ -35,28 +35,27 @@
         </div><p data-window class="sdr-note"></p></details>
       </fieldset>
     </details>
-    <details data-result class="sdr-section"><summary data-result-heading>수신 결과</summary>
+    <details data-result class="sdr-section" hidden><summary data-result-heading>수신 결과</summary>
       <div data-scan-results hidden><p data-scan-progress class="sdr-scan-progress">탐색 대기</p><div class="sdr-candidate-heading"><strong data-candidate-heading>신호 후보</strong><span data-candidate-count>0개</span></div><div data-candidates></div></div>
       <div data-fixed-results>
       <div class="sdr-metrics"><div><span>수신 데이터</span><strong data-throughput>—</strong></div><div><span>대역 전력</span><strong data-power>—</strong></div></div>
       <div class="sdr-audio" data-audio-panel hidden><div class="sdr-audio-head"><div><strong>수신음</strong></div><button type="button" data-audio disabled aria-pressed="false">소리 켜기</button></div><p data-audio-status class="sdr-note">음소거</p></div>
-      <figure class="sdr-spectrum"><figcaption>스펙트럼</figcaption>
+      <figure class="sdr-spectrum"><figcaption><strong>스펙트럼</strong><span data-spectrum-tune hidden></span><button type="button" data-spectrum-reset hidden>되돌리기</button></figcaption>
         <canvas data-spectrum role="img" aria-label="수신 시작 후 주파수별 전력 그래프가 표시됩니다."></canvas>
         <p data-spectrum-summary class="sdr-note">수신 대기</p>
       </figure>
       <details class="sdr-help"><summary>측정 정보</summary><p data-applied class="sdr-note"></p><p data-quality class="sdr-note"></p><p data-spectrum-info class="sdr-note"></p></details>
       </div>
     </details>
-    <details class="sdr-help"><summary>도움말</summary>
+    <details data-general-help class="sdr-help" hidden><summary>도움말</summary>
       <p>IQ는 신호 분석, WFM은 FM 방송 재생입니다. 음량은 휴대폰 미디어 볼륨으로 조절합니다.</p>
       <p>샘플레이트는 수신 폭, Gain은 증폭, PPM은 주파수 오차 보정입니다. 세기 비교 시 설정을 유지하세요.</p>
       <p>전력은 상대값이며 비콘·거리·방향을 판정하지 않습니다. 중심 DC와 가장자리는 최대 지점에서 제외합니다. 창을 닫거나 앱을 벗어나면 수신이 정지합니다.</p>
       <p>FM 후보는 시간 평균·신호 폭·지속성으로 잡음을 억제한 결과입니다. 방송 확인은 청취로 진행합니다. VHF 후보는 전파 감지이며 비콘 판정은 아닙니다. 후보를 선택하면 고정 수신합니다.</p>
     </details>
     </div>
-    <div class="sdr-footer">
+    <div class="sdr-footer" hidden>
       <div class="sdr-actions sdr-run"><button type="button" class="sdr-primary" data-start disabled>수신 시작</button><button type="button" data-stop disabled>정지</button></div>
-      <button type="button" data-resume hidden>탐색 재개</button>
     </div>`;
   document.body.appendChild(dialog);
   const status = dialog.querySelector(".sdr-status");
@@ -78,7 +77,13 @@
   mode.value = "iq"; deemphasis.value = "75";
   const spectrumCanvas = dialog.querySelector("[data-spectrum]");
   const spectrumSummary = dialog.querySelector("[data-spectrum-summary]");
+  const spectrumTune = dialog.querySelector("[data-spectrum-tune]");
+  const spectrumReset = dialog.querySelector("[data-spectrum-reset]");
+  let spectrumOriginalHz = null;
+  const settingsSection = dialog.querySelector("[data-settings-section]");
+  const footer = dialog.querySelector(".sdr-footer");
   const resultSection = dialog.querySelector("[data-result]");
+  const generalHelp = dialog.querySelector("[data-general-help]");
   resultSection.addEventListener("toggle", () => {
     if (resultSection.open) renderSpectrum(current);
   });
@@ -93,17 +98,49 @@
   let busy = false;
   let current = null;
   let listener = null;
+  let listenerPromise = null;
   let sequence = 0;
   let connectionAttempt = 0;
-  let task = "fixed", lastScan = null;
+  let task = "fixed", lastScan = null, restoredFixed = false, candidateSelected = false;
   const scanStart = dialog.querySelector("[data-scan-start]");
   const scanEnd = dialog.querySelector("[data-scan-end]");
   const dwell = dialog.querySelector("[data-dwell]");
   const threshold = dialog.querySelector("[data-threshold]");
   const scanButton = dialog.querySelector("[data-task-scan]");
   const fixedButton = dialog.querySelector("[data-task-fixed]");
-  const resumeButton = dialog.querySelector("[data-resume]");
   const rememberedRange = { vhf: ["148.000", "174.000"], fm: ["88.000", "108.000"] };
+  function renderMapStatus(snapshot) {
+    const reception = snapshot && snapshot.receptionState;
+    const state = snapshot && snapshot.receptionError ? "error" :
+      snapshot && snapshot.backgroundScanning && ["starting", "scanning"].includes(reception) ? "scanning" :
+      reception === "receiving" ? "receiving" :
+      snapshot && snapshot.scanResumeAvailable && snapshot.state === "connected" && reception === "idle" ? "paused" : "";
+    const labels = { scanning: "탐색 중", receiving: "수신 중", paused: "일시정지", error: "수신 오류" };
+    if (state) {
+      trigger.dataset.status = state;
+      trigger.dataset.statusLabel = labels[state];
+    } else {
+      delete trigger.dataset.status;
+      delete trigger.dataset.statusLabel;
+    }
+    const cycle = state === "scanning" && Number.isInteger(snapshot.scan?.cycle) ? ` · ${snapshot.scan.cycle}회차` : "";
+    const label = `SDR 설정${state ? ` · ${labels[state]}${cycle}` : ""}`;
+    trigger.setAttribute("aria-label", label);
+    trigger.title = label;
+  }
+
+  async function attachListener() {
+    if (listener) return;
+    if (!listenerPromise) listenerPromise = Promise.resolve().then(() => plugin.addListener("usbStateChanged", snapshot => {
+      ++sequence;
+      if (dialog.open) render(snapshot);
+      else {
+        if (snapshot.state !== "connected" && current?.state === "connected") resetDisconnectedUi();
+        current = snapshot; renderMapStatus(snapshot);
+      }
+    })).then(value => { listener = value; }).catch(error => { listenerPromise = null; throw error; });
+    await listenerPromise;
+  }
   // Assign defaults explicitly for native and test runtimes alike.
   scanStart.value = "148.000"; scanEnd.value = "174.000";
   dwell.value = "1000"; threshold.value = "10";
@@ -122,13 +159,14 @@
 
   function updateRunButtons() {
     const scanning = current && ["starting", "scanning"].includes(current.receptionState);
+    const fixedReceiving = current && ["starting", "receiving"].includes(current.receptionState);
     startButton.textContent = task === "scan" ? scanning ? "탐색 중" : canResumeScan() ? "탐색 재개" : "탐색 시작" : "수신 시작";
-    stopButton.textContent = task === "scan" ? "일시정지" : "정지";
-    resumeButton.hidden = task !== "fixed" || !lastScan || !current || !current.scanResumeAvailable;
-    dialog.querySelector("[data-back]").hidden = resumeButton.hidden;
+    stopButton.textContent = task === "scan" ? scanning ? "일시정지" : "초기화" : fixedReceiving ? "정지" : "초기화";
+    dialog.querySelector("[data-back]").hidden = task !== "fixed" || !candidateSelected ||
+      !lastScan || !current || !current.scanResumeAvailable;
   }
 
-  function setTask(next) {
+  function setTask(next, rerender = true) {
     task = next;
     scanButton.setAttribute("aria-pressed", String(next === "scan"));
     fixedButton.setAttribute("aria-pressed", String(next === "fixed"));
@@ -141,10 +179,10 @@
     dialog.querySelector("[data-fixed-results]").hidden = next === "scan";
     dialog.querySelector("[data-result-heading]").textContent = next === "scan" ? "탐색 결과" : "수신 결과";
     updateMode();
-    if (current) render(current);
+    if (current && rerender) render(current);
   }
-  scanButton.addEventListener("click", () => { if (!settings.disabled) setTask("scan"); });
-  fixedButton.addEventListener("click", () => { if (!settings.disabled) setTask("fixed"); });
+  scanButton.addEventListener("click", () => { if (!settings.disabled) { candidateSelected = false; setTask("scan"); } });
+  fixedButton.addEventListener("click", () => { if (!settings.disabled) { candidateSelected = false; setTask("fixed"); } });
   const frequencyEditor = dialog.querySelector("[data-frequency-entry]");
   const frequencyDigits = dialog.querySelector("[data-frequency-digits]");
   const frequencyEditButton = dialog.querySelector("[data-frequency-edit]");
@@ -219,7 +257,17 @@
     const rateHz = Number.isFinite(rf.sampleRate) ? rf.sampleRate : Number(rate.value);
     const data = plot.describe(rf.spectrumDbfs, centerHz, rateHz);
     const state = snapshot && snapshot.receptionState;
-    plot.draw(spectrumCanvas, data, centerHz, rateHz, state, rf.mode === "wfm" ? rf.listenFrequencyHz : mode.value === "wfm" ? Number(frequency.value) * 1e6 : null);
+    if (["starting", "receiving"].includes(state) || !data) spectrumOriginalHz = null;
+    const canTune = task === "fixed" && !settings.disabled && !!data &&
+      ["idle", "error"].includes(state) && snapshot?.fixedResultAvailable;
+    const selectedHz = canTune ? Number(frequency.value) * 1e6 : null;
+    const listenHz = state === "receiving" && rf.mode === "wfm" ? rf.listenFrequencyHz : null;
+    spectrumCanvas.classList.toggle("sdr-spectrum-tunable", canTune);
+    spectrumTune.hidden = !canTune;
+    if (canTune) spectrumTune.textContent = `선택 ${(selectedHz / 1e6).toFixed(3)} MHz · 드래그하여 변경`;
+    spectrumReset.hidden = !canTune || spectrumOriginalHz === null ||
+      Math.round(selectedHz / 1000) === Math.round(spectrumOriginalHz / 1000);
+    plot.draw(spectrumCanvas, data, centerHz, rateHz, state, listenHz, selectedHz);
     if (!data) {
       spectrumSummary.textContent = state === "receiving" ? "스펙트럼 대기 중" : "수신 대기";
       dialog.querySelector("[data-spectrum-info]").textContent = "";
@@ -230,6 +278,48 @@
     spectrumSummary.textContent = `${prefix} · 최대 ${(data.peakHz / 1e6).toFixed(3)} MHz · ${data.peakDbfs.toFixed(1)} dBFS/bin`;
     dialog.querySelector("[data-spectrum-info]").textContent = `${(data.startHz / 1e6).toFixed(3)}–${(data.endHz / 1e6).toFixed(3)} MHz · FFT ${data.binWidthHz.toFixed(0)} Hz`;
     spectrumCanvas.setAttribute("aria-label", spectrumSummary.textContent);
+  }
+
+  let spectrumPointer = null;
+  function tuneFromSpectrum(event) {
+    const rf = current?.reception || {};
+    const data = window.SdrSpectrumPlot?.describe(rf.spectrumDbfs, rf.frequencyHz, rf.sampleRate);
+    if (task !== "fixed" || settings.disabled || !current?.fixedResultAvailable ||
+        !["idle", "error"].includes(current.receptionState) || !data) return false;
+    const rect = spectrumCanvas.getBoundingClientRect();
+    const width = spectrumCanvas.clientWidth || rect.width;
+    const bounds = bands[selectedBand];
+    const hz = window.SdrSpectrumPlot.frequencyAtX(event.clientX - rect.left, width, rf.frequencyHz, rf.sampleRate);
+    if (hz === null) return false;
+    if (spectrumOriginalHz === null) spectrumOriginalHz = Math.round(Number(frequency.value) * 1e6);
+    const selected = Math.max(bounds.min * 1e6, Math.min(bounds.max * 1e6, Math.round(hz / 1000) * 1000));
+    frequency.value = (selected / 1e6).toFixed(3);
+    updateWindow();
+    return true;
+  }
+  spectrumReset.addEventListener("click", () => {
+    if (spectrumReset.hidden || spectrumOriginalHz === null || settings.disabled) return;
+    frequency.value = (spectrumOriginalHz / 1e6).toFixed(3);
+    spectrumOriginalHz = null;
+    updateWindow();
+  });
+  spectrumCanvas.addEventListener("pointerdown", event => {
+    const rect = spectrumCanvas.getBoundingClientRect();
+    const y = event.clientY - rect.top;
+    if (y < 28 || y > 208 || !tuneFromSpectrum(event)) return;
+    spectrumPointer = event.pointerId;
+    spectrumCanvas.setPointerCapture?.(event.pointerId);
+    event.preventDefault?.();
+  });
+  spectrumCanvas.addEventListener("pointermove", event => {
+    if (event.pointerId !== spectrumPointer) return;
+    tuneFromSpectrum(event);
+    event.preventDefault?.();
+  });
+  for (const name of ["pointerup", "pointercancel", "lostpointercapture"]) {
+    spectrumCanvas.addEventListener(name, event => {
+      if (event.pointerId === spectrumPointer) spectrumPointer = null;
+    });
   }
 
   function updateWindow() {
@@ -309,7 +399,48 @@
     return resolved;
   }
 
+  function resetDisconnectedUi() {
+    lastScan = null;
+    restoredFixed = false;
+    candidateSelected = false;
+    spectrumOriginalHz = null;
+    setTask("fixed", false);
+    settingsSection.open = true;
+    resultSection.open = false;
+    settingsSection.hidden = resultSection.hidden = footer.hidden = generalHelp.hidden = true;
+  }
+
   function render(snapshot) {
+    renderMapStatus(snapshot);
+    const connected = snapshot.state === "connected";
+    if (!connected && current?.state === "connected") resetDisconnectedUi();
+    settingsSection.hidden = resultSection.hidden = footer.hidden = generalHelp.hidden = !connected;
+    if (snapshot.scanResumeAvailable && snapshot.scan && snapshot.scan.startHz != null) {
+      if (!lastScan) {
+        const scan = snapshot.scan;
+        lastScan = { band: scan.band, startHz: scan.startHz, endHz: scan.endHz,
+          sampleRate: scan.requestedSampleRate, gainTenthsDb: scan.requestedGainTenthsDb,
+          ppm: scan.ppm, dwellMs: scan.dwellMs, thresholdDb: scan.thresholdDb };
+        restoreScanOptions(lastScan);
+        if (!snapshot.backgroundReceiving && snapshot.receptionState !== "receiving") setTask("scan", false);
+      }
+    }
+    if (snapshot.backgroundReceiving && !restoredFixed && snapshot.reception?.frequencyHz) {
+      const rf = snapshot.reception;
+      band.value = rf.mode === "wfm" ? "fm" : "vhf";
+      selectedBand = band.value;
+      const bounds = bands[selectedBand];
+      frequency.min = String(bounds.min);
+      frequency.max = String(bounds.max);
+      dialog.querySelector("[data-frequency-range]").textContent = `MHz · ${bounds.min}–${bounds.max}`;
+      mode.value = rf.mode || "iq";
+      frequency.value = (rf.frequencyHz / 1e6).toFixed(3);
+      if (rf.sampleRate) rate.value = String(rf.sampleRate);
+      if (Number.isFinite(rf.gainDb)) gain.value = String(rf.gainDb);
+      if (Number.isFinite(rf.ppm)) ppm.value = String(rf.ppm);
+      restoredFixed = true;
+      setTask("fixed", false);
+    }
     if (snapshot.state === "connected" && (!current || current.state !== "connected")) {
       dialog.querySelector("[data-usb-section]").open = false;
     } else if (snapshot.state !== "connected") {
@@ -368,10 +499,15 @@
     const receiving = ["starting", "receiving", "scanning", "stopping"].includes(snapshot.receptionState);
     settings.disabled = busy || receiving || snapshot.state === "unsupported";
     scanButton.disabled = fixedButton.disabled = settings.disabled;
-    resumeButton.disabled = busy || snapshot.state !== "connected" || ["starting", "stopping"].includes(snapshot.receptionState);
+    dialog.querySelector("[data-back]").disabled = busy || snapshot.state !== "connected" ||
+      snapshot.receptionState === "stopping";
     updateFrequencyDigits();
     startButton.disabled = settings.disabled || snapshot.state !== "connected" || !plugin || typeof plugin.startReception !== "function";
-    stopButton.disabled = busy || !receiving || snapshot.receptionState === "stopping";
+    const canClearScan = task === "scan" && snapshot.receptionState === "idle" &&
+      snapshot.scanResumeAvailable && typeof plugin?.clearScanHistory === "function";
+    const canClearFixed = task === "fixed" && ["idle", "error"].includes(snapshot.receptionState) &&
+      snapshot.fixedResultAvailable && typeof plugin?.clearReceptionResult === "function";
+    stopButton.disabled = busy || snapshot.receptionState === "stopping" || !(receiving || canClearScan || canClearFixed);
     const rfNames = { idle: "수신 대기", starting: "튜너 초기화 중…", receiving: "IQ 수신 중", scanning: "대역 탐색 중", stopping: "수신 정지 중…", error: "수신 오류" };
     if (snapshot.receptionError) message.textContent = snapshot.receptionError;
     const rf = snapshot.reception || {};
@@ -381,6 +517,8 @@
     dialog.querySelector("[data-quality]").textContent = rf.totalBytes != null ? `누적 ${(rf.totalBytes / 1e6).toFixed(1)} MB · ${rf.elapsedSeconds.toFixed(1)}초 · 포화 샘플 ${rf.clippingPercent.toFixed(2)}%${rf.clippingPercent > 1 ? " · Gain을 낮춰 확인하세요." : ""}` : "";
     if (receiving) status.textContent = rfNames[snapshot.receptionState];
     else if (task === "scan" && snapshot.scanResumeAvailable) status.textContent = "탐색 일시정지";
+    if (["scanning", "receiving"].includes(snapshot.receptionState)) status.dataset.activity = snapshot.receptionState;
+    else delete status.dataset.activity;
     const audio = snapshot.audio || {};
     const wfm = rf.mode === "wfm" && snapshot.receptionState === "receiving";
     audioButton.disabled = busy || !wfm || !plugin || typeof plugin.setAudio !== "function";
@@ -480,6 +618,7 @@
     restoreScanOptions(lastScan);
     frequency.value = (hz / 1e6).toFixed(3);
     mode.value = lastScan.band === "fm" ? "wfm" : "iq";
+    candidateSelected = true;
     setTask("fixed");
     await plugin.startReception({ band: lastScan.band, mode: mode.value, frequencyHz: Math.round(Number(frequency.value) * 1e6),
       listenFrequencyHz: Math.round(Number(frequency.value) * 1e6), sampleRate: lastScan.sampleRate,
@@ -490,7 +629,10 @@
     if (!plugin) return;
     const request = ++sequence;
     const snapshot = await plugin.getStatus();
-    if (request === sequence) render(snapshot);
+    if (request === sequence) {
+      if (dialog.open) render(snapshot);
+      else { current = snapshot; renderMapStatus(snapshot); }
+    }
   }
 
   async function run(action) {
@@ -510,6 +652,7 @@
     if (dialog.open) return;
     if (typeof window.__bpResetBackExit === "function") window.__bpResetBackExit();
     dialog.showModal();
+    settingsSection.hidden = resultSection.hidden = footer.hidden = generalHelp.hidden = true;
     renderSpectrum(current);
     message.textContent = "";
     status.textContent = "USB 연결 상태 확인 중…";
@@ -525,10 +668,7 @@
         status.textContent = "USB 연결 확인은 Android 앱에서 사용할 수 있습니다.";
         return;
       }
-      if (!listener) listener = await plugin.addListener("usbStateChanged", function (snapshot) {
-        ++sequence;
-        if (dialog.open) render(snapshot);
-      });
+      await attachListener();
       await refresh();
     } catch (error) {
       status.textContent = "USB 연결 기능을 초기화하지 못했습니다.";
@@ -573,7 +713,19 @@
 
   }));
   audioButton.addEventListener("click", () => run(() => plugin.setAudio({ enabled: !(current && current.audio && current.audio.enabled), volume: 1 })));
-  stopButton.addEventListener("click", () => run(() => plugin.stopReception()));
+  stopButton.addEventListener("click", () => run(async () => {
+    if (task === "scan" && current?.receptionState === "idle" && current.scanResumeAvailable) {
+      await plugin.clearScanHistory();
+      lastScan = null;
+      candidateSelected = false;
+      await refresh();
+    } else if (task === "fixed" && ["idle", "error"].includes(current?.receptionState) && current.fixedResultAvailable) {
+      await plugin.clearReceptionResult();
+      await refresh();
+    } else {
+      await plugin.stopReception();
+    }
+  }));
   async function resumeLastScan() {
     if (!lastScan || !current || !current.scanResumeAvailable) return;
     const attempt = ++connectionAttempt;
@@ -581,8 +733,8 @@
     if (attempt !== connectionAttempt || !dialog.open || !current || current.state !== "connected") return;
     restoreScanOptions(lastScan); setTask("scan");
     await plugin.startScan({ ...lastScan, resume: true });
+    candidateSelected = false;
   }
-  resumeButton.addEventListener("click", () => run(resumeLastScan));
   dialog.querySelector("[data-back]").addEventListener("click", () => run(resumeLastScan));
 
   function handleBackNavigation() {
@@ -591,7 +743,7 @@
     if (editingFrequency) {
       if (!settings.disabled) frequency.value = frequencyBeforeEditing;
       setFrequencyEditing(false);
-    } else if (task === "fixed" && lastScan && current && current.scanResumeAvailable) {
+    } else if (task === "fixed" && candidateSelected && lastScan && current && current.scanResumeAvailable) {
       void run(resumeLastScan);
     } else {
       dialog.close();
@@ -621,8 +773,10 @@
   dialog.querySelector("[data-close]").addEventListener("click", () => dialog.close());
   dialog.addEventListener("close", async function () {
     ++connectionAttempt;
-    if (!plugin) return;
-    try { await plugin.closeDevice(); } catch (error) { console.warn("SDR close:", error); }
+    // Cancel an outstanding Android permission prompt, but keep an opened USB receiver.
+    if (plugin && current && current.state === "permissionPending") {
+      try { await plugin.closeDevice(); } catch (error) { console.warn("SDR permission cancel:", error); }
+    }
   });
   if (typeof window.addEventListener === "function") {
     const resize = () => {
@@ -633,5 +787,11 @@
     window.addEventListener("resize", resize);
     window.visualViewport?.addEventListener("resize", resize);
     window.visualViewport?.addEventListener("scroll", () => { if (dialog.open) updateDialogViewport(); });
+  }
+  if (window.Capacitor?.getPlatform?.() === "android") {
+    try {
+      plugin = getAndroidPlugin();
+      if (plugin) void attachListener().then(refresh).catch(() => {});
+    } catch (_) { /* The settings dialog reports bridge errors when opened. */ }
   }
 })();

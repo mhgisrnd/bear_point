@@ -34,3 +34,17 @@ test('canvas draws the frequency ticks and resets to waiting without stale paths
   plot.draw(canvas, null, 103500000, 1024000, 'starting');
   assert.ok(text.includes('수신 준비 중'));
 });
+
+test('redrawing a frame does not resize the canvas backing store', () => {
+  const plot = setup();
+  const ctx = { setTransform() {}, fillRect() {}, beginPath() {}, moveTo() {}, lineTo() {},
+    stroke() {}, fillText() {}, setLineDash() {}, closePath() {}, fill() {}, arc() {} };
+  let resizes = 0, width, height;
+  const canvas = { clientWidth: 320, getContext: () => ctx,
+    get width() { return width; }, set width(value) { width = value; resizes++; },
+    get height() { return height; }, set height(value) { height = value; resizes++; } };
+  const data = plot.describe(Array(1024).fill(-80), 103500000, 1024000);
+  plot.draw(canvas, data, 103500000, 1024000, 'receiving');
+  plot.draw(canvas, data, 103500000, 1024000, 'receiving');
+  assert.equal(resizes, 2);
+});

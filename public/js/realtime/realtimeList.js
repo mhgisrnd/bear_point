@@ -350,104 +350,35 @@
       return lines.join("\n");
     }
 
-    function sanitizeFileNamePart(value) {
-      return String(value || "")
-        .replace(/[\\/:*?"<>|]/g, "-")
-        .replace(/\s+/g, "_")
-        .slice(0, 40);
-    }
-
-    function downloadTextFile(fileName, text) {
-      const blob = new Blob(["\uFEFF", text], { type: "text/plain;charset=utf-8" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = fileName;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
+    async function runDownload(callback, payload, label) {
+      try {
+        if (typeof callback !== "function") {
+          throw new Error("파일 저장 기능을 사용할 수 없습니다.");
+        }
+        // 미리보기와 실제 저장 결과 안내는 마커와 공유하는 처리기에 맡긴다.
+        await callback(payload);
+      } catch (error) {
+        setStatus(label + " 처리 실패: " + (error && error.message ? error.message : String(error)), "error");
+      }
     }
 
     function downloadRealtimeTxt(item) {
-      const stamp = formatDateLabel(item.timestamp).replace(/-/g, "") + "_" + formatTimeLabel(item.timestamp).replace(/[^0-9]/g, "");
-      const code = sanitizeFileNamePart(item.bearCode || "realtime");
-      const fileName = `realtime_${code}_${stamp}.txt`;
-      downloadTextFile(fileName, buildShareText(item));
-      setStatus("실시간 항목 TXT를 저장했습니다.", "ok");
+      return runDownload(options.onDownloadTxt, item, "TXT");
     }
 
     function downloadRealtimeXls(item) {
-      const stamp = formatDateLabel(item.timestamp).replace(/-/g, "") + "_" + formatTimeLabel(item.timestamp).replace(/[^0-9]/g, "");
-      const code = sanitizeFileNamePart(item.bearCode || "realtime");
-      const fileName = `realtime_${code}_${stamp}.xls`;
-      const rows = [
-        ["구분", "값"],
-        ["곰 코드", item.bearCode || "-"],
-        ["지명", item.place || "미지정"],
-        ["등록자", item.owner || "미지정"],
-        ["위도", Number(item.lat).toFixed(6)],
-        ["경도", Number(item.lon).toFixed(6)],
-        ["위도(DMS)", item.latDms || "-"],
-        ["경도(DMS)", item.lonDms || "-"],
-        ["일자", formatDateLabel(item.timestamp)],
-        ["시각", formatTimeLabel(item.timestamp)],
-      ];
-      const tsv = rows
-        .map((row) => row.map((cell) => String(cell).replace(/\t/g, " ")).join("\t"))
-        .join("\r\n");
-      const blob = new Blob(["\uFEFF", tsv], { type: "application/vnd.ms-excel;charset=utf-8" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = fileName;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
-      setStatus("실시간 항목 XLS를 저장했습니다.", "ok");
+      return runDownload(options.onDownloadXls, [item], "XLS");
     }
 
     function downloadRealtimeXlsMany(targets) {
       const list = (Array.isArray(targets) ? targets : []).filter(function (it) {
         return it && Number.isFinite(Number(it.lat)) && Number.isFinite(Number(it.lon));
       });
-
       if (!list.length) {
         setStatus("선택된 실시간 항목이 없습니다.", "warn");
         return;
       }
-
-      const rows = [["일자", "시각", "곰 코드", "지명", "등록자", "위도(DMS)", "경도(DMS)", "위도", "경도"]];
-      list.forEach(function (item) {
-        rows.push([
-          formatDateLabel(item.timestamp),
-          formatTimeLabel(item.timestamp),
-          item.bearCode || "-",
-          item.place || "미지정",
-          item.owner || "미지정",
-          item.latDms || decimalToDms(item.lat, false),
-          item.lonDms || decimalToDms(item.lon, true),
-          Number(item.lat).toFixed(6),
-          Number(item.lon).toFixed(6),
-        ]);
-      });
-
-      const tsv = rows
-        .map((row) => row.map((cell) => String(cell).replace(/\t/g, " ")).join("\t"))
-        .join("\r\n");
-      const stamp = formatDateLabel(Date.now()).replace(/-/g, "") + "_" + formatTimeLabel(Date.now()).replace(/[^0-9]/g, "");
-      const fileName = `realtime_selected_${stamp}.xls`;
-      const blob = new Blob(["\uFEFF", tsv], { type: "application/vnd.ms-excel;charset=utf-8" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = fileName;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
-      setStatus(`선택한 ${list.length}건을 엑셀로 저장했습니다.`, "ok");
+      return runDownload(options.onDownloadXls, list, "XLS");
     }
 
     function bindRealtimeActionControls() {

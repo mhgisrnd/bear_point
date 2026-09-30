@@ -2,6 +2,17 @@
   "use strict";
   const floor = -120;
 
+  function geometry(width) {
+    return { left: 48, right: width - 14, top: 28, bottom: 208 };
+  }
+
+  function frequencyAtX(x, width, centerHz, rateHz) {
+    if (!Number.isFinite(x) || !Number.isFinite(centerHz) || !Number.isFinite(rateHz) || rateHz <= 0) return null;
+    const { left, right } = geometry(Math.max(240, width));
+    const fraction = Math.max(0, Math.min(1, (x - left) / (right - left)));
+    return centerHz + (fraction - .5) * rateHz;
+  }
+
   function describe(bins, centerHz, rateHz) {
     if (!Array.isArray(bins) || bins.length !== 1024 || !bins.every(Number.isFinite) ||
         !Number.isFinite(centerHz) || !Number.isFinite(rateHz) || rateHz <= 0) return null;
@@ -17,15 +28,17 @@
       peakHz: centerHz + (peak - middle) * rateHz / bins.length, peakDbfs: bins[peak] };
   }
 
-  function draw(canvas, data, centerHz, rateHz, state, listenHz) {
+  function draw(canvas, data, centerHz, rateHz, state, listenHz, selectedHz) {
     const ctx = typeof canvas.getContext === "function" ? canvas.getContext("2d") : null;
     if (!ctx) return;
     const width = Math.max(240, canvas.clientWidth || 500), height = 240;
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    canvas.width = Math.round(width * dpr); canvas.height = Math.round(height * dpr);
+    const pixelWidth = Math.round(width * dpr), pixelHeight = Math.round(height * dpr);
+    if (canvas.width !== pixelWidth) canvas.width = pixelWidth;
+    if (canvas.height !== pixelHeight) canvas.height = pixelHeight;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.fillStyle = "#f8fafc"; ctx.fillRect(0, 0, width, height);
-    const left = 48, right = width - 14, top = 28, bottom = height - 32;
+    const { left, right, top, bottom } = geometry(width);
     const span = right - left, y = db => top + Math.max(0, Math.min(120, -db)) / 120 * (bottom - top);
     ctx.font = "11px system-ui, sans-serif";
     ctx.fillStyle = "#526477"; ctx.textAlign = "left"; ctx.fillText("dBFS/bin", 6, 15);
@@ -58,16 +71,24 @@
       return;
     }
     ctx.beginPath();
-    data.bins.forEach((db, i) => {
-      const x = left + span * i / data.bins.length;
-      if (i === 0) ctx.moveTo(x, y(db)); else ctx.lineTo(x, y(db));
+    data.bins.forEach((db, index) => {
+      const x = left + span * index / data.bins.length;
+      if (index === 0) ctx.moveTo(x, y(db)); else ctx.lineTo(x, y(db));
     });
     ctx.strokeStyle = "#087b91"; ctx.lineWidth = 1.4; ctx.stroke();
     ctx.lineTo(right, bottom); ctx.lineTo(left, bottom); ctx.closePath();
     ctx.fillStyle = "#087b9118"; ctx.fill();
     const peakX = left + span * data.peakIndex / data.bins.length;
     ctx.beginPath(); ctx.arc(peakX, y(data.peakDbfs), 3, 0, Math.PI * 2); ctx.fillStyle = "#b45309"; ctx.fill();
+    if (Number.isFinite(selectedHz) && rateHz > 0 &&
+        selectedHz >= centerHz - rateHz / 2 && selectedHz <= centerHz + rateHz / 2) {
+      const x = left + span * (.5 + (selectedHz - centerHz) / rateHz);
+      ctx.strokeStyle = "#7c3aed"; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(x, top); ctx.lineTo(x, bottom); ctx.stroke();
+      ctx.fillStyle = "#7c3aed"; ctx.textAlign = "center";
+      ctx.fillText(`${(selectedHz / 1e6).toFixed(3)} MHz`, Math.max(left + 40, Math.min(right - 40, x)), top - 8);
+    }
   }
 
-  window.SdrSpectrumPlot = { describe, draw };
+  window.SdrSpectrumPlot = { describe, draw, frequencyAtX };
 })();

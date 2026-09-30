@@ -18,8 +18,10 @@ final class SdrReceiver {
     String state = "idle", error = "";
     JSObject metrics = new JSObject();
     JSObject scan = new JSObject();
+    boolean fixedResultAvailable;
     SdrAudioOutput audio;
     String mode = "iq";
+    int tunedFrequencyHz;
     private SdrScanSession scanSession;
     boolean hasScanSession() { return scanSession != null; }
     SdrReceiver(Handler main, Runnable changed) { this.main = main; this.changed = changed; }
@@ -28,6 +30,8 @@ final class SdrReceiver {
         if (!state.equals("idle") && !state.equals("error")) throw new IllegalStateException("정지 후 다시 시작하세요.");
         int token = generation.incrementAndGet();
         audio.stop(); this.mode = mode;
+        tunedFrequencyHz = hz;
+        fixedResultAvailable = true;
         state = "starting"; error = ""; metrics = new JSObject();
         if (scanSession == null) scan = new JSObject();
         worker.execute(() -> receive(token, connection, hz, rate, gain, ppm, mode, listenHz, deemphasisUs));
@@ -119,7 +123,9 @@ final class SdrReceiver {
 
     private void launchScan(UsbDeviceConnection connection, SdrScanSession session) {
         int token = generation.incrementAndGet();
+        fixedResultAvailable = false;
         audio.stop(); mode = "iq"; state = "starting"; error = ""; metrics = new JSObject();
+        tunedFrequencyHz = 0;
         worker.execute(() -> scan(token, connection, session));
     }
 
@@ -180,6 +186,7 @@ final class SdrReceiver {
         result.put("band", plan.band);
         result.put("startHz", plan.startHz); result.put("endHz", plan.endHz);
         result.put("centerHz", session.centerHz()); result.put("sampleRate", session.actualRate);
+        result.put("requestedSampleRate", plan.rate); result.put("requestedGainTenthsDb", session.gain);
         result.put("gainDb", session.actualGainDb); result.put("ppm", session.ppm);
         result.put("segment", session.segment + 1); result.put("segments", plan.centers.length); result.put("cycle", session.cycle);
         result.put("cycleSeconds", plan.cycleSeconds()); result.put("dwellMs", plan.dwellMs);
@@ -218,8 +225,27 @@ final class SdrReceiver {
         if (audio != null) audio.stop();
         generation.incrementAndGet(); state = "idle"; metrics = new JSObject(); scan = new JSObject(); error = "";
         scanSession = null;
+        fixedResultAvailable = false;
+        tunedFrequencyHz = 0;
         // FIFO: stop the loop, close librtlsdr, then release the Java-owned descriptor.
         if (connection != null) worker.execute(connection::close);
+    }
+
+    void clearScanHistory() {
+        if (!"idle".equals(state) && !"error".equals(state))
+            throw new IllegalStateException("Stop reception before clearing scan history.");
+        scanSession = null;
+        scan = new JSObject();
+        changed.run();
+    }
+
+    void clearReceptionResult() {
+        if (!"idle".equals(state) && !"error".equals(state))
+            throw new IllegalStateException("Stop reception before clearing its result.");
+        metrics = new JSObject();
+        error = "";
+        fixedResultAvailable = false;
+        changed.run();
     }
 
     void setAudio(Boolean enabled, Double volume) {

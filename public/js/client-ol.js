@@ -59,6 +59,9 @@
   let backExitToastIconEl = null;
   let backExitToastTextEl = null;
   let backExitToastHideTimer = null;
+  let realtimeTxtExporter = null;
+  let realtimeXlsExporter = null;
+  let realtimeBulkXlsExporter = null;
 
   function mapBearMarkerItems(items, isRealtime) {
     return (Array.isArray(items) ? items : []).map(function (it) {
@@ -100,6 +103,17 @@
   }
 
   const realtimeListModule = window.createRealtimeListModule ? window.createRealtimeListModule({
+    onDownloadTxt: function (item) {
+      if (!realtimeTxtExporter) throw new Error("TXT 저장 기능이 준비되지 않았습니다.");
+      return realtimeTxtExporter(mapBearMarkerItems([item], true)[0], false);
+    },
+    onDownloadXls: function (items) {
+      if (!realtimeXlsExporter) throw new Error("XLS 저장 기능이 준비되지 않았습니다.");
+      const mapped = mapBearMarkerItems(items, true);
+      if (mapped.length === 1) return realtimeXlsExporter(mapped[0], false);
+      if (!realtimeBulkXlsExporter) throw new Error("일괄 XLS 저장 기능이 준비되지 않았습니다.");
+      return realtimeBulkXlsExporter(mapped);
+    },
     onStatus: function (message) {
       if (statusEl) statusEl.textContent = String(message || "");
     },
@@ -280,6 +294,11 @@
     if (statusEl) statusEl.textContent = "OpenLayers 로딩 실패";
     return;
   }
+
+  // 저장 함수는 이 try 블록 안에 선언된다. 목록 콜백에 같은 함수를 연결한다.
+  realtimeTxtExporter = downloadBearEstimateTxt;
+  realtimeXlsExporter = downloadBearEstimateXls;
+  realtimeBulkXlsExporter = downloadAllBearEstimatesXls;
 
   // 앱 시작 시 SQLite 준비가 끝날 때까지 화면 입력을 잠그는 오버레이를 표시한다.
   function ensureStartupOverlay() {
@@ -1524,6 +1543,10 @@
         if (onSave) {
           try {
             const saveResult = await onSave();
+            if (!isNativeCapacitorPlatform()) {
+              closeWith("saved");
+              return;
+            }
             const savePath = saveResult && saveResult.relativePath
               ? saveResult.relativePath
               : ("BearMap/" + fileName);
@@ -1695,7 +1718,7 @@
 
       const footer = document.createElement("div");
       footer.style.display = "grid";
-      footer.style.gridTemplateColumns = "repeat(3, minmax(0, 1fr))";
+      footer.style.gridTemplateColumns = onShare ? "repeat(3, minmax(0, 1fr))" : "repeat(2, minmax(0, 1fr))";
       footer.style.gap = "8px";
       footer.style.padding = "12px 14px 14px";
       footer.style.borderTop = "1px solid rgba(148,163,184,0.14)";
@@ -1759,6 +1782,10 @@
         if (onSave) {
           try {
             const saveResult = await onSave();
+            if (!isNativeCapacitorPlatform()) {
+              closeWith("saved");
+              return;
+            }
             const savePath = saveResult && saveResult.relativePath
               ? saveResult.relativePath
               : ("BearMap/" + fileName);
@@ -1803,7 +1830,7 @@
       header.appendChild(titleWrap);
       header.appendChild(closeBtn);
       footer.appendChild(previewSaveBtn);
-      footer.appendChild(previewShareBtn);
+      if (onShare) footer.appendChild(previewShareBtn);
       footer.appendChild(doneBtn);
       card.appendChild(header);
       card.appendChild(body);
@@ -2830,7 +2857,7 @@
         <div class="obs-popup-card__actions">
           <button type="button" class="obs-popup-card__action-btn obs-popup-card__action-btn--file" data-bear-action="txt">TXT</button>
           ${!item._unsaved ? '<button type="button" class="obs-popup-card__action-btn obs-popup-card__action-btn--xls" data-bear-action="xls">XLS</button>' : ''}
-          ${!item._unsaved ? '<button type="button" class="obs-popup-card__action-btn obs-popup-card__action-btn--delete" data-bear-action="delete">삭제</button>' : ''}
+          ${!item._unsaved && !item.isRealtime ? '<button type="button" class="obs-popup-card__action-btn obs-popup-card__action-btn--delete" data-bear-action="delete">삭제</button>' : ''}
         </div>
       </div>
     `;
@@ -3931,7 +3958,7 @@
         void downloadAllBearEstimatesXls([bearData]);
         return;
       }
-      if (action === "delete" && !bearData._unsaved) {
+      if (action === "delete" && !bearData._unsaved && !bearData.isRealtime) {
         void handleDeleteSingleBearEstimate(bearData);
       }
     }
@@ -4938,7 +4965,7 @@
       return;
     }
 
-    try {
+    async function saveWebXls() {
       const XLSX = await loadSheetJS();
       const workbook = buildXlsWorkbook(XLSX, xlsRows, "곰추정위치목록");
       const buffer = XLSX.write(workbook, { bookType: "xlsx", type: "array" });
@@ -4954,6 +4981,14 @@
       URL.revokeObjectURL(url);
 
       if (statusEl) statusEl.textContent = "✅ 일괄 XLS 다운로드 시작: " + fileName;
+    }
+
+    try {
+      await showSavedXlsPreviewPopup({
+        fileName: fileName,
+        previewHtml: buildXlsPreviewHtml(xlsRows),
+        onSave: saveWebXls
+      });
     } catch (error) {
       console.error("일괄 XLS 생성 오류:", error);
       if (statusEl) {
@@ -5826,7 +5861,7 @@
 
     let sourceObservations = [];
 
-    if (!isFallback) {
+    if (!it.isRealtime && !isFallback) {
       // DB에서 상세 JSON 조회
       try {
         const sqlite = getCapacitorSQLitePlugin();
@@ -5844,7 +5879,7 @@
       } catch (e) {
         console.warn("TXT 다운로드 DB 조회 오류:", e);
       }
-    } else {
+    } else if (!it.isRealtime) {
       // 웹 더미 데이터: source_observation_ids를 파싱해 가상 관측점 생성
       let obsIds = [];
       try { obsIds = JSON.parse(it.source_observation_ids || "[]"); } catch (e) { obsIds = []; }
@@ -5903,7 +5938,7 @@
     lines.push("  X (TM:EPSG:5181) : " + mapX);
     lines.push("  Y (TM:EPSG:5181) : " + mapY);
     lines.push("========================================");
-    if (isFallback) lines.push("* 웹 환경: 관측점 목록은 더미 데이터입니다.");
+    if (isFallback && !it.isRealtime) lines.push("* 웹 환경: 관측점 목록은 더미 데이터입니다.");
 
     const txtContent = lines.join("\r\n");
     const safeCode = bearCode.replace(/[^\w가-힣]/g, "_");
@@ -6102,8 +6137,7 @@
       return;
     }
 
-    // 웹 환경에서는 바로 다운로드
-    try {
+    async function saveWebXls() {
       const XLSX = await loadSheetJS();
       const workbook = buildXlsWorkbook(XLSX, xlsData, "추정위치");
 
@@ -6120,6 +6154,14 @@
       URL.revokeObjectURL(url);
 
       if (statusEl) statusEl.textContent = "✅ XLS 다운로드 시작: " + fileName;
+    }
+
+    try {
+      await showSavedXlsPreviewPopup({
+        fileName: fileName,
+        previewHtml: previewHtml,
+        onSave: saveWebXls
+      });
     } catch (error) {
       console.error("XLS 생성 오류:", error);
       if (statusEl) {
