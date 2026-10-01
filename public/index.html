@@ -113,12 +113,13 @@
             </div>
           </div>
 
-          <!-- 곰 코드 -->
+          <!-- 개체 번호 -->
           <div class="obs-reg-row">
-            <label class="obs-reg-label" for="reg-bear">곰 코드</label>
-            <select class="obs-reg-select" id="reg-bear">
-              <option value="">-- 선택 --</option>
-            </select>
+            <label class="obs-reg-label" for="reg-bear">개체 번호</label>
+            <div class="obs-reg-bear-control">
+              <input class="obs-reg-input" id="reg-bear" type="text" placeholder="개체를 선택하세요" readonly />
+              <button class="obs-reg-bear-find" id="btn-bear-find" type="button">찾기</button>
+            </div>
           </div>
 
         </div>
@@ -184,6 +185,29 @@
     </div>
   </div>
 
+  <div class="bear-picker hidden" id="bear-picker" role="dialog" aria-modal="true" aria-labelledby="bear-picker-title">
+    <div class="bear-picker__panel">
+      <div class="bear-picker__header">
+        <h2 id="bear-picker-title">곰 개체 찾기</h2>
+        <button class="bear-picker__close" id="bear-picker-close" type="button" aria-label="닫기">×</button>
+      </div>
+      <div class="bear-picker__body">
+        <input class="bear-picker__search" id="bear-picker-search" type="search" placeholder="개체번호 검색" aria-label="개체번호 검색" />
+        <div class="bear-picker__count" id="bear-picker-count" aria-live="polite"></div>
+        <div class="bear-picker__sort" role="group" aria-label="개체 목록 정렬">
+          <button type="button" data-bear-sort="bearCode">개체번호 <span class="bear-picker__sort-arrow" aria-hidden="true"></span></button>
+          <button type="button" data-bear-sort="sex">성별 <span class="bear-picker__sort-arrow" aria-hidden="true"></span></button>
+          <button type="button" data-bear-sort="birthYear">출생연도 <span class="bear-picker__sort-arrow" aria-hidden="true"></span></button>
+        </div>
+        <div class="bear-picker__list" id="bear-picker-list" role="listbox" aria-label="곰 개체 목록"></div>
+      </div>
+      <div class="bear-picker__footer">
+        <button class="bear-picker__confirm" id="bear-picker-confirm" type="button" disabled>선택 확인</button>
+        <button class="bear-picker__cancel" id="bear-picker-cancel" type="button">취소</button>
+      </div>
+    </div>
+  </div>
+
   <!-- 하단 좌측 패널 -->
   <div class="panel-stack panel-bottom-left">
     <div class="panel-tabs panel-tabs-floating">
@@ -204,7 +228,7 @@
       <div class="panel-body" id="panel-body">
         <div class="bears-box" id="bears-box">
           <div class="bears-title">
-            <span>곰 추적위치 목록</span>
+            <span>개체 추적위치 목록</span>
             <div class="bears-toolbar" id="bears-toolbar">
               <div class="bears-toolbar__row bears-toolbar__row--top">
                 <span class="bears-toolbar__summary" id="bears-toolbar-summary" aria-live="polite" hidden></span>

@@ -23,6 +23,15 @@ window.createObsRegisterModule = function createObsRegisterModule({
   var regCoordEl = document.getElementById("reg-coord");
   var regHeadingEl = document.getElementById("reg-heading");
   var regBearEl = document.getElementById("reg-bear");
+  var btnBearFind = document.getElementById("btn-bear-find");
+  var bearPickerEl = document.getElementById("bear-picker");
+  var bearPickerSearchEl = document.getElementById("bear-picker-search");
+  var bearPickerCountEl = document.getElementById("bear-picker-count");
+  var bearPickerSortEl = bearPickerEl ? bearPickerEl.querySelector(".bear-picker__sort") : null;
+  var bearPickerListEl = document.getElementById("bear-picker-list");
+  var bearPickerConfirmEl = document.getElementById("bear-picker-confirm");
+  var bearPickerCancelEl = document.getElementById("bear-picker-cancel");
+  var bearPickerCloseEl = document.getElementById("bear-picker-close");
   var chkRegHeadingLock = document.getElementById("chk-reg-heading-lock");
   var btnGpsToggle = document.getElementById("btn-gps-toggle");
   var gpsToggleRowEl = btnGpsToggle ? btnGpsToggle.closest(".obs-reg-gps-toggle-row") : null;
@@ -54,7 +63,13 @@ window.createObsRegisterModule = function createObsRegisterModule({
   var DEFAULT_MANUAL_HEADING = 0;
   var LAST_OWNER_STORAGE_KEY = "bearpoint.lastRegisteredOwner";
 
-  var BEAR_LIST_URL = "json/bear-list.json";
+  var BEAR_ENTITIES_SNAPSHOT_URL = "json/bear-entities.json";
+  var BEAR_ENTITIES_CACHE_KEY = "bearpoint.bearEntities";
+  var bearEntityItems = [];
+  var selectedBearCode = "";
+  var bearSortKey = "bearCode";
+  var bearSortDirection = "asc";
+  var bearCodeCollator = new Intl.Collator("ko", { numeric: true, sensitivity: "base" });
 
   var DET_ROW_TEMPLATE =
     '<tr class="det-row">' +
@@ -256,34 +271,178 @@ window.createObsRegisterModule = function createObsRegisterModule({
     return "obs-" + Date.now();
   }
 
-  // 등록 폼의 곰 선택 목록을 더미 JSON에서 읽어 select option으로 채운다.
-  async function loadBearListOptions() {
-    if (!regBearEl) return;
+  function normalizeBearEntities(rows) {
+    if (!Array.isArray(rows)) return [];
+    return rows.map(function (row) {
+      var code = String(row && (row.bear_code != null ? row.bear_code : row.bearCode) || "").trim();
+      return {
+        id: row && row.id != null ? String(row.id) : null,
+        bearCode: code,
+        sex: row && row.sex != null ? String(row.sex).trim().toUpperCase() : "",
+        birthYear: row && Number.isInteger(Number(row.birth_year != null ? row.birth_year : row.birthYear)) &&
+          (row.birth_year != null || row.birthYear != null)
+          ? Number(row.birth_year != null ? row.birth_year : row.birthYear) : null
+      };
+    }).filter(function (item) { return !!item.bearCode; });
+  }
+
+  function getBearEntityApiUrl() {
+    if (window.location && /^(localhost|127\.0\.0\.1)$/.test(window.location.hostname)) {
+      return "/api/realtime/bear-entities";
+    }
+    var config = window.BEAR_RUNTIME_CONFIG || {};
+    var base = String(config.realtimeApiBase || "/api/realtime").replace(/\/+$/, "");
+    return base + "/bear-entities";
+  }
+
+  function readCachedBearEntities() {
+    try {
+      return normalizeBearEntities(JSON.parse(window.localStorage.getItem(BEAR_ENTITIES_CACHE_KEY) || "[]"));
+    } catch (_) {
+      return [];
+    }
+  }
+
+  function setBearEntityItems(rows) {
+    var normalized = normalizeBearEntities(rows);
+    if (!normalized.length) return false;
+    bearEntityItems = normalized;
+    if (bearPickerEl && !bearPickerEl.classList.contains("hidden")) renderBearPickerList();
+    return true;
+  }
+
+  async function loadBearEntityCatalog() {
+    if (!bearEntityItems.length) {
+      setBearEntityItems(readCachedBearEntities());
+    }
+    if (!bearEntityItems.length) {
+      try {
+        var snapshotResponse = await fetch(BEAR_ENTITIES_SNAPSHOT_URL);
+        if (snapshotResponse.ok) setBearEntityItems(await snapshotResponse.json());
+      } catch (error) {
+        console.warn("[OBS] 개체 목록 기본 데이터 조회 실패:", error);
+      }
+    }
 
     try {
-      var response = await fetch(BEAR_LIST_URL, { cache: "no-store" });
-      if (!response.ok) {
-        throw new Error("HTTP " + response.status);
+      var response = await fetch(getBearEntityApiUrl(), { cache: "no-store" });
+      if (!response.ok) throw new Error("HTTP " + response.status);
+      var data = await response.json();
+      if (!data || data.ok !== true || !setBearEntityItems(data.items)) {
+        throw new Error("개체 목록 데이터가 올바르지 않습니다.");
       }
-
-      var rows = await response.json();
-      var items = Array.isArray(rows) ? rows : [];
-      regBearEl.innerHTML = '<option value="">-- 선택 --</option>';
-
-      for (var i = 0; i < items.length; i += 1) {
-        var item = items[i] || {};
-        var code = String(item.bear_code || item.id || item.code || "").trim();
-        var name = String(item.name || "").trim();
-        if (!code) continue;
-
-        var option = document.createElement("option");
-        option.value = code;
-        option.textContent = name ? code + "-" + name : code;
-        regBearEl.appendChild(option);
-      }
+      try {
+        window.localStorage.setItem(BEAR_ENTITIES_CACHE_KEY, JSON.stringify(data.items));
+      } catch (_) {}
     } catch (error) {
-      console.warn("[OBS] bear-list.json 로드 실패:", error);
+      if (!bearEntityItems.length && bearPickerCountEl) {
+        bearPickerCountEl.textContent = "개체 목록을 불러오지 못했습니다. 연결을 확인해 주세요.";
+      }
     }
+  }
+
+  function formatBearSex(value) {
+    if (value === "M") return "수컷";
+    if (value === "F") return "암컷";
+    return "미상";
+  }
+
+  function alignBearPickerSort() {
+    if (!bearPickerSortEl || !bearPickerListEl) return;
+    var scrollbarWidth = Math.max(0, bearPickerListEl.offsetWidth - bearPickerListEl.clientWidth);
+    bearPickerSortEl.style.paddingRight = (11 + scrollbarWidth) + "px";
+  }
+
+  function renderBearPickerList() {
+    if (!bearPickerListEl) return;
+    var query = String(bearPickerSearchEl ? bearPickerSearchEl.value : "").trim().toLowerCase();
+    var filtered = bearEntityItems.filter(function (item) {
+      return item.bearCode.toLowerCase().includes(query);
+    });
+    filtered.sort(function (a, b) {
+      var result = 0;
+      if (bearSortKey === "birthYear") {
+        if (a.birthYear == null || b.birthYear == null) {
+          result = a.birthYear == null ? (b.birthYear == null ? 0 : 1) : -1;
+          if (result) return result;
+        } else {
+          result = a.birthYear - b.birthYear;
+        }
+      } else if (bearSortKey === "sex") {
+        result = formatBearSex(a.sex).localeCompare(formatBearSex(b.sex), "ko");
+      } else {
+        result = bearCodeCollator.compare(a.bearCode, b.bearCode);
+      }
+      return result ? result * (bearSortDirection === "asc" ? 1 : -1) :
+        bearCodeCollator.compare(a.bearCode, b.bearCode);
+    });
+    document.querySelectorAll(".bear-picker__sort [data-bear-sort]").forEach(function (button) {
+      var active = button.getAttribute("data-bear-sort") === bearSortKey;
+      var label = button.textContent.trim().replace(/[▲▼]/g, "").trim();
+      button.classList.toggle("is-active", active);
+      button.setAttribute("aria-label", label + (active ? ", " + (bearSortDirection === "asc" ? "오름차순" : "내림차순") : ", 정렬"));
+      var arrow = button.querySelector(".bear-picker__sort-arrow");
+      if (arrow) arrow.textContent = active ? (bearSortDirection === "asc" ? "▲" : "▼") : "";
+    });
+    bearPickerListEl.innerHTML = "";
+    if (bearPickerCountEl) bearPickerCountEl.textContent = filtered.length + "개체 표시";
+    if (bearPickerConfirmEl) bearPickerConfirmEl.disabled = !filtered.some(function (item) {
+      return item.bearCode === selectedBearCode;
+    });
+
+    if (!filtered.length) {
+      var empty = document.createElement("div");
+      empty.className = "bear-picker__empty";
+      empty.textContent = bearEntityItems.length ? "검색 결과가 없습니다." : "개체 목록을 불러오는 중입니다.";
+      bearPickerListEl.appendChild(empty);
+      alignBearPickerSort();
+      return;
+    }
+
+    filtered.forEach(function (item) {
+      var button = document.createElement("button");
+      button.type = "button";
+      button.className = "bear-picker__item";
+      button.setAttribute("role", "option");
+      button.setAttribute("aria-selected", String(item.bearCode === selectedBearCode));
+      var code = document.createElement("span");
+      code.className = "bear-picker__item-code";
+      code.textContent = item.bearCode;
+      var sex = document.createElement("span");
+      sex.className = "bear-picker__item-sex";
+      sex.textContent = formatBearSex(item.sex);
+      var year = document.createElement("span");
+      year.className = "bear-picker__item-year";
+      year.textContent = item.birthYear != null ? item.birthYear + "년생" : "미상";
+      button.appendChild(code);
+      button.appendChild(sex);
+      button.appendChild(year);
+      button.addEventListener("click", function () {
+        selectedBearCode = item.bearCode;
+        renderBearPickerList();
+      });
+      bearPickerListEl.appendChild(button);
+    });
+    alignBearPickerSort();
+  }
+
+  function closeBearPicker() {
+    if (bearPickerEl) bearPickerEl.classList.add("hidden");
+  }
+
+  function handleBackNavigation() {
+    if (!bearPickerEl || bearPickerEl.classList.contains("hidden")) return false;
+    closeBearPicker();
+    return true;
+  }
+
+  function openBearPicker() {
+    if (!bearPickerEl) return;
+    selectedBearCode = regBearEl ? String(regBearEl.value || "").trim() : "";
+    if (bearPickerSearchEl) bearPickerSearchEl.value = "";
+    bearPickerEl.classList.remove("hidden");
+    renderBearPickerList();
+    void loadBearEntityCatalog();
   }
 
   // Capacitor SQLite 플러그인 참조를 안전하게 꺼낸다.
@@ -1334,6 +1493,7 @@ window.createObsRegisterModule = function createObsRegisterModule({
 
   // 등록 팝업을 숨기고 필요 시 폼 상태를 초기화한다.
   function hide(shouldReset) {
+    closeBearPicker();
     if (registerBoxEl) registerBoxEl.classList.add("hidden");
     if (shouldReset) resetFormState();
   }
@@ -1352,6 +1512,36 @@ window.createObsRegisterModule = function createObsRegisterModule({
 
   // 등록 팝업 관련 DOM 이벤트를 한 번에 바인딩한다.
   function bindEvents() {
+    if (btnBearFind) btnBearFind.addEventListener("click", openBearPicker);
+    if (bearPickerSearchEl) bearPickerSearchEl.addEventListener("input", renderBearPickerList);
+    window.addEventListener("resize", alignBearPickerSort);
+    document.querySelectorAll(".bear-picker__sort [data-bear-sort]").forEach(function (button) {
+      button.addEventListener("click", function () {
+        var key = button.getAttribute("data-bear-sort");
+        bearSortDirection = bearSortKey === key && bearSortDirection === "asc" ? "desc" : "asc";
+        bearSortKey = key;
+        renderBearPickerList();
+      });
+    });
+    if (bearPickerCancelEl) bearPickerCancelEl.addEventListener("click", closeBearPicker);
+    if (bearPickerCloseEl) bearPickerCloseEl.addEventListener("click", closeBearPicker);
+    if (bearPickerEl) bearPickerEl.addEventListener("click", function (event) {
+      if (event.target === bearPickerEl) closeBearPicker();
+    });
+    if (bearPickerConfirmEl) bearPickerConfirmEl.addEventListener("click", function () {
+      if (!selectedBearCode || !bearEntityItems.some(function (item) { return item.bearCode === selectedBearCode; })) return;
+      if (regBearEl) {
+        regBearEl.value = selectedBearCode;
+        regBearEl.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+      closeBearPicker();
+    });
+    document.addEventListener("keydown", function (event) {
+      if (event.key === "Escape" && bearPickerEl && !bearPickerEl.classList.contains("hidden")) {
+        event.preventDefault();
+        closeBearPicker();
+      }
+    });
     if (btnRegisterClose) btnRegisterClose.addEventListener("click", function() {
       close();
     });
@@ -1501,7 +1691,6 @@ window.createObsRegisterModule = function createObsRegisterModule({
   // 모듈 초기 진입 시 이벤트/초기 UI를 세팅한다.
   function initialize() {
     bindEvents();
-    void loadBearListOptions();
     renderEmptyDetectorState();
     syncDetBtns();
     renderLiveFields();
@@ -1512,6 +1701,7 @@ window.createObsRegisterModule = function createObsRegisterModule({
     open,
     openForEdit,
     hide,
+    handleBackNavigation,
     isHeadingLocked: getHeadingLockState,
     getLockedHeading,
     updateLiveData,

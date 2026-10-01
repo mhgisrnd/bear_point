@@ -4,7 +4,7 @@
 (function initBearSQLiteConfig() {
   window.BearSQLiteConfig = {
     dbName: "BearPointData",
-    dbVersion: 10,
+    dbVersion: 11,
     assetDbOverwrite: false,
     // 마이그레이션 이력과 실제 컬럼 상태가 어긋난 DB를 위한 보정 규칙.
     // 새 누락 컬럼이 생기면 여기에 규칙만 추가하면 된다.
@@ -102,6 +102,12 @@
         table: "bear_estimates",
         column: "analysis_diagnostics_json",
         apply: "ALTER TABLE bear_estimates ADD COLUMN analysis_diagnostics_json TEXT"
+      },
+      {
+        type: "column-exists",
+        table: "bear_estimates",
+        column: "shared_at",
+        apply: "ALTER TABLE bear_estimates ADD COLUMN shared_at TEXT"
       }
     ],
     migrations: {
@@ -146,6 +152,9 @@
       ],
       10: [
         "ALTER TABLE bear_estimates ADD COLUMN place TEXT"
+      ],
+      11: [
+        "ALTER TABLE bear_estimates ADD COLUMN shared_at TEXT"
       ]
 
     }

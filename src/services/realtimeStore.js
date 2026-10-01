@@ -17,6 +17,10 @@ const BEAR_ESTIMATE_SELECT_SQL = `
     lat_dms,
     lng_dms,
     intersections_count,
+    source_observations,
+    analysis_options,
+    analysis_rays,
+    analysis_intersections,
     TO_CHAR(source_created_at, '${KST_TIMESTAMP_SQL}') AS source_created_at,
     TO_CHAR(uploaded_at, '${KST_TIMESTAMP_SQL}') AS uploaded_at,
     update_id,
@@ -35,6 +39,33 @@ function normalizeInsertPayload(body) {
     const error = new Error("lat/lng 값이 필요합니다.");
     error.statusCode = 400;
     throw error;
+  }
+
+  if (data.source_observations != null &&
+      (!Array.isArray(data.source_observations) ||
+        !data.source_observations.every((observation) =>
+          observation && typeof observation === "object" && !Array.isArray(observation)))) {
+    const error = new Error("source_observations는 관측점 객체의 배열이어야 합니다.");
+    error.statusCode = 400;
+    throw error;
+  }
+
+  for (const field of ["analysis_options", "analysis_rays", "analysis_intersections"]) {
+    const value = data[field];
+    const valid = field === "analysis_options"
+      ? value && typeof value === "object" && !Array.isArray(value)
+      : Array.isArray(value);
+    if (value != null && !valid) {
+      const error = new Error(`${field} 형식이 올바르지 않습니다.`);
+      error.statusCode = 400;
+      throw error;
+    }
+  }
+
+  const storedData = { ...data };
+  if (data.analysis_options != null) {
+    const { spreadToleranceM, ...activeOptions } = data.analysis_options;
+    storedData.analysis_options = activeOptions;
   }
 
   return {
@@ -62,13 +93,19 @@ function normalizeInsertPayload(body) {
         : Number.isFinite(Number(data.intersectionsCount))
           ? Number(data.intersectionsCount)
           : null,
+    sourceObservations: data.source_observations == null
+      ? null
+      : JSON.stringify(data.source_observations),
+    analysisOptions: storedData.analysis_options == null ? null : JSON.stringify(storedData.analysis_options),
+    analysisRays: data.analysis_rays == null ? null : JSON.stringify(data.analysis_rays),
+    analysisIntersections: data.analysis_intersections == null ? null : JSON.stringify(data.analysis_intersections),
     sourceCreatedAt:
       data.created_at != null
         ? String(data.created_at)
         : data.ts != null
           ? new Date(Number(data.ts)).toISOString()
           : "",
-    payload: JSON.stringify(data),
+    payload: JSON.stringify(storedData),
   };
 }
 
@@ -226,15 +263,20 @@ async function insertRealtimeBearEstimate(body) {
         lat_dms,
         lng_dms,
         intersections_count,
+        source_observations,
+        analysis_options,
+        analysis_rays,
+        analysis_intersections,
         source_created_at,
         use_yn,
         payload
       )
       VALUES (
-        $1, $2, $3, $4, $5, $6, $7, $8, $9,
-        CASE WHEN $10::text = '' THEN NULL ELSE ($10::timestamptz AT TIME ZONE 'Asia/Seoul') END,
+        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb,
+        $11::jsonb, $12::jsonb, $13::jsonb,
+        CASE WHEN $14::text = '' THEN NULL ELSE ($14::timestamptz AT TIME ZONE 'Asia/Seoul') END,
         TRUE,
-        $11::jsonb
+        $15::jsonb
       )
       RETURNING
         id,
@@ -247,6 +289,10 @@ async function insertRealtimeBearEstimate(body) {
         lat_dms,
         lng_dms,
         intersections_count,
+        source_observations,
+        analysis_options,
+        analysis_rays,
+        analysis_intersections,
         TO_CHAR(source_created_at, '${KST_TIMESTAMP_SQL}') AS source_created_at,
         TO_CHAR(uploaded_at, '${KST_TIMESTAMP_SQL}') AS uploaded_at,
         update_id,
@@ -263,6 +309,10 @@ async function insertRealtimeBearEstimate(body) {
       payload.latDms,
       payload.lngDms,
       payload.intersectionsCount,
+      payload.sourceObservations,
+      payload.analysisOptions,
+      payload.analysisRays,
+      payload.analysisIntersections,
       payload.sourceCreatedAt,
       payload.payload,
     ]
@@ -305,6 +355,10 @@ async function updateRealtimeBearEstimateById(id, body, options = {}) {
         lat_dms,
         lng_dms,
         intersections_count,
+        source_observations,
+        analysis_options,
+        analysis_rays,
+        analysis_intersections,
         TO_CHAR(source_created_at, '${KST_TIMESTAMP_SQL}') AS source_created_at,
         TO_CHAR(uploaded_at, '${KST_TIMESTAMP_SQL}') AS uploaded_at,
         update_id,

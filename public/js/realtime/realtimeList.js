@@ -94,6 +94,8 @@
 
     const API_BASE = resolveApiBase();
     const MAX_ITEMS = 200;
+    const onRemoteEstimatesLoaded = typeof options.onRemoteEstimatesLoaded === "function"
+      ? options.onRemoteEstimatesLoaded : null;
 
     let items = [];
     let isLoading = false;
@@ -192,6 +194,7 @@
           typeof item.label === "string" && item.label.trim()
             ? item.label.trim()
             : "실시간 위치",
+        source_observations: Array.isArray(item.source_observations) ? item.source_observations : null,
       };
     }
 
@@ -254,6 +257,9 @@
         items = Array.isArray(data.items)
           ? data.items.map(normalizeItem).filter(Boolean).slice(0, MAX_ITEMS)
           : [];
+        if (onRemoteEstimatesLoaded) {
+          onRemoteEstimatesLoaded(Array.isArray(data.items) ? data.items : []);
+        }
         notifyItemsChanged();
         if (!silent) {
           setStatus(items.length ? "실시간 목록을 불러왔습니다." : "아직 업로드된 실시간 위치가 없습니다.", items.length ? "ok" : "warn");
@@ -634,7 +640,7 @@
         setStatus(error && error.message ? error.message : "실시간 업로드에 실패했습니다.", "error");
         return {
           ok: false,
-          reason: "request-failed",
+          reason: error && error.isNetworkError ? "network-error" : "request-failed",
           message: error && error.message ? error.message : "실시간 업로드 실패",
         };
       }
@@ -649,8 +655,8 @@
         };
       }
 
-      const normalizedList = payloadList.map(normalizeItem).filter(Boolean);
-      if (!normalizedList.length) {
+      const validPayloads = payloadList.filter(function (item) { return !!normalizeItem(item); });
+      if (!validPayloads.length) {
         return {
           ok: false,
           count: 0,
@@ -659,16 +665,21 @@
       }
 
       const savedItems = [];
+      const uploadedIds = [];
       try {
-        for (const item of normalizedList) {
+        for (const item of validPayloads) {
           const savedItem = await uploadEstimate(item);
-          if (savedItem) savedItems.push(savedItem);
+          if (savedItem) {
+            savedItems.push(savedItem);
+            if (item.id != null) uploadedIds.push(String(item.id));
+          }
         }
       } catch (error) {
         setStatus(error && error.message ? error.message : "실시간 업로드에 실패했습니다.", "error");
         return {
           ok: false,
           count: savedItems.length,
+          uploadedIds,
           message: error && error.message ? error.message : "실시간 업로드 실패",
         };
       }
@@ -690,6 +701,7 @@
       return {
         ok: true,
         count: savedItems.length,
+        uploadedIds,
       };
     }
 

@@ -1,0 +1,248 @@
+[
+  {
+    "id": "27",
+    "bear_code": "KF-110",
+    "birth_year": 2020,
+    "sex": null
+  },
+  {
+    "id": "25",
+    "bear_code": "KF-112",
+    "birth_year": 2019,
+    "sex": null
+  },
+  {
+    "id": "34",
+    "bear_code": "KF-115",
+    "birth_year": 2022,
+    "sex": null
+  },
+  {
+    "id": "12",
+    "bear_code": "KF-116",
+    "birth_year": 2016,
+    "sex": null
+  },
+  {
+    "id": "35",
+    "bear_code": "KF-117",
+    "birth_year": 2022,
+    "sex": null
+  },
+  {
+    "id": "29",
+    "bear_code": "KF-122",
+    "birth_year": 2020,
+    "sex": null
+  },
+  {
+    "id": "20",
+    "bear_code": "KF-123",
+    "birth_year": 2018,
+    "sex": null
+  },
+  {
+    "id": "2",
+    "bear_code": "KF-34",
+    "birth_year": 2011,
+    "sex": null
+  },
+  {
+    "id": "5",
+    "bear_code": "KF-47",
+    "birth_year": 2014,
+    "sex": null
+  },
+  {
+    "id": "6",
+    "bear_code": "KF-58",
+    "birth_year": 2014,
+    "sex": null
+  },
+  {
+    "id": "7",
+    "bear_code": "KF-59",
+    "birth_year": 2014,
+    "sex": null
+  },
+  {
+    "id": "17",
+    "bear_code": "KF-79",
+    "birth_year": 2018,
+    "sex": null
+  },
+  {
+    "id": "10",
+    "bear_code": "KF-80",
+    "birth_year": 2016,
+    "sex": null
+  },
+  {
+    "id": "21",
+    "bear_code": "KF-83",
+    "birth_year": 2019,
+    "sex": null
+  },
+  {
+    "id": "18",
+    "bear_code": "KF-94",
+    "birth_year": 2018,
+    "sex": null
+  },
+  {
+    "id": "23",
+    "bear_code": "KF-95",
+    "birth_year": 2019,
+    "sex": null
+  },
+  {
+    "id": "30",
+    "bear_code": "KF-96",
+    "birth_year": 2021,
+    "sex": null
+  },
+  {
+    "id": "31",
+    "bear_code": "KF-98",
+    "birth_year": 2021,
+    "sex": null
+  },
+  {
+    "id": "19",
+    "bear_code": "KF-99",
+    "birth_year": 2018,
+    "sex": null
+  },
+  {
+    "id": "32",
+    "bear_code": "KM-100",
+    "birth_year": 2021,
+    "sex": "M"
+  },
+  {
+    "id": "28",
+    "bear_code": "KM-111",
+    "birth_year": 2020,
+    "sex": "M"
+  },
+  {
+    "id": "14",
+    "bear_code": "KM-113",
+    "birth_year": 2017,
+    "sex": "M"
+  },
+  {
+    "id": "24",
+    "bear_code": "KM-114",
+    "birth_year": 2019,
+    "sex": "M"
+  },
+  {
+    "id": "36",
+    "bear_code": "KM-118",
+    "birth_year": 2022,
+    "sex": "M"
+  },
+  {
+    "id": "38",
+    "bear_code": "KM-119",
+    "birth_year": 2023,
+    "sex": "M"
+  },
+  {
+    "id": "33",
+    "bear_code": "KM-120",
+    "birth_year": 2021,
+    "sex": "M"
+  },
+  {
+    "id": "40",
+    "bear_code": "KM-121",
+    "birth_year": 2024,
+    "sex": "M"
+  },
+  {
+    "id": "39",
+    "bear_code": "KM-124",
+    "birth_year": 2023,
+    "sex": "M"
+  },
+  {
+    "id": "41",
+    "bear_code": "KM-125",
+    "birth_year": 2024,
+    "sex": "M"
+  },
+  {
+    "id": "37",
+    "bear_code": "KM-126",
+    "birth_year": 2022,
+    "sex": "M"
+  },
+  {
+    "id": "1",
+    "bear_code": "KM-32",
+    "birth_year": 2010,
+    "sex": "M"
+  },
+  {
+    "id": "3",
+    "bear_code": "KM-45",
+    "birth_year": 2013,
+    "sex": "M"
+  },
+  {
+    "id": "4",
+    "bear_code": "KM-60",
+    "birth_year": 2013,
+    "sex": "M"
+  },
+  {
+    "id": "9",
+    "bear_code": "KM-61",
+    "birth_year": 2016,
+    "sex": "M"
+  },
+  {
+    "id": "11",
+    "bear_code": "KM-81",
+    "birth_year": 2016,
+    "sex": "M"
+  },
+  {
+    "id": "22",
+    "bear_code": "KM-85",
+    "birth_year": 2019,
+    "sex": "M"
+  },
+  {
+    "id": "8",
+    "bear_code": "KM-86",
+    "birth_year": 2015,
+    "sex": "M"
+  },
+  {
+    "id": "13",
+    "bear_code": "KM-91",
+    "birth_year": 2017,
+    "sex": "M"
+  },
+  {
+    "id": "26",
+    "bear_code": "KM-92",
+    "birth_year": 2020,
+    "sex": "M"
+  },
+  {
+    "id": "15",
+    "bear_code": "RF-65",
+    "birth_year": 2018,
+    "sex": null
+  },
+  {
+    "id": "16",
+    "bear_code": "RM-66",
+    "birth_year": 2018,
+    "sex": null
+  }
+]

@@ -52,6 +52,9 @@
   const STARTUP_OVERLAY_MIN_VISIBLE_MS = 320;
   let currentBearEstimateItems = [];
   let currentBearEstimateFallbackMode = false;
+  let remoteSharedEstimateIds = new Set();
+  let sharedStatusSyncInProgress = false;
+  let reconcileSharedBearEstimates = function () { return Promise.resolve(); };
   const overlayBackCloseStack = [];
   const selectedBearEstimateIds = new Set();
   let statusBlinkResetTimer = null;
@@ -126,6 +129,12 @@
       if (activeTab === "realtime") {
         syncBearMarkersForActiveTab(items);
       }
+    },
+    onRemoteEstimatesLoaded: function (remoteItems) {
+      remoteSharedEstimateIds = new Set((Array.isArray(remoteItems) ? remoteItems : []).map(function (item) {
+        return item && (item.bear_estimate_id || (item.payload && item.payload.id));
+      }).filter(Boolean).map(String));
+      void reconcileSharedBearEstimates();
     },
     onFocusItem: function (item) {
       const lat = Number(item && item.lat);
@@ -2614,6 +2623,7 @@
   let analysisActionOverlay = null;
   let analysisOwnerInputEl = null;
   let analysisPlaceInputEl = null;
+  let analysisRealtimeShareInputEl = null;
   let currentAnalysisPoint = null; // 위치분석 최근 결과 (저장 버튼용)
   let analysisActionAnchorCoord = null;
   let analysisActionLayoutBound = false;
@@ -3381,6 +3391,12 @@
       // 1) 지도 위 관측점 상세 팝업이 열려 있으면 먼저 닫는다.
       if (observationPopupEl && observationPopupEl.style.display !== "none") {
         closeObservationPopup();
+        resetBackExitState();
+        return;
+      }
+
+      if (obsRegisterModule && typeof obsRegisterModule.handleBackNavigation === "function" &&
+          obsRegisterModule.handleBackNavigation()) {
         resetBackExitState();
         return;
       }
@@ -4786,6 +4802,23 @@
     }
   }
 
+  function parseBearEstimateJson(value, expectedType) {
+    try {
+      const parsed = typeof value === "string" ? JSON.parse(value) : value;
+      if (expectedType === "array") return Array.isArray(parsed) ? parsed : null;
+      return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function normalizeAnalysisOptions(value) {
+    const options = parseBearEstimateJson(value, "object");
+    if (!options) return null;
+    const { spreadToleranceM, ...activeOptions } = options;
+    return activeOptions;
+  }
+
   // 웹 환경에서 bears.json 더미 데이터를 곰 추적위치 목록 형식으로 정규화한다.
   function getWebFallbackBearEstimates() {
     if (!Array.isArray(bearsDataCache) || !bearsDataCache.length) return [];
@@ -4804,7 +4837,11 @@
         lng_dms: row.lng_dms || null,
         intersections_count: Number.isFinite(Number(row.intersections_count)) ? Number(row.intersections_count) : null,
         created_at: row.created_at || null,
-        source_observation_ids: row.source_observation_ids || null
+        source_observation_ids: row.source_observation_ids || null,
+        source_observations: parseBearEstimateJson(row.source_observations, "array"),
+        analysis_options: normalizeAnalysisOptions(row.analysis_options),
+        analysis_rays: parseBearEstimateJson(row.analysis_rays, "array"),
+        analysis_intersections: parseBearEstimateJson(row.analysis_intersections, "array")
       };
     });
   }
@@ -4862,6 +4899,50 @@
     return !!ok;
   }
 
+  async function markBearEstimatesShared(ids) {
+    const idSet = new Set((Array.isArray(ids) ? ids : []).filter(Boolean).map(String));
+    if (!idSet.size) return;
+    const sqlite = getCapacitorSQLitePlugin();
+    if (sqlite && !currentBearEstimateFallbackMode) {
+      const dbName = window.BearSQLiteConfig && window.BearSQLiteConfig.dbName
+        ? window.BearSQLiteConfig.dbName : "BearPointData";
+      const sharedAt = getKstSqliteTimestamp();
+      for (const id of idSet) {
+        await sqlite.run({
+          database: dbName,
+          statement: "UPDATE bear_estimates SET shared_at = COALESCE(shared_at, ?) WHERE id = ?",
+          values: [sharedAt, id],
+          transaction: true,
+          readonly: false
+        });
+      }
+      currentBearEstimateItems.forEach(function (item) {
+        if (idSet.has(String(item.id)) && !item.shared_at) item.shared_at = sharedAt;
+      });
+    } else {
+      currentBearEstimateItems.forEach(function (item) {
+        if (idSet.has(String(item.id)) && !item.shared_at) item.shared_at = getKstSqliteTimestamp();
+      });
+    }
+    renderBears(currentBearEstimateItems, currentBearEstimateFallbackMode);
+  }
+
+  reconcileSharedBearEstimates = async function () {
+    if (sharedStatusSyncInProgress || !remoteSharedEstimateIds.size || !currentBearEstimateItems.length) return;
+    const missingIds = currentBearEstimateItems.filter(function (item) {
+      return !item.shared_at && remoteSharedEstimateIds.has(String(item.id));
+    }).map(function (item) { return String(item.id); });
+    if (!missingIds.length) return;
+    sharedStatusSyncInProgress = true;
+    try {
+      await markBearEstimatesShared(missingIds);
+    } catch (error) {
+      console.warn("[bear_estimates] 공유 이력 동기화 실패:", error);
+    } finally {
+      sharedStatusSyncInProgress = false;
+    }
+  };
+
   async function handleUploadSelectedBearEstimates() {
     const targets = currentBearEstimateItems.filter(function (it) {
       return selectedBearEstimateIds.has(String(it.id));
@@ -4872,9 +4953,12 @@
       return;
     }
 
+    const alreadySharedCount = targets.filter(function (item) { return !!item.shared_at; }).length;
     const ok = await confirmRealtimeUpload(
-      "선택한 " + targets.length + "건을 실시간 목록에 업로드 하시겠습니까?",
-      "업로드 후 실시간 목록 탭에서 바로 확인할 수 있습니다."
+      alreadySharedCount
+        ? "선택한 항목 중 " + alreadySharedCount + "건은 공유완료 데이터입니다. 다시 공유하시겠습니까?"
+        : "선택한 " + targets.length + "건을 실시간 목록에 업로드 하시겠습니까?",
+      "선택한 " + targets.length + "건을 업로드합니다."
     );
     if (!ok) return;
 
@@ -4884,8 +4968,13 @@
     }
 
     const sendResult = await realtimeListModule.sendEstimates(targets);
+    if (sendResult && Array.isArray(sendResult.uploadedIds) && sendResult.uploadedIds.length) {
+      await markBearEstimatesShared(sendResult.uploadedIds);
+    }
     if (sendResult && sendResult.ok && typeof realtimeListModule.openRealtimeTab === "function") {
       realtimeListModule.openRealtimeTab();
+    } else if (sendResult && sendResult.count > 0 && statusEl) {
+      statusEl.textContent = "⚠️ " + sendResult.count + "건 공유완료, 나머지 업로드 실패: " + sendResult.message;
     }
   }
 
@@ -5446,6 +5535,7 @@
     hideAnalysisActionBar();
     if (analysisOwnerInputEl) analysisOwnerInputEl.value = "";
     if (analysisPlaceInputEl) analysisPlaceInputEl.value = "";
+    if (analysisRealtimeShareInputEl) analysisRealtimeShareInputEl.checked = true;
     currentAnalysisPoint = null;
   }
 
@@ -5486,7 +5576,7 @@
     ownerField.style.gap = "4px";
 
     const ownerLabel = document.createElement("label");
-    ownerLabel.textContent = "위치추적 담당자명";
+    ownerLabel.textContent = "담당자명";
     ownerLabel.style.color = "#ffffff";
     ownerLabel.style.fontSize = "12px";
     ownerLabel.style.fontWeight = "700";
@@ -5527,6 +5617,25 @@
     placeInput.style.color = "#0f172a";
     placeInput.style.fontSize = "14px";
     placeInput.style.outline = "none";
+
+    const realtimeShareLabel = document.createElement("label");
+    realtimeShareLabel.style.display = "flex";
+    realtimeShareLabel.style.alignItems = "center";
+    realtimeShareLabel.style.gap = "8px";
+    realtimeShareLabel.style.color = "#ffffff";
+    realtimeShareLabel.style.fontSize = "12px";
+    realtimeShareLabel.style.fontWeight = "700";
+    realtimeShareLabel.style.cursor = "pointer";
+
+    const realtimeShareInput = document.createElement("input");
+    realtimeShareInput.type = "checkbox";
+    realtimeShareInput.checked = true;
+    realtimeShareInput.style.width = "16px";
+    realtimeShareInput.style.height = "16px";
+    realtimeShareInput.style.margin = "0";
+    realtimeShareInput.style.accentColor = "#0b72c7";
+    realtimeShareLabel.appendChild(realtimeShareInput);
+    realtimeShareLabel.appendChild(document.createTextNode("실시간 공유"));
 
     const buttonRow = document.createElement("div");
     buttonRow.style.display = "flex";
@@ -5607,9 +5716,18 @@
           id: obs.id || null,
           place: obs.place || null,
           bearCode: obs.bearCode || null,
+          owner: obs.owner || null,
           heading: obs.heading ?? null,
           lat: Number(obs.lat),
           lng: Number(obs.lng),
+          createdAt: obs.createdAt || null,
+          updatedAt: obs.updatedAt || null,
+          detectors: (Array.isArray(obs.detectors) ? obs.detectors : []).map(function (detector) {
+            return {
+              detectorName: detector.detectorName || null,
+              signalStrength: detector.signalStrength || null
+            };
+          }),
           mapX: Array.isArray(projected) && Number.isFinite(projected[0]) ? projected[0] : null,
           mapY: Array.isArray(projected) && Number.isFinite(projected[1]) ? projected[1] : null
         };
@@ -5643,9 +5761,11 @@
           mapY: Array.isArray(projected) && Number.isFinite(projected[1]) ? projected[1] : null
         };
       }));
-      const analysisOptionsJson = JSON.stringify(point.analysisOptions || point.options || null);
+      const analysisOptionsJson = JSON.stringify(normalizeAnalysisOptions(point.analysisOptions || point.options));
       const analysisDiagnosticsJson = JSON.stringify(point.analysisDiagnostics || null);
+      const shareRealtime = realtimeShareInput.checked;
 
+      let localSaved = false;
       try {
         saveBtn.disabled = true;
         await sqlite.run({
@@ -5655,12 +5775,46 @@
           transaction: true,
           readonly: false
         });
+        localSaved = true;
         clearAnalysisEstimateVisuals();
         if (statusEl) statusEl.textContent = `✅ 곰 추정위치(${bearCode}) 저장 완료`;
         await refreshBearEstimatePanel();
+        if (shareRealtime) {
+          if (!realtimeListModule || typeof realtimeListModule.sendEstimate !== "function") {
+            if (statusEl) statusEl.textContent = "⚠️ 로컬에만 저장되었습니다. 실시간 공유 기능을 사용할 수 없습니다.";
+          } else {
+            const sendResult = await realtimeListModule.sendEstimate({
+              id,
+              bear_code: bearCode,
+              owner: ownerName || null,
+              place: placeName || null,
+              lat: point.lat,
+              lng: point.lng,
+              lat_dms: latDms,
+              lng_dms: lngDms,
+              intersections_count: intersectionsCount,
+              source_observations: JSON.parse(sourceObservationsJson),
+              analysis_options: JSON.parse(analysisOptionsJson),
+              analysis_rays: JSON.parse(analysisRaysJson),
+              analysis_intersections: JSON.parse(intersectionsJson),
+              created_at: createdAtKst
+            });
+            if (sendResult && sendResult.ok) {
+              await markBearEstimatesShared([id]);
+              realtimeListModule.openRealtimeTab();
+            } else if (statusEl) {
+              const reason = sendResult && sendResult.reason === "network-error"
+                ? "인터넷 또는 서버 연결을 확인해 주세요."
+                : (sendResult && sendResult.message ? sendResult.message : "다시 시도해 주세요.");
+              statusEl.textContent = "⚠️ 로컬에만 저장되었습니다. 실시간 공유 실패: " + reason;
+            }
+          }
+        }
       } catch (saveError) {
-        console.error("[bear_estimates] 저장 실패:", saveError);
-        if (statusEl) statusEl.textContent = "🔴 저장 실패: " + (saveError && saveError.message ? saveError.message : String(saveError));
+        console.error(localSaved ? "[bear_estimates] 실시간 공유 처리 실패:" : "[bear_estimates] 저장 실패:", saveError);
+        if (statusEl) statusEl.textContent = (localSaved
+          ? "⚠️ 로컬에만 저장되었습니다. 실시간 공유 처리 실패: "
+          : "🔴 저장 실패: ") + (saveError && saveError.message ? saveError.message : String(saveError));
       } finally {
         saveBtn.disabled = false;
       }
@@ -5697,6 +5851,7 @@
     fieldWrap.style.flexDirection = "column";
     fieldWrap.style.gap = "8px";
     fieldWrap.appendChild(fieldGrid);
+    fieldWrap.appendChild(realtimeShareLabel);
 
     inputCard.appendChild(headerText);
     inputCard.appendChild(fieldWrap);
@@ -5737,6 +5892,7 @@
     analysisActionBarEl = root;
     analysisOwnerInputEl = ownerInput;
     analysisPlaceInputEl = placeInput;
+    analysisRealtimeShareInputEl = realtimeShareInput;
   }
 
   // 방금 계산한 분석 결과를 임시 추정점으로 지도에 렌더링하고 저장 액션바와 연결한다.
@@ -6434,6 +6590,7 @@
       const bearCode = it.bear_code || it.bearCode || "-";
       const ownerName = normalizeOwnerName(it.owner) || "미지정";
       const placeName = normalizePlaceName(it.place) || "미지정";
+      const isShared = !!it.shared_at;
       const latDms = it.lat_dms || decimalToDMS(lat, false);
       const lngDms = it.lng_dms || decimalToDMS(lng, true);
       // const projected = mapCoordFromWgs84(lat, lng); // EPSG:5179 목록표시(기존)
@@ -6456,10 +6613,15 @@
           '<div class="bears-item__buttons bears-item__buttons--triple">' +
             '<button class="bears-txt-dl-btn" type="button" aria-label="TXT 다운로드"><span class="bears-txt-dl-btn__label">TXT 다운로드</span></button>' +
             '<button class="bears-xls-dl-btn" type="button" aria-label="XLS 다운로드"><span class="bears-xls-dl-btn__label">XLS 다운로드</span></button>' +
-            '<button class="bears-send-btn" type="button" aria-label="실시간 전송"><span class="bears-send-btn__label">실시간 전송</span></button>' +
+            '<button class="bears-send-btn" type="button" aria-label="' + (isShared ? '실시간 다시 전송' : '실시간 전송') + '"><span class="bears-send-btn__label">실시간 전송</span></button>' +
           '</div>' +
-          '<div class="bears-item__date">' + dateLabel + '</div>' +
-          '<div class="bears-item__time">' + timeLabel + '</div>' +
+          '<div class="bears-item__share-info">' +
+            (isShared ? '<span class="bears-item__shared-badge">공유완료</span>' : '') +
+            '<div class="bears-item__datetime">' +
+              '<div class="bears-item__date">' + dateLabel + '</div>' +
+              '<div class="bears-item__time">' + timeLabel + '</div>' +
+            '</div>' +
+          '</div>' +
         '</div>';
 
       el.addEventListener("click", function () {
@@ -6487,7 +6649,9 @@
         sendBtn.addEventListener("click", async function (e) {
           e.stopPropagation();
           const ok = await confirmRealtimeUpload(
-            "[" + bearCode + "] 항목을 실시간 목록에 업로드 하시겠습니까?",
+            isShared
+              ? "[" + bearCode + "] 이미 공유완료된 데이터입니다. 다시 공유하시겠습니까?"
+              : "[" + bearCode + "] 항목을 실시간 목록에 업로드 하시겠습니까?",
             "업로드 후 실시간 목록 탭에서 바로 확인할 수 있습니다."
           );
           if (!ok) return;
@@ -6499,6 +6663,7 @@
 
           const sendResult = await realtimeListModule.sendEstimate(it);
           if (sendResult && sendResult.ok && typeof realtimeListModule.openRealtimeTab === "function") {
+            await markBearEstimatesShared([itemId]);
             realtimeListModule.openRealtimeTab();
           }
         });
@@ -6551,13 +6716,13 @@
         // 최신 스키마(lat_dms/lng_dms 컬럼 포함) 우선 조회
         result = await sqlite.query({
           database: dbName,
-          statement: "SELECT id, bear_code, owner, place, lat, lng, lat_dms, lng_dms, intersections_count, created_at FROM bear_estimates ORDER BY created_at DESC LIMIT 100",
+          statement: "SELECT id, bear_code, owner, place, lat, lng, lat_dms, lng_dms, intersections_count, source_observations_json, analysis_options_json, analysis_rays_json, intersections_json, shared_at, created_at FROM bear_estimates ORDER BY created_at DESC LIMIT 100",
           values: [],
           readonly: false
         });
       } catch (primaryQueryError) {
         const message = String(primaryQueryError && primaryQueryError.message ? primaryQueryError.message : primaryQueryError);
-        if (/no such column: owner|no such column: place|no such column: lat_dms|no such column: lng_dms/i.test(message)) {
+        if (/no such column: owner|no such column: place|no such column: lat_dms|no such column: lng_dms|no such column: source_observations_json|no such column: analysis_options_json|no such column: analysis_rays_json|no such column: intersections_json|no such column: shared_at/i.test(message)) {
           // 구버전 DB(도분초 컬럼 미생성)에서도 목록이 보이도록 하위호환 조회
           result = await sqlite.query({
             database: dbName,
@@ -6599,6 +6764,11 @@
               lat_dms: row.lat_dms || null,
               lng_dms: row.lng_dms || null,
               intersections_count: row.intersections_count,
+              source_observations: parseBearEstimateJson(row.source_observations_json, "array"),
+              analysis_options: normalizeAnalysisOptions(row.analysis_options_json),
+              analysis_rays: parseBearEstimateJson(row.analysis_rays_json, "array"),
+              analysis_intersections: parseBearEstimateJson(row.intersections_json, "array"),
+              shared_at: row.shared_at || null,
               created_at: row.created_at
             };
           });
@@ -6628,6 +6798,7 @@
     currentBearEstimateFallbackMode = usedFallback;
 
     renderBears(items, usedFallback);
+    void reconcileSharedBearEstimates();
 
     syncBearMarkersForActiveTab();
 

@@ -123,7 +123,7 @@ PostgreSQL 실시간 목록 DB 연동
 
 생성 테이블
 - bear_estimates_realtime
-        - 컬럼: id, bear_estimate_id, bear_code, owner, place, lat, lng, lat_dms, lng_dms, intersections_count, source_created_at, uploaded_at, payload
+        - 컬럼: id, bear_estimate_id, bear_code, owner, place, lat, lng, lat_dms, lng_dms, intersections_count, source_observations (JSONB), analysis_options (JSONB), analysis_rays (JSONB), analysis_intersections (JSONB), source_created_at, uploaded_at, payload
 
 실시간 업로드 API
 - 저장: POST /api/realtime/bear-estimates

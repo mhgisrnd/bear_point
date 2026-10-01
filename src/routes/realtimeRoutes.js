@@ -1,4 +1,5 @@
 const express = require("express");
+const { pgQuery } = require("../db/postgres");
 const {
   listRealtimeBearEstimates,
   insertRealtimeBearEstimate,
@@ -9,6 +10,17 @@ const {
 // 실시간 곰 추적위치 목록 조회 API 라우터를 생성한다.
 function createRealtimeRouter() {
   const router = express.Router();
+
+  router.get("/bear-entities", async (req, res) => {
+    try {
+      const result = await pgQuery(
+        "SELECT id, bear_code, birth_year, sex FROM bear_entities WHERE use_yn = TRUE AND is_active = TRUE ORDER BY bear_code"
+      );
+      res.json({ ok: true, items: result.rows });
+    } catch (error) {
+      res.status(500).json({ ok: false, message: "개체 목록 조회 실패" });
+    }
+  });
 
   router.get("/bear-estimates", async (req, res) => {
     try {

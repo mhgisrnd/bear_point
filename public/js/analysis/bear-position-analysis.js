@@ -4,7 +4,7 @@
 // ── 위치분석 로직 순서도 ──────────────────────────────────────────────────
 //
 //  [입력] observations: 관측점 배열 (lat, lng, heading, bearCode)
-//         options: distanceLimitM, declinationDeg, spreadToleranceM
+//         options: distanceLimitM, declinationDeg
 //
 //   ① 유효성 검사 (validateObservations)
 //      - 관측점 2개 미만 → 실패 (NEED_MIN_TWO)
@@ -32,10 +32,9 @@
 //      - 이유: 이상 쌍이 섞이면 나머지 교차점 평균도 신뢰하기 어렵다는 판단
 //      ※ 완화 시: 이상 쌍만 건너뛰고 유효 교차점만으로 평균 계산 가능
 //
-//   ⑥ 퍼짐 판정 (현재 비활성 — 주석 처리됨)
-//      - 유효 교차점 중 중심에서 가장 먼 거리(spreadM) > spreadToleranceM 이면 → 실패
-//      - 적정 기준치가 현장마다 달라 사용자 판단에 맡김
-//      - spreadM 값은 결과 diagnostics에 포함되어 확인 가능
+//   ⑥ 교차점 퍼짐 거리(spreadM) 계산
+//      - 유효 교차점 중 평균 위치에서 가장 먼 거리
+//      - 결과 참고값이며 분석 성공 여부에는 사용하지 않음
 //
 //   ⑦ 결과 계산
 //      - 유효 교차점들의 산술평균 (averagePoint)
@@ -222,13 +221,6 @@
     // opts.declinationDeg 미지정이면 0(보정 없음).
     const declinationDeg = Number.isFinite(Number(opts.declinationDeg)) ? Number(opts.declinationDeg) : 0;
 
-    // 교차점 퍼짐 허용 반경(m): 모든 교차점의 산술평균 중심에서 가장 먼 교차점까지의 거리가
-    // 이 값을 초과하면 "교차점 불일치"로 실패 처리. 기본값 180m.
-    // 관측 오차 허용 범위를 크게 잡으려면 이 값을 늘리면 됨(예: 300~500).
-    const spreadToleranceM = Number.isFinite(Number(opts.spreadToleranceM)) && Number(opts.spreadToleranceM) > 0
-      ? Number(opts.spreadToleranceM)
-      : 180;
-
     const originLat = observations.reduce((sum, obs) => sum + Number(obs.lat), 0) / observations.length;
     const rays = observations.map((obs) => {
       const headingDeg = parseHeadingDegrees(obs.heading);
@@ -317,25 +309,6 @@
     const center = averagePoint(intersections);
     const spreadM = maxDistanceFrom(intersections, center);
 
-    // 퍼짐 판정: 교차점 분산이 spreadToleranceM을 초과하면 실패.
-    // → 적정 기준치가 현장 운용에 따라 달라지므로 현재 비활성화.
-    //   spreadM 값은 결과 diagnostics에 포함되므로 사용자가 직접 판단.
-    // if (Number.isFinite(spreadM) && spreadM > spreadToleranceM) {
-    //   return {
-    //     ok: false,
-    //     code: "INCONSISTENT_INTERSECTIONS",
-    //     message: "잘못된 관측입니다. -> 교차점 불일치",
-    //     diagnostics: {
-    //       intersectionsCount: intersections.length,
-    //       spreadM,
-    //       spreadToleranceM,
-    //       parallelCount,
-    //       backwardCount,
-    //       outOfRangeCount
-    //     }
-    //   };
-    // }
-
     const estimatedLatLng = toLatLng(center[0], center[1], originLat);
     return {
       ok: true,
@@ -350,8 +323,7 @@
         spreadM: Number.isFinite(spreadM) ? spreadM : 0,
         options: {
           distanceLimitM: Number.isFinite(maxDistanceM) ? maxDistanceM : null,
-          declinationDeg,
-          spreadToleranceM
+          declinationDeg
         },
         analysisDetails: {
           originLat,

@@ -430,3 +430,36 @@
     min-height: clamp(300px, 42vh, 420px);
   }
 }
+
+.admin-analysis-info {
+  position: absolute;
+  left: 14px;
+  bottom: 14px;
+  z-index: 4;
+  width: min(310px, calc(100% - 28px));
+  max-height: 55%;
+  overflow: auto;
+  padding: 13px 15px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.96);
+  color: #17342a;
+  box-shadow: 0 8px 28px rgba(18, 41, 32, 0.24);
+  font-size: 12px;
+}
+
+.admin-analysis-info[hidden] { display: none; }
+.admin-analysis-info strong { display: block; padding-right: 20px; font-size: 14px; }
+.admin-analysis-conditions { margin-top: 5px; font-weight: 700; }
+.admin-analysis-info ul { margin: 8px 0; padding-left: 18px; }
+.admin-analysis-info li + li { margin-top: 3px; }
+.admin-analysis-info small { color: #52675c; }
+.admin-analysis-close {
+  position: absolute;
+  right: 8px;
+  top: 5px;
+  border: 0;
+  background: transparent;
+  color: #52675c;
+  font-size: 21px;
+  cursor: pointer;
+}

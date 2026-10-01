@@ -429,6 +429,7 @@ window.createObsListModule = function createObsListModule({
       lng,
       heading,
       createdAt: row.created_at || row.createdAt || row.created || null,
+      updatedAt: row.updated_at || row.updatedAt || null,
       detectors,
       _saveFlashUntil: hasActiveFlash ? cachedFlashUntil : 0,
       _saveFlashPreset: hasActiveFlash ? (cachedFlashPreset || "default") : "default",
@@ -501,7 +502,7 @@ window.createObsListModule = function createObsListModule({
       const queryResult = await sqlite.query({
         database: dbName,
         statement: `
-          SELECT id, place, bear_code, owner, lat, lng, heading, created_at, detectors_json
+          SELECT id, place, bear_code, owner, lat, lng, heading, created_at, updated_at, detectors_json
           FROM observations
           ORDER BY created_at DESC, id ASC
         `,
@@ -971,6 +972,15 @@ window.createObsListModule = function createObsListModule({
           text-overflow: ellipsis;
           white-space: nowrap;
         }
+        #analysis-dialog-body input[type="number"] {
+          appearance: textfield;
+          -moz-appearance: textfield;
+        }
+        #analysis-dialog-body input[type="number"]::-webkit-inner-spin-button,
+        #analysis-dialog-body input[type="number"]::-webkit-outer-spin-button {
+          -webkit-appearance: none;
+          margin: 0;
+        }
 
         @media (max-width: 640px) {
           #analysis-dialog-overlay {
@@ -1003,13 +1013,16 @@ window.createObsListModule = function createObsListModule({
             gap: 4px !important;
           }
           .analysis-input {
-            height: 32px !important;
+            height: 56px !important;
             padding: 0 8px !important;
             font-size: 13px !important;
           }
+          .analysis-declination-control .analysis-input {
+            padding-left: 43px !important;
+          }
           #analysis-dialog-actions {
             gap: 6px !important;
-            margin-top: 2px !important;
+            margin-top: 12px !important;
           }
           .analysis-btn-action {
             height: 32px !important;
@@ -1099,7 +1112,7 @@ window.createObsListModule = function createObsListModule({
     distanceInput.step = "1";
     distanceInput.min = "1";
     distanceInput.inputMode = "decimal";
-    distanceInput.style.height = "34px";
+    distanceInput.style.height = "56px";
     distanceInput.style.border = "1px solid rgba(255,255,255,0.3)";
     distanceInput.style.borderRadius = "8px";
     distanceInput.style.background = "rgba(255,255,255,0.96)";
@@ -1109,7 +1122,7 @@ window.createObsListModule = function createObsListModule({
     distanceInput.style.width = "100%";
     distanceWrap.appendChild(distanceInput);
 
-    const declinationWrap = document.createElement("label");
+    const declinationWrap = document.createElement("div");
     declinationWrap.className = "analysis-input-label";
     declinationWrap.style.display = "flex";
     declinationWrap.style.flexDirection = "column";
@@ -1117,25 +1130,96 @@ window.createObsListModule = function createObsListModule({
     declinationWrap.style.fontSize = "12px";
     declinationWrap.style.fontWeight = "700";
     declinationWrap.style.color = "rgba(255,255,255,0.94)";
-    declinationWrap.textContent = "편각 (도)";
+
+    const declinationLabel = document.createElement("label");
+    declinationLabel.htmlFor = "analysis-declination-input";
+    declinationLabel.textContent = "편각 (도)";
+    declinationWrap.appendChild(declinationLabel);
 
     const declinationInput = document.createElement("input");
+    declinationInput.id = "analysis-declination-input";
     declinationInput.className = "analysis-input";
-    declinationInput.type = "text";
-    declinationInput.inputMode = "text";
+    declinationInput.type = "number";
+    declinationInput.step = "any";
+    declinationInput.inputMode = "decimal";
     declinationInput.setAttribute("autocapitalize", "off");
     declinationInput.setAttribute("autocomplete", "off");
     declinationInput.setAttribute("autocorrect", "off");
     declinationInput.setAttribute("spellcheck", "false");
-    declinationInput.style.height = "34px";
+    declinationInput.style.height = "56px";
     declinationInput.style.border = "1px solid rgba(255,255,255,0.3)";
     declinationInput.style.borderRadius = "8px";
     declinationInput.style.background = "rgba(255,255,255,0.96)";
-    declinationInput.style.padding = "0 10px";
+    declinationInput.style.padding = "0 10px 0 43px";
     declinationInput.style.fontSize = "14px";
     declinationInput.style.boxSizing = "border-box";
     declinationInput.style.width = "100%";
-    declinationWrap.appendChild(declinationInput);
+    declinationInput.style.minWidth = "0";
+
+    const declinationControl = document.createElement("div");
+    declinationControl.className = "analysis-declination-control";
+    declinationControl.style.display = "flex";
+    declinationControl.style.alignItems = "center";
+    declinationControl.style.gap = "4px";
+    declinationControl.style.width = "100%";
+
+    const declinationInputBox = document.createElement("div");
+    declinationInputBox.style.position = "relative";
+    declinationInputBox.style.flex = "1 1 auto";
+    declinationInputBox.style.minWidth = "0";
+
+    const declinationSignBtn = document.createElement("button");
+    declinationSignBtn.type = "button";
+    declinationSignBtn.textContent = "±";
+    declinationSignBtn.setAttribute("aria-label", "편각 부호 전환");
+    declinationSignBtn.style.position = "absolute";
+    declinationSignBtn.style.left = "5px";
+    declinationSignBtn.style.top = "50%";
+    declinationSignBtn.style.transform = "translateY(-50%)";
+    declinationSignBtn.style.width = "32px";
+    declinationSignBtn.style.height = "36px";
+    declinationSignBtn.style.padding = "0";
+    declinationSignBtn.style.border = "1px solid #cbd5e1";
+    declinationSignBtn.style.borderRadius = "5px";
+    declinationSignBtn.style.background = "#f1f5f9";
+    declinationSignBtn.style.color = "#0f172a";
+    declinationSignBtn.style.fontSize = "18px";
+    declinationSignBtn.style.fontWeight = "700";
+    declinationSignBtn.style.cursor = "pointer";
+    declinationInputBox.appendChild(declinationInput);
+    declinationInputBox.appendChild(declinationSignBtn);
+
+    const declinationSteps = document.createElement("div");
+    declinationSteps.style.display = "flex";
+    declinationSteps.style.flexDirection = "column";
+    declinationSteps.style.gap = "2px";
+    declinationSteps.style.flex = "0 0 34px";
+
+    function createDeclinationStepButton(label, ariaLabel) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = label;
+      button.setAttribute("aria-label", ariaLabel);
+      button.style.width = "34px";
+      button.style.height = "27px";
+      button.style.padding = "0";
+      button.style.border = "1px solid rgba(255,255,255,0.4)";
+      button.style.borderRadius = "5px";
+      button.style.background = "rgba(255,255,255,0.2)";
+      button.style.color = "#ffffff";
+      button.style.fontSize = "12px";
+      button.style.fontWeight = "700";
+      button.style.cursor = "pointer";
+      return button;
+    }
+
+    const declinationUpBtn = createDeclinationStepButton("▲", "편각 1도 증가");
+    const declinationDownBtn = createDeclinationStepButton("▼", "편각 1도 감소");
+    declinationSteps.appendChild(declinationUpBtn);
+    declinationSteps.appendChild(declinationDownBtn);
+    declinationControl.appendChild(declinationInputBox);
+    declinationControl.appendChild(declinationSteps);
+    declinationWrap.appendChild(declinationControl);
 
     const errorEl = document.createElement("div");
     errorEl.id = "analysis-dialog-error";
@@ -1152,6 +1236,7 @@ window.createObsListModule = function createObsListModule({
     actions.style.alignItems = "center";
     actions.style.gridColumn = "1 / -1";
     actions.style.flexWrap = "nowrap";
+    actions.style.marginTop = "12px";
 
     const cancelBtn = document.createElement("button");
     cancelBtn.className = "analysis-btn-action";
@@ -1206,6 +1291,9 @@ window.createObsListModule = function createObsListModule({
       desc,
       distanceInput,
       declinationInput,
+      declinationSignBtn,
+      declinationUpBtn,
+      declinationDownBtn,
       errorEl,
       cancelBtn,
       applyBtn,
@@ -1374,6 +1462,23 @@ window.createObsListModule = function createObsListModule({
         emitAnalysisPreview(buildPreviewPayload());
       };
 
+      function adjustDeclination(step) {
+        const current = parseDeclinationValue(dialog.declinationInput.value);
+        const value = current.ok ? current.value : 0;
+        dialog.declinationInput.value = String(Number((value + step).toFixed(6)));
+        dialog.declinationInput.blur();
+        dialog.declinationInput.dispatchEvent(new Event("input", { bubbles: true }));
+      }
+
+      dialog.declinationUpBtn.onclick = function () { adjustDeclination(1); };
+      dialog.declinationDownBtn.onclick = function () { adjustDeclination(-1); };
+      dialog.declinationSignBtn.onclick = function () {
+        const current = parseDeclinationValue(dialog.declinationInput.value);
+        dialog.declinationInput.value = String(current.ok ? -current.value : 0);
+        dialog.declinationInput.blur();
+        dialog.declinationInput.dispatchEvent(new Event("input", { bubbles: true }));
+      };
+
       dialog.cancelBtn.onclick = function () {
         closeWith(null);
       };
@@ -1423,6 +1528,7 @@ window.createObsListModule = function createObsListModule({
           return;
         }
         if (event.key === "Enter") {
+          if (event.target === dialog.declinationSignBtn || event.target === dialog.declinationUpBtn || event.target === dialog.declinationDownBtn) return;
           event.preventDefault();
           if (event.target === dialog.distanceInput) {
             dialog.declinationInput.focus();
@@ -1473,8 +1579,7 @@ window.createObsListModule = function createObsListModule({
     }, selectedItems, function (values) {
       return analysisModule.analyzePosition(selectedItems, {
         distanceLimitM: values.distanceLimitM,
-        declinationDeg: values.declinationDeg,
-        spreadToleranceM: 180
+        declinationDeg: values.declinationDeg
       });
     });
     if (!optionInput) {
@@ -1502,9 +1607,16 @@ window.createObsListModule = function createObsListModule({
           id: item.id,
           place: getObservationLabel(item),
           bearCode: item.bearCode,
+          owner: item.owner || null,
           heading: item.heading,
           lat: item.lat,
-          lng: item.lng
+          lng: item.lng,
+          createdAt: item.createdAt || null,
+          updatedAt: item.updatedAt || null,
+          detectors: (Array.isArray(item.detectors) ? item.detectors : []).map((detector) => ({
+            detectorName: detector.detectorName,
+            signalStrength: detector.signalStrength
+          }))
         }))
       });
     }
