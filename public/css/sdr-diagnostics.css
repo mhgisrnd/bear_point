@@ -76,7 +76,7 @@
 .sdr-section h3, .sdr-section summary { margin: 0 0 10px; font-size: 16px; font-weight: 700; }
 .sdr-section summary { cursor: pointer; min-height: 32px; }
 .sdr-section:not([open]) > summary { margin-bottom: 0; }
-.sdr-usb-section > summary { display: flex; align-items: center; justify-content: space-between; list-style: none; padding: 8px 10px; border-radius: 8px; background: #edf5f6; color: #145d75; }
+.sdr-usb-section > h3 { padding: 8px 10px; border-radius: 8px; background: #edf5f6; color: #145d75; }
 .sdr-usb-section > summary::-webkit-details-marker { display: none; }
 .sdr-chevron { font-size: 22px; line-height: 1; transition: transform .15s; }
 .sdr-usb-section[open] .sdr-chevron { transform: rotate(180deg); }
@@ -101,6 +101,16 @@
 .sdr-help { margin: 10px 0; color: #526477; font-size: 14px; }
 .sdr-help summary { min-height: 36px; color: #145d75; font-size: 14px; }
 .sdr-fields input, .sdr-fields select { box-sizing: border-box; width: 100%; min-width: 0; min-height: 46px; margin-top: 5px; padding: 8px; border: 1px solid #94a3b8; border-radius: 8px; color: #172b3a; background: #fff; font: 16px system-ui, sans-serif; }
+.sdr-fields select[data-band], .sdr-fields select[data-mode] {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-left: 12px;
+  padding-right: 40px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16'%3E%3Cpath d='m4 6 4 4 4-4' fill='none' stroke='%2364748b' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 14px center;
+  background-size: 16px 16px;
+}
 .sdr-fields:disabled { opacity: .55; }
 .sdr-fields input:focus-visible, .sdr-fields select:focus-visible { outline: 3px solid #2563eb; outline-offset: 2px; }
 .sdr-metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }

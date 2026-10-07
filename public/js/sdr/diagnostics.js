@@ -443,11 +443,7 @@
       restoredFixed = true;
       setTask("fixed", false);
     }
-    if (snapshot.state === "connected" && (!current || current.state !== "connected")) {
-      dialog.querySelector("[data-usb-section]").open = false;
-    } else if (snapshot.state !== "connected") {
-      dialog.querySelector("[data-usb-section]").open = true;
-    }
+    dialog.querySelector("[data-usb-heading]").textContent = connected ? "??? ???" : "USB ??";
     const previousReception = current && current.receptionState;
     current = snapshot;
     updateDialogViewport(snapshot);
@@ -455,7 +451,7 @@
     const names = { unsupported: "USB Host 미지원", permissionPending: "USB 권한 대기 중", connected: "USB 연결됨", idle: "USB 연결 대기" };
     status.textContent = names[snapshot.state] || "상태 확인 필요";
     list.replaceChildren();
-    const devices = (snapshot.devices || []).filter(device => device.candidate);
+    const devices = (snapshot.devices || []).filter(device => device.candidate && (!connected || device.connected));
     if (!devices.length) {
       const empty = document.createElement("p");
       empty.textContent = "RTL-SDR 없음 · USB 연결 확인";
@@ -481,7 +477,7 @@
       const button = document.createElement("button");
       button.type = "button";
       button.className = "sdr-primary";
-      button.textContent = device.hasPermission ? "연결" : "권한 허용 및 연결";
+      button.textContent = "연결";
       button.disabled = busy || snapshot.state === "permissionPending" || !device.candidate || !snapshot.hostSupported;
       button.addEventListener("click", () => run(async () => {
         const attempt = ++connectionAttempt;
