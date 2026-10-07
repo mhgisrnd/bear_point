@@ -803,7 +803,9 @@
       }
 
       setStatus(
-        `실시간 위치를 지도 중심으로 이동했습니다. (${item.lat.toFixed(5)}, ${item.lon.toFixed(5)})`,
+        item.bearCode && item.bearCode !== "-"
+          ? `[${item.bearCode}] 개체의 실시간 위치로 이동했습니다.`
+          : "선택한 개체의 실시간 위치로 이동했습니다.",
         "ok"
       );
     });

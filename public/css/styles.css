@@ -430,6 +430,65 @@ a.leaflet-control-locate-btn.is-active svg{
   white-space: nowrap;
 }
 
+.map-detail-popup .obs-popup-card__eyebrow {
+  color: #1d4ed8;
+  font-size: 14px;
+  padding: 3px 7px 10px;
+  margin-bottom: 10px;
+  border-bottom: 1px solid #e2e8f0;
+  padding-right: 24px;
+}
+
+.map-detail-popup .obs-popup-card__grid {
+  gap: 7px;
+}
+
+.map-detail-popup .obs-popup-card__row {
+  background: #f4f7fb;
+  padding: 8px;
+  border-radius: 8px;
+}
+
+.map-detail-popup .obs-popup-card__label {
+  color: #64748b;
+  margin-bottom: 4px;
+  font-weight: 600;
+}
+
+.map-detail-popup .obs-popup-card__actions {
+  position: sticky;
+  bottom: -12px;
+  z-index: 1;
+  background: #fff;
+  border-top: 1px solid #e2e8f0;
+  padding: 12px 0 0;
+  gap: 6px;
+}
+
+.map-detail-popup .obs-popup-card__action-btn {
+  min-height: 32px;
+  box-shadow: none;
+  transition: filter 120ms;
+}
+
+.map-detail-popup .obs-popup-card__action-btn:hover {
+  filter: brightness(0.94);
+}
+
+.map-detail-popup .obs-popup-card__action-btn--file {
+  background: #2563eb;
+}
+
+.map-detail-popup .obs-popup-card__action-btn--xls {
+  background: #e8f5ee;
+  color: #167344;
+}
+
+.map-detail-popup .obs-popup-card__action-btn--delete {
+  background: #fff1f2;
+  color: #be123c;
+}
+
 .obs-popup-det-table {
   display: flex;
   flex-direction: column;

@@ -747,8 +747,8 @@ window.createObsRegisterModule = function createObsRegisterModule({
       throw new Error("명칭을 입력해야 합니다.");
     }
     if (!bearCode) {
-      markCoreFieldError(regBearEl, "곰 코드를 선택해주세요.");
-      throw new Error("곰 코드를 선택해주세요.");
+      markCoreFieldError(regBearEl, "개체 코드를 입력하거나 선택해주세요.");
+      throw new Error("개체 코드를 입력하거나 선택해주세요.");
     }
     if (!coordParsed) {
       markCoreFieldError(regCoordEl, "좌표 형식이 올바르지 않습니다. 예: 35.326459, 127.637712");
@@ -796,8 +796,8 @@ window.createObsRegisterModule = function createObsRegisterModule({
       throw new Error(isManualEntryEnabled() ? "수동 방향각을 입력하세요. (예: 270)" : "GPS 방향각을 확인할 수 없어 등록할 수 없습니다.");
     }
     if (!bearCode) {
-      markCoreFieldError(regBearEl, "곰 코드를 선택해주세요.");
-      throw new Error("곰 코드를 선택해주세요.");
+      markCoreFieldError(regBearEl, "개체 코드를 입력하거나 선택해주세요.");
+      throw new Error("개체 코드를 입력하거나 선택해주세요.");
     }
 
     return {
@@ -1634,6 +1634,9 @@ window.createObsRegisterModule = function createObsRegisterModule({
     }
 
     if (regBearEl) {
+      regBearEl.addEventListener("input", function() {
+        clearCoreFieldError(regBearEl);
+      });
       regBearEl.addEventListener("change", function() {
         clearCoreFieldError(regBearEl);
       });

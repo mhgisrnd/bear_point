@@ -6,7 +6,7 @@
   dialog.className = "sdr-dialog";
   dialog.setAttribute("aria-labelledby", "sdr-title");
   dialog.innerHTML = `
-    <div class="sdr-header"><div class="sdr-title-group"><button type="button" data-back hidden aria-label="탐색 재개">‹ 탐색</button><div><span class="sdr-eyebrow">SDR · 수신 테스트</span><h2 id="sdr-title">수신기 설정</h2></div></div><button type="button" data-close>닫기</button></div>
+    <div class="sdr-header"><div class="sdr-title-group"><div><span class="sdr-eyebrow">SDR · 수신 테스트</span><h2 id="sdr-title">수신기 설정</h2></div></div><button type="button" data-back hidden aria-label="탐색 재개">‹ 탐색</button><button type="button" data-close>닫기</button></div>
     <div class="sdr-body">
     <p class="sdr-status" role="status">연결 상태 확인 전</p>
     <p class="sdr-message" role="alert"></p>
@@ -162,8 +162,10 @@
     const fixedReceiving = current && ["starting", "receiving"].includes(current.receptionState);
     startButton.textContent = task === "scan" ? scanning ? "탐색 중" : canResumeScan() ? "탐색 재개" : "탐색 시작" : "수신 시작";
     stopButton.textContent = task === "scan" ? scanning ? "일시정지" : "초기화" : fixedReceiving ? "정지" : "초기화";
-    dialog.querySelector("[data-back]").hidden = task !== "fixed" || !candidateSelected ||
-      !lastScan || !current || !current.scanResumeAvailable;
+    const showBack = task === "fixed" && candidateSelected &&
+      !!(lastScan && current && current.scanResumeAvailable);
+    dialog.querySelector("[data-back]").hidden = !showBack;
+    dialog.querySelector("[data-close]").hidden = showBack;
   }
 
   function setTask(next, rerender = true) {

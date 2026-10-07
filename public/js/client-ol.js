@@ -121,6 +121,7 @@
       if (statusEl) statusEl.textContent = String(message || "");
     },
     onTabActivated: function () {
+      closeObservationPopup();
       // 목록 패널이 접힌 상태에서 탭을 눌러도 실제 목록이 보이도록 강제로 펼친다.
       ensureBearEstimatePanelVisible();
       syncBearMarkersForActiveTab();
@@ -140,7 +141,7 @@
       const lat = Number(item && item.lat);
       const lng = Number(item && item.lng);
       if (!Number.isFinite(lat) || !Number.isFinite(lng)) return;
-      flyToLatLng([lat, lng], 16);
+      focusBearListItem(item.id, true, [lat, lng]);
     }
   }) : null;
 
@@ -1379,6 +1380,7 @@
   // }
 
   function showSavedTxtPreviewPopup(options) {
+    closeObservationPopup();
     return new Promise(function (resolve) {
       const fileName = options && options.fileName ? options.fileName : "bear_estimate.txt";
       const txtContent = options && typeof options.txtContent === "string" ? options.txtContent : "";
@@ -1648,6 +1650,7 @@
 
   // XLS 파일 미리보기 팝업 (저장하기, 공유하기, 닫기 3개 버튼만 지원)
   function showSavedXlsPreviewPopup(options) {
+    closeObservationPopup();
     return new Promise(function (resolve) {
       const fileName = options && options.fileName ? options.fileName : "bear_estimate.xlsx";
       const previewHtml = options && typeof options.previewHtml === "string" ? options.previewHtml : "";
@@ -3130,14 +3133,14 @@
     return result;
   }
 
-  function flyToLatLng(latlng, zoom) {
+  function flyToLatLng(latlng, zoom, onComplete) {
     if (!Array.isArray(latlng) || latlng.length < 2) return;
     const target = mapCoordFromWgs84(latlng[0], latlng[1]);
     view.animate({
       center: target,
       zoom: typeof zoom === "number" ? zoom : (view.getZoom() || 11),
       duration: 700
-    });
+    }, onComplete);
   }
 
   // latlngList: [{lat, lng}, ...] 배열을 모두 포함하는 extent로 fit
@@ -3894,6 +3897,7 @@
   }
 
   const observationPopupEl = document.createElement("div");
+  observationPopupEl.className = "map-detail-popup";
   observationPopupEl.style.position = "relative";
   observationPopupEl.style.minWidth = "180px";
   observationPopupEl.style.maxWidth = "240px";
@@ -3901,7 +3905,7 @@
   observationPopupEl.style.borderRadius = "14px";
   observationPopupEl.style.background = "rgba(255,255,255,0.97)";
   observationPopupEl.style.boxShadow = "0 12px 28px rgba(15,23,42,0.22)";
-  observationPopupEl.style.border = "1px solid rgba(194,65,12,0.18)";
+  observationPopupEl.style.border = "1px solid rgba(148,163,184,0.3)";
   observationPopupEl.style.color = "#1f2937";
   observationPopupEl.style.fontSize = "13px";
   observationPopupEl.style.lineHeight = "1.5";
@@ -3918,7 +3922,7 @@
   observationPopupCloseEl.style.right = "8px";
   observationPopupCloseEl.style.border = "0";
   observationPopupCloseEl.style.background = "transparent";
-  observationPopupCloseEl.style.color = "#9a3412";
+  observationPopupCloseEl.style.color = "#64748b";
   observationPopupCloseEl.style.fontSize = "18px";
   observationPopupCloseEl.style.lineHeight = "1";
   observationPopupCloseEl.style.cursor = "pointer";
@@ -3990,6 +3994,7 @@
 
   // 화면 하단/상단 여유 공간을 기준으로 상세 팝업이 잘리지 않게 배치한다.
   function syncObservationPopupPlacement(coordinate) {
+    coordinate = coordinate || observationPopupOverlay.getPosition();
     const obsSheet = document.getElementById("obs-sheet");
     const isMobile = window.matchMedia && window.matchMedia("(max-width: 899px)").matches;
     const isListVisible = !!(obsSheet && !obsSheet.classList.contains("hidden"));
@@ -3998,7 +4003,7 @@
       ? viewportEl.getBoundingClientRect()
       : null;
     const popupMarginPx = 18;
-    const popupGapPx = 18;
+    const popupGapPx = 58;
 
     let placement = "bottom-center";
     let offset = [0, -popupGapPx];
@@ -4008,15 +4013,29 @@
     if (viewportRect && coordinate && typeof map.getPixelFromCoordinate === "function") {
       const pixel = map.getPixelFromCoordinate(coordinate);
       if (Array.isArray(pixel) && Number.isFinite(pixel[1])) {
-        const availableAbove = Math.max(0, pixel[1] - popupMarginPx);
-        const availableBelow = Math.max(0, viewportRect.height - pixel[1] - popupMarginPx);
+        const visibleViewport = window.visualViewport;
+        const visibleTop = visibleViewport ? visibleViewport.offsetTop : 0;
+        const visibleBottom = visibleViewport
+          ? visibleTop + visibleViewport.height
+          : window.innerHeight;
+        const mapTop = Math.max(0, visibleTop - viewportRect.top);
+        let mapBottom = Math.min(viewportRect.height, visibleBottom - viewportRect.top);
+        if (isMobile) {
+          const listPanel = document.querySelector(".panel-bottom-left");
+          if (listPanel && listPanel.getClientRects().length) {
+            const panelRect = listPanel.getBoundingClientRect();
+            mapBottom = Math.min(mapBottom, panelRect.top - viewportRect.top);
+          }
+        }
+        const availableAbove = Math.max(0, pixel[1] - mapTop - popupMarginPx - popupGapPx);
+        const availableBelow = Math.max(0, mapBottom - pixel[1] - popupMarginPx - 38);
         const showBelow = availableBelow > availableAbove;
 
         placement = showBelow ? "top-center" : "bottom-center";
-        offset = showBelow ? [0, popupGapPx] : [0, -popupGapPx];
+        offset = showBelow ? [0, 38] : [0, -popupGapPx];
 
         const availableHeight = showBelow ? availableBelow : availableAbove;
-        const cappedHeight = Math.max(140, Math.floor(availableHeight - popupMarginPx));
+        const cappedHeight = Math.max(0, Math.floor(availableHeight));
         maxHeight = `${Math.min(cappedHeight, isMobile && isListVisible ? 340 : 360)}px`;
       }
     }
@@ -4025,6 +4044,7 @@
     observationPopupOverlay.setOffset(offset);
     observationPopupEl.style.maxWidth = maxWidth;
     observationPopupEl.style.maxHeight = maxHeight;
+    observationPopupEl.style.boxSizing = "border-box";
     observationPopupEl.style.overflowY = "auto";
     observationPopupEl.style.overscrollBehavior = "contain";
   }
@@ -4042,12 +4062,38 @@
     observationPopupOverlay.setPosition(coordinate);
   }
 
+  let bearListFocusVersion = 0;
+
   function closeObservationPopup() {
+    bearListFocusVersion += 1;
     observationPopupEl.style.display = "none";
     observationPopupOverlay.setPosition(undefined);
     observationPopupEl._observationData = null;
     observationPopupEl._bearEstimateData = null;
   }
+
+  function focusBearListItem(id, isRealtime, latlng) {
+    closeObservationPopup();
+    const focusVersion = bearListFocusVersion;
+    view.cancelAnimations();
+    flyToLatLng(latlng, 16, function (completed) {
+      if (completed && focusVersion === bearListFocusVersion) {
+        openBearListItemPopup(id, isRealtime);
+      }
+    });
+  }
+
+  function openBearListItemPopup(id, isRealtime) {
+    const feature = bearMarkerSource.getFeatures().find(function (candidate) {
+      const data = candidate.get("bearEstimateData");
+      return data && String(data.id) === String(id) && !!data.isRealtime === isRealtime;
+    });
+    if (feature) openObservationPopup(feature);
+  }
+
+  map.on("moveend", function () {
+    if (observationPopupEl.style.display !== "none") syncObservationPopupPlacement();
+  });
 
   observationPopupCloseEl.addEventListener("click", function () {
     closeObservationPopup();
@@ -4056,6 +4102,11 @@
   window.addEventListener("resize", function () {
     syncObservationPopupPlacement();
   });
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener("resize", function () {
+      syncObservationPopupPlacement();
+    });
+  }
 
   let mapGesturePointerId = null;
   let mapGestureMode = null; // null | coord-drag | heading-drag
@@ -6625,7 +6676,13 @@
         '</div>';
 
       el.addEventListener("click", function () {
-        flyToLatLng([it.lat, it.lng], 16);
+        focusBearListItem(it.id, false, [it.lat, it.lng]);
+        if (statusEl) {
+          statusEl.textContent = bearCode !== "-"
+            ? `[${bearCode}] 개체의 로컬 위치로 이동했습니다.`
+            : "선택한 개체의 로컬 위치로 이동했습니다.";
+          statusEl.style.color = "#0a6f30";
+        }
       });
 
       const dlBtn = el.querySelector(".bears-txt-dl-btn");
