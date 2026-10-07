@@ -3995,56 +3995,49 @@
   // 화면 하단/상단 여유 공간을 기준으로 상세 팝업이 잘리지 않게 배치한다.
   function syncObservationPopupPlacement(coordinate) {
     coordinate = coordinate || observationPopupOverlay.getPosition();
-    const obsSheet = document.getElementById("obs-sheet");
-    const isMobile = window.matchMedia && window.matchMedia("(max-width: 899px)").matches;
-    const isListVisible = !!(obsSheet && !obsSheet.classList.contains("hidden"));
-    const viewportEl = map && typeof map.getViewport === "function" ? map.getViewport() : null;
-    const viewportRect = viewportEl && typeof viewportEl.getBoundingClientRect === "function"
-      ? viewportEl.getBoundingClientRect()
-      : null;
-    const popupMarginPx = 18;
-    const popupGapPx = 58;
-
-    let placement = "bottom-center";
-    let offset = [0, -popupGapPx];
-    let maxWidth = isMobile && isListVisible ? "200px" : "220px";
-    let maxHeight = isMobile && isListVisible ? "340px" : "360px";
-
-    if (viewportRect && coordinate && typeof map.getPixelFromCoordinate === "function") {
-      const pixel = map.getPixelFromCoordinate(coordinate);
-      if (Array.isArray(pixel) && Number.isFinite(pixel[1])) {
-        const visibleViewport = window.visualViewport;
-        const visibleTop = visibleViewport ? visibleViewport.offsetTop : 0;
-        const visibleBottom = visibleViewport
-          ? visibleTop + visibleViewport.height
-          : window.innerHeight;
-        const mapTop = Math.max(0, visibleTop - viewportRect.top);
-        let mapBottom = Math.min(viewportRect.height, visibleBottom - viewportRect.top);
-        if (isMobile) {
-          const listPanel = document.querySelector(".panel-bottom-left");
-          if (listPanel && listPanel.getClientRects().length) {
-            const panelRect = listPanel.getBoundingClientRect();
-            mapBottom = Math.min(mapBottom, panelRect.top - viewportRect.top);
-          }
-        }
-        const availableAbove = Math.max(0, pixel[1] - mapTop - popupMarginPx - popupGapPx);
-        const availableBelow = Math.max(0, mapBottom - pixel[1] - popupMarginPx - 38);
-        const showBelow = availableBelow > availableAbove;
-
-        placement = showBelow ? "top-center" : "bottom-center";
-        offset = showBelow ? [0, 38] : [0, -popupGapPx];
-
-        const availableHeight = showBelow ? availableBelow : availableAbove;
-        const cappedHeight = Math.max(0, Math.floor(availableHeight));
-        maxHeight = `${Math.min(cappedHeight, isMobile && isListVisible ? 340 : 360)}px`;
+    if (!coordinate) return;
+    const rect = map.getViewport().getBoundingClientRect();
+    const pixel = map.getPixelFromCoordinate(coordinate);
+    if (!pixel) return;
+    const visual = window.visualViewport;
+    const screenLeft = Math.max(0, (visual ? visual.offsetLeft : 0) - rect.left);
+    const screenRight = Math.min(rect.width, (visual ? visual.offsetLeft + visual.width : window.innerWidth) - rect.left);
+    let left = screenLeft + 18;
+    const right = screenRight - 74;
+    const top = Math.max(18, (visual ? visual.offsetTop : 0) - rect.top + 18);
+    let bottom = Math.min(rect.height, (visual ? visual.offsetTop + visual.height : window.innerHeight) - rect.top) - 18;
+    const panel = document.querySelector(".panel-bottom-left");
+    if (panel && panel.getClientRects().length) {
+      const panelRect = panel.getBoundingClientRect();
+      if (panelRect.height > rect.height * 0.65 && panelRect.width < rect.width * 0.65) {
+        left = Math.max(left, panelRect.right - rect.left + 18);
+      } else {
+        bottom = Math.min(bottom, panelRect.top - rect.top - 18);
       }
     }
-
-    observationPopupOverlay.setPositioning(placement);
-    observationPopupOverlay.setOffset(offset);
-    observationPopupEl.style.maxWidth = maxWidth;
-    observationPopupEl.style.maxHeight = maxHeight;
     observationPopupEl.style.boxSizing = "border-box";
+    observationPopupEl.style.width = `${Math.min(240, Math.max(0, right - left))}px`;
+    observationPopupEl.style.minWidth = "0";
+    observationPopupEl.style.maxWidth = "240px";
+    observationPopupEl.style.maxHeight = "none";
+    const card = observationPopupEl.getBoundingClientRect();
+    const clamp = (value, min, max) => Math.max(min, Math.min(value, Math.max(min, max)));
+    const sideY = clamp(pixel[1] - card.height / 2, top, bottom - card.height);
+    const centerX = clamp(pixel[0] - card.width / 2, left, right - card.width);
+    const candidates = [
+      [pixel[0] + 44, sideY],
+      [pixel[0] - card.width - 44, sideY],
+      [centerX, pixel[1] - card.height - 58],
+      [centerX, pixel[1] + 38]
+    ];
+    let position = candidates.find(([x, y]) => x >= left && x + card.width <= right &&
+      y >= top && y + card.height <= bottom);
+    if (!position) {
+      observationPopupEl.style.maxHeight = `${Math.max(0, bottom - top)}px`;
+      position = [clamp(pixel[0] + 44, left, right - card.width), top];
+    }
+    observationPopupOverlay.setPositioning("top-left");
+    observationPopupOverlay.setOffset([position[0] - pixel[0], position[1] - pixel[1]]);
     observationPopupEl.style.overflowY = "auto";
     observationPopupEl.style.overscrollBehavior = "contain";
   }
@@ -4054,12 +4047,15 @@
     const coordinate = feature && feature.getGeometry() ? feature.getGeometry().getCoordinates() : null;
     if (!popupHtml || !coordinate) return;
 
-    syncObservationPopupPlacement(coordinate);
     observationPopupEl._observationData = feature ? (feature.get("observationData") || feature.get("obsData") || null) : null;
     observationPopupEl._bearEstimateData = feature ? (feature.get("bearEstimateData") || null) : null;
     observationPopupContentEl.innerHTML = popupHtml;
+    observationPopupEl.style.visibility = "hidden";
     observationPopupEl.style.display = "block";
+    // Make the overlay parent visible before measuring its contents.
     observationPopupOverlay.setPosition(coordinate);
+    syncObservationPopupPlacement(coordinate);
+    observationPopupEl.style.visibility = "visible";
   }
 
   let bearListFocusVersion = 0;
