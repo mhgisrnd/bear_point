@@ -3136,11 +3136,16 @@
   function flyToLatLng(latlng, zoom, onComplete) {
     if (!Array.isArray(latlng) || latlng.length < 2) return;
     const target = mapCoordFromWgs84(latlng[0], latlng[1]);
-    view.animate({
+    const animation = {
       center: target,
       zoom: typeof zoom === "number" ? zoom : (view.getZoom() || 11),
       duration: 700
-    }, onComplete);
+    };
+    if (typeof onComplete === "function") {
+      view.animate(animation, onComplete);
+    } else {
+      view.animate(animation);
+    }
   }
 
   // latlngList: [{lat, lng}, ...] 배열을 모두 포함하는 extent로 fit
