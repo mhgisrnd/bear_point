@@ -10,7 +10,7 @@
     <div class="sdr-body">
     <p class="sdr-status" role="status">연결 상태 확인 전</p>
     <p class="sdr-message" role="alert"></p>
-    <details data-usb-section class="sdr-section sdr-usb-section" open><summary><span>USB 장치</span><span class="sdr-chevron" aria-hidden="true">⌄</span></summary><div data-devices></div><div class="sdr-actions sdr-usb-tools"><button type="button" data-refresh>목록 새로고침</button><button type="button" data-disconnect>연결 해제 / 취소</button></div></details>
+    <section data-usb-section class="sdr-section sdr-usb-section"><h3 data-usb-heading>USB 장치</h3><div data-devices></div><div class="sdr-actions sdr-usb-tools"><button type="button" data-refresh>목록 새로고침</button><button type="button" data-disconnect>연결 해제 / 취소</button></div></section>
     <details data-settings-section class="sdr-section" open hidden><summary>수신 설정</summary>
       <fieldset data-settings class="sdr-settings" disabled>
         <div class="sdr-operation" role="group" aria-label="수신 방식"><button type="button" data-task-scan aria-pressed="false">대역 탐색</button><button type="button" data-task-fixed aria-pressed="true">주파수 고정</button></div>
@@ -443,7 +443,7 @@
       restoredFixed = true;
       setTask("fixed", false);
     }
-    dialog.querySelector("[data-usb-heading]").textContent = connected ? "??? ???" : "USB ??";
+    dialog.querySelector("[data-usb-heading]").textContent = connected ? "연결된 수신기" : "USB 장치";
     const previousReception = current && current.receptionState;
     current = snapshot;
     updateDialogViewport(snapshot);
