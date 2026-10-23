@@ -833,8 +833,8 @@ window.createOlMapControlsManager = function createOlMapControlsManager(options)
 
     const toggleBtn = document.createElement("button");
     toggleBtn.type = "button";
-    toggleBtn.title = "레이어 선택";
-    toggleBtn.setAttribute("aria-label", "레이어 선택");
+    // toggleBtn.title = "레이어 선택";
+    // toggleBtn.setAttribute("aria-label", "레이어 선택");
     toggleBtn.setAttribute("aria-expanded", "false");
     toggleBtn.style.width = "42px";
     toggleBtn.style.height = "42px";
