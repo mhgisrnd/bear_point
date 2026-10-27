@@ -4,10 +4,12 @@ extern "C" double sin(double), cos(double), atan2(double, double), exp(double);
 #else
 #include <cmath>
 #endif
+#include "signal_meter.h"
 
 // Stateful mono WFM: frequency shift, channel FIR/decimation, phase discriminator,
 // fractional audio FIR resampling to 48 kHz, deemphasis and DC blocking.
 class WfmDemod {
+    SignalMeter meter;
     static constexpr double PI = 3.14159265358979323846;
     static constexpr int MAX_CHANNEL = 241, AUDIO_TAPS = 97, PHASES = 32;
     float channel[MAX_CHANNEL], channelI[MAX_CHANNEL], channelQ[MAX_CHANNEL];
@@ -36,6 +38,7 @@ class WfmDemod {
             fi += channel[j] * channelI[index]; fq += channel[j] * channelQ[index];
             if (--index < 0) index = taps - 1;
         }
+        meter.observe(fi * fi + fq * fq);
         double demodulated = previousValid
             ? atan2(fq * previousI - fi * previousQ, fi * previousI + fq * previousQ) * quadRate / (2 * PI * 75000)
             : 0;
@@ -61,11 +64,13 @@ class WfmDemod {
     }
 
 public:
+    double takeSignalPeak() { return meter.takePeak(); }
     bool configure(int rate, int offsetHz, int tauUs) {
         if (rate < 250000 || rate > 2400000 || (tauUs != 50 && tauUs != 75)) return false;
         if ((offsetHz < 0 ? -double(offsetHz) : double(offsetHz)) + 100000 > rate * 0.45) return false;
         decimation = rate / 240000; if (decimation < 1) decimation = 1;
         taps = decimation * 24 + 1; quadRate = double(rate) / decimation;
+        meter.configure(quadRate);
         channelPosition = decimationPosition = audioPosition = oscillatorCount = 0;
         audioPhase = deemphasis = previousAudio = dc = previousI = previousQ = 0;
         oscillatorI = 1; oscillatorQ = 0; previousValid = odd = false;

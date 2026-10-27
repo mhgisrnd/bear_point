@@ -11,7 +11,7 @@ final class SdrScan {
     static final int MAX_CANDIDATES = 100;
     final int startHz, endHz, rate, dwellMs;
     final double thresholdDb;
-    final String band;
+    final String band, mode;
     final int[] centers;
     private final List<Candidate> candidates = new ArrayList<>();
     private int nextId = 1;
@@ -26,9 +26,22 @@ final class SdrScan {
         fmCount = fmNext = 0;
         fmLastSeconds = -1;
         Arrays.fill(fmPower, null);
+        if ("cw".equals(mode)) for (Candidate c : candidates) {
+            c.active = false;
+            if (c.observations < 2) { c.observations = 0; c.lastPulseSeconds = -1; }
+        }
     }
 
     SdrScan(String band, int startHz, int endHz, int rate, int dwellMs, double thresholdDb) {
+        this(band, startHz, endHz, rate, dwellMs, thresholdDb, "fm".equals(band) ? "wfm" : "iq");
+    }
+
+    SdrScan(String band, int startHz, int endHz, int rate, int dwellMs, double thresholdDb, String mode) {
+        if (!"cw".equals(mode) && !"iq".equals(mode) && !"wfm".equals(mode))
+            throw new IllegalArgumentException("Invalid scan mode");
+        this.mode = mode;
+        if ("cw".equals(mode) && dwellMs < 5000)
+            throw new IllegalArgumentException("CW 반복 펄스 탐색은 구간 체류 5초가 필요합니다.");
         if (!SdrSettings.validFrequency(band, startHz) || !SdrSettings.validFrequency(band, endHz)
             || endHz - startHz < 100000 || !SdrSettings.validRate(rate)
             || dwellMs < 500 || dwellMs > 5000 || !Double.isFinite(thresholdDb)
@@ -47,6 +60,8 @@ final class SdrScan {
     static final class Candidate {
         int id, frequencyHz, observations, lastSeenCycle, confirmedCycle;
         double powerDbfs, snrDb, lastSeenSeconds;
+        boolean active;
+        double onSince, lastPulseSeconds = -1;
     }
 
     List<Candidate> confirmed() {
@@ -62,7 +77,8 @@ final class SdrScan {
 
     void observe(double[] bins, int centerHz, int actualRate, double seconds, int cycle) {
         if (bins == null || bins.length != SdrSpectrum.SIZE || actualRate <= 0) return;
-        boolean fm = "fm".equals(band);
+        boolean fm = "wfm".equals(mode);
+        boolean cw = "cw".equals(mode);
         if (fm) {
             bins = averageFm(bins, centerHz, actualRate, seconds);
             if (bins == null) return;
@@ -81,7 +97,7 @@ final class SdrScan {
         if (noise <= -119) return; // Silence/invalid input must not look like RF.
         double breadthDb = Math.max(6, thresholdDb - 4);
         double limit = noise + (fm ? breadthDb : thresholdDb);
-        int mergeHz = "fm".equals(band) ? 100000 : Math.max(10000, actualRate / SdrSpectrum.SIZE * 4);
+        int mergeHz = fm ? 100000 : Math.max(10000, actualRate / SdrSpectrum.SIZE * 4);
         // Short gaps within a modulated channel do not create dozens of candidates.
         for (int i = 0; i < bins.length; i++) {
             if (!usable(i) || !Double.isFinite(bins[i]) || bins[i] < limit) continue;
@@ -126,11 +142,26 @@ final class SdrScan {
                 nearest = new Candidate(); nearest.id = nextId++; nearest.frequencyHz = hz; candidates.add(nearest);
             }
             // Count only distinct spectra, not multiple lobes of one channel in a frame.
-            if (nearest.observations == 0 || nearest.lastSeenSeconds != seconds) nearest.observations++;
+            if (cw) {
+                if (!nearest.active) { nearest.active = true; nearest.onSince = seconds; }
+            } else if (nearest.observations == 0 || nearest.lastSeenSeconds != seconds) nearest.observations++;
             if (nearest.observations >= 2 && nearest.confirmedCycle == 0) nearest.confirmedCycle = cycle;
             nearest.frequencyHz = (int) Math.round(nearest.frequencyHz * .75 + hz * .25);
             nearest.powerDbfs = peak; nearest.snrDb = peak - noise; nearest.lastSeenSeconds = seconds;
             nearest.lastSeenCycle = cycle;
+        }
+        if (cw) for (Candidate c : candidates) {
+            if (!c.active || c.lastSeenSeconds == seconds) continue;
+            c.active = false;
+            double width = seconds - c.onSince, interval = c.onSince - c.lastPulseSeconds;
+            // Accept completed short bursts; continuous carriers never complete a valid pulse.
+            // Width includes USB block timing (up to 131 ms at 0.250 MS/s).
+            if (width <= 0 || width > .4) continue;
+            if (c.lastPulseSeconds < 0 || interval < .3 || interval > 4)
+                c.observations = c.observations >= 2 ? c.observations : 1;
+            else c.observations++;
+            c.lastPulseSeconds = c.onSince;
+            if (c.observations >= 2 && c.confirmedCycle == 0) c.confirmedCycle = cycle;
         }
     }
 

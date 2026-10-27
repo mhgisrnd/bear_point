@@ -4,7 +4,7 @@ package com.bearpoint.app;
 final class SdrNative {
     static { System.loadLibrary("bear_sdr"); }
     static native long open(int fd, int frequencyHz, int sampleRate, int gainTenthsDb, int ppm);
-    static native SdrBlock read(long handle, boolean captureSpectrum, long demodulator);
+    static native SdrBlock read(long handle, boolean captureSpectrum, long demodulator, boolean continuousSpectrum);
     static native void tune(long handle, int frequencyHz);
     static native long createDemodulator(String mode, int sampleRate, int offsetHz, int deemphasisUs);
     static native void closeDemodulator(long handle);

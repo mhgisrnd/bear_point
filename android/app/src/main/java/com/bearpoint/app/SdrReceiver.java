@@ -41,47 +41,60 @@ final class SdrReceiver {
         long handle = 0, demodulator = 0;
         try {
             if (generation.get() != token) return;
-            handle = SdrNative.open(connection.getFileDescriptor(), hz, rate, gain, ppm);
+            int hardwareHz = "cw".equals(mode) ? hz - 12000 : hz;
+            handle = SdrNative.open(connection.getFileDescriptor(), hardwareHz, rate, gain, ppm);
             long total = 0, bytes = 0, started = SystemClock.elapsedRealtime(), updated = started, lastData = started;
             double power = 0, clipped = 0;
+            double signalPeak = -1;
             SdrSpectrum analyzer = new SdrSpectrum();
+            boolean pulseSpectrum = "cw".equals(mode);
+            SdrSpectrum.PeakHold peakHold = new SdrSpectrum.PeakHold();
             double[] spectrum = new double[0];
             int spectrumFrames = 0;
             long spectrumUpdated = started - 500;
             String[] tuners = {"Unknown", "E4000", "FC0012", "FC0013", "FC2580", "R820T", "R828D"};
             while (generation.get() == token) {
-                boolean captureSpectrum = SystemClock.elapsedRealtime() - spectrumUpdated >= 500;
-                SdrBlock received = SdrNative.read(handle, captureSpectrum, demodulator);
+                boolean captureSpectrum = pulseSpectrum || SystemClock.elapsedRealtime() - spectrumUpdated >= 500;
+                SdrBlock received = SdrNative.read(handle, captureSpectrum, demodulator, pulseSpectrum);
                 double[] block = received.values;
                 // Configure from the actual hardware rate, before decoding subsequent blocks.
-                if (demodulator == 0 && "wfm".equals(mode))
-                    demodulator = SdrNative.createDemodulator(mode, (int) block[4], listenHz - hz, deemphasisUs);
+                if (demodulator == 0 && ("wfm".equals(mode) || "cw".equals(mode)))
+                    demodulator = SdrNative.createDemodulator(mode, (int) block[4], listenHz - (int) block[6], deemphasisUs);
                 audio.offer(received.audio);
+                signalPeak = Math.max(signalPeak, received.signalPower);
                 long now = SystemClock.elapsedRealtime();
                 if (captureSpectrum && block.length > 7) {
-                    spectrum = analyzer.analyze(block, 7);
+                    spectrum = pulseSpectrum ? peakHold.observe(analyzer.analyzePeaks(block, 7), now) : analyzer.analyze(block, 7);
                     spectrumFrames = (block.length - 7) / (SdrSpectrum.SIZE * 2);
                     spectrumUpdated = now;
                 }
                 total += (long) block[0]; bytes += (long) block[0]; power += block[1]; clipped += block[2];
                 if (block[0] > 0) lastData = now;
                 if (now - lastData > 3000) throw new IllegalStateException("3초 동안 IQ 데이터가 없습니다. USB 전원과 연결을 확인하세요.");
-                if (now - updated < 500) continue;
+                if (now - updated < 100) continue;
                 JSObject result = new JSObject();
                 int tuner = (int) block[3];
                 result.put("tuner", tuner >= 0 && tuner < tuners.length ? tuners[tuner] : "Unknown");
                 result.put("sampleRate", (int) block[4]); result.put("gainDb", block[5] / 10);
                 result.put("frequencyHz", (int) block[6]); result.put("ppm", ppm);
                 result.put("mode", mode); result.put("listenFrequencyHz", listenHz);
-                result.put("audioSampleRate", "wfm".equals(mode) ? 48000 : 0);
+                result.put("audioSampleRate", ("wfm".equals(mode) || "cw".equals(mode)) ? 48000 : 0);
                 result.put("deemphasisUs", deemphasisUs);
                 result.put("totalBytes", total); result.put("bytesPerSecond", bytes * 1000.0 / (now - updated));
                 result.put("elapsedSeconds", (now - started) / 1000.0);
                 result.put("powerDbfs", bytes > 0 ? 10 * Math.log10(Math.max(1e-12, power / bytes)) : -120);
                 result.put("clippingPercent", bytes > 0 ? clipped * 100 / bytes : 0);
                 result.put("hasSamples", bytes > 0);
+                if (bytes > 0 && signalPeak >= 0)
+                    result.put("signalDbfs", 10 * Math.log10(Math.max(1e-12, signalPeak)));
+                if (bytes > 0 && signalPeak >= 0 && received.noisePower >= 0) {
+                    double floor = Math.max(1e-12, received.noisePower);
+                    result.put("noiseDbfs", 10 * Math.log10(floor));
+                    result.put("signalExcessDb", Math.max(0, 10 * Math.log10(Math.max(1e-12, signalPeak) / floor)));
+                }
                 if (bytes > 0 && spectrum.length == SdrSpectrum.SIZE && now - spectrumUpdated < 1000) {
                     result.put("spectrumDbfs", JSArray.from(spectrum));
+                    result.put("spectrumPeakHold", pulseSpectrum);
                     result.put("fftSize", SdrSpectrum.SIZE);
                     result.put("spectrumFrames", spectrumFrames);
                     result.put("spectrumUpdatedSeconds", (spectrumUpdated - started) / 1000.0);
@@ -90,10 +103,11 @@ final class SdrReceiver {
                     if (generation.get() != token) return;
                     boolean firstReception = "starting".equals(state);
                     state = "receiving"; metrics = result;
-                    if (firstReception && "wfm".equals(mode)) audio.startDefault();
+                    if (firstReception && ("wfm".equals(mode) || "cw".equals(mode))) audio.startDefault();
                     changed.run();
                 });
                 bytes = 0; power = 0; clipped = 0; updated = now;
+                signalPeak = -1;
             }
         } catch (Exception | LinkageError failure) {
             String reason = failure.getMessage() == null ? failure.toString() : failure.getMessage();
@@ -145,8 +159,9 @@ final class SdrReceiver {
                 while (generation.get() == token && SystemClock.elapsedRealtime() - tuned < plan.dwellMs + SdrScan.SETTLE_MS) {
                     long now = SystemClock.elapsedRealtime();
                     boolean settled = now - tuned >= SdrScan.SETTLE_MS;
-                    boolean capture = settled && now - analyzed >= 100;
-                    SdrBlock block = SdrNative.read(handle, capture, 0);
+                    boolean cw = "cw".equals(plan.mode);
+                    boolean capture = settled && (cw || now - analyzed >= 100);
+                    SdrBlock block = SdrNative.read(handle, capture, 0, cw);
                     now = SystemClock.elapsedRealtime();
                     if (generation.get() != token) break;
                     double[] values = block.values;
@@ -155,7 +170,8 @@ final class SdrReceiver {
                     if (values[0] > 0) lastData = now;
                     if (now - lastData > 3000) throw new IllegalStateException("3초 동안 IQ 데이터가 없습니다. USB 전원과 연결을 확인하세요.");
                     if (capture) {
-                        plan.observe(analyzer.analyze(values, 7), (int) values[6], (int) values[4], session.elapsedSeconds(now), session.cycle);
+                        plan.observe(cw ? analyzer.analyzePeaks(values, 7) : analyzer.analyze(values, 7),
+                            (int) values[6], (int) values[4], session.elapsedSeconds(now), session.cycle);
                         analyzed = now;
                     }
                     if (now - published < 500 && now - tuned < plan.dwellMs + SdrScan.SETTLE_MS) continue;
@@ -184,6 +200,7 @@ final class SdrReceiver {
         SdrScan plan = session.plan;
         JSObject result = new JSObject();
         result.put("band", plan.band);
+        result.put("mode", plan.mode);
         result.put("startHz", plan.startHz); result.put("endHz", plan.endHz);
         result.put("centerHz", session.centerHz()); result.put("sampleRate", session.actualRate);
         result.put("requestedSampleRate", plan.rate); result.put("requestedGainTenthsDb", session.gain);
@@ -249,8 +266,8 @@ final class SdrReceiver {
     }
 
     void setAudio(Boolean enabled, Double volume) {
-        if (Boolean.TRUE.equals(enabled) && (!"receiving".equals(state) || !"wfm".equals(mode)))
-            throw new IllegalStateException("WFM 수신을 시작한 뒤 소리를 켜주세요.");
+        if (Boolean.TRUE.equals(enabled) && (!"receiving".equals(state) || !("wfm".equals(mode) || "cw".equals(mode))))
+            throw new IllegalStateException("CW 또는 WFM 수신을 시작한 뒤 소리를 켜주세요.");
         audio.set(enabled, volume);
     }
 

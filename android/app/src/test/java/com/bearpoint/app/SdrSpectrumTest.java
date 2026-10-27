@@ -4,6 +4,49 @@ import org.junit.Test;
 import static org.junit.Assert.*;
 
 public class SdrSpectrumTest {
+    @Test public void shortPulseSurvivesUntilNextDisplayAndThenDecays() {
+        SdrSpectrum fft = new SdrSpectrum();
+        SdrSpectrum.PeakHold hold = new SdrSpectrum.PeakHold();
+        double[] input = tone(12, .5, 32, 7);
+        // A one-frame pulse late in a USB block used to fall outside the captured four frames.
+        for (int frame = 0; frame < 32; frame++) {
+            if (frame == 20) continue;
+            java.util.Arrays.fill(input, 7 + frame * 2048, 7 + (frame + 1) * 2048, 0);
+        }
+        double[] pulse = fft.analyzePeaks(input, 7);
+        double[] first = hold.observe(pulse, 1000);
+        double level = first[524];
+        assertTrue(level > -10);
+        double[] silence = fft.analyzePeaks(new double[2048], 0);
+        assertEquals(level, hold.observe(silence, 1100)[524], 1e-8);
+        assertEquals(level, hold.observe(silence, 1250)[524], 1e-8);
+        assertEquals(level - 9, hold.observe(silence, 1500)[524], 1e-8);
+        assertEquals(-120, hold.observe(silence, 5000)[524], 1e-8);
+        assertEquals(level, first[524], 0); // Published snapshots cannot mutate later.
+        assertEquals(-120, new SdrSpectrum.PeakHold().observe(silence, 1000)[524], 0);
+    }
+
+    @Test public void newPulseImmediatelyRaisesAHeldSpectrumWithoutAveragingItAway() {
+        SdrSpectrum fft = new SdrSpectrum();
+        SdrSpectrum.PeakHold hold = new SdrSpectrum.PeakHold();
+        double low = hold.observe(fft.analyzePeaks(tone(-123, .05, 1, 0), 0), 0)[389];
+        double high = hold.observe(fft.analyzePeaks(tone(-123, .5, 1, 0), 0), 100)[389];
+        assertEquals(20, high - low, 1e-8);
+        assertEquals(high, hold.observe(fft.analyzePeaks(new double[2048], 0), 349)[389], 0);
+    }
+
+    @Test public void continuousScanCapturesPulsesAfterTheFirstFourFrames() {
+        double[] iq=tone(-159,.01,32,7);
+        for(int i=0;i<32*SdrSpectrum.SIZE;i++) {
+            if(i>=12*SdrSpectrum.SIZE && i<32*SdrSpectrum.SIZE) {
+                double p=2*Math.PI*(-159)*i/SdrSpectrum.SIZE;
+                iq[7+2*i]+=.4*Math.cos(p);iq[7+2*i+1]+=.4*Math.sin(p);
+            }
+        }
+        SdrSpectrum fft=new SdrSpectrum();
+        double old=fft.analyze(iq,7)[353], captured=fft.analyzePeaks(iq,7)[353];
+        assertTrue(captured>old+25);
+    }
     private double[] tone(int bin, double amplitude, int frames, int prefix) {
         double[] iq = new double[prefix + frames * SdrSpectrum.SIZE * 2];
         for (int i = 0; i < frames * SdrSpectrum.SIZE; i++) {

@@ -5,7 +5,7 @@
 #include <cstdio>
 #include <vector>
 #include <cstring>
-#include "wfm_demod.h"
+#include "cw_demod.h"
 extern "C" int rtlsdr_open_fd(rtlsdr_dev_t **, int);
 extern "C" int rtlsdr_read_sync_timeout(rtlsdr_dev_t *, void *, int, int *);
 static void error(JNIEnv *env, const char *step, int code) {
@@ -40,7 +40,7 @@ fail:
     rtlsdr_close(dev); error(env, step, r); return 0;
 }
 extern "C" JNIEXPORT jobject JNICALL
-Java_com_bearpoint_app_SdrNative_read(JNIEnv *env, jclass, jlong handle, jboolean captureSpectrum, jlong demodulator) {
+Java_com_bearpoint_app_SdrNative_read(JNIEnv *env, jclass, jlong handle, jboolean captureSpectrum, jlong demodulator, jboolean continuousSpectrum) {
     auto *dev = reinterpret_cast<rtlsdr_dev_t *>(handle);
     unsigned char buffer[65536]; int n = 0;
     int r = rtlsdr_read_sync_timeout(dev, buffer, sizeof(buffer), &n);
@@ -54,9 +54,9 @@ Java_com_bearpoint_app_SdrNative_read(JNIEnv *env, jclass, jlong handle, jboolea
     // Linear sum/count allow accurate aggregation across arbitrary buffer sizes.
     double values[] = {double(n), square, clipped, double(rtlsdr_get_tuner_type(dev)),
         double(rtlsdr_get_sample_rate(dev)), double(rtlsdr_get_tuner_gain(dev)), double(rtlsdr_get_center_freq(dev))};
-    // At most four complete 1024-pair frames, only at the spectrum update cadence.
+    // Continuous CW captures every complete FFT frame; other modes capture up to four.
     // Raw samples never cross the Capacitor bridge into JavaScript.
-    int iqLength = captureSpectrum ? std::min(n / 2048, 4) * 2048 : 0;
+    int iqLength = captureSpectrum ? (continuousSpectrum ? n / 2048 : std::min(n / 2048, 4)) * 2048 : 0;
     jdoubleArray result = env->NewDoubleArray(7 + iqLength);
     if (!result) return nullptr;
     env->SetDoubleArrayRegion(result, 0, 7, values);
@@ -68,15 +68,17 @@ Java_com_bearpoint_app_SdrNative_read(JNIEnv *env, jclass, jlong handle, jboolea
     jshortArray audio = nullptr;
     if (demodulator && n > 0) {
         short pcm[8192];
-        int count = reinterpret_cast<WfmDemod *>(demodulator)->process(buffer, n, pcm, 8192);
+        int count = reinterpret_cast<SdrDemod *>(demodulator)->process(buffer, n, pcm, 8192);
         audio = env->NewShortArray(count);
         if (!audio) return nullptr;
         env->SetShortArrayRegion(audio, 0, count, pcm);
     }
     jclass block = env->FindClass("com/bearpoint/app/SdrBlock");
     if (!block) return nullptr;
-    jmethodID ctor = env->GetMethodID(block, "<init>", "([D[S)V");
-    return ctor ? env->NewObject(block, ctor, result, audio) : nullptr;
+    jmethodID ctor = env->GetMethodID(block, "<init>", "([D[SDD)V");
+    double signalPower = demodulator ? reinterpret_cast<SdrDemod *>(demodulator)->takeSignalPeak() : -1;
+    double noisePower = demodulator ? reinterpret_cast<SdrDemod *>(demodulator)->noisePower() : -1;
+    return ctor ? env->NewObject(block, ctor, result, audio, signalPower, noisePower) : nullptr;
 }
 extern "C" JNIEXPORT void JNICALL
 Java_com_bearpoint_app_SdrNative_tune(JNIEnv *env, jclass, jlong handle, jint hz) {
@@ -90,18 +92,19 @@ extern "C" JNIEXPORT jlong JNICALL
 Java_com_bearpoint_app_SdrNative_createDemodulator(JNIEnv *env, jclass, jstring mode, jint rate, jint offset, jint tau) {
     const char *name = env->GetStringUTFChars(mode, nullptr);
     if (!name) return 0;
-    bool supported = std::strcmp(name, "wfm") == 0;
+    bool cw = std::strcmp(name, "cw") == 0;
+    bool supported = cw || std::strcmp(name, "wfm") == 0;
     env->ReleaseStringUTFChars(mode, name);
     if (!supported) { error(env, "Demodulation mode", -1); return 0; }
-    auto *processor = new WfmDemod();
-    if (!processor->configure(rate, offset, tau)) {
-        delete processor; error(env, "WFM settings", -1); return 0;
+    auto *processor = new SdrDemod(); processor->cw = cw;
+    if (!(cw ? processor->beacon.configure(rate, offset) : processor->broadcast.configure(rate, offset, tau))) {
+        delete processor; error(env, "Audio demodulation settings", -1); return 0;
     }
     return reinterpret_cast<jlong>(processor);
 }
 extern "C" JNIEXPORT void JNICALL
 Java_com_bearpoint_app_SdrNative_closeDemodulator(JNIEnv *, jclass, jlong handle) {
-    delete reinterpret_cast<WfmDemod *>(handle);
+    delete reinterpret_cast<SdrDemod *>(handle);
 }
 extern "C" JNIEXPORT void JNICALL
 Java_com_bearpoint_app_SdrNative_close(JNIEnv *, jclass, jlong handle) {

@@ -6,5 +6,9 @@ import androidx.annotation.Keep;
 final class SdrBlock {
     final double[] values;
     final short[] audio;
-    SdrBlock(double[] values, short[] audio) { this.values = values; this.audio = audio; }
+    final double signalPower;
+    final double noisePower;
+    SdrBlock(double[] values, short[] audio, double signalPower, double noisePower) {
+        this.values = values; this.audio = audio; this.signalPower = signalPower; this.noisePower = noisePower;
+    }
 }

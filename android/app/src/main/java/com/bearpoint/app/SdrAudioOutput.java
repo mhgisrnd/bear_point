@@ -80,8 +80,11 @@ final class SdrAudioOutput {
 
     void offer(short[] samples) {
         Playback active = playback;
-        if (active != null && samples != null && samples.length > 0 && !active.queue.offer(samples))
-            active.dropped.incrementAndGet();
+        if (active != null && active.running && samples != null && samples.length > 0 && !active.queue.offer(samples)) {
+            // Keep live audio recent when playback falls behind USB reception.
+            if (active.queue.poll() != null) active.dropped.incrementAndGet();
+            if (!active.queue.offer(samples)) active.dropped.incrementAndGet();
+        }
     }
 
     private void abandonFocus() {
@@ -138,7 +141,7 @@ final class SdrAudioOutput {
     }
 
     private final class Playback implements Runnable {
-        final ArrayBlockingQueue<short[]> queue = new ArrayBlockingQueue<>(8);
+        final ArrayBlockingQueue<short[]> queue = new ArrayBlockingQueue<>(3);
         final AtomicInteger dropped = new AtomicInteger();
         final Thread thread = new Thread(this, "sdr-audio");
         volatile boolean running = true;
@@ -151,7 +154,7 @@ final class SdrAudioOutput {
                 track = new AudioTrack.Builder().setAudioAttributes(attributes)
                     .setAudioFormat(new AudioFormat.Builder().setSampleRate(48000)
                         .setChannelMask(AudioFormat.CHANNEL_OUT_MONO).setEncoding(AudioFormat.ENCODING_PCM_16BIT).build())
-                    .setTransferMode(AudioTrack.MODE_STREAM).setBufferSizeInBytes(Math.max(minimum, 19200)).build();
+                    .setTransferMode(AudioTrack.MODE_STREAM).setBufferSizeInBytes(Math.max(minimum, 4800)).build();
                 AudioTrack routedTrack = track;
                 track.addOnRoutingChangedListener(ignored -> updateRoute(this, routedTrack), main);
                 track.setVolume(volume); track.play();

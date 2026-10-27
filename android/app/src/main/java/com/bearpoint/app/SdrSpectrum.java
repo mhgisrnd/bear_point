@@ -10,6 +10,29 @@ final class SdrSpectrum {
     private final int[] reverse = new int[SIZE];
     private final double normalization;
 
+    /** Short peak hold for transient visibility; never feeds audio or scan detection. */
+    static final class PeakHold {
+        private final double[] levels = new double[SIZE];
+        private final long[] heldUntil = new long[SIZE];
+        private long updated = -1;
+
+        PeakHold() { java.util.Arrays.fill(levels, -120); }
+
+        double[] observe(double[] bins, long now) {
+            if (bins.length != SIZE) return new double[0];
+            for (int i = 0; i < SIZE; i++) {
+                long elapsed = updated < 0 ? 0 : Math.max(0, now - Math.max(updated, heldUntil[i]));
+                levels[i] = Math.max(-120, levels[i] - elapsed * .036);
+                if (bins[i] >= levels[i]) {
+                    levels[i] = bins[i];
+                    heldUntil[i] = now + 250;
+                }
+            }
+            updated = now;
+            return levels.clone();
+        }
+    }
+
     SdrSpectrum() {
         double sum = 0;
         for (int i = 0; i < SIZE; i++) {
@@ -26,8 +49,17 @@ final class SdrSpectrum {
     }
 
     double[] analyze(double[] iq, int offset) {
+        return analyze(iq, offset, false);
+    }
+
+    double[] analyzePeaks(double[] iq, int offset) {
+        return analyze(iq, offset, true);
+    }
+
+    private double[] analyze(double[] iq, int offset, boolean peaks) {
         if (iq == null || offset < 0 || offset > iq.length) return new double[0];
-        int frames = Math.min(MAX_FRAMES, (iq.length - offset) / (2 * SIZE));
+        int frames = (iq.length - offset) / (2 * SIZE);
+        if (!peaks) frames = Math.min(MAX_FRAMES, frames);
         if (frames == 0) return new double[0];
         double[] power = new double[SIZE];
         for (int frame = 0; frame < frames; frame++) {
@@ -50,11 +82,13 @@ final class SdrSpectrum {
             }
             for (int i = 0; i < SIZE; i++) {
                 int shifted = (i + SIZE / 2) % SIZE;
-                power[shifted] += (real[i] * real[i] + imaginary[i] * imaginary[i]) / normalization;
+                double value = (real[i] * real[i] + imaginary[i] * imaginary[i]) / normalization;
+                if (peaks) power[shifted] = Math.max(power[shifted], value);
+                else power[shifted] += value;
             }
         }
         for (int i = 0; i < SIZE; i++) {
-            power[i] = Math.max(-120, Math.min(0, 10 * Math.log10(Math.max(1e-12, power[i] / frames))));
+            power[i] = Math.max(-120, Math.min(0, 10 * Math.log10(Math.max(1e-12, power[i] / (peaks ? 1 : frames)))));
         }
         return power;
     }

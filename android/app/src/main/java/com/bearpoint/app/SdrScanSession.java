@@ -15,7 +15,7 @@ final class SdrScanSession {
     }
 
     boolean matches(SdrScan other, int gain, int ppm) {
-        return this.gain == gain && this.ppm == ppm && plan.band.equals(other.band)
+        return this.gain == gain && this.ppm == ppm && plan.band.equals(other.band) && plan.mode.equals(other.mode)
             && plan.startHz == other.startHz && plan.endHz == other.endHz && plan.rate == other.rate
             && plan.dwellMs == other.dwellMs && Double.compare(plan.thresholdDb, other.thresholdDb) == 0;
     }

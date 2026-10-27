@@ -76,7 +76,7 @@ function setup(android = true, bridgeMode = 'injected', listenerAsync = false) {
     window: appWindow, console
   });
   const dialog = body.children[0];
-  for (const [key, value] of Object.entries({band: 'vhf', frequency: '150.000', rate: '1024000', gain: '10', ppm: '0'})) {
+  for (const [key, value] of Object.entries({frequency: '150.000', rate: '1024000', gain: '10', ppm: '0'})) {
     dialog.querySelector(`[data-${key}]`).value = value;
   }
   return {
@@ -118,17 +118,15 @@ test('receiver settings and results appear after USB connection and hide again o
   const settings = ui.dialog.querySelector('[data-settings-section]');
   const result = ui.dialog.querySelector('[data-result]');
   const footer = ui.dialog.querySelector('.sdr-footer');
-  const help = ui.dialog.querySelector('[data-general-help]');
-  for (const section of [settings, result, footer, help]) assert.equal(section.hidden, true);
+  for (const section of [settings, result, footer]) assert.equal(section.hidden, true);
   await ui.button().click(); await tick();
-  for (const section of [settings, result, footer, help]) assert.equal(section.hidden, false);
+  for (const section of [settings, footer]) assert.equal(section.hidden, false);
+  assert.equal(result.hidden, true);
   await ui.dialog.querySelector('[data-task-scan]').click();
   await ui.dialog.querySelector('[data-disconnect]').click(); await tick();
-  for (const section of [settings, result, footer, help]) assert.equal(section.hidden, true);
+  for (const section of [settings, result, footer]) assert.equal(section.hidden, true);
   await ui.button().click(); await tick();
   assert.equal(settings.hidden, false);
-  assert.equal(settings.open, true);
-  assert.equal(result.open, false);
   assert.equal(ui.dialog.querySelector('[data-frequency-field]').hidden, false);
 });
 
@@ -215,14 +213,14 @@ test('reception validates settings, converts units, locks settings, and stops', 
   const ui = setup(); ui.device.hasPermission = true;
   await ui.trigger.click(); await ui.button().click(); await tick();
   const start = ui.dialog.querySelector('[data-start]');
-  ui.dialog.querySelector('[data-frequency]').value = '175';
+  ui.dialog.querySelector('[data-frequency]').value = '2001';
   await start.click(); await tick();
   assert.equal(ui.plugin.starts.length, 0);
   assert.match(ui.dialog.querySelector('.sdr-message').textContent, /설정 범위/);
   ui.dialog.querySelector('[data-frequency]').value = '151.125';
   ui.dialog.querySelector('[data-gain]').value = '19.7';
   await start.click(); await tick();
-  assert.deepEqual(JSON.parse(JSON.stringify(ui.plugin.starts[0])), { band: 'vhf', mode: 'iq', frequencyHz: 151125000, listenFrequencyHz: 151125000, sampleRate: 1024000, gainTenthsDb: 197, ppm: 0, deemphasisUs: 75 });
+  assert.deepEqual(JSON.parse(JSON.stringify(ui.plugin.starts[0])), { band: 'wide', mode: 'cw', frequencyHz: 151125000, listenFrequencyHz: 151125000, sampleRate: 1024000, gainTenthsDb: 197, ppm: 0, deemphasisUs: 75 });
   assert.equal(start.disabled, true);
   assert.equal(ui.dialog.querySelector('[data-settings]').disabled, true);
   await ui.dialog.querySelector('[data-stop]').click(); await tick();
@@ -238,56 +236,13 @@ test('IQ metrics are explicitly distinct from beacon detection and errors allow 
     ppm: 0, totalBytes: 4096000, bytesPerSecond: 2048000, powerDbfs: -22, clippingPercent: 0, elapsedSeconds: 2, hasSamples: true };
   ui.emit();
   assert.match(ui.dialog.querySelector('.sdr-status').textContent, /IQ 수신 중/);
-  assert.match(ui.dialog.querySelector('[data-applied]').textContent, /FC0013.*9.7 dB/);
   assert.equal(ui.dialog.querySelector('[data-throughput]').textContent, '2.05 MB/s');
   ui.state.receptionState = 'error'; ui.state.receptionError = 'USB IQ read failed (-4)'; ui.emit();
   assert.match(ui.dialog.querySelector('.sdr-message').textContent, /USB IQ read/);
   assert.equal(ui.dialog.querySelector('[data-start]').disabled, false);
 });
 
-test('FM selection tunes 103.5 MHz, shows its window, and preserves per-band inputs', async () => {
-  const ui = setup(); ui.device.hasPermission = true;
-  await ui.trigger.click(); await ui.button().click(); await tick();
-  const band = ui.dialog.querySelector('[data-band]'), frequency = ui.dialog.querySelector('[data-frequency]');
-  frequency.value = '151.125';
-  await band.change('fm');
-  assert.equal(frequency.value, '103.500');
-  assert.equal(frequency.min, '88'); assert.equal(frequency.max, '108');
-  assert.match(ui.dialog.querySelector('[data-window]').textContent, /102.988–104.012 MHz.*2.048 MB\/s/);
-  await ui.dialog.querySelector('[data-start]').click(); await tick();
-  assert.deepEqual(JSON.parse(JSON.stringify(ui.plugin.starts[0])), { band: 'fm', mode: 'iq', frequencyHz: 103500000, listenFrequencyHz: 103500000, sampleRate: 1024000, gainTenthsDb: 100, ppm: 0, deemphasisUs: 75 });
-  await ui.dialog.querySelector('[data-stop]').click(); await tick();
-  frequency.value = '101.100';
-  await band.change('vhf'); assert.equal(frequency.value, '151.125');
-  await band.change('fm'); assert.equal(frequency.value, '101.100');
-});
 
-test('selected-band boundaries are enforced and every new rate preset reaches the bridge', async () => {
-  for (const [bandValue, hz, sampleRate] of [
-    ['fm', '88', '250000'], ['fm', '108', '2400000'], ['vhf', '148', '1536000'], ['vhf', '174', '2048000']
-  ]) {
-    const ui = setup(); ui.device.hasPermission = true;
-    await ui.trigger.click(); await ui.button().click(); await tick();
-    await ui.dialog.querySelector('[data-band]').change(bandValue);
-    ui.dialog.querySelector('[data-frequency]').value = hz;
-    await ui.dialog.querySelector('[data-rate]').change(sampleRate);
-    await ui.dialog.querySelector('[data-start]').click(); await tick();
-    assert.equal(ui.plugin.starts.length, 1);
-    assert.equal(ui.plugin.starts[0].sampleRate, Number(sampleRate));
-  }
-  const ui = setup(); ui.device.hasPermission = true;
-  await ui.trigger.click(); await ui.button().click(); await tick();
-  for (const [bandValue, hz, sampleRate] of [
-    ['vhf', '103.5', '1024000'], ['fm', '150', '1024000'], ['fm', '108.001', '1024000'],
-    ['fm', '103.5', '512000'], ['fm', '103.5', '3200000'], ['fm', '', '1024000']
-  ]) {
-    await ui.dialog.querySelector('[data-band]').change(bandValue);
-    ui.dialog.querySelector('[data-frequency]').value = hz;
-    ui.dialog.querySelector('[data-rate]').value = sampleRate;
-    await ui.dialog.querySelector('[data-start]').click(); await tick();
-    assert.equal(ui.plugin.starts.length, 0);
-  }
-});
 
 test('spectrum shows frequency locations, ignores DC/edges for the marker, and labels stopped data', async () => {
   const ui = setup(); ui.device.hasPermission = true;
@@ -319,17 +274,16 @@ test('missing or malformed spectrum cannot masquerade as a live trace', async ()
 });
 
 
-test('WFM displays native default playback, can mute and unmute, and uses device media volume', async () => {
+test('CW displays native default playback, can mute and unmute, and uses device media volume', async () => {
   const ui = setup(); ui.device.hasPermission = true;
   await ui.trigger.click(); await ui.button().click(); await tick();
-  await ui.dialog.querySelector('[data-mode]').change('wfm');
   assert.equal(ui.dialog.querySelector('[data-audio-panel]').hidden, false);
-  assert.equal(ui.dialog.querySelector('[data-frequency]').value, '103.500');
+  assert.equal(ui.dialog.querySelector('[data-frequency]').value, '150.000');
   assert.doesNotMatch(ui.dialog.innerHTML, /data-listen|data-volume|data-preset/);
   assert.equal(ui.plugin.audios.length, 0);
   await ui.dialog.querySelector('[data-start]').click(); await tick();
   const options = ui.plugin.starts[0];
-  assert.equal(options.mode, 'wfm'); assert.equal(options.listenFrequencyHz, options.frequencyHz);
+  assert.equal(options.mode, 'cw'); assert.equal(options.listenFrequencyHz, options.frequencyHz);
   assert.equal(ui.dialog.querySelector('[data-audio]').disabled, true);
   ui.state.receptionState = 'receiving'; ui.state.reception = options;
   ui.state.audio = { enabled: true, volume: 1 }; ui.emit();
@@ -348,37 +302,20 @@ test('WFM displays native default playback, can mute and unmute, and uses device
   assert.match(ui.dialog.querySelector('[data-audio-status]').textContent, /분리되어 음소거/);
 });
 
-test('WFM validates its settings and tunes the same frequency at the narrow rate', async () => {
-  const ui = setup(); ui.device.hasPermission = true;
-  await ui.trigger.click(); await ui.button().click(); await tick();
-  await ui.dialog.querySelector('[data-mode]').change('wfm');
-  ui.dialog.querySelector('[data-deemphasis]').value = '0';
-  await ui.dialog.querySelector('[data-start]').click(); await tick();
-  assert.equal(ui.plugin.starts.length, 0);
-  assert.match(ui.dialog.querySelector('.sdr-message').textContent, /WFM/);
-  ui.dialog.querySelector('[data-deemphasis]').value = '75';
-  ui.dialog.querySelector('[data-rate]').value = '250000';
-  await ui.dialog.querySelector('[data-start]').click(); await tick();
-  assert.equal(ui.plugin.starts.length, 1);
-  assert.equal(ui.plugin.starts[0].frequencyHz, 103500000);
-  assert.equal(ui.plugin.starts[0].listenFrequencyHz, 103500000);
-});
 
-test('switching back to VHF removes audio controls and restores IQ analysis', async () => {
-  const ui = setup(); ui.device.hasPermission = true;
-  await ui.trigger.click(); await ui.button().click(); await tick();
-  await ui.dialog.querySelector('[data-mode]').change('wfm');
-  await ui.dialog.querySelector('[data-band]').change('vhf');
-  assert.equal(ui.dialog.querySelector('[data-mode]').value, 'iq');
-  assert.equal(ui.dialog.querySelector('[data-audio-panel]').hidden, true);
+
+test('a paused CW scan resumes with the same detector', async () => {
+  const ui=await scanningUi();
+  await ui.dialog.querySelector('[data-stop]').click(); await tick();
   await ui.dialog.querySelector('[data-start]').click(); await tick();
-  assert.equal(ui.plugin.starts[0].mode, 'iq');
+  assert.equal(ui.plugin.scans[1].mode,'cw');
+  assert.equal(ui.plugin.scans[1].resume,true);
 });
 
 test('stopped spectrum drag selects a frequency for the next fixed reception only', async () => {
   const ui = setup(); ui.device.hasPermission = true;
   await ui.trigger.click(); await ui.button().click(); await tick();
-  await ui.dialog.querySelector('[data-band]').change('fm');
+  ui.dialog.querySelector('[data-frequency]').value='103.500';
   const canvas = ui.dialog.querySelector('[data-spectrum]');
   canvas.clientWidth = 320;
   ui.state.fixedResultAvailable = true;
@@ -393,17 +330,52 @@ test('stopped spectrum drag selects a frequency for the next fixed reception onl
   ui.dialog.querySelector('[data-frequency]').value = '103.600';
   ui.dialog.querySelector('[data-frequency]').events.input();
   canvas.events.pointerdown({ pointerId: 1, clientX: 241.5, clientY: 100 });
-  assert.equal(ui.dialog.querySelector('[data-frequency]').value, '103.756');
+  assert.equal(ui.dialog.querySelector('[data-frequency]').value, '103.600');
+  assert.equal(reset.hidden, true);
+  canvas.events.pointermove({ pointerId: 1, clientX: 253.5, clientY: 100 });
+  assert.equal(ui.dialog.querySelector('[data-frequency]').value, '103.601');
   assert.equal(reset.hidden, false);
-  assert.match(ui.dialog.querySelector('[data-spectrum-tune]').textContent, /103.756 MHz/);
+  assert.match(ui.dialog.querySelector('[data-spectrum-tune]').textContent, /103.601 MHz/);
   canvas.events.pointermove({ pointerId: 1, clientX: 177, clientY: 100 });
   canvas.events.pointerup({ pointerId: 1 });
-  assert.equal(ui.dialog.querySelector('[data-frequency]').value, '103.500');
+  assert.equal(ui.dialog.querySelector('[data-frequency]').value, '103.595');
+  canvas.events.pointermove({ pointerId: 1, clientX: 300, clientY: 100 });
+  assert.equal(ui.dialog.querySelector('[data-frequency]').value, '103.595');
+  assert.equal(ui.plugin.starts.length, 0);
   await reset.click();
   assert.equal(ui.dialog.querySelector('[data-frequency]').value, '103.600');
   assert.equal(reset.hidden, true);
   await ui.dialog.querySelector('[data-start]').click(); await tick();
   assert.equal(ui.plugin.starts[0].frequencyHz, 103600000);
+});
+
+test('spectrum fine drag uses CSS pixels across sample rates and stops after cancellation', async () => {
+  const ui = setup(); ui.device.hasPermission = true;
+  await ui.trigger.click(); await ui.button().click(); await tick();
+  const frequency = ui.dialog.querySelector('[data-frequency]');
+  const canvas = ui.dialog.querySelector('[data-spectrum]');
+  canvas.clientWidth = 320;
+  canvas.getBoundingClientRect = () => ({ left: 0, top: 0, width: 320, height: 160 });
+  for (const sampleRate of [250000, 2400000]) {
+    frequency.value = '148.241';
+    ui.state.fixedResultAvailable = true;
+    ui.state.receptionState = 'idle';
+    ui.state.reception = { frequencyHz: 148229000, sampleRate, spectrumDbfs: Array(1024).fill(-80) };
+    ui.emit();
+    // CSS y=145 is below the plot, even though it falls within its backing-store coordinates.
+    canvas.events.pointerdown({ pointerId: 2, clientX: 100, clientY: 145 });
+    canvas.events.pointermove({ pointerId: 2, clientX: 160, clientY: 145 });
+    assert.equal(frequency.value, '148.241');
+    canvas.events.pointerdown({ pointerId: 2, clientX: 100, clientY: 100 });
+    canvas.events.pointermove({ pointerId: 2, clientX: 105, clientY: 100 });
+    assert.equal(frequency.value, '148.241');
+    canvas.events.pointermove({ pointerId: 2, clientX: 124, clientY: 100 });
+    assert.equal(frequency.value, '148.243');
+    canvas.events.pointercancel({ pointerId: 2 });
+    canvas.events.pointermove({ pointerId: 2, clientX: 200, clientY: 100 });
+    assert.equal(frequency.value, '148.243');
+  }
+  assert.equal(ui.plugin.starts.length, 0);
 });
 
 test('fixed reception stop becomes result reset without losing USB or tuning', async () => {
@@ -430,36 +402,18 @@ test('fixed reception stop becomes result reset without losing USB or tuning', a
   assert.equal(stop.disabled, true);
 });
 
-test('digit tuning carries exactly and stops at selected-band boundaries', async () => {
-  const ui = setup(); await ui.trigger.click();
-  const frequency = ui.dialog.querySelector('[data-frequency]');
-  frequency.value = '150.999'; frequency.events.input();
-  await ui.dialog.querySelector('[data-freq-up="1000"]').click();
-  assert.equal(frequency.value, '151.000');
-  await ui.dialog.querySelector('[data-freq-down="1000"]').click();
-  assert.equal(frequency.value, '150.999');
-  frequency.value = '174.000'; frequency.events.input();
-  assert.equal(ui.dialog.querySelector('[data-freq-up="1000"]').disabled, true);
-  await ui.dialog.querySelector('[data-freq-up="1000"]').click();
-  assert.equal(frequency.value, '174.000');
-  await ui.dialog.querySelector('[data-band]').change('fm');
-  assert.equal(ui.dialog.querySelector('[data-freq-digit="0"]').textContent, '1');
-  assert.equal(ui.dialog.querySelector('[data-freq-digit="2"]').textContent, '3');
-  frequency.value = '88.000'; frequency.events.input();
-  assert.equal(ui.dialog.querySelector('[data-freq-digit="0"]').textContent, '0');
-  assert.equal(ui.dialog.querySelector('[data-freq-down="1000"]').disabled, true);
-});
 
-test('direct frequency input validates range, returns to digits, and reaches the receiver', async () => {
+test('direct frequency editing keeps arrows visible, validates range, and reaches the receiver', async () => {
   const ui = setup(); ui.device.hasPermission = true;
   await ui.trigger.click(); await ui.button().click(); await tick();
   const edit = ui.dialog.querySelector('[data-frequency-edit]');
   const entry = ui.dialog.querySelector('[data-frequency-entry]');
   const frequency = ui.dialog.querySelector('[data-frequency]');
-  await edit.click(); assert.equal(entry.hidden, false);
-  frequency.value = '175'; await edit.click();
-  assert.equal(entry.hidden, false);
-  assert.match(ui.dialog.querySelector('.sdr-message').textContent, /148.*174/);
+  await edit.click(); assert.equal(entry.hidden, true);
+  assert.equal(ui.dialog.querySelector('[data-frequency-digits]').hidden, false);
+  frequency.value = '2001'; await edit.click();
+  assert.equal(entry.hidden, true);
+  assert.match(ui.dialog.querySelector('.sdr-message').textContent, /0.1.*999.999/);
   frequency.value = '151.125'; await edit.click();
   assert.equal(entry.hidden, true);
   assert.equal(ui.dialog.querySelector('[data-frequency-digits]').hidden, false);
@@ -477,16 +431,141 @@ test('direct frequency input validates range, returns to digits, and reaches the
 async function scanningUi() {
   const ui = setup(); ui.device.hasPermission = true;
   await ui.trigger.click(); await ui.button().click(); await tick();
-  await ui.dialog.querySelector('[data-band]').change('fm');
   await ui.dialog.querySelector('[data-task-scan]').click();
+  ui.dialog.querySelector('[data-dwell]').value='5000';
   ui.dialog.querySelector('[data-scan-start]').value = '103.000';
   ui.dialog.querySelector('[data-scan-end]').value = '104.000';
   await ui.dialog.querySelector('[data-start]').click(); await tick();
   ui.state.receptionState = 'scanning';
-  ui.state.scan = { band: 'fm', centerHz: 103300000, segment: 2, segments: 4, cycle: 1, cycleSeconds: 4.8,
+  ui.state.scan = { band: 'wide', mode: 'cw', centerHz: 103300000, segment: 2, segments: 4, cycle: 1, cycleSeconds: 4.8,
     elapsedSeconds: 2, candidates: [{id:1,frequencyHz:103505000,powerDbfs:-53,snrDb:21,lastSeenSeconds:1.9}] };
   ui.emit(); return ui;
 }
+
+test('strength bars use fixed channel-power thresholds independent of volume and mark stopped readings', async () => {
+  const ui=setup();ui.device.hasPermission=true;
+  await ui.trigger.click();await ui.button().click();await tick();
+  const active=[];
+  for(let i=0;i<10;i++) ui.dialog.querySelector(`[data-strength-bar="${i}"]`).classList.toggle=(name,on)=>{active[i]=on;};
+  ui.state.receptionState='receiving';ui.state.reception={mode:'cw',hasSamples:true,powerDbfs:-40,signalDbfs:-50,noiseDbfs:-71,signalExcessDb:21};ui.emit();
+  assert.equal(active.filter(Boolean).length,5);
+  assert.equal(ui.dialog.querySelector('[data-strength-value]').textContent,'-50.0 dBFS');
+  ui.state.audio={enabled:false};ui.emit();assert.equal(active.filter(Boolean).length,5);
+  ui.state.reception.signalDbfs=-10;ui.state.reception.signalExcessDb=36;ui.emit();assert.equal(active.filter(Boolean).length,10);
+  ui.state.reception.signalDbfs=-60;ui.state.reception.signalExcessDb=2;ui.emit();assert.equal(active.filter(Boolean).length,0);
+  ui.state.receptionState='idle';ui.emit();
+  assert.match(ui.dialog.querySelector('[data-strength-state]').textContent,/정지.*마지막/);
+  ui.state.reception={};ui.emit();
+  assert.equal(ui.dialog.querySelector('[data-strength-value]').textContent,'—');
+  assert.equal(active.filter(Boolean).length,0);
+});
+
+test('result header shows actual CW listening frequency above metrics and labels stopped results', async () => {
+  const ui=setup(); ui.device.hasPermission=true;
+  await ui.trigger.click(); await ui.button().click(); await tick();
+  ui.state.receptionState='receiving';
+  ui.state.reception={frequencyHz:148229000,listenFrequencyHz:148241000,mode:'cw'};
+  ui.emit();
+  const readout=ui.dialog.querySelector('[data-frequency-readout]');
+  assert.equal(readout.textContent,'148.241 MHz · CW · 수신 중');
+  ui.dialog.querySelector('[data-frequency]').value='150.000';
+  ui.state.receptionState='idle';ui.emit();
+  assert.equal(readout.textContent,'148.241 MHz · CW · 정지됨');
+  ui.state.reception={};ui.emit();assert.equal(readout.textContent,'수신 주파수 —');
+  assert.ok(ui.dialog.innerHTML.indexOf('data-frequency-readout') < ui.dialog.innerHTML.indexOf('data-throughput'));
+});
+
+test('CW is fixed with no band or mode picker and scanning preserves CW', async () => {
+  for (const mode of ['cw']) {
+    const ui=setup(); ui.device.hasPermission=true;
+    await ui.trigger.click(); await ui.button().click(); await tick();
+    assert.doesNotMatch(ui.dialog.innerHTML,/data-band|data-mode|<select|<details|<summary/);
+    await ui.dialog.querySelector('[data-task-scan]').click();
+    ui.dialog.querySelector('[data-scan-start]').value='220';
+    ui.dialog.querySelector('[data-scan-end]').value='221';
+    await ui.dialog.querySelector('[data-start]').click(); await tick();
+    assert.equal(ui.plugin.scans[0].band,'wide');
+    assert.equal(ui.plugin.scans[0].mode,mode);
+    ui.state.receptionState='scanning';
+    ui.state.scan={mode,band:'wide',centerHz:220500000,segment:1,segments:3,cycle:1,cycleSeconds:4,
+      elapsedSeconds:1,candidates:[{id:1,frequencyHz:220500000,powerDbfs:-50,snrDb:20,lastSeenSeconds:1}]};
+    ui.emit();
+    await ui.dialog.querySelector('[data-candidates]').children[0].click(); await tick();
+    assert.equal(ui.plugin.starts[0].mode,mode);
+    assert.equal(ui.plugin.starts[0].frequencyHz,220500000);
+  }
+});
+
+test('fixed reception accepts frequencies beyond the former presets including the three-digit upper limit', async () => {
+  for (const mhz of ['50.100','125.000','220.000','999.999']) {
+    const ui=setup(); ui.device.hasPermission=true;
+    await ui.trigger.click(); await ui.button().click(); await tick();
+    ui.dialog.querySelector('[data-frequency]').value=mhz;
+    await ui.dialog.querySelector('[data-start]').click(); await tick();
+    assert.equal(ui.plugin.starts[0].frequencyHz,Number(mhz)*1e6);
+  }
+});
+
+test('CW tunes 148.241 MHz in 1 kHz steps and offers audio playback', async () => {
+  const ui=setup(); ui.device.hasPermission=true;
+  await ui.trigger.click(); await ui.button().click(); await tick();
+  ui.dialog.querySelector('[data-frequency]').value='148.241';
+  assert.equal(ui.dialog.querySelector('[data-audio-panel]').hidden,false);
+  await ui.dialog.querySelector('[data-freq-up="1000"]').click();
+  assert.equal(ui.dialog.querySelector('[data-frequency]').value,'148.242');
+  await ui.dialog.querySelector('[data-start]').click(); await tick();
+  const options=ui.plugin.starts[0];
+  assert.equal(options.mode,'cw'); assert.equal(options.frequencyHz,148242000);
+  ui.state.receptionState='receiving'; ui.state.reception=options;
+  ui.state.audio={enabled:true}; ui.emit();
+  assert.match(ui.dialog.querySelector('.sdr-status').textContent,/CW/);
+  assert.equal(ui.dialog.querySelector('[data-audio]').disabled,false);
+  await ui.dialog.querySelector('[data-audio]').click(); await tick();
+  assert.equal(ui.plugin.audios[0].enabled,false);
+});
+
+test('restored CW shows the listening frequency instead of the offset hardware center', async () => {
+  const ui=setup(); ui.device.hasPermission=true;
+  ui.state.state='connected';ui.state.backgroundReceiving=true;ui.state.receptionState='receiving';
+  ui.state.reception={mode:'cw',frequencyHz:148229000,listenFrequencyHz:148241000,sampleRate:1024000};
+  await ui.trigger.click();
+  assert.equal(ui.dialog.querySelector('[data-frequency]').value,'148.241');
+});
+
+test('editing the existing digit cells keeps arrows and starts CW at 148 MHz', async () => {
+  const ui = setup(); ui.device.hasPermission = true;
+  await ui.trigger.click(); await ui.button().click(); await tick();
+  await ui.dialog.querySelector('[data-frequency-edit]').click();
+  for (const [index, text] of [...'148000'].entries()) {
+    const digit = ui.dialog.querySelector(`[data-freq-digit="${index}"]`);
+    digit.textContent = text; digit.events.input();
+    assert.equal(ui.dialog.querySelector('[data-frequency-digits]').hidden, false);
+    assert.equal(ui.dialog.querySelector('[data-frequency-entry]').hidden, true);
+  }
+  assert.equal(ui.dialog.querySelector('[data-frequency]').value, '148.000');
+  await ui.dialog.querySelector('[data-freq-up="1000"]').click();
+  assert.equal(ui.dialog.querySelector('[data-frequency]').value, '148.001');
+  await ui.dialog.querySelector('[data-freq-down="1000"]').click();
+  await ui.dialog.querySelector('[data-frequency-edit]').click();
+  await ui.dialog.querySelector('[data-start]').click(); await tick();
+  assert.equal(ui.plugin.starts[0].mode, 'cw');
+  assert.equal(ui.plugin.starts[0].band, 'wide');
+  assert.equal(ui.plugin.starts[0].frequencyHz, 148000000);
+});
+
+test('CW reaches the receiver at both expanded VHF boundaries', async () => {
+  for (const frequency of ['140.000', '174.000']) {
+    const ui = setup(); ui.device.hasPermission = true;
+    await ui.trigger.click(); await ui.button().click(); await tick();
+    ui.dialog.querySelector('[data-frequency]').value = frequency;
+    await ui.dialog.querySelector('[data-start]').click(); await tick();
+    assert.equal(ui.plugin.starts[0].frequencyHz, Number(frequency) * 1e6);
+    assert.equal(ui.plugin.starts[0].mode, 'cw');
+  }
+});
+
+
+
 
 test('closing the settings dialog leaves an active background scan and USB connection intact', async () => {
   const ui=await scanningUi();
@@ -530,10 +609,8 @@ test('recreated settings restore an active background fixed frequency', async ()
   ui.state.state = 'connected';
   ui.state.backgroundReceiving = true;
   ui.state.receptionState = 'receiving';
-  ui.state.reception = { mode: 'wfm', frequencyHz: 103500000, sampleRate: 1024000, gainDb: 7.1, ppm: 0 };
+  ui.state.reception = { mode: 'cw', frequencyHz: 103500000, sampleRate: 1024000, gainDb: 7.1, ppm: 0 };
   await ui.trigger.click();
-  assert.equal(ui.dialog.querySelector('[data-band]').value, 'fm');
-  assert.equal(ui.dialog.querySelector('[data-mode]').value, 'wfm');
   assert.equal(ui.dialog.querySelector('[data-frequency]').value, '103.500');
   assert.equal(ui.dialog.querySelector('[data-audio-panel]').hidden, false);
 });
@@ -544,9 +621,9 @@ test('recreated settings expose paused scan history and its reset action', async
   ui.state.state = 'connected';
   ui.state.scanResumeAvailable = true;
   ui.state.receptionState = 'idle';
-  ui.state.scan = { band: 'fm', startHz: 103000000, endHz: 104000000,
+  ui.state.scan = { band: 'wide', mode: 'cw', startHz: 103000000, endHz: 104000000,
     requestedSampleRate: 1024000, requestedGainTenthsDb: 100, ppm: 0,
-    dwellMs: 1000, thresholdDb: 10, centerHz: 103300000, segment: 2,
+    dwellMs: 5000, thresholdDb: 10, centerHz: 103300000, segment: 2,
     segments: 4, cycle: 3, cycleSeconds: 4.8, elapsedSeconds: 14, candidates: [] };
   await ui.trigger.click();
   assert.equal(ui.dialog.querySelector('[data-scan-results]').hidden, false);
@@ -586,11 +663,10 @@ test('a recreated screen restores the running scan settings from native state', 
   ui.device.hasPermission=true; ui.device.connected=true;
   ui.state.state='connected'; ui.state.receptionState='scanning';
   ui.state.backgroundScanning=true; ui.state.scanResumeAvailable=true;
-  ui.state.scan={band:'fm',startHz:103000000,endHz:104000000,centerHz:103300000,
-    requestedSampleRate:1024000,requestedGainTenthsDb:100,ppm:0,dwellMs:1000,thresholdDb:10,
+  ui.state.scan={band:'wide',mode:'cw',startHz:103000000,endHz:104000000,centerHz:103300000,
+    requestedSampleRate:1024000,requestedGainTenthsDb:100,ppm:0,dwellMs:5000,thresholdDb:10,
     segment:2,segments:4,cycle:3,cycleSeconds:4.8,elapsedSeconds:14,candidates:[]};
   await ui.trigger.click();
-  assert.equal(ui.dialog.querySelector('[data-band]').value,'fm');
   assert.equal(ui.dialog.querySelector('[data-scan-start]').value,'103.000');
   assert.equal(ui.dialog.querySelector('[data-scan-end]').value,'104.000');
   assert.equal(ui.dialog.querySelector('[data-scan-results]').hidden,false);
@@ -599,24 +675,20 @@ test('a recreated screen restores the running scan settings from native state', 
 
 test('band scan sends explicit options, stays silent, opens candidates and locks tuning', async () => {
   const ui = await scanningUi();
-  assert.deepEqual(JSON.parse(JSON.stringify(ui.plugin.scans[0])), {band:'fm',startHz:103000000,endHz:104000000,
-    sampleRate:1024000,gainTenthsDb:100,ppm:0,dwellMs:1000,thresholdDb:10});
+  assert.deepEqual(JSON.parse(JSON.stringify(ui.plugin.scans[0])), {band:'wide',mode:'cw',startHz:103000000,endHz:104000000,
+    sampleRate:1024000,gainTenthsDb:100,ppm:0,dwellMs:5000,thresholdDb:10});
   assert.equal(ui.plugin.starts.length,0); assert.equal(ui.plugin.audios.length,0);
   assert.equal(ui.dialog.querySelector('[data-audio-panel]').hidden,true);
-  assert.equal(ui.dialog.querySelector('[data-result]').open,true);
-  assert.equal(ui.dialog.querySelector('[data-settings-section]').open,false);
   assert.equal(ui.dialog.querySelector('[data-task-fixed]').disabled,true);
-  assert.equal(ui.dialog.querySelector('[data-candidate-heading]').textContent,'FM 방송 후보');
+  assert.equal(ui.dialog.querySelector('[data-candidate-heading]').textContent,'반복 펄스 후보');
   assert.match(ui.dialog.querySelector('[data-scan-progress]').textContent,/103.300 MHz.*\n.*2\/4/);
   const found = ui.dialog.querySelector('[data-candidates]'), button = found.children[0];
   ui.state.scan.candidates[0].frequencyHz = 103506000; ui.emit();
   assert.equal(found.children[0],button);
   assert.match(button.children[0].textContent,/103.506/);
-  ui.dialog.querySelector('[data-result]').open=false; ui.emit();
-  assert.equal(ui.dialog.querySelector('[data-result]').open,false);
 });
 
-test('candidate waits for native stop, then fixed WFM can resume original scan settings', async () => {
+test('candidate waits for native stop, then fixed CW can resume original scan settings', async () => {
   const ui = await scanningUi();
   const originalStop = ui.plugin.stopReception; let release;
   ui.plugin.stopReception = () => new Promise(resolve => { release=async()=>{await originalStop();resolve();}; });
@@ -624,7 +696,7 @@ test('candidate waits for native stop, then fixed WFM can resume original scan s
   assert.equal(ui.plugin.starts.length,0);
   await release(); await tick();
   assert.equal(ui.plugin.starts[0].frequencyHz,103505000);
-  assert.equal(ui.plugin.starts[0].mode,'wfm');
+  assert.equal(ui.plugin.starts[0].mode,'cw');
   assert.equal(ui.dialog.querySelector('[data-scan-results]').hidden,true);
   assert.equal(ui.dialog.querySelector('[data-back]').hidden,false);
   ui.state.receptionState='receiving'; ui.state.reception=ui.plugin.starts[0]; ui.emit();
@@ -665,27 +737,8 @@ test('closing or disconnecting during candidate handoff prevents reception resta
   }
 });
 
-test('scan validates range and retains each bands inputs including WFM-to-scan switching', async () => {
-  const ui=setup(); ui.device.hasPermission=true;
-  await ui.trigger.click(); await ui.button().click(); await tick();
-  await ui.dialog.querySelector('[data-mode]').change('wfm');
-  await ui.dialog.querySelector('[data-task-scan]').click();
-  assert.equal(ui.dialog.querySelector('[data-scan-start]').value,'88.000');
-  for (const [start,end] of [['104','103'],['103','103.05'],['87','103'],['103','109'],['','104']]) {
-    ui.dialog.querySelector('[data-scan-start]').value=start; ui.dialog.querySelector('[data-scan-end]').value=end;
-    await ui.dialog.querySelector('[data-start]').click(); await tick();
-    assert.equal(ui.plugin.scans.length,0);
-  }
-  ui.dialog.querySelector('[data-scan-start]').value='103'; ui.dialog.querySelector('[data-scan-end]').value='104';
-  await ui.dialog.querySelector('[data-band]').change('vhf');
-  assert.equal(ui.dialog.querySelector('[data-scan-start]').value,'148.000');
-  await ui.dialog.querySelector('[data-band]').change('fm');
-  assert.equal(ui.dialog.querySelector('[data-scan-start]').value,'103');
-  await ui.dialog.querySelector('[data-start]').click(); await tick();
-  assert.equal(ui.plugin.scans.length,1);
-});
 
-test('candidate list ranks recent power and selects the right frequency after ranking changes', async () => {
+test('candidate bars and ranking follow noise contrast rather than absolute power', async () => {
   const ui=await scanningUi();
   ui.state.scan.candidates=[
     {id:1,frequencyHz:103100000,powerDbfs:-81,snrDb:12,lastSeenSeconds:1},
@@ -697,9 +750,23 @@ test('candidate list ranks recent power and selects the right frequency after ra
   assert.equal(found.children[1].signalIcon.dataset.level,'1');
   assert.equal(ui.state.scan.candidates[0].id,1);
   ui.state.scan.candidates[0].powerDbfs=-45; ui.emit();
+  assert.equal(found.children[0].frequencyHz,103800000);
+  ui.state.scan.candidates[0].snrDb=28; ui.emit();
   assert.equal(found.children[0].frequencyHz,103100000);
   await found.children[0].click(); await tick();
   assert.equal(ui.plugin.starts[0].frequencyHz,103100000);
+});
+
+test('candidate bars can be empty for noise without hiding the detected candidate', async () => {
+  const ui=await scanningUi();
+  ui.state.scan.candidates=[{id:1,frequencyHz:148241000,powerDbfs:-35,snrDb:5,
+    observations:2,lastSeenSeconds:1}];
+  ui.emit();
+  const button=ui.dialog.querySelector('[data-candidates]').children[0];
+  assert.equal(button.signalIcon.dataset.level,'0');
+  assert.equal(button.frequencyHz,148241000);
+  ui.state.scan.candidates[0].snrDb=36; ui.emit();
+  assert.equal(button.signalIcon.dataset.level,'4');
 });
 
 test('fresh candidates outrank old strong measurements without changing their power and can recover', async () => {
@@ -847,7 +914,7 @@ function attachExitFlow(ui) {
     document:{createElement:()=>new Element(),body:{appendChild:element=>toasts.push(element)}},
     lastBackPressAt:0,backExitToastEl:null,backExitToastIconEl:null,backExitToastTextEl:null,backExitToastHideTimer:null,
     BACK_EXIT_DOUBLE_PRESS_MS:2000,Date:{now:()=>now},appPlugin:{exitApp(){exits++;}},
-    closeTopBackClosableOverlay:()=>false,observationPopupEl:null,obsListModule:null,analysisEstimateSource:null,
+    closeTopBackClosableOverlay:()=>false,observationPopupEl:null,obsListModule:null,obsRegisterModule:null,analysisEstimateSource:null,
     triggerHapticImpact(){}});
   vm.runInContext(mapSource.slice(toastStart,toastEnd),context);
   return {context,toasts,timers,exits:()=>exits,

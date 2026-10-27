@@ -368,7 +368,8 @@ public class RtlSdrPlugin extends Plugin {
             }
             SdrScan plan = new SdrScan(call.getString("band", "vhf"), call.getInt("startHz", 148000000),
                 call.getInt("endHz", 174000000), call.getInt("sampleRate", 1024000),
-                call.getInt("dwellMs", 1000), call.getDouble("thresholdDb", 10d));
+                call.getInt("dwellMs", 5000), call.getDouble("thresholdDb", 10d),
+                call.getString("mode", "fm".equals(call.getString("band")) ? "wfm" : "cw"));
             if (Boolean.TRUE.equals(call.getBoolean("resume", false))) sdr.resumeScan(runtime.connection, plan, gain, ppm);
             else sdr.startScan(runtime.connection, plan, gain, ppm);
             try { SdrScanService.launch(getContext(), "scan"); }

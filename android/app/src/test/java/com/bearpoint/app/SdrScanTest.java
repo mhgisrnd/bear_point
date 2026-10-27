@@ -6,6 +6,55 @@ import java.util.Random;
 import static org.junit.Assert.*;
 
 public class SdrScanTest {
+    private void pulses(SdrScan scan, double[] starts, double[] widths, boolean broad, double base) {
+        for (int i=0;i<500;i++) {
+            double t=i*.01;
+            double[] bins=new double[1024]; Arrays.fill(bins,-85);
+            for(int p=0;p<starts.length;p++) if(t>=starts[p] && t<starts[p]+widths[p]) {
+                if(broad) Arrays.fill(bins,340,370,-40);
+                else bins[353]=-58;
+            }
+            scan.observe(bins,148400000,1024000,base+t,1);
+        }
+    }
+
+    @Test public void restoredCwAcceptsTwoPulsesAndDoesNotRequireUniformTimingOrWidths() {
+        double[][] starts={{.2,1.2},{.2,1.2,3.2},{.2,1.2,2.2}};
+        double[][] widths={{.02,.02},{.02,.02,.02},{.02,.2,.02}};
+        for(int n=0;n<starts.length;n++) {
+            SdrScan scan=new SdrScan("wide",148000000,174000000,1024000,5000,10,"cw");
+            pulses(scan,starts[n],widths[n],false,0);
+            assertEquals("restored case "+n,1,scan.confirmed().size());
+            assertEquals(148241000,scan.confirmed().get(0).frequencyHz);
+        }
+    }
+
+    @Test public void cwFinds148241PulsesAndRejectsTheStronger148499ContinuousCarrier() {
+        SdrScan scan = new SdrScan("wide",148000000,174000000,1024000,5000,10,"cw");
+        for (int i=0;i<500;i++) {
+            double t=i*.01;
+            double[] bins=new double[1024];Arrays.fill(bins,-85);
+            bins[611]=-40; // 148.499 MHz at a 148.400 MHz center: continuous interference.
+            if(t%1.12>=.20&&t%1.12<.22) bins[353]=-58.3; // 148.241 MHz keyed beacon.
+            scan.observe(bins,148400000,1024000,t,1);
+        }
+        assertEquals(1,scan.confirmed().size());
+        assertEquals(148241000,scan.confirmed().get(0).frequencyHz);
+        assertTrue(scan.confirmed().get(0).observations>=2);
+    }
+
+    @Test public void onePulseAndRetuningDoNotTurnAContinuousCarrierIntoABeacon() {
+        SdrScan scan = new SdrScan("wide",148000000,174000000,1024000,5000,10,"cw");
+        for(int segment=0;segment<3;segment++) {
+            scan.beginSegment();
+            for(int i=0;i<500;i++) {
+                double[] bins=new double[1024];Arrays.fill(bins,-85);bins[611]=-40;
+                if(i==20||i==21) bins[353]=-58.3;
+                scan.observe(bins,148400000,1024000,segment*5.2+i*.01,1);
+            }
+        }
+        assertTrue(scan.confirmed().isEmpty());
+    }
     @Test public void latestObservationUpdatesCycleAndCapacityCanAdmitNewSignalsAfterOldOnesExpire() {
         SdrScan scan = new SdrScan("vhf",148000000,174000000,1024000,1000,10);
         double[] bins = new double[1024]; Arrays.fill(bins,-90); bins[620]=-50;

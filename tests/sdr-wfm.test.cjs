@@ -70,6 +70,16 @@ test('odd USB chunk boundaries preserve oscillator, filter and I/Q alignment', (
   a.api.configure(1024000, 200000, 75); b.api.configure(1024000, 200000, 75);
   assert.deepEqual(a.decode(iq), b.decode(iq, 4093));
 });
+
+test('WFM strength measures channel power before FM audio demodulation', () => {
+  const r=receiver();r.api.configure(1024000,200000,75);
+  const iq=signal(1024000);
+  r.decode(iq);const high=r.api.signalPeak();
+  r.api.configure(1024000,200000,75);
+  r.decode(Uint8Array.from(iq,x=>Math.round(127.5+(x-127.5)*.25)));
+  const low=r.api.signalPeak();
+  assert.ok(high/low>12 && high/low<20);
+});
 test('negative-frequency offset is mixed in the correct direction', () => {
   const r = receiver(); r.api.configure(1024000, -200000, 75);
   assert.ok(toneQuality(r.decode(signal(1024000, -200000)), 1000).purity > .97);

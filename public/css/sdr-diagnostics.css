@@ -55,6 +55,7 @@
 .sdr-signal svg { width: 100%; height: 100%; overflow: visible; }
 .sdr-signal path { fill: none; stroke: currentColor; stroke-width: 2.5; stroke-linecap: round; opacity: .18; }
 .sdr-signal circle { fill: currentColor; }
+.sdr-signal[data-level="0"] { opacity: .25; }
 .sdr-signal[data-level="2"] .sdr-signal-inner,
 .sdr-signal[data-level="3"] .sdr-signal-inner, .sdr-signal[data-level="3"] .sdr-signal-middle,
 .sdr-signal[data-level="4"] path { opacity: 1; }
@@ -95,6 +96,8 @@
 .sdr-frequency-digits { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)) 10px repeat(3, minmax(0, 1fr)); gap: 3px; margin-top: 8px; padding: 6px; background: #edf5f6; border-radius: 10px; }
 .sdr-digit { min-width: 0; text-align: center; }
 .sdr-digit strong { display: block; font: 600 32px/1.5 ui-monospace, monospace; color: #145d75; }
+.sdr-digit strong[contenteditable="true"] { border-radius: 5px; cursor: text; outline: 1px dashed #78a7b6; }
+.sdr-digit strong[contenteditable="true"]:focus { outline: 2px solid #145d75; background: #fff; }
 .sdr-dialog .sdr-digit button { width: 100%; min-height: 40px; padding: 0; border: 0; border-radius: 6px; background: #dcecef; color: #145d75; font-size: 13px; touch-action: manipulation; }
 .sdr-frequency-dot { align-self: center; text-align: center; font: 600 28px ui-monospace, monospace; color: #145d75; }
 .sdr-dialog [data-frequency-edit] { color: #145d75; border-color: #c7dce2; font-size: 13px; }
@@ -114,6 +117,14 @@
 .sdr-fields:disabled { opacity: .55; }
 .sdr-fields input:focus-visible, .sdr-fields select:focus-visible { outline: 3px solid #2563eb; outline-offset: 2px; }
 .sdr-metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.sdr-strength { padding: 12px; margin-bottom: 12px; border: 1px solid #c7dce2; border-radius: 9px; }
+.sdr-strength-heading { display: flex; justify-content: space-between; gap: 8px; color: #145d75; font-variant-numeric: tabular-nums; }
+.sdr-strength-bars { display: flex; align-items: flex-end; gap: 5px; height: 40px; margin-top: 8px; }
+.sdr-strength-bars span { flex: 1; background: #dde7eb; border-radius: 2px 2px 0 0; }
+.sdr-strength-bars span.is-active { background: #148078; }
+.sdr-strength-bars[data-state="stopped"] { opacity: .45; }
+.sdr-strength .sdr-note { margin-bottom: 0; }
+.sdr-frequency-readout { margin: 0 0 12px; padding: 12px; border-radius: 9px; background: #e4f0f3; color: #145d75; font-size: clamp(14px, 3.8vw, 21px); font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .sdr-metrics > div { padding: 12px; border-radius: 9px; background: #edf5f6; }
 .sdr-metrics span { display: block; font-size: 12px; color: #526477; }
 .sdr-metrics strong { font-size: 20px; color: #145d75; font-variant-numeric: tabular-nums; }
@@ -175,3 +186,72 @@
 }
 
 @media (max-height: 480px) { .sdr-header { padding: 8px 16px; } .sdr-footer { padding: 8px 16px; } .sdr-footer small { display: none; } }
+
+/* Compact CW controls: flat sections, one receiver row and no accordions. */
+.sdr-dialog { height: auto; border-radius: 12px; }
+.sdr-header { padding: 8px 12px; gap: 8px; }
+.sdr-dialog h2 { margin-right: auto; font-size: 18px; }
+.sdr-cw-label { display: inline-block; margin-left: 6px; padding: 1px 6px; border-radius: 4px; background: #e4f0f3; color: #145d75; font-size: 11px; vertical-align: middle; }
+.sdr-body { padding: 0 12px 8px; }
+.sdr-footer { padding: 8px 12px; box-shadow: none; }
+.sdr-run [data-start] { flex: 2; }
+.sdr-run [data-stop] { flex: 1; }
+.sdr-status, .sdr-status[data-activity] { margin: 5px 0; padding: 0; background: transparent; font-size: 12px; font-weight: 500; }
+.sdr-status[data-activity]::before { width: 6px; height: 6px; margin-right: 5px; animation: none; }
+.sdr-message { margin: 4px 0; font-size: 12px; }
+.sdr-dialog .sdr-usb-section { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 10px 8px; margin: 10px 0 12px; padding: 12px; border: 1px solid #d4e1e7; border-radius: 10px; background: #f5f9fb; }
+.sdr-usb-section [data-usb-heading] { grid-column: 1; grid-row: 1; margin: 0; padding: 0; background: transparent; color: #244759; font-size: 13px; font-weight: 650; }
+.sdr-usb-section [data-devices] { grid-column: 1 / -1; grid-row: 2; min-width: 0; }
+.sdr-usb-section [data-devices] > p { margin: 0; padding: 16px 8px; border: 1px dashed #ccdae1; border-radius: 7px; text-align: center; color: #526477; font-size: 12px; }
+.sdr-dialog .sdr-usb-section .sdr-device { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 3px 12px; margin: 0; padding: 10px; border: 1px solid #d8e3e9; border-radius: 8px; background: #fff; }
+.sdr-usb-section .sdr-device + .sdr-device { margin-top: 8px; }
+.sdr-usb-section .sdr-device strong { min-width: 0; margin: 0; align-self: end; font-size: 13px; line-height: 1.5; overflow-wrap: anywhere; }
+.sdr-usb-section .sdr-device small { margin: 0; font-size: 10px; color: #64748b; }
+.sdr-dialog .sdr-usb-tools { grid-column: 2; grid-row: 1; display: flex; align-items: center; gap: 8px; min-width: 0; padding: 0; border: 0; }
+.sdr-dialog .sdr-usb-tools button, .sdr-device > button { min-height: 44px; padding: 4px 10px; font-size: 12px; }
+.sdr-dialog .sdr-usb-section[data-connected="true"] { display: flex; gap: 8px; margin: 0 0 8px; padding: 7px 0; border: 0; border-bottom: 1px solid #d4dfe5; border-radius: 0; background: transparent; }
+.sdr-usb-section[data-connected="true"] [data-devices] { flex: 1; }
+.sdr-dialog .sdr-usb-section[data-connected="true"] .sdr-device { display: flex; gap: 6px; min-height: 30px; padding: 0; border: 0; border-radius: 0; background: transparent; }
+.sdr-usb-section[data-connected="true"] .sdr-device strong { flex: 1; align-self: auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sdr-usb-section[data-connected="true"] .sdr-device small { display: none; }
+.sdr-usb-section[data-connected="true"] .sdr-usb-tools { flex-shrink: 0; min-height: 30px; }
+.sdr-dialog .sdr-usb-tools [data-disconnect] { position: relative; min-height: 30px; height: 30px; padding: 0 7px; border-radius: 6px; border-color: #c7dce2; font-size: 11px; white-space: nowrap; }
+.sdr-dialog [data-disconnect]::after { content: ""; position: absolute; inset: -7px 0; }
+.sdr-connected-badge { flex-shrink: 0; padding: 1px 5px; font-size: 10px; }
+.sdr-section { margin: 0; padding: 0; border: 0; border-radius: 0; background: transparent; }
+.sdr-operation { margin-bottom: 8px; padding: 2px; }
+.sdr-fields, .sdr-scan-fields { gap: 8px; }
+.sdr-fields label { font-size: 12px; }
+.sdr-fields label span { font-size: 10px; }
+.sdr-fields input { min-height: 44px; padding: 6px 8px; font-size: 15px; }
+.sdr-tuning-options { margin-top: 8px; grid-template-columns: 104px 120px; justify-content: start; column-gap: 12px; }
+.sdr-tuning-options label { display: grid; grid-template-columns: 1fr auto; gap: 2px 4px; align-items: baseline; }
+.sdr-tuning-options input { grid-column: 1 / -1; width: 84px; max-width: 84px; justify-self: start; }
+.sdr-tuning-options [data-threshold-field] { grid-column: 1 / -1; }
+.sdr-frequency-heading > div { display: flex; align-items: baseline; gap: 6px; }
+.sdr-frequency-heading strong { font-size: 13px; }
+.sdr-frequency-digits { margin-top: 3px; padding: 4px; gap: 2px; }
+.sdr-digit strong { font-size: 28px; line-height: 1.25; }
+.sdr-dialog .sdr-digit button { min-height: 44px; }
+.sdr-readout-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px; margin-bottom: 6px; }
+.sdr-frequency-readout { min-width: 0; margin: 0; padding: 0; border-radius: 0; background: transparent; font-size: clamp(13px, 3.7vw, 19px); }
+.sdr-readout-row [data-audio] { min-height: 44px; width: auto; padding: 4px 8px; font-size: 12px; white-space: nowrap; }
+.sdr-strength { padding: 8px; margin-bottom: 8px; border-radius: 6px; }
+.sdr-strength-heading { font-size: 13px; }
+.sdr-strength-bars { margin-top: 3px; }
+.sdr-note { font-size: 11px; }
+.sdr-strength .sdr-note { margin-top: 5px; }
+.sdr-metrics { gap: 12px; margin: 6px 0; }
+.sdr-metrics > div { display: flex; align-items: baseline; justify-content: space-between; gap: 5px; padding: 0; background: transparent; }
+.sdr-metrics span { font-size: 10px; white-space: nowrap; }
+.sdr-metrics strong { font-size: 13px; white-space: nowrap; }
+.sdr-spectrum { margin: 8px 0 0; padding: 0; border: 0; }
+.sdr-spectrum figcaption { margin-bottom: 3px; font-size: 12px; }
+.sdr-spectrum canvas { height: 160px; }
+.sdr-spectrum .sdr-note { margin-top: 4px; font-size: 11px; }
+.sdr-scan-progress { padding: 6px 8px; margin: 0 0 8px; font-size: 12px; }
+.sdr-candidate-heading { margin-top: 6px; }
+.sdr-dialog .sdr-candidate { margin: 5px 0; padding: 8px; }
+@media (max-width: 480px) {
+  .sdr-dialog { inset: calc(var(--sdr-viewport-top, 0px) + var(--sdr-safe-top) + 8px) calc(var(--sdr-safe-right) + 8px) auto calc(var(--sdr-safe-left) + 8px); width: calc(100vw - var(--sdr-safe-left) - var(--sdr-safe-right) - 16px); max-height: calc(var(--sdr-viewport-height, 100dvh) - var(--sdr-safe-top) - var(--sdr-safe-bottom) - 16px); }
+}
