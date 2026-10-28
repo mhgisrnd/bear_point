@@ -182,6 +182,7 @@
             : item.lat_dms != null && String(item.lat_dms).trim()
               ? String(item.lat_dms).trim()
               : decimalToDms(lat, false),
+        admin_region: item.admin_region || item.adminRegion || (item.payload && item.payload.admin_region) || null,
         lonDms:
           item.lonDms != null && String(item.lonDms).trim()
             ? String(item.lonDms).trim()
@@ -348,6 +349,7 @@
       const lines = [
         `[${item.bearCode || "-"}] 실시간 위치`,
         `지명: ${item.place || "미지정"}`,
+        `위치: ${item.admin_region || "미지정"}`,
         `등록자: ${item.owner || "미지정"}`,
         `위도: ${Number(item.lat).toFixed(6)}`,
         `경도: ${Number(item.lon).toFixed(6)}`,
@@ -515,6 +517,7 @@
             '  <div class="bears-item__main">',
             '    <div class="bears-item__code"><b>' + escapeHtml(item.bearCode || "-") + "</b></div>",
             '    <div class="bears-item__line">지명: ' + escapeHtml(item.place || "미지정") + "</div>",
+            '    <div class="bears-item__line">위치: ' + escapeHtml(item.admin_region || "미지정") + "</div>",
             '    <div class="bears-item__line">등록자: ' + escapeHtml(item.owner || "미지정") + "</div>",
             '    <div class="bears-item__line bears-item__line--sub">' + escapeHtml(item.latDms || decimalToDms(item.lat, false)) + ' ' + escapeHtml(item.lonDms || decimalToDms(item.lon, true)) + "</div>",
             '    <div class="bears-item__line bears-item__line--sub">위도 ' + escapeHtml(Number(item.lat).toFixed(6)) + ' / 경도 ' + escapeHtml(Number(item.lon).toFixed(6)) + "</div>",

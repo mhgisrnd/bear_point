@@ -20,55 +20,20 @@ window.createObsRegisterModule = function createObsRegisterModule({
   var obsRegFormEl = document.getElementById("obs-reg-form");
   var regPlaceEl = document.getElementById("reg-place");
   var regAdminRegionEl = document.getElementById("reg-admin-region");
-  var boundaryRequest = 0;
-  var boundaryKey = "";
-  var boundaryTimer = null;
+  var regionField = window.createEditableRegionField(regAdminRegionEl);
   var isSubmitting = false;
 
   function clearBoundaryLookup() {
-    boundaryRequest++;
-    boundaryKey = "";
-    clearTimeout(boundaryTimer);
-    if (regAdminRegionEl) {
-      regAdminRegionEl.value = "";
-      regAdminRegionEl.placeholder = "좌표 선택 시 행정구역 자동 조회";
-    }
+    regionField.reset();
   }
 
   function refreshBoundary(lat, lng) {
     if (!isRegisterPopupVisible()) return;
-    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
-      clearBoundaryLookup();
-      return;
-    }
-    var key = lat + "," + lng;
-    if (key === boundaryKey) return;
-    boundaryKey = key;
-    var request = ++boundaryRequest;
-    clearTimeout(boundaryTimer);
-    if (regAdminRegionEl) {
-      regAdminRegionEl.value = "";
-      regAdminRegionEl.placeholder = "행정구역 조회 중…";
-    }
-    boundaryTimer = setTimeout(async function () {
-      try {
-        var region = await window.BearAdminBoundary.lookup(lat, lng);
-        if (request !== boundaryRequest) return;
-        if (regAdminRegionEl) {
-          regAdminRegionEl.value = region ? region.name : "";
-          regAdminRegionEl.placeholder = region ? "" : "해당 좌표의 행정구역 없음";
-        }
-      } catch (error) {
-        if (request !== boundaryRequest) return;
-        boundaryKey = "";
-        if (regAdminRegionEl) regAdminRegionEl.placeholder = error.message || "행정구역 조회 실패";
-      }
-    }, 250);
+    regionField.update(lat, lng, { preserveManual: latestLive.isGpsActive });
   }
 
   async function attachBoundary(observation) {
-    var region = await window.BearAdminBoundary.lookup(observation.lat, observation.lng);
-    observation.adminRegion = region ? region.name : null;
+    observation.adminRegion = await regionField.resolve(observation.lat, observation.lng);
   }
   var regOwnerEl = document.getElementById("reg-owner");
   var regCoordEl = document.getElementById("reg-coord");
@@ -1534,6 +1499,10 @@ window.createObsRegisterModule = function createObsRegisterModule({
     latestLive.lng = Number(target.lng);
     latestLive.heading = parseHeadingNumber(target.heading);
     latestLive.isGpsActive = false;
+    var savedRegion = target.adminRegion != null ? target.adminRegion : target.admin_region;
+    if (savedRegion != null && String(savedRegion).trim()) {
+      regionField.reset(String(savedRegion), Number(latestLive.lat.toFixed(5)), Number(latestLive.lng.toFixed(5)));
+    }
 
     if (chkRegHeadingLock) {
       chkRegHeadingLock.checked = false;

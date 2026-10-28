@@ -74,6 +74,7 @@
         bear_code: isRealtime ? (it && (it.bearCode || it.bear_code)) : (it && (it.bear_code || it.bearCode)),
         owner: it && it.owner,
         place: it && it.place,
+        admin_region: it && (it.admin_region || it.adminRegion),
         lat: Number(it && it.lat),
         lng: Number(it && (it.lng != null ? it.lng : it.lon)),
         lat_dms: it && (it.lat_dms || it.latDms),
@@ -2626,6 +2627,7 @@
   let analysisActionOverlay = null;
   let analysisOwnerInputEl = null;
   let analysisPlaceInputEl = null;
+  let analysisRegionField = null;
   let analysisRealtimeShareInputEl = null;
   let currentAnalysisPoint = null; // 위치분석 최근 결과 (저장 버튼용)
   let analysisActionAnchorCoord = null;
@@ -2840,6 +2842,10 @@
           <div class="obs-popup-card__row">
             <span class="obs-popup-card__label">등록자</span>
             <span class="obs-popup-card__value">${escapeHtml(ownerName)}</span>
+          </div>
+          <div class="obs-popup-card__row">
+            <span class="obs-popup-card__label">위치</span>
+            <span class="obs-popup-card__value">${escapeHtml(item && (item.admin_region || item.adminRegion) || "미지정")}</span>
           </div>
           <div class="obs-popup-card__row">
             <span class="obs-popup-card__label">위경도</span>
@@ -4883,6 +4889,7 @@
         bear_code: String(row.bear_code || row.bearCode || "-").trim() || "-",
         owner: normalizeOwnerName(row.owner) || "미지정",
         place: normalizePlaceName(row.place) || "미지정",
+        admin_region: row.admin_region || row.adminRegion || null,
         lat: Number(row.lat),
         lng: Number(row.lng),
         lat_dms: row.lat_dms || null,
@@ -5040,7 +5047,7 @@
       return;
     }
 
-    const xlsRows = [["등록일자", "지명", "위치추적담당자", "X좌표(TM)", "Y좌표(TM)", "추적위치(위도 DMS)", "추적위치(경도 DMS)", "추적위치(위도)", "추적위치(경도)"]];
+    const xlsRows = [["등록일자", "지명", "위치", "위치추적담당자", "X좌표(TM)", "Y좌표(TM)", "추적위치(위도 DMS)", "추적위치(경도 DMS)", "추적위치(위도)", "추적위치(경도)"]];
 
     list.forEach(function (it) {
       const lat = Number(it.lat);
@@ -5054,7 +5061,7 @@
       const ownerName = normalizeOwnerName(it.owner) || "미지정";
       const placeName = normalizePlaceName(it.place) || "미지정";
 
-      xlsRows.push([timeLabel, placeName, ownerName, mapX, mapY, latDms, lngDms, lat, lng]);
+      xlsRows.push([timeLabel, placeName, it.admin_region || it.adminRegion || "", ownerName, mapX, mapY, latDms, lngDms, lat, lng]);
     });
 
     const nowParts = new Intl.DateTimeFormat("en-CA", {
@@ -5587,6 +5594,7 @@
     hideAnalysisActionBar();
     if (analysisOwnerInputEl) analysisOwnerInputEl.value = "";
     if (analysisPlaceInputEl) analysisPlaceInputEl.value = "";
+    if (analysisRegionField) analysisRegionField.reset();
     if (analysisRealtimeShareInputEl) analysisRealtimeShareInputEl.checked = true;
     currentAnalysisPoint = null;
   }
@@ -5670,6 +5678,21 @@
     placeInput.style.fontSize = "14px";
     placeInput.style.outline = "none";
 
+    const regionField = document.createElement("div");
+    regionField.style.cssText = placeField.style.cssText;
+    const regionLabel = document.createElement("label");
+    regionLabel.textContent = "위치";
+    regionLabel.htmlFor = "analysis-admin-region";
+    regionLabel.style.cssText = placeLabel.style.cssText;
+    const regionInput = document.createElement("input");
+    regionInput.id = "analysis-admin-region";
+    regionInput.type = "text";
+    regionInput.autocomplete = "off";
+    regionInput.placeholder = "자동 조회 · 직접 수정 가능";
+    regionInput.style.cssText = placeInput.style.cssText;
+    regionField.appendChild(regionLabel);
+    regionField.appendChild(regionInput);
+
     const realtimeShareLabel = document.createElement("label");
     realtimeShareLabel.style.display = "flex";
     realtimeShareLabel.style.alignItems = "center";
@@ -5727,6 +5750,7 @@
     cancelBtn.style.boxShadow = "0 8px 20px rgba(138,59,0,0.34)";
 
     saveBtn.addEventListener("click", async function () {
+      if (saveBtn.disabled) return;
       const point = currentAnalysisPoint;
       const ownerName = normalizeOwnerName(analysisOwnerInputEl ? analysisOwnerInputEl.value : "");
       const placeName = normalizePlaceName(analysisPlaceInputEl ? analysisPlaceInputEl.value : "");
@@ -5767,6 +5791,7 @@
         return {
           id: obs.id || null,
           place: obs.place || null,
+          adminRegion: obs.adminRegion || obs.admin_region || null,
           bearCode: obs.bearCode || null,
           owner: obs.owner || null,
           heading: obs.heading ?? null,
@@ -5820,10 +5845,12 @@
       let localSaved = false;
       try {
         saveBtn.disabled = true;
+        const adminRegion = await analysisRegionField.resolve(point.lat, point.lng);
+        if (currentAnalysisPoint !== point) return;
         await sqlite.run({
           database: dbName,
-          statement: "INSERT INTO bear_estimates (id, bear_code, owner, place, lat, lng, lat_dms, lng_dms, intersections_count, source_observation_ids, source_observations_json, analysis_rays_json, intersections_json, analysis_options_json, analysis_diagnostics_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-          values: [id, bearCode, ownerName || null, placeName || null, point.lat, point.lng, latDms, lngDms, intersectionsCount, sourceIds, sourceObservationsJson, analysisRaysJson, intersectionsJson, analysisOptionsJson, analysisDiagnosticsJson, createdAtKst],
+          statement: "INSERT INTO bear_estimates (id, bear_code, owner, place, admin_region, lat, lng, lat_dms, lng_dms, intersections_count, source_observation_ids, source_observations_json, analysis_rays_json, intersections_json, analysis_options_json, analysis_diagnostics_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+          values: [id, bearCode, ownerName || null, placeName || null, adminRegion, point.lat, point.lng, latDms, lngDms, intersectionsCount, sourceIds, sourceObservationsJson, analysisRaysJson, intersectionsJson, analysisOptionsJson, analysisDiagnosticsJson, createdAtKst],
           transaction: true,
           readonly: false
         });
@@ -5840,6 +5867,7 @@
               bear_code: bearCode,
               owner: ownerName || null,
               place: placeName || null,
+              admin_region: adminRegion,
               lat: point.lat,
               lng: point.lng,
               lat_dms: latDms,
@@ -5886,6 +5914,7 @@
     placeField.appendChild(placeInput);
     fieldGrid.appendChild(ownerField);
     fieldGrid.appendChild(placeField);
+    fieldGrid.appendChild(regionField);
 
     const headerText = document.createElement("div");
     headerText.textContent = "추가정보 입력";
@@ -5944,6 +5973,7 @@
     analysisActionBarEl = root;
     analysisOwnerInputEl = ownerInput;
     analysisPlaceInputEl = placeInput;
+    analysisRegionField = window.createEditableRegionField(regionInput);
     analysisRealtimeShareInputEl = realtimeShareInput;
   }
 
@@ -6010,6 +6040,7 @@
     analysisEstimateSource.addFeature(feature);
     syncAnalysisOwnerInput(point);
     syncAnalysisPlaceInput(point);
+    if (analysisRegionField) analysisRegionField.update(point.lat, point.lng);
     showAnalysisActionBar(estimateCoord);
     startAnalysisVisualAnimation();
   }
@@ -6128,6 +6159,7 @@
     lines.push("코드     : " + bearCode);
     lines.push("등록자   : " + ownerName);
     lines.push("지명     : " + placeName);
+    lines.push("위치     : " + (it.admin_region || it.adminRegion || "미지정"));
     lines.push("저장 일시   : " + timeLabel);
     lines.push("");
     lines.push("[ 사용된 관측점 목록 (" + sourceObservations.length + "개) ]");
@@ -6307,8 +6339,8 @@
     const lngDms = it.lng_dms || decimalToDMS(lng, true);
 
     const xlsData = [
-      ["등록일자", "지명", "위치추적담당자", "X좌표(TM)", "Y좌표(TM)", "추정위치(위도 DMS)", "추정위치(경도 DMS)", "추정위치(위도)", "추정위치(경도)"],
-      [timeLabel, placeName, ownerName, mapX, mapY, latDms, lngDms, lat, lng]
+      ["등록일자", "지명", "위치", "위치추적담당자", "X좌표(TM)", "Y좌표(TM)", "추정위치(위도 DMS)", "추정위치(경도 DMS)", "추정위치(위도)", "추정위치(경도)"],
+      [timeLabel, placeName, it.admin_region || it.adminRegion || "", ownerName, mapX, mapY, latDms, lngDms, lat, lng]
     ];
 
     const previewHtml = buildXlsPreviewHtml(xlsData);
@@ -6657,6 +6689,7 @@
         '<div class="bears-item__main">' +
           '<div class="bears-item__code"><b>' + bearCode + '</b></div>' +
           '<div class="bears-item__line">지명: ' + placeName + '</div>' +
+          '<div class="bears-item__line">위치: ' + escapeHtml(it.admin_region || "미지정") + '</div>' +
           '<div class="bears-item__line">등록자: ' + ownerName + '</div>' +
           '<div class="bears-item__line bears-item__line--sub">' + latDms + ' ' + lngDms + '</div>' +
           '<div class="bears-item__line bears-item__line--sub">X: ' + mapX + ' / Y: ' + mapY + '</div>' +
@@ -6774,13 +6807,13 @@
         // 최신 스키마(lat_dms/lng_dms 컬럼 포함) 우선 조회
         result = await sqlite.query({
           database: dbName,
-          statement: "SELECT id, bear_code, owner, place, lat, lng, lat_dms, lng_dms, intersections_count, source_observations_json, analysis_options_json, analysis_rays_json, intersections_json, shared_at, created_at FROM bear_estimates ORDER BY created_at DESC LIMIT 100",
+          statement: "SELECT id, bear_code, owner, place, admin_region, lat, lng, lat_dms, lng_dms, intersections_count, source_observations_json, analysis_options_json, analysis_rays_json, intersections_json, shared_at, created_at FROM bear_estimates ORDER BY created_at DESC LIMIT 100",
           values: [],
           readonly: false
         });
       } catch (primaryQueryError) {
         const message = String(primaryQueryError && primaryQueryError.message ? primaryQueryError.message : primaryQueryError);
-        if (/no such column: owner|no such column: place|no such column: lat_dms|no such column: lng_dms|no such column: source_observations_json|no such column: analysis_options_json|no such column: analysis_rays_json|no such column: intersections_json|no such column: shared_at/i.test(message)) {
+        if (/no such column: owner|no such column: place|no such column: admin_region|no such column: lat_dms|no such column: lng_dms|no such column: source_observations_json|no such column: analysis_options_json|no such column: analysis_rays_json|no such column: intersections_json|no such column: shared_at/i.test(message)) {
           // 구버전 DB(도분초 컬럼 미생성)에서도 목록이 보이도록 하위호환 조회
           result = await sqlite.query({
             database: dbName,
@@ -6817,6 +6850,7 @@
               bear_code: String(row.bear_code || "-"),
               owner: normalizeOwnerName(row.owner) || "미지정",
               place: normalizePlaceName(row.place) || "미지정",
+              admin_region: row.admin_region || null,
               lat: Number(row.lat),
               lng: Number(row.lng),
               lat_dms: row.lat_dms || null,

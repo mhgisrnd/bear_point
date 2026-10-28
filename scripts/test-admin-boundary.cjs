@@ -44,7 +44,85 @@ test("migration 12 preserves existing observations and adds a nullable location"
     assert.deepEqual(db.prepare("SELECT * FROM observations").get(), { id: "existing", place: "original", admin_region: null });
     db.prepare("UPDATE observations SET admin_region=? WHERE id=?").run("전라남도 구례군 구례읍", "existing");
     assert.equal(db.prepare("SELECT admin_region FROM observations").get().admin_region, "전라남도 구례군 구례읍");
+    db.exec("CREATE TABLE bear_estimates(id TEXT PRIMARY KEY); INSERT INTO bear_estimates VALUES ('saved-estimate');");
+    window.BearSQLiteConfig.migrations[13].forEach(sql => db.exec(sql));
+    assert.deepEqual(db.prepare("SELECT * FROM bear_estimates").get(), { id: "saved-estimate", admin_region: null });
   } finally { db.close(); }
+});
+
+test("late automatic responses never overwrite manual text and a new coordinate resets the override", async () => {
+  let onInput;
+  let complete;
+  const input = { value: "", addEventListener: (event, handler) => { onInput = handler; } };
+  const window = { BearAdminBoundary: { lookup: () => new Promise(resolve => { complete = resolve; }) } };
+  vm.runInNewContext(fs.readFileSync(path.join(root, "public/js/db/editable-region-field.js"), "utf8"), { window, setTimeout, clearTimeout });
+  const field = window.createEditableRegionField(input);
+  field.update(35, 127);
+  await new Promise(resolve => setTimeout(resolve, 280));
+  input.value = "현장 수정 위치"; onInput();
+  complete({ name: "자동 조회 위치" });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(input.value, "현장 수정 위치");
+  assert.equal(await field.resolve(35, 127), "현장 수정 위치");
+  field.update(35.1, 127);
+  assert.equal(input.value, "");
+  field.reset();
+});
+
+test("tracking result auto-fills an editable location and stores/shares the corrected value", async () => {
+  function element(tag) {
+    return { tag, style: {}, children: [], value: "", listeners: {},
+      appendChild(child) { this.children.push(child); },
+      addEventListener(event, handler) { this.listeners[event] = handler; },
+      querySelector() { return null; } };
+  }
+  const db = new Database(":memory:");
+  db.exec(`CREATE TABLE bear_estimates(id TEXT PRIMARY KEY, bear_code TEXT, owner TEXT, place TEXT,
+    admin_region TEXT, lat REAL, lng REAL, lat_dms TEXT, lng_dms TEXT, intersections_count INTEGER,
+    source_observation_ids TEXT, source_observations_json TEXT, analysis_rays_json TEXT,
+    intersections_json TEXT, analysis_options_json TEXT, analysis_diagnostics_json TEXT, created_at TEXT)`);
+  const shared = [];
+  const window = { BearAdminBoundary: { lookup: async () => ({ name: "전라남도 구례군 구례읍" }) } };
+  const context = vm.createContext({ window, setTimeout, clearTimeout, console,
+    document: { createElement: element, createTextNode: text => ({ text }) },
+    ol: { Overlay: function (options) { this.element = options.element; } },
+    map: { addOverlay() {}, getTargetElement: () => null },
+    bindAnalysisActionBarLayoutListeners() {},
+    analysisActionBarEl: null, analysisActionOverlay: null, analysisOwnerInputEl: null,
+    analysisPlaceInputEl: null, analysisRegionField: null, analysisRealtimeShareInputEl: null,
+    currentAnalysisPoint: { lat: 35.202, lng: 127.462, bearCode: "bear-1" },
+    normalizeOwnerName: value => String(value || "").trim(),
+    normalizePlaceName: value => String(value || "").trim(),
+    initializeEmbeddedDatabase: async () => ({ ready: true }),
+    getCapacitorSQLitePlugin: () => ({ run: async options => db.prepare(options.statement).run(...options.values) }),
+    decimalToDMS: value => String(value), getKstSqliteTimestamp: () => "2026-10-28 10:00:00",
+    normalizeAnalysisOptions: value => value || {},
+    clearAnalysisEstimateVisuals() {}, refreshBearEstimatePanel: async () => {},
+    statusEl: { textContent: "" },
+    realtimeListModule: { sendEstimate: async item => { shared.push(item); return { ok: true }; }, openRealtimeTab() {} },
+    markBearEstimatesShared: async () => {}
+  });
+  vm.runInContext(fs.readFileSync(path.join(root, "public/js/db/editable-region-field.js"), "utf8"), context);
+  const source = fs.readFileSync(path.join(root, "public/js/client-ol.js"), "utf8");
+  const start = source.indexOf("  function mountAnalysisActionBar() {");
+  const end = source.indexOf("  // 방금 계산한 분석 결과", start);
+  vm.runInContext(source.slice(start, end) + "\nmountAnalysisActionBar();", context);
+  try {
+    context.analysisRegionField.update(35.202, 127.462);
+    await new Promise(resolve => setTimeout(resolve, 280));
+    const grid = context.analysisActionBarEl.children[0].children[1].children[0];
+    const input = grid.children[2].children[1];
+    assert.equal(input.value, "전라남도 구례군 구례읍");
+    input.value = "전라남도 구례군 현장 확인 지점";
+    input.listeners.input();
+    const save = context.analysisActionBarEl.children[1].children[0];
+    await save.listeners.click();
+    const row = db.prepare("SELECT * FROM bear_estimates").get();
+    assert.ok(row, context.statusEl.textContent);
+    assert.equal(row.admin_region, input.value);
+    assert.equal(row.lat, 35.202);
+    assert.equal(shared[0].admin_region, input.value);
+  } finally { context.analysisRegionField.reset(); db.close(); }
 });
 
 test("web lookup returns real regions, no match and input errors", async () => {
@@ -120,6 +198,9 @@ test("registration and editing refresh location from GPS/map/manual input and pe
     } }
   };
   const statusEl = { textContent: "" };
+  vm.runInNewContext(fs.readFileSync(path.join(root, "public/js/db/editable-region-field.js"), "utf8"), {
+    window, setTimeout, clearTimeout
+  });
   vm.runInNewContext(fs.readFileSync(path.join(root, "public/js/obs/obsRegister.js"), "utf8"), {
     window, document: { getElementById: id => elements[id] || null, querySelectorAll: () => [], addEventListener() {} },
     setTimeout, clearTimeout, Intl, console
@@ -134,11 +215,15 @@ test("registration and editing refresh location from GPS/map/manual input and pe
     form.updateLiveData({ lat: 37.5665, lng: 126.978, heading: 0, isGpsActive: true });
     await settle();
     assert.equal(elements["reg-admin-region"].value, "서울특별시 중구 명동");
+    elements["reg-admin-region"].value = "직접 수정한 관측 위치";
+    elements["reg-admin-region"].listeners.input();
+    form.updateLiveData({ lat: 37.56651, lng: 126.97801, heading: 0, isGpsActive: true });
+    assert.equal(elements["reg-admin-region"].value, "직접 수정한 관측 위치");
     elements["btn-reg-submit"].listeners.click();
     await settle();
     assert.equal(saved.length, 1, statusEl.textContent);
     const row = db.prepare("SELECT * FROM observations").get();
-    assert.equal(row.admin_region, "서울특별시 중구 명동");
+    assert.equal(row.admin_region, "직접 수정한 관측 위치");
 
     form.openForEdit({ ...row, bearCode: row.bear_code });
     form.applyMapClickCoordinate(35.202, 127.462);
