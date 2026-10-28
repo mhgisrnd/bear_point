@@ -19,6 +19,57 @@ window.createObsRegisterModule = function createObsRegisterModule({
   var detListEl = document.getElementById("det-list");
   var obsRegFormEl = document.getElementById("obs-reg-form");
   var regPlaceEl = document.getElementById("reg-place");
+  var regAdminRegionEl = document.getElementById("reg-admin-region");
+  var boundaryRequest = 0;
+  var boundaryKey = "";
+  var boundaryTimer = null;
+  var isSubmitting = false;
+
+  function clearBoundaryLookup() {
+    boundaryRequest++;
+    boundaryKey = "";
+    clearTimeout(boundaryTimer);
+    if (regAdminRegionEl) {
+      regAdminRegionEl.value = "";
+      regAdminRegionEl.placeholder = "좌표 선택 시 행정구역 자동 조회";
+    }
+  }
+
+  function refreshBoundary(lat, lng) {
+    if (!isRegisterPopupVisible()) return;
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+      clearBoundaryLookup();
+      return;
+    }
+    var key = lat + "," + lng;
+    if (key === boundaryKey) return;
+    boundaryKey = key;
+    var request = ++boundaryRequest;
+    clearTimeout(boundaryTimer);
+    if (regAdminRegionEl) {
+      regAdminRegionEl.value = "";
+      regAdminRegionEl.placeholder = "행정구역 조회 중…";
+    }
+    boundaryTimer = setTimeout(async function () {
+      try {
+        var region = await window.BearAdminBoundary.lookup(lat, lng);
+        if (request !== boundaryRequest) return;
+        if (regAdminRegionEl) {
+          regAdminRegionEl.value = region ? region.name : "";
+          regAdminRegionEl.placeholder = region ? "" : "해당 좌표의 행정구역 없음";
+        }
+      } catch (error) {
+        if (request !== boundaryRequest) return;
+        boundaryKey = "";
+        if (regAdminRegionEl) regAdminRegionEl.placeholder = error.message || "행정구역 조회 실패";
+      }
+    }, 250);
+  }
+
+  async function attachBoundary(observation) {
+    var region = await window.BearAdminBoundary.lookup(observation.lat, observation.lng);
+    observation.adminRegion = region ? region.name : null;
+  }
   var regOwnerEl = document.getElementById("reg-owner");
   var regCoordEl = document.getElementById("reg-coord");
   var regHeadingEl = document.getElementById("reg-heading");
@@ -537,8 +588,8 @@ window.createObsRegisterModule = function createObsRegisterModule({
     await sqlite.run({
       database: dbName,
       statement: [
-        "INSERT INTO observations (id, bear_code, owner, lat, lng, heading, place, detectors_json)",
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+        "INSERT INTO observations (id, bear_code, owner, lat, lng, heading, place, detectors_json, admin_region)",
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
       ].join(" "),
       values: [
         observation.id,
@@ -548,7 +599,8 @@ window.createObsRegisterModule = function createObsRegisterModule({
         observation.lng,
         observation.heading,
         observation.place,
-        JSON.stringify(normalizedDetectors)
+        JSON.stringify(normalizedDetectors),
+        observation.adminRegion
       ],
       transaction: true,
       readonly: false
@@ -587,7 +639,7 @@ window.createObsRegisterModule = function createObsRegisterModule({
       database: getDbName(),
       statement: [
         "UPDATE observations",
-        "SET bear_code = ?, owner = ?, place = ?, lat = ?, lng = ?, heading = ?, detectors_json = ?, updated_at = datetime('now')",
+        "SET bear_code = ?, owner = ?, place = ?, lat = ?, lng = ?, heading = ?, detectors_json = ?, admin_region = ?, updated_at = datetime('now')",
         "WHERE id = ?"
       ].join(" "),
       values: [
@@ -598,6 +650,7 @@ window.createObsRegisterModule = function createObsRegisterModule({
         payload.lng,
         payload.heading,
         JSON.stringify(normalizedDetectors),
+        payload.adminRegion,
         observationId
       ],
       transaction: true,
@@ -777,6 +830,11 @@ window.createObsRegisterModule = function createObsRegisterModule({
     var bearCode = regBearEl ? regBearEl.value.trim() : "";
     var lat = parseFiniteNumber(latestLive.lat);
     var lng = parseFiniteNumber(latestLive.lng);
+    if (isManualEntryEnabled()) {
+      var manualCoordinate = parseManualCoordInput(regCoordEl ? regCoordEl.value : "");
+      lat = manualCoordinate ? manualCoordinate.lat : NaN;
+      lng = manualCoordinate ? manualCoordinate.lng : NaN;
+    }
     var heading = parseHeadingNumber(isHeadingLocked ? lockedHeadingDeg : latestLive.heading);
 
     if (!owner) {
@@ -813,9 +871,12 @@ window.createObsRegisterModule = function createObsRegisterModule({
 
   // 제출 버튼 진입점으로, payload 생성부터 저장 후 콜백 호출까지 처리한다.
   async function submitObservation() {
+    if (isSubmitting) return;
+    isSubmitting = true;
     try {
       clearAllValidationErrors();
       var observation = buildObservationPayload();
+      await attachBoundary(observation);
       var detectors = collectDetectorRows();
       var source = "demo";
       if (window.Capacitor && typeof window.Capacitor.isNativePlatform === "function" && window.Capacitor.isNativePlatform()) {
@@ -844,11 +905,15 @@ window.createObsRegisterModule = function createObsRegisterModule({
       statusEl.textContent = "⚠️ " + (error && error.message ? error.message : String(error));
       triggerLightErrorVibration();
       highlightStatusOnce();
+    } finally {
+      isSubmitting = false;
     }
   }
 
   // 수정 모드 제출: 확인 후 앱(SQLite) 업데이트 또는 웹 더미 메모리 업데이트를 수행한다.
   async function submitObservationEdit() {
+    if (isSubmitting) return;
+    isSubmitting = true;
     try {
       clearAllValidationErrors();
       if (!editingObservationId) {
@@ -877,10 +942,12 @@ window.createObsRegisterModule = function createObsRegisterModule({
         return;
       }
 
+      await attachBoundary(editedObservation);
+
       var source = "demo";
 
       if (window.Capacitor && typeof window.Capacitor.isNativePlatform === "function" && window.Capacitor.isNativePlatform()) {
-        await updateObservationInSQLite(editingObservationId, editedObservation, detectors);
+        await updateObservationInSQLite(editedObservation.id, editedObservation, detectors);
         source = "sqlite";
       }
       if (onObservationSaved) {
@@ -900,11 +967,14 @@ window.createObsRegisterModule = function createObsRegisterModule({
       statusEl.textContent = "⚠️ " + (error && error.message ? error.message : String(error));
       triggerLightErrorVibration();
       highlightStatusOnce();
+    } finally {
+      isSubmitting = false;
     }
   }
 
   // 등록 폼을 기본 상태로 초기화하고 감지기 섹션을 빈 상태 안내문으로 되돌린다.
   function resetFormState() {
+    clearBoundaryLookup();
     clearManualPreview();
     if (obsRegFormEl) obsRegFormEl.reset();
     applyLastOwnerDefault();
@@ -1070,6 +1140,10 @@ window.createObsRegisterModule = function createObsRegisterModule({
         }
       }
     }
+
+    var displayedManualCoordinate = isManualInputMode ? parseManualCoordInput(regCoordEl ? regCoordEl.value : "") : null;
+    refreshBoundary(isManualInputMode ? (displayedManualCoordinate && displayedManualCoordinate.lat) : (hasCoord ? latValue : null),
+      isManualInputMode ? (displayedManualCoordinate && displayedManualCoordinate.lng) : (hasCoord ? lngValue : null));
 
     if (regHeadingEl) {
       if (isManualInputMode) {
@@ -1378,6 +1452,7 @@ window.createObsRegisterModule = function createObsRegisterModule({
       latestLive.lat = coordParsed.lat;
       latestLive.lng = coordParsed.lng;
     }
+    refreshBoundary(coordParsed ? coordParsed.lat : null, coordParsed ? coordParsed.lng : null);
 
     if (Number.isFinite(headingParsed) && !isHeadingLocked) {
       latestLive.heading = headingParsed;
@@ -1398,6 +1473,7 @@ window.createObsRegisterModule = function createObsRegisterModule({
 
   // 등록 팝업을 열고 위치/UI 상태를 초기 표시로 맞춘다.
   function open() {
+    clearBoundaryLookup();
     if (registerBoxEl) registerBoxEl.classList.remove("hidden");
     formMode = "create";
     syncGpsToggleModeUi();
@@ -1424,6 +1500,7 @@ window.createObsRegisterModule = function createObsRegisterModule({
 
   // 관측점 수정 모드로 팝업을 열고 기존 데이터를 폼에 채운다.
   function openForEdit(observation) {
+    clearBoundaryLookup();
     var target = observation || {};
     var targetId = String(target.id || "").trim();
     if (!targetId) {
@@ -1493,6 +1570,7 @@ window.createObsRegisterModule = function createObsRegisterModule({
 
   // 등록 팝업을 숨기고 필요 시 폼 상태를 초기화한다.
   function hide(shouldReset) {
+    clearBoundaryLookup();
     closeBearPicker();
     if (registerBoxEl) registerBoxEl.classList.add("hidden");
     if (shouldReset) resetFormState();
@@ -1601,6 +1679,7 @@ window.createObsRegisterModule = function createObsRegisterModule({
         var parsed = parseManualCoordInput(regCoordEl.value);
         if (!parsed) return;
         regCoordEl.value = parsed.lat.toFixed(5) + ", " + parsed.lng.toFixed(5);
+        applyManualInputValues();
       });
     }
 

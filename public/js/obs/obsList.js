@@ -350,6 +350,10 @@ window.createObsListModule = function createObsListModule({
             </div>
           </div>
           <div class="obs-popup-card__row">
+            <span class="obs-popup-card__label">위치</span>
+            <span class="obs-popup-card__value">${escapeHtml(item && item.adminRegion ? item.adminRegion : "-")}</span>
+          </div>
+          <div class="obs-popup-card__row">
             <span class="obs-popup-card__label">방향각</span>
             <span class="obs-popup-card__value">${heading}</span>
           </div>
@@ -423,6 +427,7 @@ window.createObsListModule = function createObsListModule({
     return {
       id,
       place,
+      adminRegion: String(row.admin_region || row.adminRegion || "").trim(),
       bearCode,
       owner,
       lat,
@@ -502,7 +507,7 @@ window.createObsListModule = function createObsListModule({
       const queryResult = await sqlite.query({
         database: dbName,
         statement: `
-          SELECT id, place, bear_code, owner, lat, lng, heading, created_at, updated_at, detectors_json
+          SELECT id, place, admin_region, bear_code, owner, lat, lng, heading, created_at, updated_at, detectors_json
           FROM observations
           ORDER BY created_at DESC, id ASC
         `,

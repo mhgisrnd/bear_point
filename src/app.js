@@ -1,5 +1,6 @@
 const path = require("path");
 const express = require("express");
+const { createAdminBoundaryRouter } = require("./routes/adminBoundaryRoutes");
 
 const { createMbtilesStore } = require("./services/mbtilesStore");
 const { createMbtilesRouter } = require("./routes/mbtilesRoutes");
@@ -61,6 +62,7 @@ function createApp(rootDir, options = {}) {
   });
 
   rootRouter.use(createMbtilesRouter(mbtilesStore));
+  rootRouter.use(createAdminBoundaryRouter(rootDir));
   rootRouter.use("/api/db/postgres", createPostgresRouter());
   rootRouter.use("/api/realtime", createRealtimeRouter());
   rootRouter.use("/api/admin/auth", createAdminAuthRouter({ adminSessionStore }));
