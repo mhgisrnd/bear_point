@@ -36,6 +36,9 @@
   const btnBearsDownloadAllXlsEl = document.getElementById("btn-bears-download-all-xls");
   const btnBearsUploadSelectedEl = document.getElementById("btn-bears-upload-selected");
   const btnBearsDeleteSelectedEl = document.getElementById("btn-bears-delete-selected");
+  const bearCodeSearchFormEl = document.getElementById("bear-code-search-form");
+  const bearCodeSearchEl = document.getElementById("bear-code-query");
+  const btnBearCodeClearEl = document.getElementById("btn-bear-code-clear");
   const currentCoordEl = document.getElementById("obs-current-coord");
   const currentHeadingEl = document.getElementById("obs-current-heading");
   const searchParams = new URLSearchParams(window.location.search);
@@ -92,8 +95,14 @@
     });
   }
 
+  function getFilteredBearEstimates(items = currentBearEstimateItems) {
+    const query = String(bearCodeSearchEl?.value || "").trim().toLowerCase();
+    if (!query) return items;
+    return items.filter(item => String(item.bear_code || item.bearCode || "").toLowerCase().includes(query));
+  }
+
   function syncBearMarkersForActiveTab(realtimeItemsOverride) {
-    renderBearMarkers(mapBearMarkerItems(currentBearEstimateItems, false));
+    renderBearMarkers(mapBearMarkerItems(getFilteredBearEstimates(), false));
   }
 
   function repaintUnifiedBearList() {
@@ -5240,13 +5249,29 @@
     bearsSelectAllEl.addEventListener("change", function () {
       selectedBearEstimateIds.clear();
       if (bearsSelectAllEl.checked) {
-        currentBearEstimateItems.forEach(function (it) {
+        getFilteredBearEstimates().forEach(function (it) {
           selectedBearEstimateIds.add(String(it.id));
         });
       }
       renderBears(currentBearEstimateItems, currentBearEstimateFallbackMode);
     });
   }
+
+  function applyBearCodeSearch() {
+    if (btnBearCodeClearEl) btnBearCodeClearEl.disabled = !bearCodeSearchEl?.value;
+    repaintUnifiedBearList();
+  }
+  if (bearCodeSearchEl) bearCodeSearchEl.addEventListener("input", applyBearCodeSearch);
+  if (bearCodeSearchFormEl) bearCodeSearchFormEl.addEventListener("submit", function (event) {
+    event.preventDefault();
+    applyBearCodeSearch();
+    bearCodeSearchEl?.blur();
+  });
+  if (btnBearCodeClearEl) btnBearCodeClearEl.addEventListener("click", function () {
+    bearCodeSearchEl.value = "";
+    applyBearCodeSearch();
+    bearCodeSearchEl.focus();
+  });
 
   const btnBearsRefresh = document.getElementById("btn-bears-refresh");
   let bearRefreshInProgress = false;
@@ -5285,7 +5310,7 @@
     btnBearsDownloadAllXlsEl.addEventListener("click", function (event) {
       event.preventDefault();
       event.stopPropagation();
-      downloadAllBearEstimatesXls(currentBearEstimateItems);
+      downloadAllBearEstimatesXls(getFilteredBearEstimates());
     });
   }
 
@@ -6658,6 +6683,8 @@
 
   function renderBears(items, isFallback) {
     if (!bearsListEl) return;
+    items = getFilteredBearEstimates(Array.isArray(items) ? items : []);
+    const searching = !!String(bearCodeSearchEl?.value || "").trim();
     syncSelectedBearEstimateIds(items);
     if (realtimeListModule && typeof realtimeListModule.bindEstimateItems === "function") {
       realtimeListModule.bindEstimateItems(items);
@@ -6665,7 +6692,7 @@
     bearsListEl.innerHTML = "";
 
     if (!items || items.length === 0) {
-      bearsListEl.innerHTML = [
+      bearsListEl.innerHTML = searching ? '<div class="bears-search-empty" role="status">일치하는 개체 코드가 없습니다.<small>검색어를 바꾸거나 초기화해주세요.</small></div>' : [
         '<div class="bears-empty" role="status" aria-live="polite">',
         '  <div class="bears-empty__icon" aria-hidden="true">🐻</div>',
         '  <div class="bears-empty__title">곰 추적위치 목록이 비어 있습니다</div>',
@@ -6675,15 +6702,15 @@
         '</div>'
       ].join('');
       if (bearsToolbarSummaryEl) {
-        bearsToolbarSummaryEl.hidden = true;
-        bearsToolbarSummaryEl.textContent = "";
+        bearsToolbarSummaryEl.hidden = !searching;
+        bearsToolbarSummaryEl.textContent = searching ? "0 / " + currentBearEstimateItems.length + "건" : "";
       }
       updateBearEstimateToolbar([]);
       return;
     }
 
     if (bearsToolbarSummaryEl) {
-      bearsToolbarSummaryEl.innerHTML = '<img src="css/image/icon_bear.png" style="height:16px;vertical-align:middle;margin-right:4px;" alt="곰"/> ' + items.length + '건 표시됨' + (isFallback ? ' <span style="font-size:11px;opacity:.6">(샘플)</span>' : '');
+      bearsToolbarSummaryEl.innerHTML = '<img src="css/image/icon_bear.png" style="height:16px;vertical-align:middle;margin-right:4px;" alt="곰"/> ' + items.length + (searching ? ' / ' + currentBearEstimateItems.length + '건' : '건 표시됨') + (isFallback ? ' <span style="font-size:11px;opacity:.6">(샘플)</span>' : '');
       bearsToolbarSummaryEl.hidden = false;
     }
 

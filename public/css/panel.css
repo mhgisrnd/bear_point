@@ -3131,6 +3131,14 @@
 
 /* Unified tracking rows keep essential fields visible within a compact card. */
 #panel:not(.collapsed) .panel-body { margin-top: 6px; }
+.bear-code-search { display: flex; flex: 0 0 auto; gap: 5px; margin: 0 0 6px; min-width: 0; }
+.bear-code-search input { box-sizing: border-box; min-width: 0; flex: 1 1 auto; height: 32px; padding: 0 9px; border: 1px solid #d4dfec; border-radius: 7px; background: #fff; color: #243c56; font: 12px system-ui, sans-serif; outline: none; }
+.bear-code-search input:focus { border-color: #8eade8; box-shadow: 0 0 0 2px #dce8ff; }
+.bear-code-search button { flex: 0 0 auto; height: 32px; padding: 0 9px; border: 1px solid #d4dfec; border-radius: 7px; background: #fff; color: #526881; font-size: 11px; font-weight: 700; cursor: pointer; }
+.bear-code-search .bear-code-search__submit { color: #2858b4; background: #eef4ff; border-color: #c5d5f1; }
+.bear-code-search button:disabled { opacity: .45; cursor: default; }
+.bears-search-empty { padding: 15px 6px; color: #526881; text-align: center; font-size: 12px; }
+.bears-search-empty small { display: block; margin-top: 5px; color: #7a8899; font-size: 11px; }
 #bears-box { margin-top: 4px; padding: 6px; border-radius: 8px; }
 #bears-box .bears-title { margin-bottom: 4px; }
 #bears-box .bears-toolbar { gap: 3px; }
@@ -3183,8 +3191,8 @@
 }
 
 @media (orientation: landscape) and (max-width: 899px) {
-  #panel:not(.collapsed) { max-height: max(220px, 56dvh); }
-  #panel:not(.collapsed) .panel-body { display: flex; flex-direction: column; overflow: hidden; max-height: max(166px, calc(56dvh - 54px)); }
+  #panel:not(.collapsed) { max-height: max(262px, 64dvh); }
+  #panel:not(.collapsed) .panel-body { display: flex; flex-direction: column; overflow: hidden; max-height: min(calc(100dvh - 126px), max(208px, calc(64dvh - 54px))); }
   #panel .tracking-source-heading { position: absolute; top: 10px; right: 54px; margin: 0; padding: 0; border: 0; }
   #panel .tracking-source-heading > span { display: none; }
   #bears-box { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; margin-top: 0; }

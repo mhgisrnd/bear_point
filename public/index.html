@@ -253,6 +253,11 @@
 
       <div class="panel-body" id="panel-body">
         <div class="tracking-source-heading"><span>개체 추적</span><button class="tracking-refresh" id="btn-bears-refresh" type="button" title="공유 자료 새로고침" aria-label="개체 추적위치 새로고침">↻</button></div>
+        <form class="bear-code-search" id="bear-code-search-form" role="search" aria-label="개체 코드 검색">
+          <input id="bear-code-query" type="search" placeholder="개체 코드 검색" aria-label="검색할 개체 코드" autocomplete="off" spellcheck="false" enterkeyhint="search" />
+          <button type="submit" class="bear-code-search__submit">조회</button>
+          <button type="button" id="btn-bear-code-clear" disabled>초기화</button>
+        </form>
         <div class="bears-box" id="bears-box">
           <div class="bears-title">
             <div class="bears-toolbar" id="bears-toolbar">

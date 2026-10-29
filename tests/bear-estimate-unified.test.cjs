@@ -5,6 +5,30 @@ const vm = require('node:vm');
 const source = fs.readFileSync('public/js/client-ol.js', 'utf8');
 const transport = fs.readFileSync('public/js/realtime/realtimeList.js', 'utf8');
 
+test('code search matches fragments without case sensitivity and clears without changing source records', () => {
+  const rows = [{ id: 'one', bear_code: 'KF-58', owner: 'KF-99' }, { id: 'two', bearCode: 'KM-120' }, { id: 'three', bear_code: 'KF-58' }];
+  const context = vm.createContext({ currentBearEstimateItems: rows, bearCodeSearchEl: { value: '  kf-5  ' } });
+  const start = source.indexOf('  function getFilteredBearEstimates(');
+  vm.runInContext(source.slice(start, source.indexOf('  function syncBearMarkersForActiveTab(', start)), context);
+  assert.deepEqual([...context.getFilteredBearEstimates()].map(row => row.id), ['one', 'three']);
+  context.bearCodeSearchEl.value = '120';
+  assert.equal(context.getFilteredBearEstimates()[0].id, 'two');
+  context.bearCodeSearchEl.value = 'kf-99';
+  assert.equal(context.getFilteredBearEstimates().length, 0, 'only the code field is searched');
+  context.bearCodeSearchEl.value = '';
+  assert.equal(context.getFilteredBearEstimates(), rows);
+  assert.equal(rows.length, 3);
+});
+
+test('filtered rendering removes hidden selections before bulk operations', () => {
+  const selected = new Set(['one', 'two']);
+  const context = vm.createContext({ selectedBearEstimateIds: selected });
+  const start = source.indexOf('  function syncSelectedBearEstimateIds(');
+  vm.runInContext(source.slice(start, source.indexOf('  //', start)), context);
+  context.syncSelectedBearEstimateIds([{ id: 'one' }]);
+  assert.deepEqual([...selected], ['one']);
+});
+
 test('unified transport starts without a toggle, paginates completely, and retains rows on network failure', async () => {
   const el = () => ({ dataset: {}, style: {}, classList: { add() {}, remove() {} }, addEventListener() {}, setAttribute() {} });
   const elements = new Map();
