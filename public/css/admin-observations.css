@@ -1,0 +1,5 @@
+.tracking-modal-dialog { max-height: calc(100dvh - 48px); overflow-y: auto; margin-top: 24px; }
+.observation-detectors { border: 1px solid #d5dfd9; border-radius: 10px; padding: 12px; }
+.observation-detector-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 8px 0; }
+.observation-detector-row input { width: 100%; min-width: 0; box-sizing: border-box; }
+.tracking-edit-actions { position: sticky; bottom: -16px; padding: 12px 0; background: white; }

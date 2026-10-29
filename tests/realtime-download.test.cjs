@@ -196,6 +196,7 @@ test('web TXT and XLS previews download only after Save and close without native
       return node;
     } },
     window: { alert() { throw new Error('native alert must not open'); } },
+    closeObservationPopup() {},
     registerBackClosableOverlay: () => () => {},
     isNativeCapacitorPlatform: () => false,
     showSavedFileOpenDialog: () => { throw new Error('native dialog must not open'); },

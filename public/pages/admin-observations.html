@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>관측점 관리</title>
+  <link rel="stylesheet" href="../css/admin-layout.css" />
+  <link rel="stylesheet" href="../css/admin-tracking.css" />
+  <link rel="stylesheet" href="../css/admin-observations.css" />
+</head>
+<body data-admin-page="observations" data-admin-title="관측점 관리" data-admin-subtitle="공유 관측점의 수정·삭제를 관리합니다">
+  <div class="admin-app">
+    <main class="admin-shell">
+      <aside class="admin-sidebar" id="adminSidebar"></aside>
+      <div class="admin-main">
+        <header class="admin-header" id="adminHeader"></header>
+        <section class="tracking-shell">
+          <h1 id="adminHeaderTitle">관측점 관리</h1>
+          <p id="adminHeaderSubtitle">공유 관측점의 수정·삭제를 관리합니다.</p>
+          <article class="tracking-board">
+            <header class="tracking-board-head">
+              <h2>공유 관측점</h2>
+              <button class="ghost-button" id="refresh" type="button">목록 새로고침</button>
+            </header>
+            <div class="tracking-search-row">
+              <input class="tracking-search-input" id="search" type="search" placeholder="명칭, 코드, 담당자, 위치 검색" aria-label="관측점 검색" />
+            </div>
+            <p class="tracking-board-status" id="status" role="status"></p>
+            <div class="tracking-table-wrap">
+              <table class="tracking-table">
+                <thead><tr><th>명칭</th><th>개체 코드</th><th>담당자</th><th>위치</th><th>위도</th><th>경도</th><th>방향각</th><th>관리</th></tr></thead>
+                <tbody id="rows"></tbody>
+              </table>
+            </div>
+            <div class="tracking-pagination">
+              <button class="ghost-button" id="prev" type="button">이전</button>
+              <span id="page"></span>
+              <button class="ghost-button" id="next" type="button">다음</button>
+            </div>
+          </article>
+          <div class="tracking-modal" id="edit-modal" aria-hidden="true">
+            <div class="tracking-modal-backdrop" data-close></div>
+            <div class="tracking-modal-dialog" role="dialog" aria-modal="true" aria-labelledby="edit-title">
+              <h2 id="edit-title">공유 관측점 수정</h2>
+              <form class="tracking-edit-form" id="edit-form">
+                <label class="tracking-edit-field">명칭<input name="place" required maxlength="150" /></label>
+                <label class="tracking-edit-field">개체 코드<input name="bear_code" required maxlength="100" /></label>
+                <label class="tracking-edit-field">담당자<input name="owner" required maxlength="100" /></label>
+                <label class="tracking-edit-field">위치<input name="admin_region" maxlength="300" placeholder="자동 조회 후 수정 가능" /></label>
+                <label class="tracking-edit-field">위도<input name="lat" type="number" step="any" min="-90" max="90" required /></label>
+                <label class="tracking-edit-field">경도<input name="lng" type="number" step="any" min="-180" max="180" required /></label>
+                <label class="tracking-edit-field">방향각<input name="heading" type="number" step="any" min="0" max="359.999999" required /></label>
+                <fieldset class="observation-detectors"><legend>감지기 (최대 3개)</legend>
+                  <div class="observation-detector-row"><label class="tracking-edit-field">감지기 1<input name="detector_name_0" maxlength="100" /></label><label class="tracking-edit-field">신호강도<input name="signal_strength_0" maxlength="30" /></label></div>
+                  <div class="observation-detector-row"><label class="tracking-edit-field">감지기 2<input name="detector_name_1" maxlength="100" /></label><label class="tracking-edit-field">신호강도<input name="signal_strength_1" maxlength="30" /></label></div>
+                  <div class="observation-detector-row"><label class="tracking-edit-field">감지기 3<input name="detector_name_2" maxlength="100" /></label><label class="tracking-edit-field">신호강도<input name="signal_strength_2" maxlength="30" /></label></div>
+                </fieldset>
+                <p class="tracking-edit-status" id="edit-status" role="status"></p>
+                <div class="tracking-edit-actions">
+                  <button class="ghost-button" type="button" data-close>취소</button>
+                  <button class="primary-link" id="save" type="submit">저장</button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </section>
+      </div>
+    </main>
+    <footer class="admin-footer" id="adminFooter"></footer>
+  </div>
+  <script src="../js/admin/admin-layout.js"></script>
+  <script src="../js/db/editable-region-field.js"></script>
+  <script src="../js/admin/admin-observations.js"></script>
+</body>
+</html>

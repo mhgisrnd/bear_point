@@ -2,6 +2,7 @@
   "use strict";
 
   function createRealtimeListModule(options) {
+    const unified = !!options.unified;
     const listEl =
       options.realtimeListEl || document.getElementById("realtime-list");
     const tabButton = options.tabButton || document.getElementById("btn-realtime-list");
@@ -38,7 +39,7 @@
     const onItemsChanged =
       typeof options.onItemsChanged === "function" ? options.onItemsChanged : null;
 
-    if (!listEl || !tabButton || !titleLabelEl) {
+    if (!listEl || (!unified && !tabButton) || !titleLabelEl) {
       return null;
     }
 
@@ -73,6 +74,7 @@
     function resolveApiBase() {
       const optionBase = normalizeApiBase(options.apiBase);
       if (optionBase) return optionBase;
+      if (!isNativeCapacitorRuntime()) return "api/app-realtime";
 
       const runtimeConfig =
         window && window.BEAR_RUNTIME_CONFIG && typeof window.BEAR_RUNTIME_CONFIG === "object"
@@ -99,6 +101,7 @@
 
     let items = [];
     let isLoading = false;
+    let loadError = "";
     const selectedItemIds = new Set();
     const realtimeSelectAllEl =
       options.realtimeSelectAllEl || document.getElementById("realtime-select-all");
@@ -241,11 +244,19 @@
       return data;
     }
 
-    async function fetchRealtimeItems(options) {
+    let refreshPromise = null;
+    function fetchRealtimeItems(options) {
+      if (refreshPromise) return refreshPromise;
+      refreshPromise = fetchRealtimeSnapshot(options).finally(() => { refreshPromise = null; });
+      return refreshPromise;
+    }
+    async function fetchRealtimeSnapshot(options) {
+      const requestedAt = Date.now();
       const opts = options && typeof options === "object" ? options : {};
       const silent = !!opts.silent;
 
       isLoading = true;
+      loadError = "";
       renderRealtimeList();
 
       try {
@@ -255,18 +266,29 @@
             Accept: "application/json",
           },
         });
+        const rawItems = Array.isArray(data.items) ? data.items.slice() : [];
+        if (unified && Number(data.total) > rawItems.length) {
+          const ids = new Set(rawItems.map(item => String(item.id)));
+          const pageSize = Number(data.pageSize) || rawItems.length || MAX_ITEMS;
+          for (let page = 2; rawItems.length < Number(data.total) && page <= 100; page++) {
+            const next = await requestJson("/bear-estimates?page=" + page + "&pageSize=" + pageSize, { method: "GET", headers: { Accept: "application/json" } });
+            const additions = (next.items || []).filter(item => !ids.has(String(item.id)));
+            if (!additions.length) break;
+            additions.forEach(item => ids.add(String(item.id))); rawItems.push(...additions);
+          }
+        }
         items = Array.isArray(data.items)
-          ? data.items.map(normalizeItem).filter(Boolean).slice(0, MAX_ITEMS)
+          ? rawItems.map(normalizeItem).filter(Boolean).slice(0, unified ? undefined : MAX_ITEMS)
           : [];
         if (onRemoteEstimatesLoaded) {
-          onRemoteEstimatesLoaded(Array.isArray(data.items) ? data.items : []);
+          await onRemoteEstimatesLoaded(rawItems, { complete: data.total != null && Number(data.total) === rawItems.length, requestedAt });
         }
         notifyItemsChanged();
         if (!silent) {
           setStatus(items.length ? "실시간 목록을 불러왔습니다." : "아직 업로드된 실시간 위치가 없습니다.", items.length ? "ok" : "warn");
         }
       } catch (error) {
-        items = [];
+        loadError = error && error.message ? error.message : "공유 목록을 불러오지 못했습니다.";
         notifyItemsChanged();
         if (!silent) {
           const message = error && error.isNetworkError
@@ -278,7 +300,7 @@
         }
         return {
           ok: false,
-          items: [],
+          items: items.slice(),
           message: error && error.message ? error.message : "실시간 목록 조회 실패",
         };
       } finally {
@@ -499,7 +521,7 @@
 
       if (!items.length) {
         listEl.innerHTML =
-          '<div class="realtime-empty">아직 업로드된 실시간 위치가 없습니다.</div>';
+          '<div class="realtime-empty" role="status">' + (loadError ? '공유 목록을 불러오지 못했습니다. 다시 시도해주세요.' : '아직 업로드된 실시간 위치가 없습니다.') + '</div>';
         return;
       }
 
@@ -536,7 +558,7 @@
         })
         .join("\n");
 
-      listEl.innerHTML = rows;
+      listEl.innerHTML = (loadError ? '<p class="realtime-refresh-error" role="status">목록 갱신에 실패해 이전에 불러온 자료를 표시합니다.</p>' : '') + rows;
     }
 
     function findItemById(id) {
@@ -546,6 +568,7 @@
     }
 
     function setTab(tab, opts) {
+      if (unified) return;
       const nextTab = tab === "realtime" ? "realtime" : "estimate";
       const optionsObj = opts && typeof opts === "object" ? opts : {};
       const silent = !!optionsObj.silent;
@@ -563,8 +586,8 @@
         tabButton.classList.add("list-toggle--realtime");
         tabButton.classList.remove("list-toggle--local");
         tabButton.setAttribute("aria-pressed", "true");
-        tabButton.setAttribute("aria-label", "실시간 목록에서 로컬 목록으로 전환");
-        titleLabelEl.textContent = "실시간 목록";
+        tabButton.setAttribute("aria-label", "개체 추적: 공유 목록에서 로컬 목록으로 전환");
+        titleLabelEl.textContent = "공유된 개체 추적위치";
         renderRealtimeList();
         fetchRealtimeItems({ silent });
       } else {
@@ -576,7 +599,7 @@
         tabButton.classList.remove("list-toggle--realtime");
         tabButton.classList.add("list-toggle--local");
         tabButton.setAttribute("aria-pressed", "false");
-        tabButton.setAttribute("aria-label", "로컬 목록에서 실시간 목록으로 전환");
+        tabButton.setAttribute("aria-label", "개체 추적: 로컬 목록에서 공유 목록으로 전환");
       }
 
       if (activeTab !== prevTab && !silent && !suppressNotify) {
@@ -593,6 +616,7 @@
     }
 
     function activateRealtime() {
+      if (unified) { notifyItemsChanged(); return; }
       setTab("realtime");
     }
 
@@ -601,6 +625,7 @@
     }
 
     async function uploadEstimate(payload) {
+      if (refreshPromise) await refreshPromise;
       const response = await requestJson("/bear-estimates", {
         method: "POST",
         headers: {
@@ -609,6 +634,8 @@
         },
         body: JSON.stringify(payload || {}),
       });
+
+      if (onRemoteEstimatesLoaded && response.item) await onRemoteEstimatesLoaded([response.item], { complete: false });
 
       return normalizeItem(Object.assign({}, payload || {}, response.item || {}));
     }
@@ -726,7 +753,7 @@
     setTab("estimate", { silent: true });
     suppressNotify = false;
 
-    tabButton.addEventListener("click", function () {
+    if (tabButton) tabButton.addEventListener("click", function () {
       if (activeTab === "realtime") {
         activateEstimate();
       } else {

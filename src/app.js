@@ -1,15 +1,17 @@
 const path = require("path");
 const express = require("express");
 const { createAdminBoundaryRouter } = require("./routes/adminBoundaryRoutes");
+const { createObservationRouter } = require("./routes/observationRoutes");
 
 const { createMbtilesStore } = require("./services/mbtilesStore");
 const { createMbtilesRouter } = require("./routes/mbtilesRoutes");
 const { createPostgresRouter } = require("./routes/postgresRoutes");
 const { createRealtimeRouter } = require("./routes/realtimeRoutes");
+const { createAppRealtimeRouter } = require("./routes/appRealtimeRoutes");
 const { createAdminAuthRouter } = require("./routes/adminAuthRoutes");
 const { createAdminUserRouter } = require("./routes/adminUserRoutes");
 const { createAdminSessionStore } = require("./services/adminSessionStore");
-const { normalizeContextRoot } = require("./config/runtime-config");
+const { normalizeContextRoot, getRuntimeConfig } = require("./config/runtime-config");
 
 // 앱 공통 미들웨어와 라우터를 조립해 Express 인스턴스를 생성한다.
 function createApp(rootDir, options = {}) {
@@ -65,6 +67,8 @@ function createApp(rootDir, options = {}) {
   rootRouter.use(createAdminBoundaryRouter(rootDir));
   rootRouter.use("/api/db/postgres", createPostgresRouter());
   rootRouter.use("/api/realtime", createRealtimeRouter());
+  rootRouter.use("/api/app-realtime", createAppRealtimeRouter({ apiBase: getRuntimeConfig(process.env).realtimeApiBase }));
+  rootRouter.use("/api/observations", createObservationRouter());
   rootRouter.use("/api/admin/auth", createAdminAuthRouter({ adminSessionStore }));
   rootRouter.use("/api/admin/users", createAdminUserRouter());
 
@@ -95,6 +99,11 @@ function createApp(rootDir, options = {}) {
     }
 
     res.sendFile(path.join(rootDir, "public", "pages", "admin-tracking.html"));
+  });
+
+  rootRouter.get("/admin/observations", (req, res) => {
+    if (!req.adminSession) return res.redirect(withBase("/admin/login"));
+    res.sendFile(path.join(rootDir, "public", "pages", "admin-observations.html"));
   });
 
   rootRouter.get("/admin/users", (req, res) => {

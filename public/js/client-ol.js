@@ -51,6 +51,10 @@
   const STARTUP_OVERLAY_DELAY_MS = 140;
   const STARTUP_OVERLAY_MIN_VISIBLE_MS = 320;
   let currentBearEstimateItems = [];
+  let localBearEstimateItems = [];
+  let bearPanelReady = false;
+  const unifiedBearStore = window.BearEstimateStore.createStore(window);
+  const pendingBearUploads = new Set();
   let currentBearEstimateFallbackMode = false;
   let remoteSharedEstimateIds = new Set();
   let sharedStatusSyncInProgress = false;
@@ -70,7 +74,9 @@
     return (Array.isArray(items) ? items : []).map(function (it) {
       return {
         id: it && it.id,
-        isRealtime: !!isRealtime,
+        isRealtime: !!isRealtime || !!(it && it.remoteOnly),
+        shared_at: it && it.shared_at,
+        source_observations: it && it.source_observations,
         bear_code: isRealtime ? (it && (it.bearCode || it.bear_code)) : (it && (it.bear_code || it.bearCode)),
         owner: it && it.owner,
         place: it && it.place,
@@ -87,26 +93,18 @@
   }
 
   function syncBearMarkersForActiveTab(realtimeItemsOverride) {
-    if (!realtimeListModule || typeof realtimeListModule.getActiveTab !== "function") {
-      renderBearMarkers(mapBearMarkerItems(currentBearEstimateItems, false));
-      return;
-    }
-
-    const activeTab = realtimeListModule.getActiveTab();
-    if (activeTab === "realtime") {
-      const realtimeItems = Array.isArray(realtimeItemsOverride)
-        ? realtimeItemsOverride
-        : typeof realtimeListModule.getItems === "function"
-          ? realtimeListModule.getItems()
-          : [];
-      renderBearMarkers(mapBearMarkerItems(realtimeItems, true));
-      return;
-    }
-
     renderBearMarkers(mapBearMarkerItems(currentBearEstimateItems, false));
   }
 
+  function repaintUnifiedBearList() {
+    if (!bearPanelReady) return;
+    currentBearEstimateItems = unifiedBearStore.merge(localBearEstimateItems);
+    renderBears(currentBearEstimateItems, false);
+    syncBearMarkersForActiveTab();
+  }
+
   const realtimeListModule = window.createRealtimeListModule ? window.createRealtimeListModule({
+    unified: true,
     onDownloadTxt: function (item) {
       if (!realtimeTxtExporter) throw new Error("TXT 저장 기능이 준비되지 않았습니다.");
       return realtimeTxtExporter(mapBearMarkerItems([item], true)[0], false);
@@ -128,15 +126,13 @@
       syncBearMarkersForActiveTab();
     },
     onItemsChanged: function (items, activeTab) {
-      if (activeTab === "realtime") {
-        syncBearMarkersForActiveTab(items);
-      }
+      repaintUnifiedBearList();
     },
-    onRemoteEstimatesLoaded: function (remoteItems) {
-      remoteSharedEstimateIds = new Set((Array.isArray(remoteItems) ? remoteItems : []).map(function (item) {
-        return item && (item.bear_estimate_id || (item.payload && item.payload.id));
-      }).filter(Boolean).map(String));
-      void reconcileSharedBearEstimates();
+    onRemoteEstimatesLoaded: async function (remoteItems, metadata) {
+      await unifiedBearStore.accept(remoteItems || [], metadata);
+      remoteSharedEstimateIds = new Set(unifiedBearStore.raw().map(window.BearEstimateStore.originId).filter(Boolean));
+      await reconcileSharedBearEstimates();
+      repaintUnifiedBearList();
     },
     onFocusItem: function (item) {
       const lat = Number(item && item.lat);
@@ -2831,52 +2827,37 @@
     const mapY = Array.isArray(tmCoord) && Number.isFinite(tmCoord[1]) ? tmCoord[1].toFixed(3) : "-";
     const createdAt = formatKstDateTimeLabel(item && (item.created_at || item.createdAt || item.ts));
 
+    const row = (label, value, mono = false) => {
+      const text = escapeHtml(value == null || value === "" ? "-" : value);
+      return `<tr><th scope="row">${label}</th><td><span class="obs-detail-value${mono ? ' obs-detail-value--mono' : ''}" title="${text}">${text}</span></td></tr>`;
+    };
+    const unsaved = !!(item && item._unsaved);
+    const isRealtime = !!(item && item.isRealtime);
     return `
-      <div class="obs-popup-card">
+      <div class="obs-popup-card obs-popup-card--estimate">
         <div class="obs-popup-card__eyebrow">${escapeHtml(bearCode)}</div>
-        <div class="obs-popup-card__grid">
-          <div class="obs-popup-card__row">
-            <span class="obs-popup-card__label">지명</span>
-            <span class="obs-popup-card__value">${escapeHtml(placeName)}</span>
-          </div>
-          <div class="obs-popup-card__row">
-            <span class="obs-popup-card__label">등록자</span>
-            <span class="obs-popup-card__value">${escapeHtml(ownerName)}</span>
-          </div>
-          <div class="obs-popup-card__row">
-            <span class="obs-popup-card__label">위치</span>
-            <span class="obs-popup-card__value">${escapeHtml(item && (item.admin_region || item.adminRegion) || "미지정")}</span>
-          </div>
-          <div class="obs-popup-card__row">
-            <span class="obs-popup-card__label">위경도</span>
-            <div class="obs-popup-card__value obs-popup-card__value--coord">
-              <span>위도: ${escapeHtml(formatPopupCoordinate(lat))}</span>
-              <span>경도: ${escapeHtml(formatPopupCoordinate(lng))}</span>
-            </div>
-          </div>
-          <div class="obs-popup-card__row">
-            <span class="obs-popup-card__label">도분초</span>
-            <div class="obs-popup-card__value obs-popup-card__value--coord">
-              <span>${escapeHtml(latDms)}</span>
-              <span>${escapeHtml(lngDms)}</span>
-            </div>
-          </div>
-          <div class="obs-popup-card__row">
-            <span class="obs-popup-card__label">TM 좌표</span>
-            <div class="obs-popup-card__value obs-popup-card__value--coord">
-              <span>X: ${escapeHtml(mapX)}</span>
-              <span>Y: ${escapeHtml(mapY)}</span>
-            </div>
-          </div>
-          <div class="obs-popup-card__row obs-popup-card__row--wide">
-            <span class="obs-popup-card__label">등록시간</span>
-            <span class="obs-popup-card__value">${escapeHtml(createdAt)}</span>
-          </div>
+        <div class="obs-detail-frame">
+          <table class="obs-detail-table" aria-label="개체 추적위치 상세 정보"><tbody>
+            ${row("지명", placeName)}
+            ${row("등록자", ownerName)}
+            ${row("위치", item && (item.admin_region || item.adminRegion) || "미지정")}
+            ${row("위경도", `${formatPopupCoordinate(lat)}, ${formatPopupCoordinate(lng)}`, true)}
+          </tbody></table>
         </div>
+        <details class="obs-detail-more">
+          <summary>좌표·등록정보</summary>
+          <div class="obs-detail-frame">
+            <table class="obs-detail-table" aria-label="추가 좌표 및 등록정보"><tbody>
+              ${row("도분초", `${latDms}, ${lngDms}`, true)}
+              ${row("TM 좌표", `X ${mapX}, Y ${mapY}`, true)}
+              ${row("등록시간", createdAt)}
+            </tbody></table>
+          </div>
+        </details>
         <div class="obs-popup-card__actions">
           <button type="button" class="obs-popup-card__action-btn obs-popup-card__action-btn--file" data-bear-action="txt">TXT</button>
-          ${!item._unsaved ? '<button type="button" class="obs-popup-card__action-btn obs-popup-card__action-btn--xls" data-bear-action="xls">XLS</button>' : ''}
-          ${!item._unsaved && !item.isRealtime ? '<button type="button" class="obs-popup-card__action-btn obs-popup-card__action-btn--delete" data-bear-action="delete">삭제</button>' : ''}
+          ${!unsaved ? '<button type="button" class="obs-popup-card__action-btn obs-popup-card__action-btn--xls" data-bear-action="xls">XLS</button>' : ''}
+          ${!unsaved && !isRealtime && !item.shared_at ? '<button type="button" class="obs-popup-card__action-btn obs-popup-card__action-btn--delete" data-bear-action="delete">삭제</button>' : ''}
         </div>
       </div>
     `;
@@ -3989,7 +3970,7 @@
         void downloadAllBearEstimatesXls([bearData]);
         return;
       }
-      if (action === "delete" && !bearData._unsaved && !bearData.isRealtime) {
+      if (action === "delete" && !bearData._unsaved && !bearData.isRealtime && !bearData.shared_at) {
         void handleDeleteSingleBearEstimate(bearData);
       }
     }
@@ -4027,9 +4008,12 @@
       }
     }
     observationPopupEl.style.boxSizing = "border-box";
-    observationPopupEl.style.width = `${Math.min(240, Math.max(0, right - left))}px`;
+    const isCompactDetail = !!observationPopupContentEl.querySelector(".obs-popup-card--observation, .obs-popup-card--estimate");
+    const popupWidth = isCompactDetail ? 300 : 240;
+    observationPopupEl.style.padding = isCompactDetail ? "9px 10px" : "12px 14px";
+    observationPopupEl.style.width = `${Math.min(popupWidth, Math.max(0, right - left))}px`;
     observationPopupEl.style.minWidth = "0";
-    observationPopupEl.style.maxWidth = "240px";
+    observationPopupEl.style.maxWidth = `${popupWidth}px`;
     observationPopupEl.style.maxHeight = "none";
     const card = observationPopupEl.getBoundingClientRect();
     const clamp = (value, min, max) => Math.max(min, Math.min(value, Math.max(min, max)));
@@ -4052,6 +4036,10 @@
     observationPopupEl.style.overflowY = "auto";
     observationPopupEl.style.overscrollBehavior = "contain";
   }
+
+  observationPopupContentEl.addEventListener("toggle", function () {
+    if (observationPopupEl.style.display !== "none") syncObservationPopupPlacement();
+  }, true);
 
   function openObservationPopup(feature) {
     const popupHtml = feature && feature.get("popupHtml");
@@ -4550,7 +4538,7 @@
     btnPanelToggle.setAttribute("aria-expanded", "true");
   }
 
-  // 태블릿 전용 2단 사이드바 UI를 적용할 가로 화면 조건을 판별한다.
+  // 고정 사이드바와 별도 관측점 팝업을 사용하는 큰 가로 화면 조건.
   function isTabletLandscapeSidebarMode() {
     return window.matchMedia(
       "(min-width: 900px) and (orientation: landscape)"
@@ -4607,6 +4595,10 @@
 
   // 목록과 팝업에서 공통으로 쓰는 관측점 수정 진입 경로를 묶는다.
   function openObservationEdit(item) {
+    if (item && item.shareState === "sending") {
+      statusEl.textContent = "전송 중인 관측점입니다.";
+      return;
+    }
     if (controlsManager && typeof controlsManager.deactivateMeasure === "function") {
       controlsManager.deactivateMeasure("menu");
     }
@@ -4692,7 +4684,7 @@
           obsListModule.updateObservation(payload.observation);
         }
         if (payload.source === "sqlite") {
-          await obsListModule.refreshObservationList();
+          await obsListModule.refreshObservationList({localOnly:true});
         }
         setTabletSidebarCollapsed(false);
         // 수정 완료 후 목록 패널 복원
@@ -4704,7 +4696,7 @@
       setTabletSidebarCollapsed(false);
       obsListModule.openList();
       if (payload.source === "sqlite") {
-        await obsListModule.refreshObservationList();
+        await obsListModule.refreshObservationList({localOnly:true});
       } else {
         obsListModule.addObservation(payload.observation);
       }
@@ -4940,7 +4932,10 @@
     }
 
     if (btnBearsUploadSelectedEl) {
-      btnBearsUploadSelectedEl.disabled = selectedCount === 0;
+      const eligible = list.filter(it => selectedBearEstimateIds.has(String(it.id)) && !it.shared_at && !it.remoteOnly && !pendingBearUploads.has(String(it.id))).length;
+      btnBearsUploadSelectedEl.disabled = eligible === 0;
+      btnBearsUploadSelectedEl.hidden = eligible === 0;
+      btnBearsUploadSelectedEl.title = "미공유 " + eligible + "건 공유";
     }
 
     if (btnBearsDeleteSelectedEl) btnBearsDeleteSelectedEl.disabled = selectedCount === 0;
@@ -4975,20 +4970,20 @@
           readonly: false
         });
       }
-      currentBearEstimateItems.forEach(function (item) {
+      localBearEstimateItems.forEach(function (item) {
         if (idSet.has(String(item.id)) && !item.shared_at) item.shared_at = sharedAt;
       });
     } else {
-      currentBearEstimateItems.forEach(function (item) {
+      localBearEstimateItems.forEach(function (item) {
         if (idSet.has(String(item.id)) && !item.shared_at) item.shared_at = getKstSqliteTimestamp();
       });
     }
-    renderBears(currentBearEstimateItems, currentBearEstimateFallbackMode);
+    repaintUnifiedBearList();
   }
 
   reconcileSharedBearEstimates = async function () {
-    if (sharedStatusSyncInProgress || !remoteSharedEstimateIds.size || !currentBearEstimateItems.length) return;
-    const missingIds = currentBearEstimateItems.filter(function (item) {
+    if (sharedStatusSyncInProgress || !remoteSharedEstimateIds.size || !localBearEstimateItems.length) return;
+    const missingIds = localBearEstimateItems.filter(function (item) {
       return !item.shared_at && remoteSharedEstimateIds.has(String(item.id));
     }).map(function (item) { return String(item.id); });
     if (!missingIds.length) return;
@@ -5002,39 +4997,40 @@
     }
   };
 
-  async function handleUploadSelectedBearEstimates() {
-    const targets = currentBearEstimateItems.filter(function (it) {
-      return selectedBearEstimateIds.has(String(it.id));
-    });
-
-    if (!targets.length) {
-      if (statusEl) statusEl.textContent = "⚠️ 선택된 곰 추정위치가 없습니다.";
-      return;
-    }
-
-    const alreadySharedCount = targets.filter(function (item) { return !!item.shared_at; }).length;
-    const ok = await confirmRealtimeUpload(
-      alreadySharedCount
-        ? "선택한 항목 중 " + alreadySharedCount + "건은 공유완료 데이터입니다. 다시 공유하시겠습니까?"
-        : "선택한 " + targets.length + "건을 실시간 목록에 업로드 하시겠습니까?",
-      "선택한 " + targets.length + "건을 업로드합니다."
-    );
+  async function uploadUnsharedBearEstimates(targets) {
+    if (!realtimeListModule) return;
+    const eligible = targets.filter(it => !it.shared_at && !it.remoteOnly && !pendingBearUploads.has(String(it.id)));
+    if (!eligible.length) return;
+    const ok = await confirmRealtimeUpload("미공유 추적위치 " + eligible.length + "건을 공유할까요?", "");
     if (!ok) return;
+    const reserved = eligible.filter(it => !pendingBearUploads.has(String(it.id)));
+    reserved.forEach(it => pendingBearUploads.add(String(it.id)));
+    repaintUnifiedBearList();
+    let count = 0, failed = 0;
+    try {
+      // Check previous receipts before retrying an upload whose response may have been lost.
+      const refreshed = await realtimeListModule.refresh({ silent: true });
+      if (!refreshed.ok) throw new Error(refreshed.message);
+      for (const item of reserved) {
+        const latest = currentBearEstimateItems.find(row => String(row.id) === String(item.id));
+        if (!latest || latest.shared_at || remoteSharedEstimateIds.has(String(item.id))) continue;
+        const result = await realtimeListModule.sendEstimate(latest);
+        if (result && result.ok) {
+          count++;
+          await markBearEstimatesShared([item.id]);
+        } else failed++;
+      }
+      if (statusEl) statusEl.textContent = count + "건 공유 완료" + (failed ? ", " + failed + "건 공유 실패 (다시 시도 가능)" : "");
+    } catch (error) {
+      if (statusEl) statusEl.textContent = "공유하지 못했습니다. 다시 시도해주세요: " + (error.message || error);
+    } finally {
+      reserved.forEach(it => pendingBearUploads.delete(String(it.id)));
+      repaintUnifiedBearList();
+    }
+  }
 
-    if (!realtimeListModule || typeof realtimeListModule.sendEstimates !== "function") {
-      if (statusEl) statusEl.textContent = "⚠️ 실시간 목록 모듈을 사용할 수 없습니다.";
-      return;
-    }
-
-    const sendResult = await realtimeListModule.sendEstimates(targets);
-    if (sendResult && Array.isArray(sendResult.uploadedIds) && sendResult.uploadedIds.length) {
-      await markBearEstimatesShared(sendResult.uploadedIds);
-    }
-    if (sendResult && sendResult.ok && typeof realtimeListModule.openRealtimeTab === "function") {
-      realtimeListModule.openRealtimeTab();
-    } else if (sendResult && sendResult.count > 0 && statusEl) {
-      statusEl.textContent = "⚠️ " + sendResult.count + "건 공유완료, 나머지 업로드 실패: " + sendResult.message;
-    }
+  async function handleUploadSelectedBearEstimates() {
+    await uploadUnsharedBearEstimates(currentBearEstimateItems.filter(it => selectedBearEstimateIds.has(String(it.id))));
   }
 
   async function downloadAllBearEstimatesXls(items) {
@@ -5187,7 +5183,7 @@
   // 체크된 곰 추정위치 행들을 사용자 확인 후 일괄 삭제한다.
   async function handleDeleteSelectedBearEstimates() {
     const targetIds = currentBearEstimateItems.filter(function (it) {
-      return selectedBearEstimateIds.has(String(it.id));
+      return selectedBearEstimateIds.has(String(it.id)) && !it.shared_at && !it.remoteOnly && !pendingBearUploads.has(String(it.id));
     }).map(function (it) {
       return String(it.id);
     });
@@ -5217,6 +5213,7 @@
 
   // 팝업에서 곰 추정위치 단건을 삭제한다. 확인 다이얼로그 → DB 삭제 → 목록 갱신.
   async function handleDeleteSingleBearEstimate(item) {
+    if (item.shared_at || item.isRealtime || pendingBearUploads.has(String(item.id))) return;
     const bearCode = item.bear_code || item.bearCode || item.id || "-";
     const ok = await showStyledConfirmDialog({
       title: "삭제 확인",
@@ -5250,6 +5247,31 @@
       renderBears(currentBearEstimateItems, currentBearEstimateFallbackMode);
     });
   }
+
+  const btnBearsRefresh = document.getElementById("btn-bears-refresh");
+  let bearRefreshInProgress = false;
+  async function refreshUnifiedBearList(options) {
+    if (bearRefreshInProgress) return;
+    bearRefreshInProgress = true;
+    if (btnBearsRefresh) btnBearsRefresh.disabled = true;
+    try {
+      await refreshBearEstimatePanel();
+      if (realtimeListModule) await realtimeListModule.refresh({ silent: !!(options && options.silent) });
+    } catch (error) {
+      console.warn("[bear_estimates] refresh failed", error);
+    } finally {
+      bearRefreshInProgress = false;
+      if (btnBearsRefresh) btnBearsRefresh.disabled = false;
+    }
+  }
+  if (btnBearsRefresh) btnBearsRefresh.addEventListener("click", refreshUnifiedBearList);
+  window.addEventListener("online", refreshUnifiedBearList);
+  document.addEventListener("visibilitychange", function () {
+    if (!document.hidden && navigator.onLine !== false) void refreshUnifiedBearList({ silent: true });
+  });
+  window.setInterval(function () {
+    if (!document.hidden && navigator.onLine !== false) void refreshUnifiedBearList({ silent: true });
+  }, 30000);
 
   if (btnBearsDeleteSelectedEl) {
     btnBearsDeleteSelectedEl.addEventListener("click", function (event) {
@@ -5855,6 +5877,7 @@
           readonly: false
         });
         localSaved = true;
+        if (shareRealtime) pendingBearUploads.add(String(id));
         clearAnalysisEstimateVisuals();
         if (statusEl) statusEl.textContent = `✅ 곰 추정위치(${bearCode}) 저장 완료`;
         await refreshBearEstimatePanel();
@@ -5896,6 +5919,8 @@
           ? "⚠️ 로컬에만 저장되었습니다. 실시간 공유 처리 실패: "
           : "🔴 저장 실패: ") + (saveError && saveError.message ? saveError.message : String(saveError));
       } finally {
+        pendingBearUploads.delete(String(id));
+        repaintUnifiedBearList();
         saveBtn.disabled = false;
       }
     });
@@ -6098,9 +6123,9 @@
     const mapX = Array.isArray(legacyProjected) && Number.isFinite(legacyProjected[0]) ? legacyProjected[0].toFixed(3) : "-";
     const mapY = Array.isArray(legacyProjected) && Number.isFinite(legacyProjected[1]) ? legacyProjected[1].toFixed(3) : "-";
 
-    let sourceObservations = [];
+    let sourceObservations = Array.isArray(it.source_observations) ? it.source_observations : [];
 
-    if (!it.isRealtime && !isFallback) {
+    if (!sourceObservations.length && !it.isRealtime && !isFallback) {
       // DB에서 상세 JSON 조회
       try {
         const sqlite = getCapacitorSQLitePlugin();
@@ -6118,7 +6143,7 @@
       } catch (e) {
         console.warn("TXT 다운로드 DB 조회 오류:", e);
       }
-    } else if (!it.isRealtime) {
+    } else if (!sourceObservations.length && !it.isRealtime && isFallback) {
       // 웹 더미 데이터: source_observation_ids를 파싱해 가상 관측점 생성
       let obsIds = [];
       try { obsIds = JSON.parse(it.source_observation_ids || "[]"); } catch (e) { obsIds = []; }
@@ -6666,55 +6691,42 @@
       const itemId = String(it.id);
       const isSelected = selectedBearEstimateIds.has(itemId);
       const el = document.createElement("div");
-      el.className = "bears-item" + (isSelected ? " is-selected" : "");
+      el.className = "bears-item bears-item--unified" + (isSelected ? " is-selected" : "");
       const lat = Number(it.lat);
       const lng = Number(it.lng);
-      const timeLabel = formatKstTimeLabel(it.created_at || it.ts);
-      const dateLabel = formatKstDateLabel(it.created_at || it.ts);
       const bearCode = it.bear_code || it.bearCode || "-";
       const ownerName = normalizeOwnerName(it.owner) || "미지정";
-      const placeName = normalizePlaceName(it.place) || "미지정";
+      const regionName = it.admin_region || "미지정";
       const isShared = !!it.shared_at;
-      const latDms = it.lat_dms || decimalToDMS(lat, false);
-      const lngDms = it.lng_dms || decimalToDMS(lng, true);
-      // const projected = mapCoordFromWgs84(lat, lng); // EPSG:5179 목록표시(기존)
-      const projected = legacyTmCoordFromWgs84(lat, lng);
-      const mapX = Array.isArray(projected) && Number.isFinite(projected[0]) ? projected[0].toFixed(3) : "-";
-      const mapY = Array.isArray(projected) && Number.isFinite(projected[1]) ? projected[1].toFixed(3) : "-";
-      // 목록은 DMS와 X/Y를 우선 노출하고, lat/lng 줄은 요청에 따라 잠시 숨긴다.
+      const coordinateText = (Number.isFinite(lat) ? lat.toFixed(6) : "-") + ", " + (Number.isFinite(lng) ? lng.toFixed(6) : "-");
       el.innerHTML =
         '<div class="bears-item__select">' +
           '<input class="bears-item__checkbox" type="checkbox" aria-label="곰 추정위치 선택" ' + (isSelected ? 'checked' : '') + ' />' +
         '</div>' +
         '<div class="bears-item__main">' +
-          '<div class="bears-item__code"><b>' + bearCode + '</b></div>' +
-          '<div class="bears-item__line">지명: ' + placeName + '</div>' +
-          '<div class="bears-item__line">위치: ' + escapeHtml(it.admin_region || "미지정") + '</div>' +
-          '<div class="bears-item__line">등록자: ' + ownerName + '</div>' +
-          '<div class="bears-item__line bears-item__line--sub">' + latDms + ' ' + lngDms + '</div>' +
-          '<div class="bears-item__line bears-item__line--sub">X: ' + mapX + ' / Y: ' + mapY + '</div>' +
+          '<div class="bears-item__code"><b>' + escapeHtml(bearCode) + '</b>' + (isShared ? '<span class="bears-item__shared-badge" role="status">공유완료</span>' : '') + '</div>' +
         '</div>' +
         '<div class="bears-item__meta bears-item__meta--send">' +
-          '<div class="bears-item__buttons bears-item__buttons--triple">' +
-            '<button class="bears-txt-dl-btn" type="button" aria-label="TXT 다운로드"><span class="bears-txt-dl-btn__label">TXT 다운로드</span></button>' +
-            '<button class="bears-xls-dl-btn" type="button" aria-label="XLS 다운로드"><span class="bears-xls-dl-btn__label">XLS 다운로드</span></button>' +
-            '<button class="bears-send-btn" type="button" aria-label="' + (isShared ? '실시간 다시 전송' : '실시간 전송') + '"><span class="bears-send-btn__label">실시간 전송</span></button>' +
+          '<div class="bears-item__buttons">' +
+            '<button class="bears-txt-dl-btn" type="button" aria-label="TXT 다운로드"><span class="bears-txt-dl-btn__label">TXT</span></button>' +
+            '<button class="bears-xls-dl-btn" type="button" aria-label="XLS 다운로드"><span class="bears-xls-dl-btn__label">XLS</span></button>' +
           '</div>' +
-          '<div class="bears-item__share-info">' +
-            (isShared ? '<span class="bears-item__shared-badge">공유완료</span>' : '') +
-            '<div class="bears-item__datetime">' +
-              '<div class="bears-item__date">' + dateLabel + '</div>' +
-              '<div class="bears-item__time">' + timeLabel + '</div>' +
-            '</div>' +
-          '</div>' +
-        '</div>';
+            (isShared ? '' : pendingBearUploads.has(itemId)
+                ? '<span class="bear-share-control bear-share-control--sending">공유 중</span>'
+                : '<button class="bear-share-control bear-share-control--needed" type="button">공유 필요</button>') +
+        '</div>' +
+        '<div class="bears-item__detail-frame"><table class="bears-item__detail-table" aria-label="개체 추적위치 정보"><tbody>' +
+          '<tr><th scope="row">등록자</th><td><span class="bears-item__detail-value" title="' + escapeHtml(ownerName) + '">' + escapeHtml(ownerName) + '</span></td></tr>' +
+          '<tr><th scope="row">위치</th><td><span class="bears-item__detail-value" title="' + escapeHtml(regionName) + '">' + escapeHtml(regionName) + '</span></td></tr>' +
+          '<tr><th scope="row">좌표</th><td><span class="bears-item__detail-value bears-item__detail-value--coords" aria-label="위도, 경도">' + coordinateText + '</span></td></tr>' +
+        '</tbody></table></div>';
 
       el.addEventListener("click", function () {
-        focusBearListItem(it.id, false, [it.lat, it.lng]);
+        focusBearListItem(it.id, !!it.remoteOnly, [it.lat, it.lng]);
         if (statusEl) {
           statusEl.textContent = bearCode !== "-"
-            ? `[${bearCode}] 개체의 로컬 위치로 이동했습니다.`
-            : "선택한 개체의 로컬 위치로 이동했습니다.";
+            ? `[${bearCode}] 개체의 추적 위치로 이동했습니다.`
+            : "선택한 개체의 추적 위치로 이동했습니다.";
           statusEl.style.color = "#0a6f30";
         }
       });
@@ -6735,30 +6747,11 @@
         });
       }
 
-      const sendBtn = el.querySelector(".bears-send-btn");
-      if (sendBtn) {
-        sendBtn.addEventListener("click", async function (e) {
-          e.stopPropagation();
-          const ok = await confirmRealtimeUpload(
-            isShared
-              ? "[" + bearCode + "] 이미 공유완료된 데이터입니다. 다시 공유하시겠습니까?"
-              : "[" + bearCode + "] 항목을 실시간 목록에 업로드 하시겠습니까?",
-            "업로드 후 실시간 목록 탭에서 바로 확인할 수 있습니다."
-          );
-          if (!ok) return;
-
-          if (!realtimeListModule || typeof realtimeListModule.sendEstimate !== "function") {
-            if (statusEl) statusEl.textContent = "⚠️ 실시간 목록 모듈을 사용할 수 없습니다.";
-            return;
-          }
-
-          const sendResult = await realtimeListModule.sendEstimate(it);
-          if (sendResult && sendResult.ok && typeof realtimeListModule.openRealtimeTab === "function") {
-            await markBearEstimatesShared([itemId]);
-            realtimeListModule.openRealtimeTab();
-          }
-        });
-      }
+      const sendBtn = el.querySelector(".bear-share-control--needed");
+      if (sendBtn) sendBtn.addEventListener("click", async function (event) {
+        event.stopPropagation();
+        await uploadUnsharedBearEstimates([it]);
+      });
 
       const checkboxEl = el.querySelector(".bears-item__checkbox");
       if (checkboxEl) {
@@ -6807,7 +6800,7 @@
         // 최신 스키마(lat_dms/lng_dms 컬럼 포함) 우선 조회
         result = await sqlite.query({
           database: dbName,
-          statement: "SELECT id, bear_code, owner, place, admin_region, lat, lng, lat_dms, lng_dms, intersections_count, source_observations_json, analysis_options_json, analysis_rays_json, intersections_json, shared_at, created_at FROM bear_estimates ORDER BY created_at DESC LIMIT 100",
+          statement: "SELECT id, bear_code, owner, place, admin_region, lat, lng, lat_dms, lng_dms, intersections_count, source_observations_json, analysis_options_json, analysis_rays_json, intersections_json, shared_at, created_at FROM bear_estimates ORDER BY created_at DESC",
           values: [],
           readonly: false
         });
@@ -6817,7 +6810,7 @@
           // 구버전 DB(도분초 컬럼 미생성)에서도 목록이 보이도록 하위호환 조회
           result = await sqlite.query({
             database: dbName,
-            statement: "SELECT id, bear_code, lat, lng, intersections_count, created_at FROM bear_estimates ORDER BY created_at DESC LIMIT 100",
+            statement: "SELECT id, bear_code, lat, lng, intersections_count, created_at FROM bear_estimates ORDER BY created_at DESC",
             values: [],
             readonly: false
           });
@@ -6880,21 +6873,19 @@
           }
         }
       }
-    } else {
-      await loadBearsData();
-      items = getWebFallbackBearEstimates();
-      usedFallback = true;
     }
 
-    currentBearEstimateItems = items.slice();
-    currentBearEstimateFallbackMode = usedFallback;
+    if (!hasQueryError) localBearEstimateItems = items.slice();
+    currentBearEstimateFallbackMode = false;
+    try {
+      await unifiedBearStore.load();
+      remoteSharedEstimateIds = new Set(unifiedBearStore.raw().map(window.BearEstimateStore.originId).filter(Boolean));
+    } catch (error) { console.warn("[bear_estimates] cache load failed", error); }
+    bearPanelReady = true;
+    await reconcileSharedBearEstimates();
+    repaintUnifiedBearList();
 
-    renderBears(items, usedFallback);
-    void reconcileSharedBearEstimates();
-
-    syncBearMarkersForActiveTab();
-
-    if (!items.length) {
+    if (!currentBearEstimateItems.length) {
       if (!hasQueryError && statusEl) statusEl.textContent = "🟠 표시할 곰 추정위치가 없습니다";
       return;
     }
@@ -6947,6 +6938,7 @@
     } else {
       // 태블릿 범위를 벗어나면 사이드바 접힘 상태를 정리한다.
       setTabletSidebarCollapsed(false);
+      if (obsListModule && obsListModule.getCurrentTab() === "list") collapseBearEstimatePanel();
     }
 
     if (map && typeof map.updateSize === "function") {
@@ -6972,13 +6964,8 @@
       }
       closeObservationPopup();
       setTabletSidebarCollapsed(false);
-      // 태블릿 가로에서는 obs-sheet 아래에 곰 패널이 자동 표시되므로 접지 않고 확장유지
-      var _isTablet = window.matchMedia("(min-width: 900px) and (orientation: landscape)").matches;
-      if (_isTablet) {
-        expandBearEstimatePanel();
-      } else {
-        collapseBearEstimatePanel();
-      }
+      // 큰 화면의 개체 목록은 관측점 팝업을 열어도 그대로 유지한다.
+      if (!isTabletLandscapeSidebarMode()) collapseBearEstimatePanel();
     },
     onOpenRegister: function () {
       if (controlsManager && typeof controlsManager.deactivateMeasure === "function") {

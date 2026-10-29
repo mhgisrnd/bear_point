@@ -8,6 +8,7 @@
   <link rel="stylesheet" href="vendor/ol/ol.css" />
   <link rel="stylesheet" href="css/styles.css" />
   <link rel="stylesheet" href="css/panel.css" />
+  <link rel="stylesheet" href="css/observation-sharing.css" />
   <link rel="stylesheet" href="css/sdr-diagnostics.css" />
 </head>
 <body>
@@ -17,7 +18,8 @@
     <div class="obs-sheet-header">
       <h2>관측점 목록</h2>
       <div class="obs-header-actions">
-        <button class="analysis-btn" id="btn-analysis" type="button">위치분석</button>
+        <button class="obs-header-add" id="btn-obs-add-inline" type="button">+ 등록</button>
+        <button class="obs-header-refresh" id="btn-obs-refresh" type="button" aria-label="공유 관측점 새로고침" title="공유 관측점 새로고침"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5M6 7a7 7 0 0 1 12-1l2 3M4 15l2 3a7 7 0 0 0 12-1" /></svg></button>
         <button class="obs-panel-icon-btn" id="btn-obs-list-peek" type="button" aria-label="최소화" title="최소화"><img src="css/svg/peek-collapse-white.svg" alt="" aria-hidden="true" /></button>
         <button class="obs-sheet-close" id="btn-obs-list-close" type="button" aria-label="닫기">
           <img src="css/svg/close-white.svg" alt="" aria-hidden="true" />
@@ -26,22 +28,46 @@
     </div>
 
     <div class="obs-search-bar">
-      <select class="obs-search-select" id="search-field">
+      <select class="obs-search-select" id="search-field" aria-label="검색 항목">
         <option value="obs">관측점</option>
         <option value="bear">코드</option>
       </select>
-      <input class="obs-search-input" id="search-query" type="text" placeholder="검색..." autocomplete="off" />
+      <input class="obs-search-input" id="search-query" type="text" placeholder="검색..." aria-label="관측점 검색어" autocomplete="off" />
+      <button class="obs-filter-toggle" id="btn-obs-filter" type="button" aria-expanded="false" aria-controls="obs-filter-panel">필터</button>
       <button class="obs-search-clear" id="btn-search-clear" type="button">초기화</button>
     </div>
 
-    <div class="obs-list-status" id="obs-list-status" aria-live="polite" hidden>
-      <div class="obs-list-status__meta">
-        <span class="obs-list-status__count" id="obs-list-count">0건</span>
-        <span class="sel-count-badge" id="obs-selected-count" hidden>0개 선택</span>
+    <section class="obs-filter-panel" id="obs-filter-panel" aria-label="관측점 상세 필터" hidden>
+      <div class="obs-filter-body">
+        <div class="obs-filter-field">
+          <label for="obs-filter-owner">담당자 <small>담당자명 기준</small></label>
+          <div class="obs-filter-control-row"><select id="obs-filter-owner"><option value="">전체 담당자</option></select><button id="btn-obs-filter-mine" type="button" title="이 기기에서 마지막으로 등록할 때 입력한 담당자">내 담당자</button></div>
+        </div>
+        <div class="obs-filter-field">
+          <label for="obs-filter-period">등록 기간 <small>한국 시간 기준</small></label>
+          <div class="obs-filter-control-row">
+            <select id="obs-filter-period"><option value="all">전체 기간</option><option value="today">오늘</option><option value="day">일별</option><option value="month">월별</option><option value="year">년별</option></select>
+            <input id="obs-filter-day" type="date" aria-label="등록일 선택" hidden />
+            <input id="obs-filter-month" type="month" aria-label="등록월 선택" hidden />
+            <input id="obs-filter-year" type="number" inputmode="numeric" min="1900" max="9999" step="1" aria-label="등록년도 입력" placeholder="예: 2026" hidden />
+          </div>
+          <p class="obs-filter-error" id="obs-filter-error" role="status" hidden></p>
+        </div>
       </div>
-      <div class="obs-list-status__actions">
-        <button class="obs-inline-register-btn" id="btn-obs-add-inline" type="button">관측점 등록</button>
-        <button class="bulk-delete-btn bulk-delete-btn--inline" id="btn-delete-selected" type="button">선택 삭제</button>
+      <div class="obs-filter-footer"><button id="btn-obs-filter-done" type="button">결과 보기</button></div>
+    </section>
+
+    <div class="obs-list-status" id="obs-list-status" aria-live="polite" hidden>
+      <div class="obs-overview">
+        <span class="obs-list-status__count" id="obs-list-count">0건</span>
+        <button id="obs-filter-summary" class="obs-filter-summary" type="button" aria-controls="obs-filter-panel" aria-expanded="false" hidden></button>
+      </div>
+      <p class="obs-sync-note" id="obs-sync-note" hidden></p>
+      <div class="obs-selection-actions" id="obs-selection-actions" hidden>
+        <span class="sel-count-badge" id="obs-selected-count" hidden>0개 선택</span>
+        <button class="analysis-btn" id="btn-analysis" type="button" hidden>위치분석</button>
+        <button class="obs-inline-register-btn" id="btn-obs-send-selected" type="button" hidden>선택 공유</button>
+        <button class="bulk-delete-btn bulk-delete-btn--inline" id="btn-delete-selected" type="button" hidden>삭제</button>
       </div>
     </div>
 
@@ -217,11 +243,6 @@
   <div class="panel-stack panel-bottom-left">
     <div class="panel-tabs panel-tabs-floating">
       <button class="tab-btn tab-active" id="btn-obs-list" type="button">관측점 목록</button>
-      <button class="tab-btn list-toggle list-toggle--local" id="btn-realtime-list" type="button" aria-label="로컬 목록에서 실시간 목록으로 전환" aria-pressed="false">
-        <span class="list-toggle__label list-toggle__label--left">로컬</span>
-        <span class="list-toggle__track" aria-hidden="true"><span class="list-toggle__thumb"></span></span>
-        <span class="list-toggle__label list-toggle__label--right">실시간</span>
-      </button>
     </div>
 
     <div class="panel" id="panel">
@@ -231,9 +252,9 @@
       </div>
 
       <div class="panel-body" id="panel-body">
+        <div class="tracking-source-heading"><span>개체 추적</span><button class="tracking-refresh" id="btn-bears-refresh" type="button" title="공유 자료 새로고침" aria-label="개체 추적위치 새로고침">↻</button></div>
         <div class="bears-box" id="bears-box">
           <div class="bears-title">
-            <span>개체 추적위치 목록</span>
             <div class="bears-toolbar" id="bears-toolbar">
               <div class="bears-toolbar__row bears-toolbar__row--top">
                 <span class="bears-toolbar__summary" id="bears-toolbar-summary" aria-live="polite" hidden></span>
@@ -242,9 +263,9 @@
                     <span class="bears-toolbar-btn__excel-icon" aria-hidden="true"></span>
                     <span>일괄 다운로드</span>
                   </button>
-                  <button class="bears-toolbar-btn bears-toolbar-btn--ghost bears-toolbar-btn--realtime-upload" id="btn-bears-upload-selected" type="button" aria-label="실시간 선택 업로드" disabled>
+                  <button class="bears-toolbar-btn bears-toolbar-btn--ghost bears-toolbar-btn--realtime-upload" id="btn-bears-upload-selected" type="button" aria-label="선택한 미공유 추적위치 공유" disabled>
                     <span class="bears-toolbar-btn__upload-icon" aria-hidden="true"></span>
-                    <span>선택 업로드</span>
+                    <span>선택 공유</span>
                   </button>
                 </div>
               </div>
@@ -332,7 +353,10 @@
   <script src="runtime-config.js"></script>
   <script src="js/analysis/bear-position-analysis.js"></script>
   <script src="js/realtime/realtimeList.js"></script>
+  <script src="js/realtime/bear-estimate-store.js"></script>
   <script src="js/obs/obsList.js"></script>
+  <script src="js/obs/observation-filters.js"></script>
+  <script src="js/obs/observation-sync.js"></script>
   <script src="js/obs/obsRegister.js"></script>
   <script src="js/map/ol-map-controls.js"></script>
   <script src="js/client-ol.js"></script>

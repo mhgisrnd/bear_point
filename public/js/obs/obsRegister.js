@@ -72,6 +72,7 @@ window.createObsRegisterModule = function createObsRegisterModule({
   };
   var formMode = "create";
   var editingObservationId = null;
+  var editingRevision = null;
   var suppressCloseCallback = false;
   var DETECTOR_STRENGTH_OPTIONS = ["미약", "감1", "감2", "감3", "P1", "P2", "P3", "P4", "P5", "P6", "P7", "P8", "P9", "P10"];
   var DEFAULT_MANUAL_LAT = 35.326459;
@@ -284,7 +285,7 @@ window.createObsRegisterModule = function createObsRegisterModule({
 
   // SQLite PK로 쓸 관측점 식별자를 클라이언트에서 먼저 생성한다.
   function generateObservationId() {
-    return "obs-" + Date.now();
+    return "obs-" + (window.crypto && window.crypto.randomUUID ? window.crypto.randomUUID() : Date.now().toString(36) + "-" + Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2));
   }
 
   function normalizeBearEntities(rows) {
@@ -521,106 +522,12 @@ window.createObsRegisterModule = function createObsRegisterModule({
   }
 
   // 관측점 본문과 감지기 배열을 한 row로 직렬화해 observations 테이블에 저장한다.
-  async function saveObservationToSQLite(observation, detectors) {
-    var sqliteModule = window.BearSQLite;
-    if (!sqliteModule || typeof sqliteModule.initialize !== "function") {
-      throw new Error("SQLite 모듈이 로드되지 않았습니다.");
-    }
-
-    var initState = await sqliteModule.initialize();
-    if (!initState || !initState.ready) {
-      throw new Error("SQLite 연결이 준비되지 않았습니다.");
-    }
-
-    var sqlite = getSQLitePlugin();
-    if (!sqlite || typeof sqlite.run !== "function") {
-      throw new Error("SQLite run API를 사용할 수 없습니다.");
-    }
-
-    var dbName = getDbName();
-
-    var normalizedDetectors = Array.isArray(detectors)
-      ? detectors.slice(0, MAX_DET).map(function(item) {
-          return {
-            detectorName: String(item && item.detectorName ? item.detectorName : "").trim(),
-            signalStrength: String(item && item.signalStrength ? item.signalStrength : "").trim()
-          };
-        }).filter(function(item) {
-          return !!(item.detectorName || item.signalStrength);
-        })
-      : [];
-
-    await sqlite.run({
-      database: dbName,
-      statement: [
-        "INSERT INTO observations (id, bear_code, owner, lat, lng, heading, place, detectors_json, admin_region)",
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
-      ].join(" "),
-      values: [
-        observation.id,
-        observation.bearCode,
-        observation.owner,
-        observation.lat,
-        observation.lng,
-        observation.heading,
-        observation.place,
-        JSON.stringify(normalizedDetectors),
-        observation.adminRegion
-      ],
-      transaction: true,
-      readonly: false
-    });
+  async function saveObservationLocally(observation, detectors) {
+    await window.BearObservationSync.saveDraft(observation, detectors);
   }
 
-  // 관측점 수정 시 핵심 필드(명칭/등록자/곰코드/좌표/방향각/감지기)를 SQLite에 반영한다.
-  async function updateObservationInSQLite(observationId, payload, detectors) {
-    var sqliteModule = window.BearSQLite;
-    if (!sqliteModule || typeof sqliteModule.initialize !== "function") {
-      throw new Error("SQLite 모듈이 로드되지 않았습니다.");
-    }
-
-    var initState = await sqliteModule.initialize();
-    if (!initState || !initState.ready) {
-      throw new Error("SQLite 연결이 준비되지 않았습니다.");
-    }
-
-    var sqlite = getSQLitePlugin();
-    if (!sqlite || typeof sqlite.run !== "function") {
-      throw new Error("SQLite run API를 사용할 수 없습니다.");
-    }
-
-    var normalizedDetectors = Array.isArray(detectors)
-      ? detectors.slice(0, MAX_DET).map(function(item) {
-          return {
-            detectorName: String(item && item.detectorName ? item.detectorName : "").trim(),
-            signalStrength: String(item && item.signalStrength ? item.signalStrength : "").trim()
-          };
-        }).filter(function(item) {
-          return !!(item.detectorName || item.signalStrength);
-        })
-      : [];
-
-    await sqlite.run({
-      database: getDbName(),
-      statement: [
-        "UPDATE observations",
-        "SET bear_code = ?, owner = ?, place = ?, lat = ?, lng = ?, heading = ?, detectors_json = ?, admin_region = ?, updated_at = datetime('now')",
-        "WHERE id = ?"
-      ].join(" "),
-      values: [
-        payload.bearCode,
-        payload.owner,
-        payload.place,
-        payload.lat,
-        payload.lng,
-        payload.heading,
-        JSON.stringify(normalizedDetectors),
-        payload.adminRegion,
-        observationId
-      ],
-      transaction: true,
-      readonly: false
-    });
+  async function updateObservationLocally(observationId, payload, detectors) {
+    await window.BearObservationSync.saveDraft({ ...payload, id: observationId }, detectors, true);
   }
 
   // 감지기 행을 수집한다. 한쪽만 선택된 행이 있으면 저장을 막고 빈 칸을 표시한다.
@@ -845,8 +752,11 @@ window.createObsRegisterModule = function createObsRegisterModule({
       var detectors = collectDetectorRows();
       var source = "demo";
       if (window.Capacitor && typeof window.Capacitor.isNativePlatform === "function" && window.Capacitor.isNativePlatform()) {
-        await saveObservationToSQLite(observation, detectors);
+        await saveObservationLocally(observation, detectors);
         source = "sqlite";
+      } else {
+        await saveObservationLocally(observation, detectors);
+        source = "web";
       }
       saveLastOwner(observation.owner);
 
@@ -862,10 +772,15 @@ window.createObsRegisterModule = function createObsRegisterModule({
         });
       }
 
-      statusEl.textContent = source === "sqlite"
-        ? "✅ 관측점 등록 완료"
-        : "✅ 웹 더미 관측점이 등록되었습니다.";
+      statusEl.textContent = "관측점 로컬 저장 완료 · 공유 전송 중";
       hide(true);
+      void window.BearObservationSync.upload(observation.id).then(function (result) {
+        statusEl.textContent = result.ok
+          ? (result.deleted ? "관리자가 삭제한 관측점입니다." : result.backup ? "이미 공유된 자료를 적용했습니다. 미반영 수정 사본은 로컬 DB에 보관했습니다." : "관측점 공유 완료")
+          : "로컬 저장 완료 · 전송 실패: " + result.message;
+      }).catch(function (error) {
+        statusEl.textContent = "로컬 저장 완료 · 전송 상태 확인 필요: " + error.message;
+      });
     } catch (error) {
       statusEl.textContent = "⚠️ " + (error && error.message ? error.message : String(error));
       triggerLightErrorVibration();
@@ -892,6 +807,7 @@ window.createObsRegisterModule = function createObsRegisterModule({
         heading: latestLive.heading
       };
       var editedObservation = buildObservationEditPayload(baseObservation);
+      editedObservation.editRevision = editingRevision;
       var detectors = collectDetectorRows();
 
       var confirmed = (typeof window.__bpShowConfirmDialog === "function")
@@ -912,8 +828,11 @@ window.createObsRegisterModule = function createObsRegisterModule({
       var source = "demo";
 
       if (window.Capacitor && typeof window.Capacitor.isNativePlatform === "function" && window.Capacitor.isNativePlatform()) {
-        await updateObservationInSQLite(editedObservation.id, editedObservation, detectors);
+        await updateObservationLocally(editedObservation.id, editedObservation, detectors);
         source = "sqlite";
+      } else {
+        await updateObservationLocally(editedObservation.id, editedObservation, detectors);
+        source = "web";
       }
       if (onObservationSaved) {
         await onObservationSaved({
@@ -924,10 +843,15 @@ window.createObsRegisterModule = function createObsRegisterModule({
         });
       }
 
-      statusEl.textContent = source === "sqlite"
-        ? "✅ 관측점이 수정되었습니다."
-        : "✅ 웹 더미 관측점이 수정되었습니다.";
+      statusEl.textContent = "관측점 로컬 수정 완료 · 공유 전송 중";
       hide(true);
+      void window.BearObservationSync.upload(editedObservation.id).then(function (result) {
+        statusEl.textContent = result.ok
+          ? (result.deleted ? "관리자가 삭제한 관측점입니다." : result.backup ? "이미 공유된 자료를 적용했습니다. 미반영 수정 사본은 로컬 DB에 보관했습니다." : "관측점 공유 완료")
+          : result.conflict ? "수정본은 기기에 보관했습니다. 목록의 충돌 확인 버튼에서 비교해주세요." : "로컬 저장 완료 · 전송 실패: " + result.message;
+      }).catch(function (error) {
+        statusEl.textContent = "로컬 저장 완료 · 전송 상태 확인 필요: " + error.message;
+      });
     } catch (error) {
       statusEl.textContent = "⚠️ " + (error && error.message ? error.message : String(error));
       triggerLightErrorVibration();
@@ -955,6 +879,7 @@ window.createObsRegisterModule = function createObsRegisterModule({
     formMode = "create";
     syncGpsToggleModeUi();
     editingObservationId = null;
+    editingRevision = null;
     suppressCloseCallback = false;
     if (chkRegHeadingLock) chkRegHeadingLock.checked = false;
     if (registerTitleEl) registerTitleEl.textContent = "관측점 등록";
@@ -1464,9 +1389,14 @@ window.createObsRegisterModule = function createObsRegisterModule({
   }
 
   // 관측점 수정 모드로 팝업을 열고 기존 데이터를 폼에 채운다.
-  function openForEdit(observation) {
+  async function openForEdit(observation) {
+    var editableRow;
+    try {
+      editableRow = await window.BearObservationSync.assertEditable(String(observation && observation.id || ""));
+    } catch (error) { statusEl.textContent = error.message; return; }
     clearBoundaryLookup();
-    var target = observation || {};
+    var target = { ...(observation || {}), ...editableRow, bearCode: editableRow.bear_code,
+      adminRegion: editableRow.admin_region, detectors: typeof editableRow.detectors_json === "string" ? JSON.parse(editableRow.detectors_json || "[]") : editableRow.detectors_json || [] };
     var targetId = String(target.id || "").trim();
     if (!targetId) {
       statusEl.textContent = "⚠️ 수정할 관측점 정보가 올바르지 않습니다.";
@@ -1485,6 +1415,7 @@ window.createObsRegisterModule = function createObsRegisterModule({
     formMode = "edit";
     syncGpsToggleModeUi();
     editingObservationId = targetId;
+    editingRevision = window.BearObservationSync.revision(editableRow);
     // 수정 팝업을 닫을 때(onClose) 목록 패널 복원 콜백이 실행되도록 suppress를 끈다.
     suppressCloseCallback = false;
     if (registerTitleEl) registerTitleEl.textContent = "관측점 수정";

@@ -100,7 +100,8 @@ test("tracking result auto-fills an editable location and stores/shares the corr
     clearAnalysisEstimateVisuals() {}, refreshBearEstimatePanel: async () => {},
     statusEl: { textContent: "" },
     realtimeListModule: { sendEstimate: async item => { shared.push(item); return { ok: true }; }, openRealtimeTab() {} },
-    markBearEstimatesShared: async () => {}
+    markBearEstimatesShared: async () => {},
+    pendingBearUploads: new Set(), repaintUnifiedBearList() {}
   });
   vm.runInContext(fs.readFileSync(path.join(root, "public/js/db/editable-region-field.js"), "utf8"), context);
   const source = fs.readFileSync(path.join(root, "public/js/client-ol.js"), "utf8");
@@ -183,14 +184,18 @@ test("registration and editing refresh location from GPS/map/manual input and pe
   const elements = Object.fromEntries(["register-box", "reg-place", "reg-owner", "reg-coord", "reg-heading",
     "reg-bear", "reg-admin-region", "btn-reg-submit"].map(id => [id, element()]));
   const db = new Database(":memory:");
-  db.exec("CREATE TABLE observations(id TEXT PRIMARY KEY, bear_code TEXT, owner TEXT, lat REAL, lng REAL, heading REAL, place TEXT, detectors_json TEXT, admin_region TEXT, updated_at TEXT)");
+  db.exec("CREATE TABLE observations(id TEXT PRIMARY KEY, bear_code TEXT, owner TEXT, lat REAL, lng REAL, heading REAL, place TEXT, detectors_json TEXT, admin_region TEXT, created_at TEXT, updated_at TEXT)");
+  const migrationWindow = {};
+  vm.runInNewContext(fs.readFileSync(path.join(root, "public/js/db/sqlite-migrations.js"), "utf8"), { window: migrationWindow });
+  migrationWindow.BearSQLiteConfig.migrations[14].forEach(sql => db.exec(sql));
+  migrationWindow.BearSQLiteConfig.migrations[16].forEach(sql => db.exec(sql));
   const saved = [];
   const queries = [];
   const window = { innerHeight: 1000, innerWidth: 1200, addEventListener() {}, confirm: () => true,
     BearSQLite: { initialize: async () => ({ ready: true }) },
     Capacitor: { isNativePlatform: () => true, Plugins: { CapacitorSQLite: {
-      query: async () => ({ values: [] }),
-      run: async options => db.prepare(options.statement).run(...options.values)
+      query: async options => ({ values: options.statement.includes("detector_catalog") ? [] : db.prepare(options.statement).all(...options.values) }),
+      run: async options => ({ changes: { changes: db.prepare(options.statement).run(...options.values).changes } })
     } } },
     BearAdminBoundary: { lookup: async (lat, lng) => {
       queries.push([lat, lng]);
@@ -200,6 +205,10 @@ test("registration and editing refresh location from GPS/map/manual input and pe
   const statusEl = { textContent: "" };
   vm.runInNewContext(fs.readFileSync(path.join(root, "public/js/db/editable-region-field.js"), "utf8"), {
     window, setTimeout, clearTimeout
+  });
+  vm.runInNewContext(fs.readFileSync(path.join(root, "public/js/obs/observation-sync.js"), "utf8"), {
+    window, setTimeout, clearTimeout, AbortController,
+    fetch: async () => { throw new Error("offline"); }
   });
   vm.runInNewContext(fs.readFileSync(path.join(root, "public/js/obs/obsRegister.js"), "utf8"), {
     window, document: { getElementById: id => elements[id] || null, querySelectorAll: () => [], addEventListener() {} },
@@ -225,7 +234,7 @@ test("registration and editing refresh location from GPS/map/manual input and pe
     const row = db.prepare("SELECT * FROM observations").get();
     assert.equal(row.admin_region, "직접 수정한 관측 위치");
 
-    form.openForEdit({ ...row, bearCode: row.bear_code });
+    await form.openForEdit({ ...row, bearCode: row.bear_code });
     form.applyMapClickCoordinate(35.202, 127.462);
     await settle();
     assert.equal(elements["reg-admin-region"].value, "전라남도 구례군 구례읍");
@@ -234,8 +243,8 @@ test("registration and editing refresh location from GPS/map/manual input and pe
     assert.equal(saved.length, 2, statusEl.textContent);
     assert.equal(db.prepare("SELECT admin_region FROM observations").get().admin_region, "전라남도 구례군 구례읍");
 
-    form.openForEdit({ ...row, bearCode: row.bear_code });
-    elements["reg-coord"].value = "35.202, 127.462";
+    await form.openForEdit({ ...row, bearCode: row.bear_code });
+    elements["reg-coord"].value = "35.203, 127.463";
     elements["reg-coord"].listeners.input();
     await settle();
     assert.equal(elements["reg-admin-region"].value, "전라남도 구례군 구례읍");
@@ -245,6 +254,6 @@ test("registration and editing refresh location from GPS/map/manual input and pe
     elements["btn-reg-submit"].listeners.click();
     await settle();
     assert.equal(saved.length, 2);
-    assert.ok(queries.length >= 4);
+    assert.ok(queries.some(([lat, lng]) => lat === 35.203 && lng === 127.463), "manual changes refresh the region after reopening the latest local row");
   } finally { form.hide(false); db.close(); }
 });

@@ -4,11 +4,50 @@
 (function initBearSQLiteConfig() {
   window.BearSQLiteConfig = {
     dbName: "BearPointData",
-    dbVersion: 13,
+    dbVersion: 16,
     assetDbOverwrite: false,
     // 마이그레이션 이력과 실제 컬럼 상태가 어긋난 DB를 위한 보정 규칙.
     // 새 누락 컬럼이 생기면 여기에 규칙만 추가하면 된다.
     schemaGuards: [
+      { type: "column-exists", table: "observations", column: "sync_mutation_id", apply: "ALTER TABLE observations ADD COLUMN sync_mutation_id TEXT" },
+      { type: "column-exists", table: "observations", column: "conflict_json", apply: "ALTER TABLE observations ADD COLUMN conflict_json TEXT" },
+      { type: "table-exists", table: "bear_estimate_remote_cache", apply: "CREATE TABLE IF NOT EXISTS bear_estimate_remote_cache (server_id TEXT PRIMARY KEY, payload_json TEXT NOT NULL)" },
+      {
+        "type": "column-exists",
+        "table": "observations",
+        "column": "share_state",
+        "apply": "ALTER TABLE observations ADD COLUMN share_state TEXT NOT NULL DEFAULT 'local'"
+      },
+      {
+        "type": "column-exists",
+        "table": "observations",
+        "column": "sync_error",
+        "apply": "ALTER TABLE observations ADD COLUMN sync_error TEXT"
+      },
+      {
+        "type": "column-exists",
+        "table": "observations",
+        "column": "shared_at",
+        "apply": "ALTER TABLE observations ADD COLUMN shared_at TEXT"
+      },
+      {
+        "type": "column-exists",
+        "table": "observations",
+        "column": "server_version",
+        "apply": "ALTER TABLE observations ADD COLUMN server_version INTEGER NOT NULL DEFAULT 0"
+      },
+      {
+        "type": "column-exists",
+        "table": "observations",
+        "column": "server_deleted",
+        "apply": "ALTER TABLE observations ADD COLUMN server_deleted INTEGER NOT NULL DEFAULT 0"
+      },
+      {
+        "type": "column-exists",
+        "table": "observations",
+        "column": "unshared_backup",
+        "apply": "ALTER TABLE observations ADD COLUMN unshared_backup TEXT"
+      },
       {
         type: "column-exists",
         table: "observations",
@@ -173,7 +212,17 @@
       ],
       13: [
         "ALTER TABLE bear_estimates ADD COLUMN admin_region TEXT"
-      ]
+      ],
+      14: [
+        "ALTER TABLE observations ADD COLUMN share_state TEXT NOT NULL DEFAULT 'local'",
+        "ALTER TABLE observations ADD COLUMN sync_error TEXT",
+        "ALTER TABLE observations ADD COLUMN shared_at TEXT",
+        "ALTER TABLE observations ADD COLUMN server_version INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE observations ADD COLUMN server_deleted INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE observations ADD COLUMN unshared_backup TEXT"
+      ],
+      15: ["CREATE TABLE IF NOT EXISTS bear_estimate_remote_cache (server_id TEXT PRIMARY KEY, payload_json TEXT NOT NULL)"],
+      16: ["ALTER TABLE observations ADD COLUMN sync_mutation_id TEXT", "ALTER TABLE observations ADD COLUMN conflict_json TEXT"]
 
     }
   };
