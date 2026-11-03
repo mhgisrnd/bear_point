@@ -59,6 +59,7 @@
   }
   function payload(row) {
     return { id: row.id, bear_code: row.bear_code, owner: row.owner, place: row.place,
+      team_id: row.team_id || null, team_name: row.team_name || null, team_color: row.team_color || null,
       admin_region: row.admin_region || null, lat: Number(row.lat), lng: Number(row.lng), heading: ((Number(row.heading) % 360) + 360) % 360,
       detectors: typeof row.detectors_json === "string" ? JSON.parse(row.detectors_json || "[]") : row.detectors_json || [],
       created_at: row.created_at && /Z$|[+]\d\d:\d\d$/.test(row.created_at) ? row.created_at : String(row.created_at || "").replace(" ", "T") + "Z" };
@@ -81,7 +82,10 @@
     return serialize(async () => {
     const original = edit ? await assertEditable(observation.id) : null;
     if (original && observation.editRevision != null && observation.editRevision !== revision(original)) throw new Error("수정 중 관측점이 변경되었습니다. 입력 내용은 유지됩니다. 최신 자료를 확인하고 다시 수정해주세요.");
-    const fields = { bear_code: observation.bearCode, owner: observation.owner, place: observation.place,
+    const fields = { bear_code: observation.bearCode, owner: original ? original.owner : observation.owner, place: observation.place,
+      team_id: (original ? original.team_id : observation.team_id) || null,
+      team_name: (original ? original.team_name : observation.team_name) || null,
+      team_color: (original ? original.team_color : observation.team_color) || null,
       admin_region: observation.adminRegion || null, lat: observation.lat, lng: observation.lng,
       heading: observation.heading, detectors_json: JSON.stringify(detectors || []),
       updated_at: new Date().toISOString(), share_state: original?.share_state === "conflict" ? "conflict" : "local", sync_error: null,
@@ -109,7 +113,7 @@
   function sameContent(local, remote) {
     const data = payload(local);
     const detectors = typeof remote.detectors_json === "string" ? JSON.parse(remote.detectors_json || "[]") : remote.detectors_json || [];
-    return ["bear_code", "owner", "place", "admin_region", "lat", "lng", "heading"].every(key => (data[key] ?? null) === (remote[key] ?? null)) && JSON.stringify(data.detectors) === JSON.stringify(detectors);
+    return ["bear_code", "owner", "place", "admin_region", "lat", "lng", "heading", "team_id", "team_name", "team_color"].every(key => (data[key] ?? null) === (remote[key] ?? null)) && JSON.stringify(data.detectors) === JSON.stringify(detectors);
   }
   async function recordConflict(id, remote) {
     await patch(id, { share_state: "conflict", conflict_json: JSON.stringify(remote), sync_error: remote.deleted ? "서버에서 삭제된 관측점입니다. 로컬 수정본은 유지됩니다." : "다른 수정 사항이 있습니다. 내용을 비교해주세요." });
@@ -127,6 +131,9 @@
     if (local && Number(local.server_version || 0) > Number(remote.server_version)) return;
     const detectors = typeof remote.detectors_json === "string" ? remote.detectors_json : JSON.stringify(remote.detectors_json || []);
     const fields = { bear_code: remote.bear_code, owner: remote.owner, place: remote.place,
+      team_id: remote.team_id === undefined ? local?.team_id || null : remote.team_id,
+      team_name: remote.team_name === undefined ? local?.team_name || null : remote.team_name,
+      team_color: remote.team_color === undefined ? local?.team_color || null : remote.team_color,
       admin_region: remote.admin_region, lat: Number(remote.lat), lng: Number(remote.lng), heading: Number(remote.heading),
       detectors_json: detectors, created_at: remote.created_at, updated_at: remote.updated_at,
       share_state: "shared", shared_at: remote.uploaded_at, server_version: remote.server_version,
@@ -135,7 +142,7 @@
     // before adopting the immutable canonical server record.
     if (local && acknowledged && local.share_state !== "shared") {
       const old = payload(local);
-      const differs = ["bear_code", "owner", "place", "admin_region", "lat", "lng", "heading"].some(key => old[key] !== fields[key]) || JSON.stringify(old.detectors) !== detectors;
+      const differs = ["bear_code", "owner", "place", "admin_region", "lat", "lng", "heading", "team_id", "team_name", "team_color"].some(key => old[key] !== fields[key]) || JSON.stringify(old.detectors) !== detectors;
       if (differs) fields.unshared_backup = JSON.stringify(local);
     }
     if (local) await patch(remote.id, fields);

@@ -52,8 +52,13 @@
       // Snapshot user text before awaiting, so saving never replaces a manual
       // override with a fresh automatic response.
       if (dirty) return input ? input.value.trim() || null : null;
-      const region = await lookup(lat, lng);
-      return region ? region.name : null;
+      try {
+        const region = await lookup(lat, lng);
+        return region ? region.name : null;
+      } catch (_) {
+        // Optional address lookup must not prevent saving valid coordinates offline.
+        return input ? input.value.trim() || null : null;
+      }
     }
     return { reset, update, resolve };
   };

@@ -10,8 +10,10 @@ const { SCHEMA_SQL, createObservationStore } = require("../src/services/observat
     // All test records live in a temporary table that shadows the real table.
     await client.query(SCHEMA_SQL.replace("CREATE TABLE IF NOT EXISTS shared_observations", "CREATE TEMP TABLE shared_observations"));
     const store = createObservationStore((...args) => client.query(...args));
-    const data = { id: "obs-integration", bear_code: "bear", owner: "tester", place: "original", lat: 35, lng: 127, heading: 90, created_at: new Date().toISOString(), detectors: [] };
+    const data = { id: "obs-integration", bear_code: "bear", owner: "tester", team_id: "gurye", team_name: "구례팀", team_color: "#16A34A", place: "original", lat: 35, lng: 127, heading: 90, created_at: new Date().toISOString(), detectors: [] };
     const first = await store.insert(data); assert.equal(first.alreadyExists, false);
+    assert.equal(first.item.team_id, "gurye");
+    assert.equal(first.item.team_color, "#16A34A");
     const retry = await store.insert({ ...data, place: "must-not-overwrite" });
     assert.equal(retry.alreadyExists, true); assert.equal(retry.item.place, "original");
     const updated = await store.update(data.id, { ...data, place: "admin-edit", server_version: 1 }, "admin");

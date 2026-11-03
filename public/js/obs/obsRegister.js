@@ -16,12 +16,23 @@ window.createObsRegisterModule = function createObsRegisterModule({
   var btnRegisterPeek = document.getElementById("btn-register-peek");
   var btnDetAdd = document.getElementById("btn-det-add");
   var btnDetRemove = document.getElementById("btn-det-remove");
+  var btnDetToggle = document.getElementById("btn-det-toggle");
+  var detectorFieldsEl = document.getElementById("det-fields");
+  var detectorSummaryEl = document.getElementById("det-summary");
   var detListEl = document.getElementById("det-list");
   var obsRegFormEl = document.getElementById("obs-reg-form");
   var regPlaceEl = document.getElementById("reg-place");
   var regAdminRegionEl = document.getElementById("reg-admin-region");
   var regionField = window.createEditableRegionField(regAdminRegionEl);
   var isSubmitting = false;
+  var sdrReturn = null;
+  var sdrSourceEl = document.getElementById("reg-sdr-source");
+  function clearSdrContext() {
+    sdrReturn = null;
+    if (sdrSourceEl) { sdrSourceEl.hidden = true; sdrSourceEl.textContent = ""; }
+    if (regBearEl) regBearEl.readOnly = false;
+    if (btnBearFind) btnBearFind.disabled = false;
+  }
 
   function clearBoundaryLookup() {
     regionField.reset();
@@ -36,6 +47,7 @@ window.createObsRegisterModule = function createObsRegisterModule({
     observation.adminRegion = await regionField.resolve(observation.lat, observation.lng);
   }
   var regOwnerEl = document.getElementById("reg-owner");
+  var regTeamEl = document.getElementById("reg-team");
   var regCoordEl = document.getElementById("reg-coord");
   var regHeadingEl = document.getElementById("reg-heading");
   var regBearEl = document.getElementById("reg-bear");
@@ -206,6 +218,7 @@ window.createObsRegisterModule = function createObsRegisterModule({
 
   function markDetectorFieldError(fieldEl) {
     if (!fieldEl) return;
+    setDetectorsCollapsed(false);
     var tag = String(fieldEl.tagName || "").toLowerCase();
     if (tag === "select") {
       fieldEl.classList.add("obs-reg-select--error");
@@ -448,7 +461,10 @@ window.createObsRegisterModule = function createObsRegisterModule({
   }
 
   function handleBackNavigation() {
-    if (!bearPickerEl || bearPickerEl.classList.contains("hidden")) return false;
+    if (!bearPickerEl || bearPickerEl.classList.contains("hidden")) {
+      if (sdrReturn && isRegisterPopupVisible()) { close(); return true; }
+      return false;
+    }
     closeBearPicker();
     return true;
   }
@@ -638,14 +654,31 @@ window.createObsRegisterModule = function createObsRegisterModule({
   function applyLastOwnerDefault() {
     if (!regOwnerEl) return;
     if (formMode !== "create") return;
-
-    var current = String(regOwnerEl.value || "").trim();
-    if (current) return;
-
-    var lastOwner = loadLastOwner();
-    if (!lastOwner) return;
-    regOwnerEl.value = lastOwner;
+    var profile = window.BearAppSettings?.getProfile();
+    regOwnerEl.value = profile?.owner || "";
+    fitFixedOwnerField();
+    var team = (window.BearAppSettings?.store?.snapshot()?.items || []).find(item => item.id === profile?.team_id);
+    updateTeamLabel(team?.name || profile?.team_name || "", team?.color || profile?.team_color);
   }
+  window.addEventListener("bearpoint:profile-changed", applyLastOwnerDefault);
+  window.addEventListener("bearpoint:teams-changed", applyLastOwnerDefault);
+  function updateTeamLabel(name, color) {
+    if (!regTeamEl) return;
+    regTeamEl.value = name;
+    var badge = regTeamEl.closest(".obs-reg-team-badge");
+    if (!badge) return;
+    var hex = /^#[0-9A-Fa-f]{6}$/.test(color || "") ? color : "#7E90A2";
+    badge.style.setProperty("--team-color", hex);
+    badge.style.setProperty("--team-background", hex + "18");
+    badge.style.setProperty("--team-border", hex + "55");
+    badge.title = name || "소속 팀 미지정";
+  }
+  function fitFixedOwnerField() {
+    if (!regOwnerEl || regOwnerEl.tagName !== "TEXTAREA") return;
+    regOwnerEl.style.height = "auto";
+    regOwnerEl.style.height = Math.max(22, regOwnerEl.scrollHeight) + "px";
+  }
+  window.addEventListener("resize", fitFixedOwnerField);
 
   // GPS가 꺼져 있으면(등록/수정 공통) 수동 입력을 허용한다.
   function isManualEntryEnabled() {
@@ -696,9 +729,9 @@ window.createObsRegisterModule = function createObsRegisterModule({
   }
 
   // 실시간 위치 상태와 폼 입력값을 검증해 저장용 payload를 만든다.
-  function buildObservationPayload() {
+  function buildObservationPayload(identity) {
     var place = regPlaceEl ? regPlaceEl.value.trim() : "";
-    var owner = regOwnerEl ? regOwnerEl.value.trim() : "";
+    var owner = identity.owner;
     var bearCode = regBearEl ? regBearEl.value.trim() : "";
     var lat = parseFiniteNumber(latestLive.lat);
     var lng = parseFiniteNumber(latestLive.lng);
@@ -732,6 +765,9 @@ window.createObsRegisterModule = function createObsRegisterModule({
 
     return {
       id: generateObservationId(),
+      team_id: identity.team_id,
+      team_name: identity.team_name,
+      team_color: identity.team_color,
       place: place,
       bearCode: bearCode,
       owner: owner,
@@ -747,7 +783,8 @@ window.createObsRegisterModule = function createObsRegisterModule({
     isSubmitting = true;
     try {
       clearAllValidationErrors();
-      var observation = buildObservationPayload();
+      var identity = await window.BearAppSettings.requireIdentity();
+      var observation = buildObservationPayload(identity);
       await attachBoundary(observation);
       var detectors = collectDetectorRows();
       var source = "demo";
@@ -863,12 +900,14 @@ window.createObsRegisterModule = function createObsRegisterModule({
 
   // 등록 폼을 기본 상태로 초기화하고 감지기 섹션을 빈 상태 안내문으로 되돌린다.
   function resetFormState() {
+    clearSdrContext();
     clearBoundaryLookup();
     clearManualPreview();
     if (obsRegFormEl) obsRegFormEl.reset();
     applyLastOwnerDefault();
     clearAllValidationErrors();
     renderEmptyDetectorState();
+    setDetectorsCollapsed(true);
     if (!latestLive.isGpsActive) {
       latestLive.lat = null;
       latestLive.lng = null;
@@ -947,6 +986,7 @@ window.createObsRegisterModule = function createObsRegisterModule({
   // 감지기 추가/삭제 버튼 활성화를 현재 행 개수에 맞춰 갱신한다.
   function syncDetBtns() {
     var count = getDetCount();
+    if (detectorSummaryEl) detectorSummaryEl.textContent = "감지기 " + count + "개";
     if (btnDetAdd) btnDetAdd.disabled = count >= MAX_DET;
     if (btnDetRemove) btnDetRemove.disabled = count <= 0;
   }
@@ -954,6 +994,7 @@ window.createObsRegisterModule = function createObsRegisterModule({
   // 감지기 행을 최대 개수(MAX_DET)까지 추가한다.
   function addDetRow() {
     if (!detListEl || getDetCount() >= MAX_DET) return;
+    setDetectorsCollapsed(false);
     clearEmptyDetectorState();
     var temp = document.createElement("tbody");
     temp.innerHTML = DET_ROW_TEMPLATE;
@@ -961,6 +1002,18 @@ window.createObsRegisterModule = function createObsRegisterModule({
     detListEl.appendChild(newRow);
     ensureDetectorRowAutocomplete();
     syncDetBtns();
+  }
+
+  function setDetectorsCollapsed(collapsed) {
+    if (detectorFieldsEl) detectorFieldsEl.hidden = !!collapsed;
+    if (btnDetToggle) {
+      btnDetToggle.setAttribute("aria-expanded", String(!collapsed));
+      btnDetToggle.title = collapsed ? "감지기 펼치기" : "감지기 접기";
+    }
+    if (isRegisterPopupVisible()) {
+      applyMobileViewportSizing();
+      keepPopupInViewport(false);
+    }
   }
 
   // 마지막 감지기 행을 삭제한다. 모두 삭제되면 빈 상태 안내문을 표시한다.
@@ -1242,6 +1295,8 @@ window.createObsRegisterModule = function createObsRegisterModule({
   function syncGpsToggleUi(isOn) {
     if (!btnGpsToggle) return;
     btnGpsToggle.setAttribute("aria-pressed", String(!!isOn));
+    btnGpsToggle.setAttribute("aria-label", isOn ? "내 위치 사용 중, 끄기" : "내 위치 사용 안 함, 켜기");
+    btnGpsToggle.title = isOn ? "내 위치 끄기" : "내 위치 켜기";
     var labelEl = btnGpsToggle.querySelector(".obs-reg-gps-toggle__label");
     if (labelEl) labelEl.textContent = isOn ? "내위치 ON" : "내위치 OFF";
   }
@@ -1363,6 +1418,7 @@ window.createObsRegisterModule = function createObsRegisterModule({
 
   // 등록 팝업을 열고 위치/UI 상태를 초기 표시로 맞춘다.
   function open() {
+    clearSdrContext();
     clearBoundaryLookup();
     if (registerBoxEl) registerBoxEl.classList.remove("hidden");
     formMode = "create";
@@ -1386,6 +1442,24 @@ window.createObsRegisterModule = function createObsRegisterModule({
     emitManualPreview({ shouldFocus: true });
     statusEl.textContent = "🧭 관측점 등록(GPS ON 시 위치 자동 갱신)";
     highlightStatusOnce();
+  }
+
+  function openFromSdr(context, onCancel) {
+    if (isRegisterPopupVisible() || isSubmitting) return false;
+    var code = String(context && context.bearCode || "").trim();
+    var hz = Number(context && context.frequencyHz);
+    if (!code || !Number.isInteger(hz) || hz < 100000 || hz > 999999000) return false;
+    resetFormState();
+    open();
+    regBearEl.value = code;
+    regBearEl.readOnly = true;
+    if (btnBearFind) btnBearFind.disabled = true;
+    if (sdrSourceEl) {
+      sdrSourceEl.textContent = "SDR · " + code + " · " + window.BearSdrAnimals.formatHz(hz) + " MHz · CW";
+      sdrSourceEl.hidden = false;
+    }
+    sdrReturn = typeof onCancel === "function" ? onCancel : null;
+    return true;
   }
 
   // 관측점 수정 모드로 팝업을 열고 기존 데이터를 폼에 채운다.
@@ -1424,6 +1498,8 @@ window.createObsRegisterModule = function createObsRegisterModule({
 
     if (regPlaceEl) regPlaceEl.value = String(target.place || target.name || "").trim();
     if (regOwnerEl) regOwnerEl.value = String(target.owner || "").trim();
+    fitFixedOwnerField();
+    updateTeamLabel(target.team_name || "미지정", target.team_color);
     if (regBearEl) regBearEl.value = String(target.bearCode || target.bear_code || "").trim();
 
     latestLive.lat = Number(target.lat);
@@ -1448,6 +1524,7 @@ window.createObsRegisterModule = function createObsRegisterModule({
     }
 
     setDetectorRows(target.detectors);
+    setDetectorsCollapsed(false);
     ensureDetectorRowAutocomplete();
 
     // 수정 팝업 진입 시 좌표/방향각 입력값을 현재 관측점 값으로 강제 동기화한다.
@@ -1470,6 +1547,7 @@ window.createObsRegisterModule = function createObsRegisterModule({
 
   // 등록 팝업을 숨기고 필요 시 폼 상태를 초기화한다.
   function hide(shouldReset) {
+    clearSdrContext();
     clearBoundaryLookup();
     closeBearPicker();
     if (registerBoxEl) registerBoxEl.classList.add("hidden");
@@ -1479,6 +1557,7 @@ window.createObsRegisterModule = function createObsRegisterModule({
   // 등록 팝업을 닫고 onClose 콜백을 실행한다.
   function close() {
     var shouldSuppressClose = suppressCloseCallback;
+    var returnToSdr = sdrReturn;
     hide(true);
     if (typeof window.__bpSetDefaultStatus === "function") {
       window.__bpSetDefaultStatus();
@@ -1486,10 +1565,14 @@ window.createObsRegisterModule = function createObsRegisterModule({
       statusEl.textContent = "반달가슴곰 위치추적분석";
     }
     if (!shouldSuppressClose && onClose) onClose();
+    if (returnToSdr) returnToSdr();
   }
 
   // 등록 팝업 관련 DOM 이벤트를 한 번에 바인딩한다.
   function bindEvents() {
+    if (btnDetToggle) btnDetToggle.addEventListener("click", function () {
+      setDetectorsCollapsed(btnDetToggle.getAttribute("aria-expanded") === "true");
+    });
     if (btnBearFind) btnBearFind.addEventListener("click", openBearPicker);
     if (bearPickerSearchEl) bearPickerSearchEl.addEventListener("input", renderBearPickerList);
     window.addEventListener("resize", alignBearPickerSort);
@@ -1681,6 +1764,8 @@ window.createObsRegisterModule = function createObsRegisterModule({
   return {
     initialize,
     open,
+    openFromSdr,
+    isOpen: isRegisterPopupVisible,
     openForEdit,
     hide,
     handleBackNavigation,

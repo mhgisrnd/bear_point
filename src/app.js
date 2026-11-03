@@ -53,6 +53,7 @@ function createApp(rootDir, options = {}) {
 
   rootRouter.use(express.static(path.join(rootDir, "public")));
   rootRouter.use("/node_modules", express.static(path.join(rootDir, "node_modules")));
+  rootRouter.use("/api/app-realtime/movement-tracks", express.json({ limit: "16mb" }));
   rootRouter.use(express.json({ limit: "1mb" }));
   rootRouter.use("/api", applyApiCors);
 
@@ -67,7 +68,8 @@ function createApp(rootDir, options = {}) {
   rootRouter.use(createAdminBoundaryRouter(rootDir));
   rootRouter.use("/api/db/postgres", createPostgresRouter());
   rootRouter.use("/api/realtime", createRealtimeRouter());
-  rootRouter.use("/api/app-realtime", createAppRealtimeRouter({ apiBase: getRuntimeConfig(process.env).realtimeApiBase }));
+  const appApiConfig = getRuntimeConfig(process.env);
+  rootRouter.use("/api/app-realtime", createAppRealtimeRouter({ apiBase: appApiConfig.realtimeApiBase, teamsApiUrl: appApiConfig.webTeamsApiUrl, movementApiUrl: appApiConfig.webMovementApiUrl }));
   rootRouter.use("/api/observations", createObservationRouter());
   rootRouter.use("/api/admin/auth", createAdminAuthRouter({ adminSessionStore }));
   rootRouter.use("/api/admin/users", createAdminUserRouter());

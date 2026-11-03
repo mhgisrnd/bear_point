@@ -111,6 +111,7 @@ window.createObsListModule = function createObsListModule({
   const obsListPanelEl = document.getElementById("obs-list-panel");
   const obsListBodyEl = document.getElementById("obs-list-body");
   const obsTableWrapEl = document.querySelector(".obs-table-wrap");
+  const observationListPages = window.BearProgressiveList.create({ scroller: obsTableWrapEl, key: item => item._obsKey });
   const obsTableBodyScrollableEl = document.querySelector(".obs-table tbody");
   const obsListStatusEl = document.getElementById("obs-list-status");
   const obsListCountEl = document.getElementById("obs-list-count");
@@ -194,6 +195,7 @@ window.createObsListModule = function createObsListModule({
     _clearTabletPanelHideTimer();
     if (obsSheetEl) obsSheetEl.classList.remove("hidden");
     if (obsListPanelEl) obsListPanelEl.classList.remove("hidden");
+    window.BearMobileDock?.select('observations', { activate: false });
 
     if (!_isTabletLandscape()) return;
 
@@ -368,6 +370,10 @@ window.createObsListModule = function createObsListModule({
 
   function buildObservationPopupHtml(item) {
     const title = escapeHtml(getObservationLabel(item) || "관측점");
+    const teamName = escapeHtml(item && item.team_name || "팀 미지정");
+    const rawTeamColor = item && item.team_color;
+    const teamColor = /^#[0-9A-Fa-f]{6}$/.test(rawTeamColor || "") ? rawTeamColor : "#7E90A2";
+    const heading = item && item.heading != null && item.heading !== "" ? escapeHtml(item.heading) + "°" : "-";
     const row = (label, value, mono = false) => {
       const text = escapeHtml(value == null || value === "" ? "-" : value);
       return `<tr><th scope="row">${label}</th><td><span class="obs-detail-value${mono ? ' obs-detail-value--mono' : ''}" title="${text}">${text}</span></td></tr>`;
@@ -377,15 +383,15 @@ window.createObsListModule = function createObsListModule({
         <div class="obs-popup-card__eyebrow">${title}</div>
         <div class="obs-detail-frame">
           <table class="obs-detail-table" aria-label="관측점 상세 정보"><tbody>
-            ${row("코드·방향", `${item && item.bearCode || '-'} · ${item && item.heading != null && item.heading !== '' ? item.heading : '-'}`)}
-            ${row("담당자", item && item.owner)}
+            ${row("코드", item && item.bearCode || "-")}
+            <tr><th scope="row">담당자</th><td><div class="obs-detail-registrar"><span class="obs-detail-registrar-name">${escapeHtml(item && item.owner || "미지정")}</span><span class="obs-detail-team-badge" title="${teamName}" aria-label="소속 팀 ${teamName}" style="--team-color:${teamColor};--team-background:${teamColor}18;--team-border:${teamColor}55"><i aria-hidden="true"></i><span>${teamName}</span></span></div></td></tr>
             ${row("위치", item && item.adminRegion)}
-            ${row("위경도", `${formatCoordinate(item && item.lat)}, ${formatCoordinate(item && item.lng)}`, true)}
+            <tr><th scope="row">좌표·방향</th><td><div class="obs-detail-coordinate-row"><span class="obs-detail-value obs-detail-value--mono">${escapeHtml(formatCoordinate(item && item.lat))}, ${escapeHtml(formatCoordinate(item && item.lng))}</span><span class="obs-detail-heading" title="방향각">${heading}</span></div></td></tr>
             ${buildDetectorRowsHtml(item && item.detectors)}
           </tbody></table>
         </div>
         <details class="obs-detail-more"><summary>등록정보</summary><div>등록일시 <span class="obs-detail-value">${escapeHtml(formatDateTimeSeconds(item && item.createdAt))}</span></div></details>
-        ${item.shareState === "sending" ? '' : '<div class="obs-popup-card__actions"><button class="obs-popup-card__action-btn obs-popup-card__action-btn--edit" type="button" data-observation-action="edit">수정</button>' + (item.shareState === 'conflict' ? '' : '<button class="obs-popup-card__action-btn obs-popup-card__action-btn--delete" type="button" data-observation-action="delete">삭제</button>') + '</div>'}
+        ${item.shareState === "sending" ? '' : '<div class="obs-popup-card__actions"><button class="obs-popup-card__action-btn obs-popup-card__action-btn--edit" type="button" data-observation-action="edit">수정</button></div>'}
       </div>
     `;
   }
@@ -451,6 +457,9 @@ window.createObsListModule = function createObsListModule({
       unsharedBackup: row.unshared_backup || null,
       bearCode,
       owner,
+      team_id: row.team_id || null,
+      team_name: row.team_name || null,
+      team_color: row.team_color || null,
       lat,
       lng,
       heading,
@@ -535,6 +544,7 @@ window.createObsListModule = function createObsListModule({
 
   // 헤더에서 드래그를 시작해 목록 패널의 절대 위치를 고정한다.
   function startSheetDrag(e) {
+    if (window.BearMobileDock?.isMobile()) return;
     if (!obsSheetEl || !obsSheetHeaderEl) return;
     if (!e || typeof e.clientX !== "number" || typeof e.clientY !== "number") return;
     if (e.isPrimary === false || (e.button != null && e.button !== 0)) return;
@@ -600,6 +610,7 @@ window.createObsListModule = function createObsListModule({
   }
 
   function keepSheetInViewport() {
+    if (window.BearMobileDock?.isMobile()) return;
     if (!obsSheetEl || isDraggingSheet || obsSheetEl.classList.contains("hidden") || !obsSheetEl.style.left || !obsSheetEl.style.top) return;
     const rect = obsSheetEl.getBoundingClientRect();
     const left = Math.min(Math.max(0, rect.left), Math.max(0, window.innerWidth - rect.width));
@@ -630,13 +641,16 @@ window.createObsListModule = function createObsListModule({
     const badgeShadow = isSelected
       ? "0 0 0 4px rgba(59,130,246,0.26), 0 10px 24px rgba(194,65,12,0.38)"
       : "0 10px 24px rgba(194,65,12,0.32)";
+    const teamColor = /^#[0-9a-f]{6}$/i.test(String(item?.team_color || "")) ? item.team_color : null;
+    const pointerColor = teamColor || "#c2410c";
+    const badgeBackground = teamColor || "linear-gradient(180deg,#f97316 0%,#dc2626 100%)";
 
     return L.divIcon({
       className: "observation-pin-icon",
       html: `
         <div style="position:relative;width:${wrapperWidth}px;height:${wrapperHeight}px;display:flex;align-items:flex-start;justify-content:center;">
-          <div style="position:absolute;left:50%;bottom:0;transform:translateX(-50%);width:0;height:0;border-left:${pointerSide}px solid transparent;border-right:${pointerSide}px solid transparent;border-top:${pointerHeight}px solid #c2410c;"></div>
-          <div style="min-width:${pillMinWidth}px;max-width:${wrapperWidth}px;height:${pillHeight}px;padding:0 ${horizontalPadding}px;border-radius:${Math.round(999 * scale)}px;background:linear-gradient(180deg,#f97316 0%,#dc2626 100%);border:${badgeBorder};color:#fff;font-weight:800;font-size:${fontSize}px;line-height:${pillHeight - 4}px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;box-shadow:${badgeShadow};">${labelText}</div>
+          <div style="position:absolute;left:50%;bottom:0;transform:translateX(-50%);width:0;height:0;border-left:${pointerSide}px solid transparent;border-right:${pointerSide}px solid transparent;border-top:${pointerHeight}px solid ${pointerColor};"></div>
+          <div style="min-width:${pillMinWidth}px;max-width:${wrapperWidth}px;height:${pillHeight}px;padding:0 ${horizontalPadding}px;border-radius:${Math.round(999 * scale)}px;background:${badgeBackground};border:${badgeBorder};color:#fff;font-weight:800;font-size:${fontSize}px;line-height:${pillHeight - 4}px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;box-shadow:${badgeShadow};">${labelText}</div>
         </div>
       `,
       iconSize: [wrapperWidth, wrapperHeight],
@@ -671,11 +685,12 @@ window.createObsListModule = function createObsListModule({
     }
   }
 
-  // 관측점 행 클릭 시 해당 좌표로 지도를 이동한다.
+  let observationFocusVersion = 0;
+  // 관측점 행 클릭 시 해당 좌표로 이동한 뒤 마커 옆에 상세정보를 연다.
   function moveToObservation(item, row) {
     if (!item) return;
+    const focusVersion = ++observationFocusVersion;
     const currentZoom = map && typeof map.getZoom === "function" ? map.getZoom() : undefined;
-    flyToLatLng([item.lat, item.lng], currentZoom);
 
     if (row && row.classList) {
       row.classList.remove("is-flashing");
@@ -690,13 +705,12 @@ window.createObsListModule = function createObsListModule({
       return entry && entry.obsData && String(entry.obsData._obsKey) === String(item._obsKey);
     });
     const feature = marker && marker._feature;
-    // 기존 등록/수정 플래시를 그대로 재사용해 선택된 점만 부드럽게 강조한다.
-    const triggerFlash = window.__bpTriggerObservationSaveFlash;
-    if (typeof triggerFlash === "function") {
-      window.setTimeout(function () {
-        triggerFlash(feature, observationMarkersLayer, 2400, "move-double");
-      }, 720);
-    }
+    flyToLatLng([item.lat, item.lng], currentZoom, function (completed) {
+      if (completed === false || focusVersion !== observationFocusVersion) return;
+      if (marker && typeof marker.openPopup === "function") marker.openPopup();
+      const triggerFlash = window.__bpTriggerObservationSaveFlash;
+      if (typeof triggerFlash === "function") triggerFlash(feature, observationMarkersLayer, 2400, "move-double");
+    });
 
   }
 
@@ -714,9 +728,11 @@ window.createObsListModule = function createObsListModule({
   function renderObservationList(items) {
     if (!obsListBodyEl) return;
 
+    observationListPages.beforeClear();
     obsListBodyEl.innerHTML = "";
 
     if (items.length === 0) {
+      observationListPages.render([], () => {});
       const emptyRow = document.createElement("tr");
       emptyRow.className = "obs-empty-row";
       emptyRow.innerHTML = '<td colspan="5" class="obs-empty-cell">데이터가 없습니다.</td>';
@@ -725,8 +741,10 @@ window.createObsListModule = function createObsListModule({
       return;
     }
 
-    for (const item of items) {
+    observationListPages.render(items, item => {
       const row = document.createElement("tr");
+      const teamName = escapeHtml(item.team_name || "미지정");
+      const teamColor = /^#[0-9a-f]{6}$/i.test(String(item.team_color || "")) ? item.team_color : "#7e90a2";
       const isChecked = selectedObsIds.has(item._obsKey);
       if (isChecked) row.classList.add("selected");
       if (!["shared", "sending"].includes(item.shareState)) row.classList.add("obs-row--unshared");
@@ -737,9 +755,8 @@ window.createObsListModule = function createObsListModule({
         <td>${escapeHtml(item.bearCode)}</td>
         <td>${escapeHtml(item.owner)}</td>
         <td>
-          <div class="obs-actions">
-            ${item.shareState === 'sending' ? '' : '<button class="obs-action-btn edit" type="button" data-action="edit">수정</button>'}
-            ${item.shareState === 'sending' ? '' : '<button class="obs-action-btn delete" type="button" data-action="delete"' + (item.shareState === 'conflict' ? ' disabled title="충돌 내용을 먼저 확인해주세요."' : '') + '>삭제</button>'}
+          <div class="obs-list-team-cell">
+            <span class="obs-detail-team-badge" title="${teamName}" style="--team-color:${teamColor};--team-background:${teamColor}18;--team-border:${teamColor}55"><i aria-hidden="true"></i><span>${teamName}</span></span>
             ${item.unsharedBackup ? '<button class="obs-action-btn" type="button" data-action="backup">수정 사본</button>' : ''}
           </div>
         </td>
@@ -750,9 +767,6 @@ window.createObsListModule = function createObsListModule({
         handleObsCheck(item._obsKey, chk.checked, row);
       });
 
-      const editBtn = row.querySelector('[data-action="edit"]');
-      const deleteBtn = row.querySelector('[data-action="delete"]');
-      if (deleteBtn) deleteBtn.addEventListener("click", event => { event.stopPropagation(); void deleteObservations([item]); });
       const conflictBtn = row.querySelector('[data-action="conflict"]');
       if (conflictBtn) conflictBtn.addEventListener("click", event => { event.stopPropagation(); void reviewConflict(item.id); });
       const backupBtn = row.querySelector('[data-action="backup"]');
@@ -762,21 +776,13 @@ window.createObsListModule = function createObsListModule({
         const link = document.createElement("a"); link.href = url; link.download = "observation-backup-" + item.id + ".json";
         link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
       });
-      if (editBtn) editBtn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        if (typeof onEditObservation === "function") {
-          onEditObservation(item);
-        } else if (statusEl) {
-          statusEl.textContent = "⚠️ 수정 UI를 열 수 없습니다.";
-        }
-      });
 
       row.addEventListener("click", () => {
         moveToObservation(item, row);
       });
 
       obsListBodyEl.appendChild(row);
-    }
+    });
 
     syncChkAll(items);
   }
@@ -832,7 +838,14 @@ window.createObsListModule = function createObsListModule({
   }
 
   // 단건/다건 삭제를 공용 처리하고, SQLite/메모리/UI 정리를 한 번에 수행한다.
+  let observationDeletionPending = false;
   async function deleteObservations(items, options) {
+    if (observationDeletionPending) return { confirmed: false, sqliteDeletedCount: 0, memoryDeletedCount: 0 };
+    observationDeletionPending = true;
+    try { return await performObservationDeletion(items, options); }
+    finally { observationDeletionPending = false; }
+  }
+  async function performObservationDeletion(items, options) {
     const targetItems = Array.isArray(items) ? items.filter(Boolean) : [];
     if (targetItems.some(item => ["sending", "conflict"].includes(item.shareState))) {
       statusEl.textContent = "전송 중이거나 충돌 확인이 필요한 관측점입니다.";
@@ -1663,6 +1676,10 @@ window.createObsListModule = function createObsListModule({
         sourceObservationIds: selectedItems.map((item) => item.id),
         sourceObservations: selectedItems.map((item) => ({
           id: item.id,
+          adminRegion: item.adminRegion || item.admin_region || null,
+          team_id: item.team_id || null,
+          team_name: item.team_name || null,
+          team_color: item.team_color || null,
           place: getObservationLabel(item),
           bearCode: item.bearCode,
           owner: item.owner || null,
@@ -2032,6 +2049,7 @@ window.createObsListModule = function createObsListModule({
       });
     },
     renderObservationMarkers,
+    setMapVisible: visible => observationMarkersLayer.setVisible(visible),
     refreshObservationList: refreshObservationData
   };
 };

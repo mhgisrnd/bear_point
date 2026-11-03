@@ -134,7 +134,12 @@
     }
   }
 
-  async function initialize() {
+  let initializing;
+  function initialize() {
+    if (!initializing) initializing = initializeOnce().finally(() => { initializing = null; });
+    return initializing;
+  }
+  async function initializeOnce() {
     // 성공 상태는 캐시하지만, 실패 상태(init-failed 등)는 재시도를 허용한다.
     if (state.initialized && state.ready) return { ...state };
     if (state.initialized && state.reason === "non-native-platform") return { ...state };

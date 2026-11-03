@@ -64,6 +64,10 @@ function getRuntimeConfig(env = process.env) {
     contextRoot === "/" ? publicOrigin : `${publicOrigin}${contextRoot}`;
 
   const realtimeApiBase = resolveRealtimeApiBase(appApiEnv, env, baseWithContextRoot);
+  // Browser development can use the local administrator catalog without changing
+  // the realtime dataset or bundling a localhost URL into the native app.
+  const webTeamsApiUrl = normalizeBase(env.WEB_TEAMS_API_URL)
+    || new URL("../teams", realtimeApiBase + "/").href;
   const serverUrl = baseWithContextRoot;
 
   return {
@@ -73,6 +77,9 @@ function getRuntimeConfig(env = process.env) {
     publicOrigin,
     appApiEnv,
     realtimeApiBase,
+    webTeamsApiUrl,
+    movementApiUrl: normalizeBase(env.MOVEMENT_API_URL) || realtimeApiBase + "/movement-tracks",
+    webMovementApiUrl: normalizeBase(env.WEB_MOVEMENT_API_URL) || normalizeBase(env.MOVEMENT_API_URL) || realtimeApiBase + "/movement-tracks",
     serverUrl,
   };
 }

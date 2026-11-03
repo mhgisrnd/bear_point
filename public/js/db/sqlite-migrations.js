@@ -4,11 +4,13 @@
 (function initBearSQLiteConfig() {
   window.BearSQLiteConfig = {
     dbName: "BearPointData",
-    dbVersion: 16,
+    dbVersion: 18,
     assetDbOverwrite: false,
     // 마이그레이션 이력과 실제 컬럼 상태가 어긋난 DB를 위한 보정 규칙.
     // 새 누락 컬럼이 생기면 여기에 규칙만 추가하면 된다.
     schemaGuards: [
+      ...["observations", "bear_estimates"].flatMap(table => ["team_id", "team_name", "team_color"].map(column => ({ type: "column-exists", table, column, apply: `ALTER TABLE ${table} ADD COLUMN ${column} TEXT` }))),
+      { type: "table-exists", table: "app_settings", apply: "CREATE TABLE IF NOT EXISTS app_settings (setting_key TEXT PRIMARY KEY, value_json TEXT NOT NULL)" },
       { type: "column-exists", table: "observations", column: "sync_mutation_id", apply: "ALTER TABLE observations ADD COLUMN sync_mutation_id TEXT" },
       { type: "column-exists", table: "observations", column: "conflict_json", apply: "ALTER TABLE observations ADD COLUMN conflict_json TEXT" },
       { type: "table-exists", table: "bear_estimate_remote_cache", apply: "CREATE TABLE IF NOT EXISTS bear_estimate_remote_cache (server_id TEXT PRIMARY KEY, payload_json TEXT NOT NULL)" },
@@ -222,7 +224,9 @@
         "ALTER TABLE observations ADD COLUMN unshared_backup TEXT"
       ],
       15: ["CREATE TABLE IF NOT EXISTS bear_estimate_remote_cache (server_id TEXT PRIMARY KEY, payload_json TEXT NOT NULL)"],
-      16: ["ALTER TABLE observations ADD COLUMN sync_mutation_id TEXT", "ALTER TABLE observations ADD COLUMN conflict_json TEXT"]
+      16: ["ALTER TABLE observations ADD COLUMN sync_mutation_id TEXT", "ALTER TABLE observations ADD COLUMN conflict_json TEXT"],
+      17: ["CREATE TABLE IF NOT EXISTS app_settings (setting_key TEXT PRIMARY KEY, value_json TEXT NOT NULL)"],
+      18: ["observations", "bear_estimates"].flatMap(table => ["team_id", "team_name", "team_color"].map(column => `ALTER TABLE ${table} ADD COLUMN ${column} TEXT`))
 
     }
   };

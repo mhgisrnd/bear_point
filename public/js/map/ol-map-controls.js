@@ -254,14 +254,15 @@ window.createOlMapControlsManager = function createOlMapControlsManager(options)
     const panelStackEl = document.querySelector(".panel-stack.panel-bottom-left");
     const panelTabsEl = document.querySelector(".panel-tabs.panel-tabs-floating");
 
-    if (isTablet) {
+    const mobileDock = !!window.BearMobileDock?.isMobile();
+    if (isTablet || mobileDock) {
       if (measureActionPanelEl.parentElement !== mapEl) {
         mapEl.appendChild(measureActionPanelEl);
       }
 
       measureActionPanelEl.style.position = "absolute";
       measureActionPanelEl.style.right = "calc(48px + var(--safe-right))";
-      measureActionPanelEl.style.bottom = "calc(20px + var(--safe-bottom))";
+      measureActionPanelEl.style.bottom = mobileDock ? "calc(var(--mobile-dock-height) + 12px)" : "calc(20px + var(--safe-bottom))";
       measureActionPanelEl.style.left = "auto";
       measureActionPanelEl.style.top = "auto";
       measureActionPanelEl.style.marginBottom = "0";
@@ -597,6 +598,7 @@ window.createOlMapControlsManager = function createOlMapControlsManager(options)
 
   function mountRightBottomControls() {
     const root = document.createElement("div");
+    root.className = "map-right-controls";
     root.style.position = "absolute";
     root.style.right = "calc(8px + var(--safe-right))";
     root.style.bottom = "calc(20px + var(--safe-bottom))";
@@ -816,6 +818,7 @@ window.createOlMapControlsManager = function createOlMapControlsManager(options)
       measureLayoutMq.addListener(onMeasureLayoutChange);
     }
     window.addEventListener("resize", onMeasureLayoutChange);
+    window.addEventListener("bearpoint:mobile-dock-layout", onMeasureLayoutChange);
 
     mapEl.appendChild(root);
   }
@@ -833,8 +836,10 @@ window.createOlMapControlsManager = function createOlMapControlsManager(options)
 
     const toggleBtn = document.createElement("button");
     toggleBtn.type = "button";
-    // toggleBtn.title = "레이어 선택";
-    // toggleBtn.setAttribute("aria-label", "레이어 선택");
+    toggleBtn.id = "btn-map-layers";
+    toggleBtn.title = "배경지도 선택";
+    toggleBtn.setAttribute("aria-label", "배경지도 선택");
+    toggleBtn.setAttribute("aria-controls", "map-layer-options");
     toggleBtn.setAttribute("aria-expanded", "false");
     toggleBtn.style.width = "42px";
     toggleBtn.style.height = "42px";
@@ -849,6 +854,7 @@ window.createOlMapControlsManager = function createOlMapControlsManager(options)
     toggleBtn.innerHTML = createImageIconMarkup("css/svg/layer-stack.svg", 22, 22);
 
     const panel = document.createElement("div");
+    panel.id = "map-layer-options";
     panel.style.position = "absolute";
     panel.style.top = "46px";
     panel.style.right = "0";

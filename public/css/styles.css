@@ -65,6 +65,9 @@ body::after {
   height: 100%;
 }
 
+/* Native modal top layer stays above OpenLayers overlays and makes the map inert. */
+.bp-confirm-dialog::backdrop { background: transparent; }
+
 /* 위치분석 추가정보 오버레이를 관측점 목록 패널 위 계층으로 유지 */
 #map .analysis-action-overlay,
 #map .analysis-action-overlay-container,

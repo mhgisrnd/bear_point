@@ -2,11 +2,13 @@ const express = require("express");
 
 // The browser calls its own host; the server reaches the configured remote API.
 // This keeps the remote dataset, without changing the administrator's local API.
-function createAppRealtimeRouter({ apiBase, fetchImpl = fetch }) {
+function createAppRealtimeRouter({ apiBase, teamsApiUrl, movementApiUrl, fetchImpl = fetch }) {
   const router = express.Router();
   const base = new URL(apiBase);
   if (!["http:", "https:"].includes(base.protocol)) throw new Error("Invalid realtime API protocol");
   const targetBase = base.href.replace(/\/$/, "");
+  const teamTarget = new URL(teamsApiUrl || new URL("../teams", targetBase + "/").href);
+  if (!["http:", "https:"].includes(teamTarget.protocol)) throw new Error("Invalid team API protocol");
   async function forward(req, res) {
     try {
       const target = new URL(targetBase + "/bear-estimates");
@@ -28,8 +30,35 @@ function createAppRealtimeRouter({ apiBase, fetchImpl = fetch }) {
       res.status(502).json({ ok: false, message: "공유 개체 목록 서버에 연결할 수 없습니다. 잠시 후 다시 시도해주세요." });
     }
   }
+  router.post("/movement-tracks", async (req,res) => {
+    res.set("Cache-Control","no-store");
+    try {
+      const target=new URL(movementApiUrl || targetBase+"/movement-tracks");
+      if(!["http:","https:"].includes(target.protocol)) throw new Error("Invalid movement API protocol");
+      const response=await fetchImpl(target.href,{method:"POST",redirect:"error",signal:AbortSignal.timeout(25000),
+        headers:{Accept:"application/json","Content-Type":"application/json"},body:JSON.stringify(req.body)});
+      res.status(response.status).json(await response.json());
+    } catch(_) {res.status(502).json({ok:false,message:"이동기록 서버에 연결할 수 없습니다."});}
+  });
   router.get("/bear-estimates", forward);
+  router.get("/bear-entities", async (req, res) => {
+    res.set("Cache-Control", "no-store");
+    try {
+      const response = await fetchImpl(targetBase + "/bear-entities", {
+        method: "GET", redirect: "error", signal: AbortSignal.timeout(8000), headers: { Accept: "application/json" }
+      });
+      res.status(response.status).json(await response.json());
+    } catch (_) { res.status(502).json({ ok: false, message: "개체 주파수 목록을 갱신하지 못했습니다." }); }
+  });
   router.post("/bear-estimates", forward);
+  // Read-only catalog from the administrator server; browser credentials stay local.
+  router.get("/teams", async (req, res) => {
+    res.set("Cache-Control", "no-store");
+    try {
+      const response = await fetchImpl(teamTarget.href, { method: "GET", redirect: "error", signal: AbortSignal.timeout(8000), headers: { Accept: "application/json" } });
+      res.status(response.status).json(await response.json());
+    } catch (_) { res.status(502).json({ ok: false, message: "팀 목록을 갱신하지 못했습니다." }); }
+  });
   return router;
 }
 module.exports = { createAppRealtimeRouter };

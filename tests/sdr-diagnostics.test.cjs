@@ -22,7 +22,89 @@ class Element {
 }
 const tick = () => new Promise(resolve => setImmediate(resolve));
 
-function setup(android = true, bridgeMode = 'injected', listenerAsync = false) {
+const animalCatalog = () => ({formatHz:hz=>String(hz/1e6),load:async()=>({notice:'',items:[
+  {id:'1',code:'KF-110',frequencies:[{slot:'A',hz:148241500},{slot:'B',hz:149125000}]},
+  {id:'2',code:'KF-112',frequencies:[]}
+]})});
+
+test('animal catalog includes all records in the scrollable list and searches without a six-row cap',async()=>{
+  const items=Array.from({length:14},(_,i)=>({id:String(i+1),code:'KF-'+(100+i),frequencies:[{slot:'A',hz:148000000+i*10000}]}));
+  const catalog={formatHz:hz=>String(hz/1e6),load:async()=>({notice:'',items})};
+  const ui=setup(true,'injected',false,catalog);ui.device.hasPermission=true;
+  await ui.trigger.click();await ui.button().click();await tick();
+  const list=ui.dialog.querySelector('[data-animal-list]');
+  assert.equal(list.children.length,14);
+  assert.equal(ui.dialog.querySelector('[data-animal-count]').textContent,'전체 14개체');
+  list.scrollLeft=200;const first=list.children[0];ui.emit();
+  assert.equal(list.scrollLeft,200);assert.equal(list.children[0],first);
+  const search=ui.dialog.querySelector('[data-animal-search]');search.value='KF-113';search.events.input();
+  assert.equal(list.children.length,1);
+  assert.equal(ui.dialog.querySelector('[data-animal-count]').textContent,'검색 결과 1개체');
+  assert.equal(list.scrollLeft,0);
+  search.value='148.000';search.events.input();
+  assert.equal(list.children.length,1);
+  assert.equal(list.children[0].children.length,0,'frequency alone must not match an animal');
+  search.value='kf-113';search.events.input();assert.equal(list.children[0].children[0].textContent,'KF-113');
+  search.value='113';search.events.input();assert.equal(list.children[0].children[0].textContent,'KF-113');
+  search.value='';search.events.input();assert.equal(list.children.length,14);
+  await list.children[9].children[2].children[0].click();
+  assert.equal(ui.dialog.querySelector('[data-frequency]').value,'148.09');
+  assert.equal(ui.plugin.starts.length,0);
+});
+
+test('individual animal selection searches and tunes exact registered A/B frequencies without changing scan defaults',async()=>{
+  const ui=setup(true,'injected',false,animalCatalog());ui.device.hasPermission=true;
+  await ui.trigger.click();await ui.button().click();await tick();
+  const list=ui.dialog.querySelector('[data-animal-list]');
+  assert.equal(list.children[1].disabled,true);
+  await list.children[0].children[2].children[0].click();
+  assert.equal(ui.dialog.querySelector('[data-frequency]').value,'148.2415');
+  assert.equal(ui.dialog.querySelector('[data-frequency-field]').hidden,false);
+  assert.equal(ui.dialog.querySelector('[data-animal-results]').hidden,false);
+  await ui.dialog.querySelector('[data-freq-up="10"]').click();
+  assert.equal(ui.dialog.querySelector('[data-frequency]').value,'148.24151');
+  assert.equal(ui.dialog.querySelector('[data-register-observation]').hidden,true);
+  assert.equal(ui.dialog.querySelector('[data-animal-clear]').disabled,true);
+  assert.equal(ui.dialog.querySelector('[data-animal-clear]').disabled,true);
+  await list.children[0].children[2].children[0].click();
+  assert.equal(ui.dialog.querySelector('[data-frequency]').value,'148.2415');
+  await ui.dialog.querySelector('[data-animal-list]').children[0].children[2].children[1].click();
+  await ui.dialog.querySelector('[data-start]').click();
+  assert.equal(ui.plugin.starts[0].frequencyHz,149125000);assert.equal(ui.plugin.starts[0].mode,'cw');
+  assert.equal(ui.dialog.querySelector('[data-scan-start]').value,'148.000');
+});
+
+test('animal registration waits for samples, stops reception and hands off the same subject; cancel restores SDR',async()=>{
+  const ui=setup(true,'injected',false,animalCatalog());ui.device.hasPermission=true;
+  await ui.trigger.click();await ui.button().click();await tick();
+  await ui.dialog.querySelector('[data-animal-list]').children[0].children[2].children[0].click();
+  const button=ui.dialog.querySelector('[data-register-observation]');assert.equal(button.hidden,true);
+  await ui.dialog.querySelector('[data-start]').click();
+  ui.state.backgroundReceiving=true;ui.state.receptionState='receiving';
+  ui.state.reception={mode:'cw',frequencyHz:148229500,listenFrequencyHz:148241500,sampleRate:1024000,
+    hasSamples:true,powerDbfs:-56,totalBytes:65536,bytesPerSecond:2048000,signalDbfs:-56,noiseDbfs:-75,signalExcessDb:19};
+  ui.emit();assert.equal(button.hidden,false);
+  assert.equal(ui.dialog.querySelector('[data-frequency]').value,'148.2415');
+  let context,cancel;ui.window.BearSdrRegistration={open:(data,back)=>{assert.equal(ui.dialog.open,false);assert.equal(ui.state.receptionState,'idle');context=data;cancel=back;return true;}};
+  await button.click();await tick();assert.equal(context.bearCode,'KF-110');assert.equal(context.frequencyHz,148241500);
+  assert.equal(ui.dialog.open,false);cancel();await tick();assert.equal(ui.dialog.open,true);
+  assert.equal(ui.dialog.querySelector('[data-frequency]').value,'148.2415');
+  assert.equal(ui.plugin.starts.length,1,'cancel must not restart audio without user action');
+});
+
+test('manual frequency changes cannot register an unrelated selected animal',async()=>{
+  const ui=setup(true,'injected',false,animalCatalog());ui.device.hasPermission=true;
+  await ui.trigger.click();await ui.button().click();await tick();
+  await ui.dialog.querySelector('[data-animal-list]').children[0].children[2].children[0].click();
+  await ui.dialog.querySelector('[data-animal-clear]').click();
+  assert.equal(ui.dialog.querySelector('[data-frequency]').value,'148.2415');
+  assert.equal(ui.dialog.querySelector('[data-frequency-field]').hidden,false);
+  assert.equal(ui.dialog.querySelector('[data-register-observation]').hidden,true);
+  const search=ui.dialog.querySelector('[data-animal-search]');search.value='missing';search.events.input();
+  assert.equal(ui.dialog.querySelector('[data-animal-list]').children[0].textContent,'검색 결과가 없습니다.');
+});
+
+function setup(android = true, bridgeMode = 'injected', listenerAsync = false, catalog = null) {
   const trigger = new Element(), body = new Element();
   const device = { deviceId: '/usb/1', name: 'RTL2832U', vendorId: 3034, productId: 10290, candidate: true, hasPermission: false, connected: false };
   const state = { hostSupported: true, state: 'idle', devices: [device] };
@@ -71,6 +153,7 @@ function setup(android = true, bridgeMode = 'injected', listenerAsync = false) {
   if (android && bridgeMode === 'registered') capacitor.registerPlugin = () => plugin;
   if (android && bridgeMode === 'throws') capacitor.registerPlugin = () => { throw new Error('bridge init failure'); };
   const appWindow = { Capacitor: capacitor };
+  if (catalog) appWindow.BearSdrAnimals = catalog;
   vm.runInNewContext(spectrumSource + '\n' + source, {
     document: { getElementById: () => trigger, createElement: () => new Element(), body },
     window: appWindow, console
@@ -645,7 +728,7 @@ test('map SDR button changes state for pause, fixed reception and disconnect', a
   ui.state.receptionError=''; ui.state.receptionState='idle'; ui.state.scanResumeAvailable=false;
   ui.state.state='idle'; ui.emit();
   assert.equal(ui.trigger.dataset.status,undefined);
-  assert.equal(ui.trigger.title,'SDR 설정');
+  assert.equal(ui.trigger.title,'탐색');
 });
 
 test('running scan is visible on the map after a WebView reload without opening settings', async () => {
@@ -888,7 +971,7 @@ test('Android shared back handler resumes from listening without closing SDR or 
   const bodyStart=mapSource.indexOf('{',start)+1, bodyEnd=mapSource.indexOf('\n    });',bodyStart);
   let exits=0, overlays=0;
   const context={window:ui.window,lastBackPressAt:Date.now(),appPlugin:{exitApp(){exits++;}},
-    closeTopBackClosableOverlay(){overlays++;return false;},observationPopupEl:null,obsListModule:null,
+    closeTopBackClosableOverlay(){overlays++;return false;},observationPopupEl:null,obsListModule:null,gpsTrackUi:{isOpen:()=>false},
     analysisEstimateSource:null,BACK_EXIT_DOUBLE_PRESS_MS:1500,showBackExitToast(){},triggerHapticImpact(){},setTimeout,
     resetBackExitState(){context.lastBackPressAt=0;}};
   const handler='(function(){'+mapSource.slice(bodyStart,bodyEnd)+'})()';
@@ -897,7 +980,7 @@ test('Android shared back handler resumes from listening without closing SDR or 
   await tick();
   assert.equal(ui.dialog.open,true); assert.equal(ui.plugin.scans.length,2);
   assert.equal(ui.plugin.scans[1].resume,true); assert.deepEqual(ui.state.scan,history);
-  assert.equal(exits,0); assert.equal(overlays,0); assert.equal(context.lastBackPressAt,0);
+  assert.equal(exits,0); assert.equal(overlays,2); assert.equal(context.lastBackPressAt,0);
 });
 
 function attachExitFlow(ui) {
@@ -914,7 +997,7 @@ function attachExitFlow(ui) {
     document:{createElement:()=>new Element(),body:{appendChild:element=>toasts.push(element)}},
     lastBackPressAt:0,backExitToastEl:null,backExitToastIconEl:null,backExitToastTextEl:null,backExitToastHideTimer:null,
     BACK_EXIT_DOUBLE_PRESS_MS:2000,Date:{now:()=>now},appPlugin:{exitApp(){exits++;}},
-    closeTopBackClosableOverlay:()=>false,observationPopupEl:null,obsListModule:null,obsRegisterModule:null,analysisEstimateSource:null,
+    closeTopBackClosableOverlay:()=>false,observationPopupEl:null,obsListModule:null,obsRegisterModule:null,analysisEstimateSource:null,gpsTrackUi:{isOpen:()=>false},
     triggerHapticImpact(){}});
   vm.runInContext(mapSource.slice(toastStart,toastEnd),context);
   return {context,toasts,timers,exits:()=>exits,
@@ -941,6 +1024,15 @@ test('opening SDR cancels the map exit prompt; closing it requires two fresh map
   assert.equal(flow.exits(),1);
   assert.equal(flow.toasts[0].style.opacity,'0');
   assert.equal(flow.timers.size,0);
+});
+
+test('Android back presses during startup loading do not close background panels or arm app exit',()=>{
+  const ui=setup(),flow=attachExitFlow(ui);
+  ui.window.BearStartupLoading=true;
+  flow.back();flow.back();assert.equal(flow.exits(),0);assert.equal(flow.context.lastBackPressAt,0);
+  ui.window.BearStartupLoading=false;
+  flow.back();assert.equal(flow.exits(),0);
+  flow.back();assert.equal(flow.exits(),1);
 });
 
 test('map exit eligibility lasts exactly as long as its visible prompt', () => {
@@ -1007,4 +1099,106 @@ test('dialog receives only actual system-bar overlap and follows the visible key
   ui.state.viewportInsets={top:-1,bottom:'bad'}; ui.emit();
   assert.equal(ui.dialog.style['--sdr-native-safe-top'],'0px');
   assert.equal(ui.dialog.style['--sdr-native-safe-bottom'],'0px');
+});
+
+
+test('five decimal digit tuning preserves 10 Hz steps through editing and CW reception', async () => {
+  const ui=setup();ui.device.hasPermission=true;
+  await ui.trigger.click();await ui.button().click();
+  const frequency=ui.dialog.querySelector('[data-frequency]');frequency.value='148.24123';
+  await ui.dialog.querySelector('[data-freq-up="10"]').click();
+  assert.equal(frequency.value,'148.24124');
+  await ui.dialog.querySelector('[data-freq-down="100"]').click();
+  assert.equal(frequency.value,'148.24114');
+  await ui.dialog.querySelector('[data-frequency-edit]').click();
+  const last=ui.dialog.querySelector('[data-freq-digit="7"]');last.textContent='7';last.events.input();
+  await ui.dialog.querySelector('[data-frequency-edit]').click();
+  assert.equal(frequency.value,'148.24117');
+  await ui.dialog.querySelector('[data-start]').click();
+  assert.equal(ui.plugin.starts[0].frequencyHz,148241170);
+  ui.state.receptionState='idle';ui.state.reception={mode:'cw',frequencyHz:148229170,listenFrequencyHz:148241170,sampleRate:1024000};
+  ui.emit();
+  assert.match(ui.dialog.querySelector('[data-frequency-readout]').textContent,/148\.24117 MHz/);
+});
+
+
+test('manual tuning clears selection and labels every exact matching catalog code without auto-selecting', async () => {
+  const catalog={formatHz:hz=>String(hz/1e6),load:async()=>({notice:'',items:[
+    {id:'1',code:'KF-110',frequencies:[{slot:'A',hz:148241230},{slot:'B',hz:149125000}]},
+    {id:'2',code:'KF-111',frequencies:[{slot:'A',hz:148241240}]},
+    {id:'3',code:'KF-112',frequencies:[{slot:'A',hz:148241240}]}
+  ]})};
+  const ui=setup(true,'injected',false,catalog);ui.device.hasPermission=true;
+  await ui.trigger.click();await ui.button().click();await tick();
+  const list=ui.dialog.querySelector('[data-animal-list]'),label=ui.dialog.querySelector('[data-frequency-animal]');
+  await list.children[0].children[2].children[0].click();assert.equal(label.textContent,'KF-110');assert.equal(label.hidden,false);
+  await ui.dialog.querySelector('[data-animal-list]').children[0].children[2].children[1].click();
+  assert.equal(ui.dialog.querySelector('[data-animal-clear]').disabled,false,'registered A/B changes keep explicit selection');
+  await list.children[0].children[2].children[0].click();
+  await ui.dialog.querySelector('[data-freq-up="10"]').click();
+  assert.equal(label.textContent,'KF-111, KF-112');assert.equal(label.hidden,false);
+  assert.equal(ui.dialog.querySelector('[data-animal-clear]').disabled,true);
+  assert.equal(ui.dialog.querySelector('[data-animal-clear]').disabled,true);
+  assert.equal(ui.dialog.querySelector('[data-register-observation]').hidden,true);
+  await ui.dialog.querySelector('[data-freq-up="10"]').click();
+  assert.equal(label.hidden,true,'nearby frequencies must not match');
+  const frequency=ui.dialog.querySelector('[data-frequency]');frequency.value='148.24123';frequency.events.input();
+  assert.equal(label.textContent,'KF-110');assert.equal(label.hidden,false);
+  assert.equal(ui.dialog.querySelector('[data-animal-clear]').disabled,true,'matching labels must not silently select a subject');
+  frequency.value='';frequency.events.input();assert.equal(label.hidden,true);
+});
+
+
+test('search in a short viewport uses compact layout and Enter or IME submit releases focus', async () => {
+  const ui=setup(true,'injected',false,animalCatalog());ui.device.hasPermission=true;
+  await ui.trigger.click();await ui.button().click();await tick();
+  ui.window.innerHeight=180;
+  const search=ui.dialog.querySelector('[data-animal-search]');let blurs=0,prevented=0;
+  search.blur=()=>{blurs++;};search.events.focus();
+  assert.equal(ui.dialog.dataset.searchCompact,'true');
+  search.events.keydown({key:'Enter',isComposing:true,preventDefault(){prevented++;}});
+  assert.equal(ui.dialog.dataset.searchCompact,'true');assert.equal(blurs,0);
+  search.events.keydown({key:'Enter',preventDefault(){prevented++;}});
+  assert.equal(ui.dialog.dataset.searchCompact,'false');assert.equal(blurs,1);
+  search.events.focus();
+  ui.dialog.querySelector('[data-animal-search-form]').events.submit({preventDefault(){prevented++;}});
+  assert.equal(ui.dialog.dataset.searchCompact,'false');assert.equal(blurs,2);assert.equal(prevented,2);
+  search.events.focus();await ui.dialog.querySelector('[data-animal-list]').children[0].children[2].children[0].click();
+  assert.equal(ui.dialog.dataset.searchCompact,'false');assert.equal(blurs,3);
+});
+
+
+test('card A/B/C stays available during reception and switches only after stopping the old stream', async () => {
+  const ui=setup(true,'injected',false,animalCatalog());ui.device.hasPermission=true;
+  await ui.trigger.click();await ui.button().click();await tick();
+  const cards=()=>ui.dialog.querySelector('[data-animal-list]').children;
+  const slot=i=>cards()[0].children[2].children[i];
+  await slot(0).click();await ui.dialog.querySelector('[data-start]').click();
+  ui.state.receptionState='receiving';ui.state.backgroundReceiving=true;
+  ui.state.reception={mode:'cw',frequencyHz:148229500,listenFrequencyHz:148241500,hasSamples:true,powerDbfs:-56};ui.emit();
+  assert.equal(ui.dialog.querySelector('[data-settings]').disabled,true);
+  assert.equal(ui.dialog.querySelector('[data-animal-search]').disabled,false);assert.equal(slot(1).disabled,false);
+  const order=[],originalStart=ui.plugin.startReception.bind(ui.plugin);
+  ui.plugin.startReception=async o=>{order.push('start');await originalStart(o);};
+  let release;ui.plugin.stopReception=()=>new Promise(resolve=>{order.push('stop');release=()=>{ui.state.receptionState='idle';ui.emit();resolve();};});
+  const switching=slot(1).click();await tick();
+  assert.equal(ui.plugin.starts.length,1);assert.equal(ui.dialog.querySelector('[data-register-observation]').hidden,true);
+  release();await switching;
+  assert.deepEqual(order,['stop','start']);assert.equal(ui.plugin.starts[1].frequencyHz,149125000);
+  assert.equal(ui.plugin.starts[1].mode,'cw');assert.equal(ui.dialog.querySelector('[data-register-observation]').hidden,true);
+  ui.state.receptionState='receiving';ui.state.reception={mode:'cw',frequencyHz:149113000,listenFrequencyHz:149125000,hasSamples:true,powerDbfs:-56};ui.emit();
+  assert.equal(ui.dialog.querySelector('[data-register-observation]').hidden,false);
+  await slot(1).click();assert.equal(ui.plugin.starts.length,2,'same-frequency selection must not restart audio');
+});
+
+test('disconnect while a live card switch is stopping prevents a new reception request', async () => {
+  const ui=setup(true,'injected',false,animalCatalog());ui.device.hasPermission=true;
+  await ui.trigger.click();await ui.button().click();await tick();
+  const slots=()=>ui.dialog.querySelector('[data-animal-list]').children[0].children[2].children;
+  await slots()[0].click();await ui.dialog.querySelector('[data-start]').click();
+  ui.state.receptionState='receiving';ui.state.reception={mode:'cw',listenFrequencyHz:148241500};ui.emit();
+  let release;ui.plugin.stopReception=()=>new Promise(resolve=>{release=resolve;});
+  const switching=slots()[1].click();await tick();
+  ui.state.state='idle';ui.state.receptionState='idle';ui.state.devices=[];ui.emit();release();await switching;
+  assert.equal(ui.plugin.starts.length,1);
 });

@@ -10,7 +10,7 @@ const ENV_PATH = path.join(ROOT_DIR, ".env");
 const OUTPUT_PATH = path.join(ROOT_DIR, "public", "runtime-config.js");
 
 dotenv.config({ path: ENV_PATH });
-const { appApiEnv, realtimeApiBase } = getRuntimeConfig(process.env);
+const { appApiEnv, realtimeApiBase, movementApiUrl } = getRuntimeConfig(process.env);
 
 const output = [
   "(function (window) {",
@@ -18,7 +18,8 @@ const output = [
   "",
   "  window.BEAR_RUNTIME_CONFIG = Object.freeze({",
   `    env: ${JSON.stringify(appApiEnv)},`,
-  `    realtimeApiBase: ${JSON.stringify(realtimeApiBase)}`,
+  `    realtimeApiBase: ${JSON.stringify(realtimeApiBase)},`,
+  `    movementApiUrl: ${JSON.stringify(movementApiUrl)}`,
   "  });",
   "",
   "  window.BEAR_API_BASE = window.BEAR_RUNTIME_CONFIG.realtimeApiBase;",

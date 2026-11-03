@@ -10,6 +10,7 @@
   const btnObsList = document.getElementById("btn-obs-list");
   const btnSidebarToggle = document.getElementById("btn-sidebar-toggle");
   const bearsListEl = document.getElementById("bears-list");
+  const bearListPages = window.BearProgressiveList.create({ scroller: bearsListEl, key: item => String(item.id) });
     if (bearsListEl) {
       // 빈 상태 카드의 버튼을 눌렀을 때 기존 관측점 버튼 동작을 그대로 재사용한다.
       bearsListEl.addEventListener("click", function (event) {
@@ -51,12 +52,15 @@
   let startupOverlayRetryBtn = null;
   let startupOverlayShowTimer = null;
   let startupOverlayVisibleAt = 0;
+  let resolveStartupReady;
+  window.BearStartupReady = new Promise(function (resolve) { resolveStartupReady = resolve; });
   const STARTUP_OVERLAY_DELAY_MS = 140;
   const STARTUP_OVERLAY_MIN_VISIBLE_MS = 320;
   let currentBearEstimateItems = [];
   let localBearEstimateItems = [];
   let bearPanelReady = false;
   const unifiedBearStore = window.BearEstimateStore.createStore(window);
+  const localEstimateStore = window.BearEstimateStore.createLocalStore(window);
   const pendingBearUploads = new Set();
   let currentBearEstimateFallbackMode = false;
   let remoteSharedEstimateIds = new Set();
@@ -82,6 +86,9 @@
         source_observations: it && it.source_observations,
         bear_code: isRealtime ? (it && (it.bearCode || it.bear_code)) : (it && (it.bear_code || it.bearCode)),
         owner: it && it.owner,
+        team_id: it && it.team_id,
+        team_name: it && it.team_name,
+        team_color: it && it.team_color,
         place: it && it.place,
         admin_region: it && (it.admin_region || it.adminRegion),
         lat: Number(it && it.lat),
@@ -297,8 +304,26 @@
 
   function setDefaultStatusWithIcon() {
     if (!statusEl) return;
+    statusEl.style.color = "";
     statusEl.innerHTML = '<img src="css/image/helloHiking.png" style="height:1.2em;vertical-align:middle;margin-top:-8px;"> 반달가슴곰 위치추적분석';
   }
+
+  function installStatusAutoReset() {
+    if (!statusEl || typeof MutationObserver !== "function") return;
+    let resetTimer = null;
+    const observer = new MutationObserver(function () {
+      if (resetTimer !== null) window.clearTimeout(resetTimer);
+      resetTimer = null;
+      const message = String(statusEl.textContent || "").trim();
+      if (!message || message === "반달가슴곰 위치추적분석") return;
+      resetTimer = window.setTimeout(function () {
+        resetTimer = null;
+        if (String(statusEl.textContent || "").trim() === message) setDefaultStatusWithIcon();
+      }, 5000);
+    });
+    observer.observe(statusEl, { childList: true, characterData: true, subtree: true });
+  }
+  installStatusAutoReset();
 
   // 다른 모듈(목록/등록)에서도 동일한 기본 상태를 재사용하도록 전역으로 노출한다.
   window.__bpSetDefaultStatus = setDefaultStatusWithIcon;
@@ -320,10 +345,22 @@
   function ensureStartupOverlay() {
     if (startupOverlayEl) return;
 
-    const overlay = document.createElement("div");
+    const overlay = document.createElement("dialog");
+    overlay.id = "app-startup-loading";
+    overlay.setAttribute("aria-label", "앱 데이터 준비");
+    overlay.setAttribute("aria-busy", "true");
+    overlay.addEventListener("cancel", function (event) { event.preventDefault(); });
     overlay.style.position = "fixed";
     overlay.style.inset = "0";
-    overlay.style.zIndex = "5000";
+    overlay.style.zIndex = "2147483646";
+    overlay.style.width = "100%";
+    overlay.style.height = "100%";
+    overlay.style.maxWidth = "none";
+    overlay.style.maxHeight = "none";
+    overlay.style.margin = "0";
+    overlay.style.padding = "0";
+    overlay.style.border = "0";
+    overlay.style.boxSizing = "border-box";
     overlay.style.display = "none";
     overlay.style.alignItems = "center";
     overlay.style.justifyContent = "center";
@@ -388,7 +425,7 @@
     document.body.appendChild(overlay);
 
     const styleEl = document.createElement("style");
-    styleEl.textContent = "@keyframes bpStartLoading { 0% { transform: translateX(-115%); } 100% { transform: translateX(250%); } }";
+    styleEl.textContent = "#app-startup-loading::backdrop { background: transparent; } @keyframes bpStartLoading { 0% { transform: translateX(-115%); } 100% { transform: translateX(250%); } }";
     document.head.appendChild(styleEl);
 
     startupOverlayEl = overlay;
@@ -398,6 +435,8 @@
 
   function showStartupOverlay(message, allowRetry, forceImmediate) {
     ensureStartupOverlay();
+    window.BearStartupLoading = !allowRetry;
+    startupOverlayEl.setAttribute("aria-busy", String(!allowRetry));
     if (startupOverlayTextEl && typeof message === "string" && message) {
       startupOverlayTextEl.textContent = message;
     }
@@ -408,6 +447,7 @@
     const revealOverlay = function () {
       if (!startupOverlayEl) return;
       startupOverlayEl.style.display = "flex";
+      if (!startupOverlayEl.open) startupOverlayEl.showModal();
       startupOverlayVisibleAt = Date.now();
     };
 
@@ -436,6 +476,8 @@
 
       if (!startupOverlayEl || startupOverlayEl.style.display === "none") {
         startupOverlayVisibleAt = 0;
+        window.BearStartupLoading = false;
+        resolveStartupReady();
         resolve();
         return;
       }
@@ -444,8 +486,13 @@
       const waitMs = Math.max(0, STARTUP_OVERLAY_MIN_VISIBLE_MS - elapsedMs);
 
       window.setTimeout(function () {
-        if (startupOverlayEl) startupOverlayEl.style.display = "none";
+        if (startupOverlayEl) {
+          if (startupOverlayEl.open) startupOverlayEl.close();
+          startupOverlayEl.style.display = "none";
+        }
         startupOverlayVisibleAt = 0;
+        window.BearStartupLoading = false;
+        resolveStartupReady();
         resolve();
       }, waitMs);
     });
@@ -553,8 +600,6 @@
   const ONLINE_MAX_ZOOM = VIEW_MAX_ZOOM;
   const BEAR_LABEL_OFFSET_Y = 12;
   const ESTIMATE_LABEL_OFFSET_Y = 18;
-  const REALTIME_BEAR_PULSE_COLOR = "rgba(52, 199, 89, 0.92)";
-  const REALTIME_BEAR_LABEL_COLOR = "rgba(22, 163, 74, 0.94)";
   // 힐셰이드는 성능/정합 이슈로 15까지만 지원한다.
   const HILLSHADE_MAX_ZOOM = Math.min(getNumericParam("olHillshadeMaxZoom", HILLSHADE_HARD_MAX_ZOOM, 3, PARAM_MAX_ZOOM_LIMIT), HILLSHADE_HARD_MAX_ZOOM);
   const HILLSHADE_SAFE_MAX_ZOOM = Math.min(getNumericParam("olHillshadeSafeMaxZoom", HILLSHADE_HARD_MAX_ZOOM, 3, PARAM_MAX_ZOOM_LIMIT), HILLSHADE_HARD_MAX_ZOOM);
@@ -942,8 +987,13 @@
   }
 
   // 공용 확인 팝업: 기본 confirm 대화상자 대신 디자인된 확인 UI를 제공한다.
+  let styledConfirmPending = false;
   function showStyledConfirmDialog(options) {
+    // Never share a positive answer with a second caller: each action needs its own confirmation.
+    if (styledConfirmPending) return Promise.resolve(false);
+    styledConfirmPending = true;
     return new Promise(function (resolve) {
+      const previousFocus = document.activeElement;
       const titleText = options && options.title ? String(options.title) : "확인";
       const messageText = options && options.message ? String(options.message) : "계속 진행할까요?";
       const detailText = options && options.detail ? String(options.detail) : "";
@@ -951,9 +1001,20 @@
       const cancelText = options && options.cancelText ? String(options.cancelText) : "취소";
       const isDanger = !!(options && options.tone === "danger");
 
-      const overlay = document.createElement("div");
+      const overlay = document.createElement("dialog");
+      overlay.className = "bp-confirm-dialog";
+      overlay.setAttribute("role", "alertdialog");
+      overlay.setAttribute("aria-labelledby", "bp-confirm-title");
+      overlay.setAttribute("aria-describedby", "bp-confirm-message");
       overlay.style.position = "fixed";
       overlay.style.inset = "0";
+      overlay.style.margin = "0";
+      overlay.style.width = "100vw";
+      overlay.style.height = "100dvh";
+      overlay.style.maxWidth = "none";
+      overlay.style.maxHeight = "none";
+      overlay.style.border = "0";
+      overlay.style.boxSizing = "border-box";
       overlay.style.zIndex = "23110";
       overlay.style.background = "rgba(15,23,42,0.45)";
       overlay.style.display = "flex";
@@ -969,17 +1030,21 @@
       card.style.borderRadius = "14px";
       card.style.boxShadow = "0 16px 36px rgba(2,6,23,0.3)";
       card.style.overflow = "hidden";
+      card.style.maxHeight = "calc(100dvh - 36px)";
+      card.style.overflowY = "auto";
 
       const body = document.createElement("div");
       body.style.padding = "16px 16px 12px";
 
       const title = document.createElement("div");
+      title.id = "bp-confirm-title";
       title.textContent = titleText;
       title.style.fontSize = "20px";
       title.style.fontWeight = "700";
       title.style.marginBottom = "8px";
 
       const message = document.createElement("div");
+      message.id = "bp-confirm-message";
       message.textContent = messageText;
       message.style.fontSize = "15px";
       message.style.lineHeight = "1.55";
@@ -1035,7 +1100,9 @@
         if (isClosed) return;
         isClosed = true;
         unregisterOverlayBackClose();
+        overlay.close();
         if (overlay && overlay.parentNode) overlay.parentNode.removeChild(overlay);
+        if (previousFocus && previousFocus.isConnected && typeof previousFocus.focus === "function") previousFocus.focus();
         resolve(!!confirmed);
       }
 
@@ -1046,6 +1113,7 @@
       overlay.addEventListener("click", function (event) {
         if (event.target === overlay) closeWith(false);
       });
+      overlay.addEventListener("cancel", function (event) { event.preventDefault(); closeWith(false); });
       cancelBtn.addEventListener("click", function () { closeWith(false); });
       confirmBtn.addEventListener("click", function () { closeWith(true); });
 
@@ -1055,10 +1123,6 @@
           closeWith(false);
           return;
         }
-        if (event.key === "Enter") {
-          event.preventDefault();
-          closeWith(true);
-        }
       });
 
       footer.appendChild(cancelBtn);
@@ -1067,8 +1131,9 @@
       card.appendChild(footer);
       overlay.appendChild(card);
       document.body.appendChild(overlay);
-      confirmBtn.focus();
-    });
+      overlay.showModal();
+      cancelBtn.focus();
+    }).finally(function () { styledConfirmPending = false; });
   }
 
   window.__bpShowConfirmDialog = showStyledConfirmDialog;
@@ -2218,10 +2283,8 @@
   const OBSERVATION_HEADING_ICON_SIZE = 40;
   const observationHeadingIconSrc = createHeadingIconDataUri(OBSERVATION_HEADING_ICON_SIZE, "#ea580c", 5.5);
   const observationHeadingEditIconSrc = createHeadingIconDataUri(OBSERVATION_HEADING_ICON_SIZE, "#16a34a", 5.5);
-  const observationHeadingFlashIconSrc = createHeadingIconDataUri(OBSERVATION_HEADING_ICON_SIZE, "#fbff00", 5.8);
-  const observationHeadingRegisterFlashIconSrc = createHeadingIconDataUri(OBSERVATION_HEADING_ICON_SIZE, "#fbff00", 5.8);
-  const observationHeadingMoveFlashIconSrc = createHeadingIconDataUri(OBSERVATION_HEADING_ICON_SIZE, "#fbff00", 5.8);
   let currentEditingObservationId = null;
+  let focusedObservationId = null;
   const MAP_HEADING_HANDLE_LENGTH_PX = 60;
   const MAP_HEADING_HANDLE_RADIUS_PX = 10;
 
@@ -2631,6 +2694,7 @@
   let analysisActionBarEl = null;
   let analysisActionOverlay = null;
   let analysisOwnerInputEl = null;
+  let analysisTeamInputEl = null;
   let analysisPlaceInputEl = null;
   let analysisRegionField = null;
   let analysisRealtimeShareInputEl = null;
@@ -2660,22 +2724,33 @@
   }
 
   function resolveDefaultAnalysisOwner(point) {
-    if (point && normalizeOwnerName(point.owner)) {
-      return normalizeOwnerName(point.owner);
-    }
-
-    const sourceOwners = buildUniqueOwnerList((point && Array.isArray(point.sourceObservations) ? point.sourceObservations : []).map(function (obs) {
-      return obs && obs.owner ? obs.owner : "";
-    }));
-
-    if (sourceOwners.length === 1) return sourceOwners[0];
-    return sourceOwners[0] || "";
+    return window.BearAppSettings?.getProfile()?.owner || "";
   }
 
   function syncAnalysisOwnerInput(point) {
     if (!analysisOwnerInputEl) return;
     analysisOwnerInputEl.value = resolveDefaultAnalysisOwner(point);
+    const profile = window.BearAppSettings?.getProfile();
+    const team = (window.BearAppSettings?.store?.snapshot()?.items || []).find(item => item.id === profile?.team_id);
+    if (analysisTeamInputEl) {
+      analysisTeamInputEl.value = team?.name || profile?.team_name || "";
+      const badge = analysisTeamInputEl.closest(".obs-reg-team-badge");
+      const color = team?.color || profile?.team_color;
+      const hex = /^#[0-9A-Fa-f]{6}$/.test(color || "") ? color : "#7E90A2";
+      badge.style.setProperty("--team-color", hex);
+      badge.style.setProperty("--team-background", hex + "18");
+      badge.style.setProperty("--team-border", hex + "55");
+    }
+    resizeAnalysisOwner();
   }
+  function resizeAnalysisOwner() {
+    if (!analysisOwnerInputEl || !analysisOwnerInputEl.getClientRects().length) return;
+    analysisOwnerInputEl.style.height = "auto";
+    analysisOwnerInputEl.style.height = Math.max(22, analysisOwnerInputEl.scrollHeight) + "px";
+  }
+  window.addEventListener("bearpoint:profile-changed", () => syncAnalysisOwnerInput(currentAnalysisPoint));
+  window.addEventListener("bearpoint:teams-changed", () => syncAnalysisOwnerInput(currentAnalysisPoint));
+  window.addEventListener("resize", resizeAnalysisOwner);
 
   function resolveDefaultAnalysisPlace(point) {
     return "";
@@ -2828,6 +2903,9 @@
     const lng = Number(item && item.lng);
     const placeName = normalizePlaceName(item && item.place) || "미지정";
     const ownerName = normalizeOwnerName(item && item.owner) || "미지정";
+    const teamName = String(item && item.team_name || "팀 미지정");
+    const rawTeamColor = item && item.team_color;
+    const teamColor = /^#[0-9A-Fa-f]{6}$/.test(rawTeamColor || "") ? rawTeamColor : "#7E90A2";
     const bearCode = String(item && (item.bear_code || item.bearCode || item.id || "-"));
     const latDms = item && item.lat_dms ? item.lat_dms : (Number.isFinite(lat) ? decimalToDMS(lat, false) : "-");
     const lngDms = item && item.lng_dms ? item.lng_dms : (Number.isFinite(lng) ? decimalToDMS(lng, true) : "-");
@@ -2848,15 +2926,15 @@
         <div class="obs-detail-frame">
           <table class="obs-detail-table" aria-label="개체 추적위치 상세 정보"><tbody>
             ${row("지명", placeName)}
-            ${row("등록자", ownerName)}
+            <tr><th scope="row">등록자</th><td><div class="obs-detail-registrar"><span class="obs-detail-registrar-name">${escapeHtml(ownerName)}</span><span class="obs-detail-team-badge" title="${escapeHtml(teamName)}" aria-label="소속 팀 ${escapeHtml(teamName)}" style="--team-color:${teamColor};--team-background:${teamColor}18;--team-border:${teamColor}55"><i aria-hidden="true"></i><span>${escapeHtml(teamName)}</span></span></div></td></tr>
             ${row("위치", item && (item.admin_region || item.adminRegion) || "미지정")}
-            ${row("위경도", `${formatPopupCoordinate(lat)}, ${formatPopupCoordinate(lng)}`, true)}
           </tbody></table>
         </div>
         <details class="obs-detail-more">
           <summary>좌표·등록정보</summary>
           <div class="obs-detail-frame">
             <table class="obs-detail-table" aria-label="추가 좌표 및 등록정보"><tbody>
+              ${row("위경도", `${formatPopupCoordinate(lat)}, ${formatPopupCoordinate(lng)}`, true)}
               ${row("도분초", `${latDms}, ${lngDms}`, true)}
               ${row("TM 좌표", `X ${mapX}, Y ${mapY}`, true)}
               ${row("등록시간", createdAt)}
@@ -3026,6 +3104,7 @@
     _onSidebarMqChange();
   })();
 
+  const gpsTrackUi = window.createGpsTrackUi({ ol, map, project: mapCoordFromWgs84, insertBefore: bearMarkerLayer });
   const controlsManager = window.createOlMapControlsManager ? window.createOlMapControlsManager({
     ol: ol,
     map: map,
@@ -3055,6 +3134,7 @@
     measureSource: measureSource,
     onToggleMyLocation: toggleMyLocation,
     onMeasureActivated: function () {
+      window.BearMobileDock?.collapse();
       stopManualMapGesture();
       clearAnalysisEstimateVisuals();
       closeObservationPopup();
@@ -3382,12 +3462,21 @@
     if (!appPlugin || removeBackButtonListener) return;
 
     const listener = await appPlugin.addListener("backButton", function () {
-      if (window.SdrDiagnostics && window.SdrDiagnostics.handleBackNavigation()) {
+      if (window.BearStartupLoading) { resetBackExitState(); return; }
+      // Confirmation/preview overlays take precedence over the panels underneath.
+      if (closeTopBackClosableOverlay()) {
         resetBackExitState();
         return;
       }
-      // 최상단 저장/미리보기 팝업이 열려 있으면 우선 닫는다.
-      if (closeTopBackClosableOverlay()) {
+      if (window.BearAppSettings?.isOpen()) {
+        window.BearAppSettings.close();
+        resetBackExitState();
+        return;
+      }
+      if (gpsTrackUi.isOpen() && !window.BearMobileDock?.isDocked()) {
+        gpsTrackUi.close(); resetBackExitState(); return;
+      }
+      if (window.SdrDiagnostics && window.SdrDiagnostics.handleBackNavigation()) {
         resetBackExitState();
         return;
       }
@@ -3406,7 +3495,8 @@
       }
 
       // 2) 목록/등록/분석 다이얼로그 등 메뉴성 UI는 obsList 모듈에서 우선 닫는다.
-      if (obsListModule && typeof obsListModule.handleBackNavigation === "function") {
+      if (window.BearMobileDock?.handleBack()) { resetBackExitState(); return; }
+      if (!window.BearMobileDock?.isDocked() && obsListModule && typeof obsListModule.handleBackNavigation === "function") {
         const handled = obsListModule.handleBackNavigation();
         if (handled) { resetBackExitState(); return; }
       }
@@ -3778,42 +3868,49 @@
   function createObservationStyleFromMarker(marker) {
     const obsData = marker && marker.obsData ? marker.obsData : null;
     const labelText = getObservationMarkerText(obsData);
+    const teamColor = /^#[0-9a-f]{6}$/i.test(String(obsData?.team_color || "")) ? obsData.team_color : null;
+    const headingIconSrc = teamColor
+      ? createHeadingIconDataUri(OBSERVATION_HEADING_ICON_SIZE, teamColor, 5.5)
+      : observationHeadingIconSrc;
 
     return function() {
       const headingDeg = getObservationHeadingDeg(obsData);
       const isSelected = !!(obsData && obsData.isSelected);
       const obsId = String(obsData && obsData.id ? obsData.id : "").trim();
+      const isFocused = !!(obsId && obsId === focusedObservationId);
       const isEditingTarget = !!(obsId && currentEditingObservationId && obsId === currentEditingObservationId);
       const suppressSelectedHalo = !!editOriginFeature;
       const flashUntil = Number(marker && marker._feature && marker._feature.get ? marker._feature.get("saveFlashUntil") : 0);
       const flashDurationMs = Number(marker && marker._feature && marker._feature.get ? marker._feature.get("saveFlashDurationMs") : 0) || OBS_SAVE_FLASH_DURATION_MS;
-      const flashPreset = String(marker && marker._feature && marker._feature.get ? marker._feature.get("saveFlashPreset") : "").trim() || "default";
       const flashRemainingMs = Number.isFinite(flashUntil) ? flashUntil - Date.now() : 0;
       const isSaveFlashActive = flashRemainingMs > 0;
       const flashElapsedMs = isSaveFlashActive ? (flashDurationMs - flashRemainingMs) : 0;
       const flashProgress = isSaveFlashActive ? clamp01(flashElapsedMs / flashDurationMs) : 1;
-      const flashIntro = clamp01(flashElapsedMs / 560);
-      const flashIntro2 = clamp01((flashElapsedMs - 700) / 900);
-      const flashOutro = clamp01((1 - flashProgress) / 0.9);
-      let flashOpacity = 0;
-      if (isSaveFlashActive) {
-        if (flashPreset === "move-double") {
-          const pulseWave = Math.pow(Math.sin(flashProgress * Math.PI * 2), 2);
-          const easeIn = clamp01(flashProgress / 0.22);
-          const easeOut = clamp01((1 - flashProgress) / 0.18);
-          const envelope = easeIn * easeOut;
-          flashOpacity = clamp01((0.18 + 0.82 * envelope) * (0.35 + 0.65 * pulseWave));
-        } else {
-          const flashBreath = 0.5 - 0.5 * Math.cos((flashElapsedMs / 1200) * Math.PI * 2);
-          // 초반 점진 상승 + 중반 2차 점진 상승을 합쳐 강조감을 더 자연스럽게 올린다.
-          const flashEnvelope = (0.12 + 0.56 * flashIntro + 0.32 * flashIntro2) * flashOutro;
-          const flashPulse = 0.58 + 0.42 * flashBreath;
-          flashOpacity = clamp01(flashEnvelope * flashPulse);
-        }
-      }
       const rotation = Number.isFinite(headingDeg) ? (headingDeg * Math.PI) / 180 : 0;
 
       const styles = [];
+
+      if (isFocused) {
+        styles.push(new ol.style.Style({ image: new ol.style.Circle({
+          radius: 17, stroke: new ol.style.Stroke({ color: "rgba(15,23,42,0.8)", width: 6 })
+        }) }));
+        styles.push(new ol.style.Style({ image: new ol.style.Circle({
+          radius: 17, stroke: new ol.style.Stroke({ color: "#ffffff", width: 3 })
+        }) }));
+      }
+
+      if (isSaveFlashActive) {
+        // Two expanding outlined rings distinguish focus from every team color.
+        const phase = (flashProgress * 2) % 1;
+        const opacity = Math.sin(phase * Math.PI) * clamp01((1 - flashProgress) * 4);
+        const radius = 14 + 20 * phase;
+        styles.push(new ol.style.Style({ image: new ol.style.Circle({
+          radius, stroke: new ol.style.Stroke({ color: `rgba(15,23,42,${opacity * 0.65})`, width: 5 })
+        }) }));
+        styles.push(new ol.style.Style({ image: new ol.style.Circle({
+          radius, stroke: new ol.style.Stroke({ color: `rgba(255,255,255,${opacity})`, width: 2.5 })
+        }) }));
+      }
 
       if (isEditingTarget) {
         styles.push(new ol.style.Style({
@@ -3836,11 +3933,7 @@
       }
 
       
-      const baseHeadingIconSrc = isEditingTarget ? observationHeadingEditIconSrc : observationHeadingIconSrc;
-      const shouldFadeBaseHeading = isSaveFlashActive && flashPreset !== "move-double";
-      const baseHeadingOpacity = shouldFadeBaseHeading
-        ? clamp01(1 - flashOpacity * 0.95)
-        : 1;
+      const baseHeadingIconSrc = isEditingTarget ? observationHeadingEditIconSrc : headingIconSrc;
       styles.push(new ol.style.Style({
           image: new ol.style.Icon({
             src: baseHeadingIconSrc,
@@ -3851,7 +3944,7 @@
             anchorYUnits: "fraction",
             rotateWithView: true,
             rotation: rotation,
-            opacity: baseHeadingOpacity
+            opacity: 1
           }),
           text: new ol.style.Text({
             text: labelText,
@@ -3862,36 +3955,15 @@
             backgroundFill: new ol.style.Fill({
               color: isEditingTarget
                 ? "rgba(22,163,74,0.9)"
-                : (isSelected ? "rgba(194,65,12,0.84)" : "rgba(194,65,12,0.58)")
+                : (teamColor ? teamColor + (isSelected ? "e6" : "c7") : (isSelected ? "rgba(194,65,12,0.84)" : "rgba(194,65,12,0.58)"))
             }),
             backgroundStroke: new ol.style.Stroke({
               color: isSelected ? "rgba(255,255,255,0.92)" : "rgba(255,255,255,0.55)",
-              width: isSelected ? 1.6 : 1.25
+              width: isFocused ? 2.5 : isSelected ? 1.6 : 1.25
             })
           })
         }));
 
-      if (isSaveFlashActive && flashOpacity > 0.01) {
-        let flashIconSrc = observationHeadingFlashIconSrc;
-        if (flashPreset === "move-double") {
-          flashIconSrc = observationHeadingMoveFlashIconSrc;
-        } else if (flashPreset === "register") {
-          flashIconSrc = observationHeadingRegisterFlashIconSrc;
-        }
-        styles.push(new ol.style.Style({
-          image: new ol.style.Icon({
-            src: flashIconSrc,
-            width: OBSERVATION_HEADING_ICON_SIZE,
-            height: OBSERVATION_HEADING_ICON_SIZE,
-            anchor: [0.5, 0.5],
-            anchorXUnits: "fraction",
-            anchorYUnits: "fraction",
-            rotateWithView: true,
-            rotation: rotation,
-            opacity: flashOpacity
-          })
-        }));
-      }
 
       return styles;
     };
@@ -3957,9 +4029,6 @@
         openObservationEdit(obsData);
         return;
       }
-      if (action === "delete" && obsListModule && typeof obsListModule.deleteObservation === "function") {
-        void obsListModule.deleteObservation(obsData);
-      }
       return;
     }
 
@@ -4007,7 +4076,7 @@
     const right = screenRight - 74;
     const top = Math.max(18, (visual ? visual.offsetTop : 0) - rect.top + 18);
     let bottom = Math.min(rect.height, (visual ? visual.offsetTop + visual.height : window.innerHeight) - rect.top) - 18;
-    const panel = document.querySelector(".panel-bottom-left");
+    const panel = window.BearMobileDock?.isMobile() ? document.getElementById('mobile-map-dock') : document.querySelector(".panel-bottom-left");
     if (panel && panel.getClientRects().length) {
       const panelRect = panel.getBoundingClientRect();
       if (panelRect.height > rect.height * 0.65 && panelRect.width < rect.width * 0.65) {
@@ -4056,6 +4125,8 @@
     if (!popupHtml || !coordinate) return;
 
     observationPopupEl._observationData = feature ? (feature.get("observationData") || feature.get("obsData") || null) : null;
+    focusedObservationId = observationPopupEl._observationData?.id != null ? String(observationPopupEl._observationData.id) : null;
+    observationMarkerSource.changed();
     observationPopupEl._bearEstimateData = feature ? (feature.get("bearEstimateData") || null) : null;
     observationPopupContentEl.innerHTML = popupHtml;
     observationPopupEl.style.visibility = "hidden";
@@ -4070,6 +4141,8 @@
 
   function closeObservationPopup() {
     bearListFocusVersion += 1;
+    focusedObservationId = null;
+    observationMarkerSource.changed();
     observationPopupEl.style.display = "none";
     observationPopupOverlay.setPosition(undefined);
     observationPopupEl._observationData = null;
@@ -4446,6 +4519,10 @@
   };
 
   const observationMarkersLayer = {
+    setVisible: function (visible) {
+      observationMarkerLayer.setVisible(!!visible);
+      if (!visible && observationPopupEl._observationData) closeObservationPopup();
+    },
     animateMarkerToCoordinate: function (feature, fromLatLng, toLatLng) {
       if (!feature || !Array.isArray(fromLatLng) || !Array.isArray(toLatLng)) return;
       if (!Number.isFinite(Number(fromLatLng[0])) || !Number.isFinite(Number(fromLatLng[1]))) return;
@@ -4547,7 +4624,7 @@
     btnPanelToggle.setAttribute("aria-expanded", "true");
   }
 
-  // 고정 사이드바와 별도 관측점 팝업을 사용하는 큰 가로 화면 조건.
+  // 큰 가로 화면에서는 공통 메뉴를 좌측 사이드바에 배치한다.
   function isTabletLandscapeSidebarMode() {
     return window.matchMedia(
       "(min-width: 900px) and (orientation: landscape)"
@@ -4572,7 +4649,7 @@
 
     if (btnSidebarToggle) {
       const isCollapsed = !!(document.body && document.body.classList.contains("bp-sidebar-collapsed"));
-      btnSidebarToggle.textContent = isCollapsed ? "▶" : "◀";
+      btnSidebarToggle.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m14 7-5 5 5 5"/></svg>';
       btnSidebarToggle.setAttribute("aria-expanded", isCollapsed ? "false" : "true");
       btnSidebarToggle.setAttribute("aria-label", isCollapsed ? "사이드바 펼치기" : "사이드바 접기");
       btnSidebarToggle.setAttribute("title", isCollapsed ? "사이드바 펼치기" : "사이드바 접기");
@@ -4983,6 +5060,7 @@
         if (idSet.has(String(item.id)) && !item.shared_at) item.shared_at = sharedAt;
       });
     } else {
+      await localEstimateStore.markShared([...idSet], getKstSqliteTimestamp());
       localBearEstimateItems.forEach(function (item) {
         if (idSet.has(String(item.id)) && !item.shared_at) item.shared_at = getKstSqliteTimestamp();
       });
@@ -5151,6 +5229,11 @@
   }
 
   async function deleteBearEstimateRows(ids, isFallback, deleteAll) {
+    if (!isNativeCapacitorPlatform()) {
+      const targets = deleteAll ? (await localEstimateStore.list()).map(row => String(row.id)) : (ids || []).map(String);
+      await localEstimateStore.remove(targets);
+      return;
+    }
     if (isFallback) {
       if (deleteAll) {
         bearsDataCache = [];
@@ -5190,7 +5273,14 @@
   }
 
   // 체크된 곰 추정위치 행들을 사용자 확인 후 일괄 삭제한다.
+  let bearDeletionPending = false;
   async function handleDeleteSelectedBearEstimates() {
+    if (bearDeletionPending) return;
+    bearDeletionPending = true;
+    try { return await deleteSelectedBearEstimates(); }
+    finally { bearDeletionPending = false; }
+  }
+  async function deleteSelectedBearEstimates() {
     const targetIds = currentBearEstimateItems.filter(function (it) {
       return selectedBearEstimateIds.has(String(it.id)) && !it.shared_at && !it.remoteOnly && !pendingBearUploads.has(String(it.id));
     }).map(function (it) {
@@ -5222,6 +5312,12 @@
 
   // 팝업에서 곰 추정위치 단건을 삭제한다. 확인 다이얼로그 → DB 삭제 → 목록 갱신.
   async function handleDeleteSingleBearEstimate(item) {
+    if (bearDeletionPending) return;
+    bearDeletionPending = true;
+    try { return await deleteSingleBearEstimate(item); }
+    finally { bearDeletionPending = false; }
+  }
+  async function deleteSingleBearEstimate(item) {
     if (item.shared_at || item.isRealtime || pendingBearUploads.has(String(item.id))) return;
     const bearCode = item.bear_code || item.bearCode || item.id || "-";
     const ok = await showStyledConfirmDialog({
@@ -5322,6 +5418,12 @@
     });
   }
 
+  function bearTeamColor(item) {
+    return /^#[0-9a-f]{6}$/i.test(String(item?.team_color || "")) ? item.team_color : "#7e90a2";
+  }
+  function bearTeamTint(color, opacity) {
+    return `rgba(${parseInt(color.slice(1,3),16)},${parseInt(color.slice(3,5),16)},${parseInt(color.slice(5,7),16)},${opacity})`;
+  }
   // 저장된 곰 추적위치 목록을 지도 마커로 렌더링하고, 클릭용 상세 팝업 HTML도 함께 싣는다.
   function renderBearMarkers(items) {
     bearMarkerSource.clear();
@@ -5330,13 +5432,15 @@
       return;
     }
 
-    let hasRealtimeMarker = false;
+    let hasAnimatedMarker = false;
 
     items.forEach(function (it) {
       const isRealtimeMarker = !!(it && it.isRealtime);
-      if (isRealtimeMarker) hasRealtimeMarker = true;
+      const shouldAnimate = isRealtimeMarker || !!(it && it.shared_at);
+      if (shouldAnimate) hasAnimatedMarker = true;
       const markerText = String(it && (it.bear_code || it.bearCode || it.id) || "-");
-      const labelColor = isRealtimeMarker ? REALTIME_BEAR_LABEL_COLOR : "rgba(43,124,255,0.95)";
+      const teamColor = bearTeamColor(it);
+      const labelColor = bearTeamTint(teamColor,0.95);
 
       const feature = new ol.Feature({
         geometry: new ol.geom.Point(mapCoordFromWgs84(it.lat, it.lng))
@@ -5362,12 +5466,12 @@
         })
       });
 
-      if (isRealtimeMarker) {
+      if (shouldAnimate) {
         const pulseOuterStyle = new ol.style.Style({
           image: new ol.style.Circle({
             radius: 17,
-            fill: new ol.style.Fill({ color: "rgba(52, 199, 89, 0.08)" }),
-            stroke: new ol.style.Stroke({ color: "rgba(52, 199, 89, 0.32)", width: 2 })
+            fill: new ol.style.Fill({ color: bearTeamTint(teamColor,0.08) }),
+            stroke: new ol.style.Stroke({ color: bearTeamTint(teamColor,0.32), width: 2 })
           })
         });
 
@@ -5375,15 +5479,15 @@
           image: new ol.style.Circle({
             radius: 12,
             fill: new ol.style.Fill({ color: "rgba(255,255,255,0.18)" }),
-            stroke: new ol.style.Stroke({ color: REALTIME_BEAR_PULSE_COLOR, width: 2.5 })
+            stroke: new ol.style.Stroke({ color: bearTeamTint(teamColor,0.8), width: 2.5 })
           })
         });
 
         feature.setStyle(function () {
           pulseOuterStyle.setImage(new ol.style.Circle({
             radius: 17 + realtimeBearMarkerPulse * 8,
-            fill: new ol.style.Fill({ color: `rgba(52, 199, 89, ${0.08 + realtimeBearMarkerPulse * 0.16})` }),
-            stroke: new ol.style.Stroke({ color: `rgba(52, 199, 89, ${0.32 + realtimeBearMarkerPulse * 0.28})`, width: 2 })
+            fill: new ol.style.Fill({ color: bearTeamTint(teamColor,0.08 + realtimeBearMarkerPulse * 0.16) }),
+            stroke: new ol.style.Stroke({ color: bearTeamTint(teamColor,0.32 + realtimeBearMarkerPulse * 0.28), width: 2 })
           }));
 
           return [pulseOuterStyle, pulseInnerStyle, markerIconStyle];
@@ -5395,7 +5499,7 @@
       bearMarkerSource.addFeature(feature);
     });
 
-    if (hasRealtimeMarker) startBearMarkerAnimation();
+    if (hasAnimatedMarker) startBearMarkerAnimation();
     else stopBearMarkerAnimation();
   }
 
@@ -5538,6 +5642,7 @@
     document.body.classList.add("analysis-action-active");
     analysisActionAnchorCoord = [anchorCoord[0], anchorCoord[1]];
     analysisActionOverlay.setPosition(analysisActionAnchorCoord);
+    window.requestAnimationFrame(function () { resizeAnalysisOwner(); scheduleAnalysisActionBarLayoutUpdate(); });
     scheduleAnalysisActionBarLayoutUpdate();
   }
 
@@ -5655,7 +5760,7 @@
     root.style.flexDirection = "column";
     root.style.alignItems = "center";
     root.style.gap = "8px";
-    root.style.width = "min(90vw, 260px)";
+    root.style.width = "min(90vw, 300px)";
     root.style.position = "relative";
     root.style.zIndex = "11060";
     root.style.pointerEvents = "auto";
@@ -5678,28 +5783,23 @@
     fieldGrid.style.gap = "8px";
 
     const ownerField = document.createElement("div");
-    ownerField.style.display = "flex";
-    ownerField.style.flexDirection = "column";
-    ownerField.style.gap = "4px";
+    ownerField.className = "obs-reg-identity analysis-registration-identity";
+    ownerField.setAttribute("role", "group");
+    ownerField.setAttribute("aria-label", "설정된 담당자와 팀");
+    ownerField.title = "담당자·팀은 상단 설정에서 변경할 수 있습니다";
 
     const ownerLabel = document.createElement("label");
-    ownerLabel.textContent = "담당자명";
-    ownerLabel.style.color = "#ffffff";
-    ownerLabel.style.fontSize = "12px";
-    ownerLabel.style.fontWeight = "700";
+    ownerLabel.textContent = "담당자";
+    ownerLabel.className = "obs-reg-identity-label";
+    ownerLabel.htmlFor = "analysis-owner";
 
-    const ownerInput = document.createElement("input");
-    ownerInput.type = "text";
-    ownerInput.placeholder = "입력 또는 미지정";
+    const ownerInput = document.createElement("textarea");
+    ownerInput.id = "analysis-owner";
+    ownerInput.className = "obs-reg-identity-owner";
+    ownerInput.rows = 1;
+    ownerInput.readOnly = true;
+    ownerInput.placeholder = "설정에서 담당자를 지정해주세요";
     ownerInput.autocomplete = "off";
-    ownerInput.style.height = "32px";
-    ownerInput.style.padding = "0 10px";
-    ownerInput.style.border = "1px solid rgba(148,163,184,0.65)";
-    ownerInput.style.borderRadius = "6px";
-    ownerInput.style.background = "rgba(255,255,255,0.96)";
-    ownerInput.style.color = "#0f172a";
-    ownerInput.style.fontSize = "14px";
-    ownerInput.style.outline = "none";
 
     const placeField = document.createElement("div");
     placeField.style.display = "flex";
@@ -5739,6 +5839,16 @@
     regionInput.style.cssText = placeInput.style.cssText;
     regionField.appendChild(regionLabel);
     regionField.appendChild(regionInput);
+    const teamField = document.createElement("div");
+    teamField.className = "obs-reg-identity-team";
+    const teamLabel = document.createElement("label");
+    teamLabel.textContent = "팀"; teamLabel.htmlFor = "analysis-team"; teamLabel.className = "obs-reg-identity-label";
+    const teamInput = document.createElement("input");
+    teamInput.id = "analysis-team"; teamInput.className = "obs-reg-identity-team-input"; teamInput.readOnly = true; teamInput.placeholder = "팀 선택";
+    const teamBadge = document.createElement("div"); teamBadge.className = "obs-reg-team-badge";
+    const teamDot = document.createElement("span"); teamDot.className = "obs-reg-team-dot"; teamDot.setAttribute("aria-hidden", "true");
+    teamBadge.append(teamDot, teamInput);
+    teamField.append(teamLabel, teamBadge);
 
     const realtimeShareLabel = document.createElement("label");
     realtimeShareLabel.style.display = "flex";
@@ -5765,11 +5875,16 @@
     buttonRow.style.justifyContent = "center";
     buttonRow.style.gap = "8px";
     buttonRow.style.width = "100%";
+    buttonRow.style.boxSizing = "border-box";
+    buttonRow.style.padding = "8px 10px 10px";
+    buttonRow.style.borderTop = "1px solid rgba(255,255,255,0.15)";
+    buttonRow.style.background = "rgba(255,255,255,0.025)";
 
     const saveBtn = document.createElement("button");
     saveBtn.type = "button";
     saveBtn.textContent = "저장";
-    saveBtn.style.height = "30px";
+    saveBtn.style.height = "34px";
+    saveBtn.style.flex = "1";
     saveBtn.style.minWidth = "78px";
     saveBtn.style.padding = "0 14px";
     saveBtn.style.border = "1px solid rgba(255,255,255,0.62)";
@@ -5779,12 +5894,13 @@
     saveBtn.style.fontSize = "16px";
     saveBtn.style.fontWeight = "700";
     saveBtn.style.cursor = "pointer";
-    saveBtn.style.boxShadow = "0 8px 20px rgba(11,114,199,0.35)";
+    saveBtn.style.boxShadow = "none";
 
     const cancelBtn = document.createElement("button");
     cancelBtn.type = "button";
     cancelBtn.textContent = "취소";
-    cancelBtn.style.height = "30px";
+    cancelBtn.style.height = "34px";
+    cancelBtn.style.flex = "1";
     cancelBtn.style.minWidth = "78px";
     cancelBtn.style.padding = "0 14px";
     cancelBtn.style.border = "1px solid rgba(255,255,255,0.62)";
@@ -5794,31 +5910,20 @@
     cancelBtn.style.fontSize = "16px";
     cancelBtn.style.fontWeight = "700";
     cancelBtn.style.cursor = "pointer";
-    cancelBtn.style.boxShadow = "0 8px 20px rgba(138,59,0,0.34)";
+    cancelBtn.style.boxShadow = "none";
 
     saveBtn.addEventListener("click", async function () {
       if (saveBtn.disabled) return;
+      saveBtn.disabled = true;
+      let identity;
+      try { identity = await window.BearAppSettings.requireIdentity(); }
+      catch (error) { if (statusEl) statusEl.textContent = error.message; saveBtn.disabled = false; return; }
       const point = currentAnalysisPoint;
-      const ownerName = normalizeOwnerName(analysisOwnerInputEl ? analysisOwnerInputEl.value : "");
+      const ownerName = identity.owner;
       const placeName = normalizePlaceName(analysisPlaceInputEl ? analysisPlaceInputEl.value : "");
       if (!point || !Number.isFinite(point.lat) || !Number.isFinite(point.lng)) {
         if (statusEl) statusEl.textContent = "⚠️ 저장할 분석 결과가 없습니다.";
-        return;
-      }
-
-      const initState = await initializeEmbeddedDatabase();
-      if (!initState || !initState.ready) {
-        if (statusEl) statusEl.textContent = "⚠️ SQLite 연결이 준비되지 않았습니다.";
-        return;
-      }
-
-      const sqlite = getCapacitorSQLitePlugin();
-      const dbName = window.BearSQLiteConfig && window.BearSQLiteConfig.dbName
-        ? window.BearSQLiteConfig.dbName
-        : "BearPointData";
-
-      if (!sqlite) {
-        if (statusEl) statusEl.textContent = "⚠️ SQLite를 사용할 수 없습니다.";
+        saveBtn.disabled = false;
         return;
       }
 
@@ -5837,6 +5942,9 @@
         const projected = mapCoordFromWgs84(Number(obs.lat), Number(obs.lng));
         return {
           id: obs.id || null,
+          team_id: obs.team_id || null,
+          team_name: obs.team_name || null,
+          team_color: obs.team_color || null,
           place: obs.place || null,
           adminRegion: obs.adminRegion || obs.admin_region || null,
           bearCode: obs.bearCode || null,
@@ -5894,13 +6002,11 @@
         saveBtn.disabled = true;
         const adminRegion = await analysisRegionField.resolve(point.lat, point.lng);
         if (currentAnalysisPoint !== point) return;
-        await sqlite.run({
-          database: dbName,
-          statement: "INSERT INTO bear_estimates (id, bear_code, owner, place, admin_region, lat, lng, lat_dms, lng_dms, intersections_count, source_observation_ids, source_observations_json, analysis_rays_json, intersections_json, analysis_options_json, analysis_diagnostics_json, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-          values: [id, bearCode, ownerName || null, placeName || null, adminRegion, point.lat, point.lng, latDms, lngDms, intersectionsCount, sourceIds, sourceObservationsJson, analysisRaysJson, intersectionsJson, analysisOptionsJson, analysisDiagnosticsJson, createdAtKst],
-          transaction: true,
-          readonly: false
-        });
+        await localEstimateStore.insert({ id, bear_code: bearCode, ...identity, place: placeName || null,
+          admin_region: adminRegion, lat: point.lat, lng: point.lng, lat_dms: latDms, lng_dms: lngDms,
+          intersections_count: intersectionsCount, source_observation_ids: sourceIds, source_observations_json: sourceObservationsJson,
+          analysis_rays_json: analysisRaysJson, intersections_json: intersectionsJson, analysis_options_json: analysisOptionsJson,
+          analysis_diagnostics_json: analysisDiagnosticsJson, created_at: createdAtKst });
         localSaved = true;
         if (shareRealtime) pendingBearUploads.add(String(id));
         clearAnalysisEstimateVisuals();
@@ -5914,6 +6020,9 @@
               id,
               bear_code: bearCode,
               owner: ownerName || null,
+              team_id: identity.team_id,
+              team_name: identity.team_name,
+              team_color: identity.team_color,
               place: placeName || null,
               admin_region: adminRegion,
               lat: point.lat,
@@ -5960,6 +6069,7 @@
 
     ownerField.appendChild(ownerLabel);
     ownerField.appendChild(ownerInput);
+    ownerField.appendChild(teamField);
     placeField.appendChild(placeLabel);
     placeField.appendChild(placeInput);
     fieldGrid.appendChild(ownerField);
@@ -5988,9 +6098,9 @@
     inputCard.appendChild(fieldWrap);
     buttonRow.appendChild(saveBtn);
     buttonRow.appendChild(cancelBtn);
+    inputCard.appendChild(buttonRow);
 
     root.appendChild(inputCard);
-    root.appendChild(buttonRow);
 
     // 분석 결과 입력 UI는 지도 좌표에 앵커링된 오버레이로 유지한다.
     analysisActionOverlay = new ol.Overlay({
@@ -6022,6 +6132,7 @@
 
     analysisActionBarEl = root;
     analysisOwnerInputEl = ownerInput;
+    analysisTeamInputEl = teamInput;
     analysisPlaceInputEl = placeInput;
     analysisRegionField = window.createEditableRegionField(regionInput);
     analysisRealtimeShareInputEl = realtimeShareInput;
@@ -6057,10 +6168,15 @@
     const feature = new ol.Feature({
       geometry: new ol.geom.Point(estimateCoord)
     });
+    const analysisProfile = window.BearAppSettings?.getProfile();
+    const analysisTeam = window.BearAppSettings?.store?.snapshot()?.items?.find(team => team.id === analysisProfile?.team_id);
     const _analysisItem = {
       id: point.bearCode || "추정",
       bearCode: point.bearCode || "추정",
       owner: resolveDefaultAnalysisOwner(point),
+      team_id: analysisProfile?.team_id || null,
+      team_name: analysisTeam?.name || analysisProfile?.team_name || null,
+      team_color: analysisTeam?.color || analysisProfile?.team_color || null,
       place: resolveDefaultAnalysisPlace(point),
       lat: point.lat,
       lng: point.lng,
@@ -6082,7 +6198,7 @@
         offsetY: ESTIMATE_LABEL_OFFSET_Y,
         font: "700 12px sans-serif",
         fill: new ol.style.Fill({ color: "#ffffff" }),
-        backgroundFill: new ol.style.Fill({ color: "rgba(16,185,129,0.96)" }),
+        backgroundFill: new ol.style.Fill({ color: bearTeamTint(bearTeamColor(_analysisItem),0.96) }),
         padding: [3, 6, 3, 6]
       })
     }));
@@ -6689,9 +6805,11 @@
     if (realtimeListModule && typeof realtimeListModule.bindEstimateItems === "function") {
       realtimeListModule.bindEstimateItems(items);
     }
+    bearListPages.beforeClear();
     bearsListEl.innerHTML = "";
 
     if (!items || items.length === 0) {
+      bearListPages.render([], () => {});
       bearsListEl.innerHTML = searching ? '<div class="bears-search-empty" role="status">일치하는 개체 코드가 없습니다.<small>검색어를 바꾸거나 초기화해주세요.</small></div>' : [
         '<div class="bears-empty" role="status" aria-live="polite">',
         '  <div class="bears-empty__icon" aria-hidden="true">🐻</div>',
@@ -6714,18 +6832,17 @@
       bearsToolbarSummaryEl.hidden = false;
     }
 
-    items.forEach(function (it) {
+    bearListPages.render(items, function (it) {
       const itemId = String(it.id);
       const isSelected = selectedBearEstimateIds.has(itemId);
       const el = document.createElement("div");
       el.className = "bears-item bears-item--unified" + (isSelected ? " is-selected" : "");
-      const lat = Number(it.lat);
-      const lng = Number(it.lng);
       const bearCode = it.bear_code || it.bearCode || "-";
       const ownerName = normalizeOwnerName(it.owner) || "미지정";
       const regionName = it.admin_region || "미지정";
+      const teamName = String(it.team_name || "팀 미지정");
+      const teamColor = /^#[0-9a-f]{6}$/i.test(String(it.team_color || "")) ? it.team_color : "#7e90a2";
       const isShared = !!it.shared_at;
-      const coordinateText = (Number.isFinite(lat) ? lat.toFixed(6) : "-") + ", " + (Number.isFinite(lng) ? lng.toFixed(6) : "-");
       el.innerHTML =
         '<div class="bears-item__select">' +
           '<input class="bears-item__checkbox" type="checkbox" aria-label="곰 추정위치 선택" ' + (isSelected ? 'checked' : '') + ' />' +
@@ -6735,17 +6852,16 @@
         '</div>' +
         '<div class="bears-item__meta bears-item__meta--send">' +
           '<div class="bears-item__buttons">' +
-            '<button class="bears-txt-dl-btn" type="button" aria-label="TXT 다운로드"><span class="bears-txt-dl-btn__label">TXT</span></button>' +
-            '<button class="bears-xls-dl-btn" type="button" aria-label="XLS 다운로드"><span class="bears-xls-dl-btn__label">XLS</span></button>' +
+            '<button class="bears-txt-dl-btn" type="button" aria-label="TXT 다운로드" title="TXT 다운로드"><svg class="bears-download-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M12 11v7m-3-3 3 3 3-3"/></svg><span class="bears-txt-dl-btn__label">TXT</span></button>' +
+            '<button class="bears-xls-dl-btn" type="button" aria-label="XLS 다운로드" title="XLS 다운로드"><svg class="bears-download-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 12h8v6H8zM8 15h8m-4-3v6"/></svg><span class="bears-xls-dl-btn__label">XLS</span></button>' +
           '</div>' +
             (isShared ? '' : pendingBearUploads.has(itemId)
                 ? '<span class="bear-share-control bear-share-control--sending">공유 중</span>'
                 : '<button class="bear-share-control bear-share-control--needed" type="button">공유 필요</button>') +
         '</div>' +
         '<div class="bears-item__detail-frame"><table class="bears-item__detail-table" aria-label="개체 추적위치 정보"><tbody>' +
-          '<tr><th scope="row">등록자</th><td><span class="bears-item__detail-value" title="' + escapeHtml(ownerName) + '">' + escapeHtml(ownerName) + '</span></td></tr>' +
+          '<tr><th scope="row">등록자</th><td><div class="bears-item__registrar"><span class="bears-item__detail-value" title="' + escapeHtml(ownerName) + '">' + escapeHtml(ownerName) + '</span><span class="bears-item__team" style="--team-color:' + teamColor + '" title="' + escapeHtml(teamName) + '" aria-label="소속 팀 ' + escapeHtml(teamName) + '"><i aria-hidden="true"></i><span>' + escapeHtml(teamName) + '</span></span></div></td></tr>' +
           '<tr><th scope="row">위치</th><td><span class="bears-item__detail-value" title="' + escapeHtml(regionName) + '">' + escapeHtml(regionName) + '</span></td></tr>' +
-          '<tr><th scope="row">좌표</th><td><span class="bears-item__detail-value bears-item__detail-value--coords" aria-label="위도, 경도">' + coordinateText + '</span></td></tr>' +
         '</tbody></table></div>';
 
       el.addEventListener("click", function () {
@@ -6827,7 +6943,7 @@
         // 최신 스키마(lat_dms/lng_dms 컬럼 포함) 우선 조회
         result = await sqlite.query({
           database: dbName,
-          statement: "SELECT id, bear_code, owner, place, admin_region, lat, lng, lat_dms, lng_dms, intersections_count, source_observations_json, analysis_options_json, analysis_rays_json, intersections_json, shared_at, created_at FROM bear_estimates ORDER BY created_at DESC",
+          statement: "SELECT * FROM bear_estimates ORDER BY created_at DESC",
           values: [],
           readonly: false
         });
@@ -6869,6 +6985,9 @@
               id: row.id,
               bear_code: String(row.bear_code || "-"),
               owner: normalizeOwnerName(row.owner) || "미지정",
+              team_id: row.team_id || null,
+              team_name: row.team_name || null,
+              team_color: row.team_color || null,
               place: normalizePlaceName(row.place) || "미지정",
               admin_region: row.admin_region || null,
               lat: Number(row.lat),
@@ -6902,6 +7021,16 @@
       }
     }
 
+    if (isWebFallbackMode) {
+      try {
+        items = (await localEstimateStore.list()).map(row => ({ ...row,
+          lat: Number(row.lat), lng: Number(row.lng),
+          source_observations: parseBearEstimateJson(row.source_observations_json, "array"),
+          analysis_options: normalizeAnalysisOptions(row.analysis_options_json),
+          analysis_rays: parseBearEstimateJson(row.analysis_rays_json, "array"),
+          analysis_intersections: parseBearEstimateJson(row.intersections_json, "array") }));
+      } catch (error) { hasQueryError = true; if (statusEl) statusEl.textContent = "개체 위치 자료를 읽지 못했습니다: " + error.message; }
+    }
     if (!hasQueryError) localBearEstimateItems = items.slice();
     currentBearEstimateFallbackMode = false;
     try {
@@ -6959,7 +7088,7 @@
       setTabletSidebarCollapsed(isRegisterOpen);
 
       // 목록 탭 상태인데 이전에 숨김 처리되어 있었다면 태블릿 진입 시 복원한다.
-      if (!isRegisterOpen && obsListModule && typeof obsListModule.showPanel === "function") {
+      if (!isRegisterOpen && !window.BearMobileDock?.isDocked() && obsListModule && typeof obsListModule.showPanel === "function") {
         obsListModule.showPanel();
       }
     } else {
@@ -6994,23 +7123,7 @@
       // 큰 화면의 개체 목록은 관측점 팝업을 열어도 그대로 유지한다.
       if (!isTabletLandscapeSidebarMode()) collapseBearEstimatePanel();
     },
-    onOpenRegister: function () {
-      if (controlsManager && typeof controlsManager.deactivateMeasure === "function") {
-        controlsManager.deactivateMeasure("menu");
-      }
-      setCurrentEditingObservationId(null);
-      closeObservationPopup();
-      if (isTabletLandscapeSidebarMode()) {
-        setTabletSidebarCollapsed(true);
-        expandBearEstimatePanel();
-      } else {
-        collapseBearEstimatePanel();
-      }
-      clearEditOriginMarker();
-      // 등록 팝업이 열리는 동안 목록 패널을 숨긴다.
-      if (obsListModule && typeof obsListModule.hidePanel === "function") obsListModule.hidePanel();
-      if (obsRegisterModule) obsRegisterModule.open();
-    },
+    onOpenRegister: function () { openObservationRegistration(); },
     onEditObservation: function (item) {
       openObservationEdit(item);
     },
@@ -7037,6 +7150,28 @@
     }
   }) : null;
 
+  function openObservationRegistration(sdrContext, onCancel) {
+      if (!obsRegisterModule || (sdrContext && obsRegisterModule.isOpen())) return false;
+      if (controlsManager && typeof controlsManager.deactivateMeasure === "function") {
+        controlsManager.deactivateMeasure("menu");
+      }
+      setCurrentEditingObservationId(null);
+      closeObservationPopup();
+      if (isTabletLandscapeSidebarMode()) {
+        setTabletSidebarCollapsed(true);
+        expandBearEstimatePanel();
+      } else {
+        collapseBearEstimatePanel();
+      }
+      clearEditOriginMarker();
+      // 등록 팝업이 열리는 동안 목록 패널을 숨긴다.
+      if (obsListModule && typeof obsListModule.hidePanel === "function") obsListModule.hidePanel();
+      if (sdrContext) return obsRegisterModule.openFromSdr(sdrContext, onCancel);
+      obsRegisterModule.open();
+      return true;
+  }
+  window.BearSdrRegistration = { open: openObservationRegistration };
+
   if (obsRegisterModule) {
     obsRegisterModule.initialize();
     obsRegisterModule.updateLiveData({
@@ -7049,6 +7184,8 @@
   }
   updateRegistrationPreview();
   if (obsListModule) obsListModule.initialize();
+  window.createMobileMapDock({ observations: obsListModule, gps: gpsTrackUi, expandBears: expandBearEstimatePanel, setSidebarCollapsed: setTabletSidebarCollapsed,
+    onBeforeOpen: function () { closeObservationPopup(); controlsManager?.deactivateMeasure?.('menu'); } });
   ensureStartupOverlay();
   if (startupOverlayRetryBtn && startupOverlayRetryBtn.dataset.bound !== "1") {
     startupOverlayRetryBtn.dataset.bound = "1";

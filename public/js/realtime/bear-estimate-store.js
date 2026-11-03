@@ -24,6 +24,9 @@
         bear_code: row.bear_code || payload.bear_code || "-",
         place: row.place || "미지정", owner: row.owner || "미지정",
         admin_region: row.admin_region ?? payload.admin_region ?? previous?.admin_region ?? null,
+        team_id: row.team_id ?? payload.team_id ?? previous?.team_id ?? null,
+        team_name: row.team_name ?? payload.team_name ?? previous?.team_name ?? null,
+        team_color: row.team_color ?? payload.team_color ?? previous?.team_color ?? null,
         lat: Number(row.lat), lng: Number(row.lng), lat_dms: row.lat_dms || null, lng_dms: row.lng_dms || null,
         created_at: row.source_created_at || payload.created_at || previous?.created_at || row.uploaded_at,
         shared_at: row.uploaded_at || previous?.shared_at || "shared",
@@ -77,7 +80,55 @@
     }
     return { load, accept, merge: local => merge(local, rows), raw: () => rows.slice() };
   }
-  const api = { merge, originId, createStore };
+  function createLocalStore(window) {
+    const key = "bearpoint.local-estimates.v1";
+    const native = () => !!window.Capacitor?.isNativePlatform();
+    const database = () => window.BearSQLiteConfig?.dbName || "BearPointData";
+    const sqlite = () => window.Capacitor.Plugins.CapacitorSQLite;
+    const columns = ["id","bear_code","owner","team_id","team_name","team_color","place","admin_region","lat","lng","lat_dms","lng_dms","intersections_count","source_observation_ids","source_observations_json","analysis_rays_json","intersections_json","analysis_options_json","analysis_diagnostics_json","created_at","shared_at"];
+    let queue = Promise.resolve();
+    function serialize(action) { const result = queue.then(action); queue = result.catch(() => {}); return result; }
+    function readWeb() {
+      const rows = JSON.parse(window.localStorage.getItem(key) || "[]");
+      if (!Array.isArray(rows)) throw new Error("저장된 개체 위치 자료 형식이 올바르지 않습니다.");
+      return rows;
+    }
+    async function ready() { if (native() && !(await window.BearSQLite.initialize()).ready) throw new Error("SQLite 연결이 준비되지 않았습니다."); }
+    async function list() {
+      await queue; await ready();
+      return native() ? (await sqlite().query({database:database(),readonly:false,statement:"SELECT * FROM bear_estimates ORDER BY created_at DESC",values:[]})).values || [] : readWeb();
+    }
+    function insert(input) {
+      const row = Object.fromEntries(columns.map(column => [column, input[column] ?? null]));
+      return serialize(async () => {
+        await ready();
+        if (!row.id || !Number.isFinite(row.lat) || !Number.isFinite(row.lng)) throw new Error("개체 위치 정보를 확인해주세요.");
+        if (native()) await sqlite().run({database:database(),readonly:false,transaction:true,
+          statement:`INSERT INTO bear_estimates (${columns.join(",")}) VALUES (${columns.map(()=>"?").join(",")})`,values:columns.map(column=>row[column])});
+        else {
+          const rows=readWeb();if(rows.some(item=>item.id===row.id))throw new Error("이미 저장된 개체 위치입니다.");
+          window.localStorage.setItem(key,JSON.stringify([row,...rows]));
+        }
+        return {...row};
+      });
+    }
+    function markShared(ids, timestamp) {
+      return serialize(async () => {
+        await ready();
+        if (native()) for (const id of ids) await sqlite().run({database:database(),readonly:false,transaction:true,statement:"UPDATE bear_estimates SET shared_at=COALESCE(shared_at,?) WHERE id=?",values:[timestamp,id]});
+        else window.localStorage.setItem(key,JSON.stringify(readWeb().map(row=>ids.includes(String(row.id))?{...row,shared_at:row.shared_at||timestamp}:row)));
+      });
+    }
+    function remove(ids) {
+      return serialize(async () => {
+        await ready();
+        if (native()) for (const id of ids) await sqlite().run({database:database(),readonly:false,transaction:true,statement:"DELETE FROM bear_estimates WHERE id=? AND shared_at IS NULL",values:[id]});
+        else window.localStorage.setItem(key,JSON.stringify(readWeb().filter(row=>!ids.includes(String(row.id))||row.shared_at)));
+      });
+    }
+    return {list,insert,markShared,remove};
+  }
+  const api = { merge, originId, createStore, createLocalStore };
   if (typeof module === "object" && module.exports) module.exports = api;
   else root.BearEstimateStore = api;
 })(typeof window !== "undefined" ? window : globalThis);

@@ -17,6 +17,9 @@ CREATE TABLE IF NOT EXISTS shared_observations (
 CREATE INDEX IF NOT EXISTS shared_observations_updated ON shared_observations(updated_at);
 ALTER TABLE shared_observations ADD COLUMN IF NOT EXISTS sync_mutation_id TEXT;
 ALTER TABLE shared_observations ADD COLUMN IF NOT EXISTS sync_mutation_hash TEXT;
+ALTER TABLE shared_observations ADD COLUMN IF NOT EXISTS team_id TEXT;
+ALTER TABLE shared_observations ADD COLUMN IF NOT EXISTS team_name TEXT;
+ALTER TABLE shared_observations ADD COLUMN IF NOT EXISTS team_color TEXT;
 `;
 
 function bad(message, statusCode = 400) { return Object.assign(new Error(message), { statusCode }); }
@@ -34,8 +37,13 @@ function normalize(body) {
     return value;
   };
   const detectors = data.detectors == null ? [] : data.detectors;
+  const team = { team_id: data.team_id || null, team_name: data.team_name || null, team_color: data.team_color || null };
+  if (Object.values(team).some(Boolean) && (typeof team.team_id !== "string" || !/^[a-zA-Z0-9_-]{1,100}$/.test(team.team_id)
+    || typeof team.team_name !== "string" || !team.team_name.trim() || team.team_name.length > 30
+    || typeof team.team_color !== "string" || !/^#[0-9A-Fa-f]{6}$/.test(team.team_color))) throw bad("팀 정보를 확인해주세요.");
   if (!Array.isArray(detectors) || detectors.length > 3 || detectors.some(item => !item || typeof item !== "object" || Array.isArray(item))) throw bad("감지기 정보를 확인해주세요.");
   return {
+    ...team,
     bear_code: text("bear_code", 100, true), owner: text("owner", 100, true),
     place: text("place", 150, true), admin_region: text("admin_region", 300, false) || null,
     lat: number("lat", -90, 90), lng: number("lng", -180, 180), heading: number("heading", 0, 359.999999999),
@@ -65,10 +73,10 @@ function createObservationStore(query = pgQuery) {
     // Insert-only, including tombstones: retries never overwrite an existing
     // observation or resurrect an administrator-deleted observation.
     const result = await query(`INSERT INTO shared_observations
-      (id,bear_code,owner,place,admin_region,lat,lng,heading,detectors_json,created_at)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10)
+      (id,bear_code,owner,place,admin_region,lat,lng,heading,detectors_json,created_at,team_id,team_name,team_color)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10,$11,$12,$13)
       ON CONFLICT (id) DO NOTHING RETURNING *`,
-    [id, data.bear_code, data.owner, data.place, data.admin_region, data.lat, data.lng, data.heading, JSON.stringify(data.detectors), created.toISOString()]);
+    [id, data.bear_code, data.owner, data.place, data.admin_region, data.lat, data.lng, data.heading, JSON.stringify(data.detectors), created.toISOString(), data.team_id, data.team_name, data.team_color]);
     if (result.rows.length) return { item: result.rows[0], alreadyExists: false };
     const existing = await query("SELECT * FROM shared_observations WHERE id=$1", [id]);
     return { item: existing.rows[0], alreadyExists: true };

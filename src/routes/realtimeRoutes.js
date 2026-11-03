@@ -14,7 +14,7 @@ function createRealtimeRouter() {
   router.get("/bear-entities", async (req, res) => {
     try {
       const result = await pgQuery(
-        "SELECT id, bear_code, birth_year, sex FROM bear_entities WHERE use_yn = TRUE AND is_active = TRUE ORDER BY bear_code"
+        "SELECT id, bear_code, birth_year, sex, frequency_a, frequency_b, frequency_c, frequency_applied_at FROM bear_entities WHERE use_yn = TRUE AND is_active = TRUE ORDER BY bear_code"
       );
       res.json({ ok: true, items: result.rows });
     } catch (error) {

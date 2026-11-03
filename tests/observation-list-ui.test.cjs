@@ -20,9 +20,14 @@ test("animal detail uses compact full-width rows and retains export/delete permi
   const end = clientSource.indexOf("  const analysisGuideLayer", start);
   vm.runInContext(clientSource.slice(start, end), context);
   const item = { bear_code: "005", owner: '긴 등록자 <script>', place: "긴 지명", admin_region: "전라남도 구례군 토지면",
+    team_name: '광역팀 <test>', team_color: '#9333EA',
     lat: 35.2324, lng: 127.6597, created_at: "2026-10-29 10:00:00" };
   const html = context.buildBearEstimatePopupHtml(item);
   assert.match(html, /obs-popup-card--estimate/);
+  assert.match(html, /광역팀 &lt;test&gt;/);
+  assert.match(html, /--team-color:#9333EA/);
+  assert.doesNotMatch(html.split('<details')[0], /<th scope="row">위경도/);
+  assert.match(html.split('<details')[1], /<th scope="row">위경도/);
   assert.doesNotMatch(html, /obs-popup-card__grid/);
   assert.match(html, /전라남도 구례군 토지면/);
   assert.match(html, /&lt;script&gt;/); assert.doesNotMatch(html, /<script>/);
@@ -41,6 +46,7 @@ test("observation detail table preserves long text, detector rows and zero headi
   const end = source.indexOf("  // SQLite row/", start);
   vm.runInContext(source.slice(start, end), context);
   const item = { place: "표 테스트", bearCode: "KF-58", owner: '긴 담당자 <script>alert(1)</script>',
+    team_name: '구례팀 <test>', team_color: '#16A34A',
     adminRegion: "전라남도 구례군 토지면 긴 위치 이름", lat: 35, lng: 127, heading: 0,
     createdAt: "2026-10-29 10:00:00", shareState: "shared",
     detectors: [{ detectorName: '긴 감지기 이름 "A"', signalStrength: "P3" }, { detectorName: "B", signalStrength: "P5" }] };
@@ -51,11 +57,15 @@ test("observation detail table preserves long text, detector rows and zero headi
   assert.doesNotMatch(html, /<script>/);
   assert.match(html, /감지기 1/); assert.match(html, /감지기 2/);
   assert.match(html, /감도 P3/);
-  assert.match(html, /KF-58 · 0<\/span>/);
+  assert.doesNotMatch(html, /코드·방향|KF-58 · 0/);
+  assert.match(html, /구례팀 &lt;test&gt;/);
+  assert.match(html, /--team-color:#16A34A/);
+  assert.match(html, /좌표·방향/);
+  assert.match(html, /class="obs-detail-heading" title="방향각">0°/);
   assert.match(html, /<details class="obs-detail-more"><summary>등록정보/);
   assert.doesNotMatch(html, /<details[^>]*\sopen[\s>]/);
   assert.doesNotMatch(html, /관리자 페이지/);
-  assert.match(html, /data-observation-action="delete"/);
+  assert.doesNotMatch(html, /data-observation-action="delete"/);
   assert.match(html, /data-observation-action="edit"/);
   assert.match(context.buildObservationPopupHtml({ ...item, shareState: "local" }), /data-observation-action="edit"/);
 });

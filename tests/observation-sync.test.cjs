@@ -17,6 +17,8 @@ function fixture(native = false) {
   vm.runInNewContext(fs.readFileSync(path.join(__dirname, "../public/js/db/sqlite-migrations.js"), "utf8"), { window: config });
   config.BearSQLiteConfig.migrations[14].forEach(sql => db.exec(sql));
   config.BearSQLiteConfig.migrations[16].forEach(sql => db.exec(sql));
+  // Older rows keep null team values when upgrading.
+  config.BearSQLiteConfig.migrations[18].filter(sql => sql.startsWith("ALTER TABLE observations ")).forEach(sql => db.exec(sql));
   let transport = async () => { throw new Error("offline"); };
   function boot(runtimeConfig = {}) {
     const window = { Capacitor: { isNativePlatform: () => native, Plugins: { CapacitorSQLite: {

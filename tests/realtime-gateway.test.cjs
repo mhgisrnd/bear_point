@@ -51,3 +51,52 @@ test("upstream failure becomes an explicit API error, not an empty successful li
     const body = await result.json(); assert.equal(body.ok, false); assert.ok(body.message);
   } finally { await new Promise(resolve => server.close(resolve)); }
 });
+
+test("team gateway reaches administrator catalog beneath the configured context and allows only reads", async () => {
+  let request;
+  const app=express();app.use('/api/app-realtime',createAppRealtimeRouter({apiBase:'https://admin.test/bear/api/realtime',fetchImpl:async(url,options)=>{
+    request={url,options};return {status:200,json:async()=>({ok:true,items:[]})};
+  }}));
+  const server=app.listen(0,'127.0.0.1');await new Promise(resolve=>server.once('listening',resolve));
+  try {
+    const url=`http://127.0.0.1:${server.address().port}/api/app-realtime/teams`;
+    const result=await fetch(url,{headers:{Cookie:'private-session'}});
+    assert.equal(result.status,200);assert.equal(request.url,'https://admin.test/bear/api/teams');
+    assert.deepEqual(Object.keys(request.options.headers),['Accept']);
+    assert.equal((await fetch(url,{method:'POST'})).status,404);
+  } finally {await new Promise(resolve=>server.close(resolve));}
+});
+
+test("local web team override does not change realtime or native runtime endpoints", async () => {
+  const { getRuntimeConfig } = require('../src/config/runtime-config');
+  const config=getRuntimeConfig({APP_API_ENV:'dev',REALTIME_API_BASE_DEV:'https://remote.test/api/realtime',WEB_TEAMS_API_URL:'http://localhost:9090/api/teams'});
+  assert.equal(config.realtimeApiBase,'https://remote.test/api/realtime');
+  assert.equal(config.webTeamsApiUrl,'http://localhost:9090/api/teams');
+  assert.equal(getRuntimeConfig({APP_API_ENV:'dev',REALTIME_API_BASE_DEV:'https://remote.test/base/api/realtime'}).webTeamsApiUrl,'https://remote.test/base/api/teams');
+  const calls=[];
+  const app=express();app.use(createAppRealtimeRouter({apiBase:config.realtimeApiBase,teamsApiUrl:config.webTeamsApiUrl,fetchImpl:async url=>{
+    calls.push(url);return {status:200,json:async()=>({ok:true,items:[]})};
+  }}));
+  const server=app.listen(0,'127.0.0.1');await new Promise(resolve=>server.once('listening',resolve));
+  try {
+    const base=`http://127.0.0.1:${server.address().port}`;
+    await fetch(base+'/teams');await fetch(base+'/bear-estimates');
+    assert.equal(calls[0],'http://localhost:9090/api/teams');
+    assert.equal(calls[1],'https://remote.test/api/realtime/bear-estimates?limit=200');
+    const runtimeSource=fs.readFileSync(path.join(__dirname,'../scripts/generate-runtime-config.js'),'utf8');
+    assert.equal(runtimeSource.includes('webTeamsApiUrl'),false);
+  } finally {await new Promise(resolve=>server.close(resolve));}
+});
+
+
+test("movement gateway sends GPS records only to its configured administrator endpoint",async()=>{
+ const calls=[];const app=express();app.use(express.json({limit:'16mb'}));
+ app.use('/api/app-realtime',createAppRealtimeRouter({apiBase:'https://remote.test/api/realtime',movementApiUrl:'https://admin.test/base/api/realtime/movement-tracks',fetchImpl:async(url,options)=>{calls.push({url,options});return {status:200,json:async()=>({ok:true,id:'track'})};}}));
+ const server=app.listen(0,'127.0.0.1');await new Promise(resolve=>server.once('listening',resolve));
+ const url=`http://127.0.0.1:${server.address().port}/api/app-realtime/movement-tracks`;
+ try {
+  const response=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json',Cookie:'local-only'},body:JSON.stringify({id:'track',points:[]})});
+  assert.equal(response.status,200);assert.equal(calls[0].url,'https://admin.test/base/api/realtime/movement-tracks');assert.equal(calls[0].options.headers.Cookie,undefined);
+  assert.equal((await fetch(url)).status,404);
+ }finally{await new Promise(resolve=>server.close(resolve));}
+});

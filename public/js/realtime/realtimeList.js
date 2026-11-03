@@ -186,6 +186,9 @@
               ? String(item.lat_dms).trim()
               : decimalToDms(lat, false),
         admin_region: item.admin_region || item.adminRegion || (item.payload && item.payload.admin_region) || null,
+        team_id: item.team_id ?? item.payload?.team_id ?? null,
+        team_name: item.team_name ?? item.payload?.team_name ?? null,
+        team_color: item.team_color ?? item.payload?.team_color ?? null,
         lonDms:
           item.lonDms != null && String(item.lonDms).trim()
             ? String(item.lonDms).trim()
