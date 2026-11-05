@@ -8,7 +8,7 @@ import com.getcapacitor.BridgeActivity;
 public class MainActivity extends BridgeActivity {
 	private static final String TAG = "BearPointMain";
 	private static final long LAUNCH_SPLASH_MIN_DURATION_MS = 1500L;
-	private static final String WEB_ASSET_REVISION = "1.0.4-ui42";
+	private static final String WEB_ASSET_REVISION = "1.0.4-ui44";
 
 	@Override
 	protected void load() {

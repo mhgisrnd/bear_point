@@ -23,6 +23,17 @@ function environment(native) {
   return {win,db,web};
 }
 for (const native of [false,true]) {
+  test(`${native?'SQLite':'web'}: manual observation identity validates team metadata without creating a fixed profile`,async t=>{
+    const {win,db}=environment(native);t.after(()=>db.close());
+    const store=createStore(win);await store.load();
+    const identity=await store.manualIdentity(' Field owner ','gurye');
+    assert.deepEqual(identity,{owner:'Field owner',team_id:'gurye',team_name:'구례팀',team_color:'#16A34A'});
+    assert.equal(store.snapshot().profile,null);
+    const reboot=createStore(win);await reboot.load();assert.equal(reboot.snapshot().profile,null);
+    await assert.rejects(()=>store.manualIdentity('','gurye'));
+    await assert.rejects(()=>store.manualIdentity('Owner','missing'));
+    await assert.rejects(()=>store.manualIdentity('x'.repeat(101),'gurye'));
+  });
   test(`${native?'SQLite':'web'}: tracking options persist offline independently of profile and reject invalid/failed saves`,async t=>{
     const {win,db}=environment(native);t.after(()=>db.close());
     const store=createStore(win);await store.load();

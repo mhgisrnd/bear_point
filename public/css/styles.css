@@ -4,6 +4,7 @@
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --safe-left: env(safe-area-inset-left, 0px);
 }
+.leaflet-control-locate-btn[aria-busy="true"] { box-shadow: 0 0 0 2px #93c5fd, 0 2px 8px #0003 !important; }
 
 /* 앱 UX: 터치 하이라이트·포커스링·텍스트 선택 제거 */
 * {

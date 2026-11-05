@@ -116,7 +116,15 @@
       if (!team) throw new Error("선택한 팀을 사용할 수 없습니다. 설정에서 팀을 다시 선택해주세요.");
       return { owner: profile.owner, team_id: team.id, team_name: team.name, team_color: team.color };
     }
-    return { load, snapshot, refresh, save, saveTracking, identity };
+    async function manualIdentity(owner, teamId) {
+      await load();
+      const name = typeof owner === "string" ? owner.trim() : "";
+      if (!name || name.length > 100 || name.includes("\0")) throw new Error("담당자 이름을 1~100자로 입력해주세요.");
+      const team = catalog.items.find(item => item.id === teamId);
+      if (!team) throw new Error("소속 팀을 선택해주세요.");
+      return { owner: name, team_id: team.id, team_name: team.name, team_color: team.color };
+    }
+    return { load, snapshot, refresh, save, saveTracking, identity, manualIdentity };
   }
   const api = { DEFAULT_TEAMS, DEFAULT_TRACKING, normalizeTracking, normalizeTeams, validProfile, createStore };
   if (typeof module === "object" && module.exports) module.exports = api;

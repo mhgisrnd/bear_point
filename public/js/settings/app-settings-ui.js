@@ -67,9 +67,12 @@
     const options = store.snapshot().tracking;
     trackingForm.elements.interval.value = String(options.interval_seconds);
     trackingMessage.textContent = "";
-    tabs[1].disabled = required || !loaded;
+    tabs[1].disabled = !loaded;
   }
-  let loaded = false, required = true, saving = false, refreshing = false, selection = "";
+  let loaded = false, required = true, saving = false, refreshing = false, selection = "", closing = false, deferred = false;
+  function paintCloseButtons() {
+    closeButtons.forEach(button => { button.hidden = required && !button.classList.contains("app-settings-close"); });
+  }
   function paintTeams() {
     const state = store.snapshot();
     grid.replaceChildren(...state.items.map(team => {
@@ -84,16 +87,25 @@
     else if (selection && !state.items.some(team => team.id === selection)) message.textContent = "이전에 선택한 팀이 사용 중지되었거나 목록에서 제외되었습니다. 팀을 다시 선택해주세요.";
     saveButton.disabled = !loaded || saving || !state.items.length;
   }
-  function close() {
-    if (required || saving) return false;
-    dialog.close(); trigger.focus(); return true;
+  async function close() {
+    if (saving || closing || !dialog.open) return false;
+    closing = true;
+    try {
+      if (required) {
+        const options = { title: "시작 설정", message: "담당자와 소속 팀을 나중에 설정하시겠습니까?", detail: "관측점 등록 시 담당자를 입력하고 팀을 선택할 수 있습니다.", confirmText: "나중에 설정", cancelText: "계속 설정" };
+        const accepted = window.__bpShowConfirmDialog ? await window.__bpShowConfirmDialog(options) : window.confirm(options.message);
+        if (!accepted) return false;
+        deferred = true;
+      }
+      dialog.close(); trigger.focus(); return true;
+    } finally { closing = false; }
   }
   async function open() {
     if (window.BearStartupReady) await window.BearStartupReady;
     if (dialog.open) return;
     message.textContent = "";
     required = !store.snapshot().profile;
-    closeButtons.forEach(button => { button.hidden = required; });
+    paintCloseButtons();
     dialog.querySelector("h2").textContent = required ? "시작 설정" : "설정";
     selectTab(tabs[0]);
     saveButton.textContent = required ? "저장하고 시작" : "저장";
@@ -121,17 +133,17 @@
       const state = store.snapshot();
       required = !state.profile;
       paintTracking();
-      closeButtons.forEach(button => { button.hidden = required; });
+      paintCloseButtons();
       dialog.querySelector("h2").textContent = required ? "시작 설정" : "설정";
       saveButton.textContent = required ? "저장하고 시작" : "저장";
       trigger.dataset.required = String(!state.profile);
       trigger.title = state.profile ? `${state.profile.owner} · ${state.profile.team_name} 설정` : "담당자·팀 설정";
       if (state.profile) window.dispatchEvent(new CustomEvent("bearpoint:profile-changed", { detail: state.profile }));
       if (!state.profile) {
-        if (!dialog.open) await open();
+        if (!dialog.open && !deferred) await open();
         else paintTeams();
       } else if (dialog.open) {
-        required = false; closeButtons.forEach(button => { button.hidden = false; });
+        required = false; paintCloseButtons();
         form.elements.owner.value = state.profile.owner; selection = state.profile.team_id; paintTeams();
       }
       // Network refresh never delays reading the local profile or opening the app.
@@ -139,14 +151,15 @@
     } catch (error) {
       loaded = false; trigger.dataset.required = "true";
       if (window.BearStartupReady) await window.BearStartupReady;
-      if (!dialog.open) { dialog.showModal(); closeButtons.forEach(button => { button.hidden = true; }); }
+      required = true; paintCloseButtons();
+      if (!dialog.open && !deferred) dialog.showModal();
       saveButton.disabled = true; message.textContent = error.message;
       refreshButton.textContent = "저장소 다시 연결";
     }
   }
   form.addEventListener("change", event => { if (event.target.name === "team") selection = event.target.value; });
   trackingForm.addEventListener("submit", async event => {
-    event.preventDefault(); if (!loaded || saving || required) return;
+    event.preventDefault(); if (!loaded || saving) return;
     saving = true; const button = trackingForm.querySelector('[type="submit"]'); button.disabled = true;
     let saved = false;
     try {

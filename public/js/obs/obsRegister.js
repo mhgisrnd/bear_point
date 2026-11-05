@@ -48,6 +48,7 @@ window.createObsRegisterModule = function createObsRegisterModule({
   }
   var regOwnerEl = document.getElementById("reg-owner");
   var regTeamEl = document.getElementById("reg-team");
+  var regTeamSelectEl = document.getElementById("reg-team-select");
   var regCoordEl = document.getElementById("reg-coord");
   var regHeadingEl = document.getElementById("reg-heading");
   var regBearEl = document.getElementById("reg-bear");
@@ -251,6 +252,7 @@ window.createObsRegisterModule = function createObsRegisterModule({
 
   function clearCoreFieldErrors() {
     clearCoreFieldError(regOwnerEl);
+    clearCoreFieldError(regTeamSelectEl);
     clearCoreFieldError(regPlaceEl);
     clearCoreFieldError(regCoordEl);
     clearCoreFieldError(regHeadingEl);
@@ -655,13 +657,43 @@ window.createObsRegisterModule = function createObsRegisterModule({
     if (!regOwnerEl) return;
     if (formMode !== "create") return;
     var profile = window.BearAppSettings?.getProfile();
-    regOwnerEl.value = profile?.owner || "";
+    regOwnerEl.readOnly = !!profile;
+    if (profile) regOwnerEl.value = profile.owner || "";
+    var identityRow = regOwnerEl.closest(".obs-reg-identity");
+    if (identityRow) {
+      identityRow.classList.toggle("is-manual", !profile);
+      identityRow.title = profile ? "담당자·팀은 상단 설정에서 변경할 수 있습니다" : "담당자를 입력하고 소속 팀을 선택해주세요";
+      identityRow.setAttribute("aria-label", profile ? "설정된 담당자와 팀" : "담당자와 소속 팀 입력");
+    }
+    if (regTeamEl) regTeamEl.hidden = !profile;
+    if (regTeamSelectEl) {
+      regTeamSelectEl.hidden = !!profile;
+      var selected = regTeamSelectEl.value;
+      regTeamSelectEl.replaceChildren(new Option("팀 선택", ""));
+      (window.BearAppSettings?.store?.snapshot()?.items || []).forEach(function (team) {
+        regTeamSelectEl.add(new Option(team.name, team.id));
+      });
+      regTeamSelectEl.value = selected;
+    }
     fitFixedOwnerField();
-    var team = (window.BearAppSettings?.store?.snapshot()?.items || []).find(item => item.id === profile?.team_id);
+    var team = (window.BearAppSettings?.store?.snapshot()?.items || []).find(item => item.id === (profile?.team_id || regTeamSelectEl?.value));
     updateTeamLabel(team?.name || profile?.team_name || "", team?.color || profile?.team_color);
   }
   window.addEventListener("bearpoint:profile-changed", applyLastOwnerDefault);
   window.addEventListener("bearpoint:teams-changed", applyLastOwnerDefault);
+  async function getRegistrationIdentity() {
+    if (window.BearAppSettings?.getProfile()) return window.BearAppSettings.requireIdentity();
+    var owner = regOwnerEl ? regOwnerEl.value.trim() : "";
+    if (!owner || owner.length > 100) {
+      markCoreFieldError(regOwnerEl, "담당자 이름을 1~100자로 입력해주세요.");
+      throw new Error("담당자 이름을 1~100자로 입력해주세요.");
+    }
+    if (!regTeamSelectEl?.value) {
+      markCoreFieldError(regTeamSelectEl, "소속 팀을 선택해주세요.");
+      throw new Error("소속 팀을 선택해주세요.");
+    }
+    return window.BearAppSettings.store.manualIdentity(owner, regTeamSelectEl.value);
+  }
   function updateTeamLabel(name, color) {
     if (!regTeamEl) return;
     regTeamEl.value = name;
@@ -783,7 +815,7 @@ window.createObsRegisterModule = function createObsRegisterModule({
     isSubmitting = true;
     try {
       clearAllValidationErrors();
-      var identity = await window.BearAppSettings.requireIdentity();
+      var identity = await getRegistrationIdentity();
       var observation = buildObservationPayload(identity);
       await attachBoundary(observation);
       var detectors = collectDetectorRows();
@@ -1514,6 +1546,10 @@ window.createObsRegisterModule = function createObsRegisterModule({
 
     if (regPlaceEl) regPlaceEl.value = String(target.place || target.name || "").trim();
     if (regOwnerEl) regOwnerEl.value = String(target.owner || "").trim();
+    if (regOwnerEl) regOwnerEl.readOnly = true;
+    if (regTeamSelectEl) regTeamSelectEl.hidden = true;
+    if (regTeamEl) regTeamEl.hidden = false;
+    regOwnerEl?.closest(".obs-reg-identity")?.classList.remove("is-manual");
     fitFixedOwnerField();
     updateTeamLabel(target.team_name || "미지정", target.team_color);
     if (regBearEl) regBearEl.value = String(target.bearCode || target.bear_code || "").trim();
@@ -1702,8 +1738,14 @@ window.createObsRegisterModule = function createObsRegisterModule({
     if (regOwnerEl) {
       regOwnerEl.addEventListener("input", function() {
         clearCoreFieldError(regOwnerEl);
+        fitFixedOwnerField();
       });
     }
+    if (regTeamSelectEl) regTeamSelectEl.addEventListener("change", function() {
+      clearCoreFieldError(regTeamSelectEl);
+      var team = (window.BearAppSettings?.store?.snapshot()?.items || []).find(item => item.id === regTeamSelectEl.value);
+      updateTeamLabel(team?.name || "", team?.color);
+    });
 
     if (regPlaceEl) {
       regPlaceEl.addEventListener("input", function() {

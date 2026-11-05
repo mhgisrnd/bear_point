@@ -4,8 +4,8 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover" />
   <title>지리산 반달곰 위치 분석</title>
-  <script src="js/startup-diagnostics.js?v=1.0.4-ui42"></script>
-  <script src="js/native-plugin-compat.js?v=1.0.4-ui42"></script>
+  <script src="js/startup-diagnostics.js?v=1.0.4-ui44"></script>
+  <script src="js/native-plugin-compat.js?v=1.0.4-ui44"></script>
 
   <link rel="stylesheet" href="vendor/ol/ol.css" />
   <link rel="stylesheet" href="css/styles.css" />
@@ -115,8 +115,8 @@
           <!-- 설정에서 가져온 고정 등록 정보 -->
           <div class="obs-reg-identity" role="group" aria-label="설정된 담당자와 팀" title="담당자·팀은 상단 설정에서 변경할 수 있습니다">
             <label class="obs-reg-identity-label" for="reg-owner">담당자</label>
-            <textarea class="obs-reg-identity-owner" id="reg-owner" rows="1" readonly aria-label="담당자, 설정에서 지정한 고정값" placeholder="담당자 설정"></textarea>
-            <div class="obs-reg-identity-team"><label class="obs-reg-identity-label" for="reg-team">팀</label><div class="obs-reg-team-badge"><span class="obs-reg-team-dot" aria-hidden="true"></span><input class="obs-reg-identity-team-input" id="reg-team" type="text" readonly aria-label="소속 팀, 설정에서 지정한 고정값" placeholder="팀 선택" /></div></div>
+            <textarea class="obs-reg-identity-owner" id="reg-owner" rows="1" maxlength="100" readonly aria-label="담당자" placeholder="담당자 입력"></textarea>
+            <div class="obs-reg-identity-team"><label class="obs-reg-identity-label" for="reg-team">팀</label><div class="obs-reg-team-badge"><span class="obs-reg-team-dot" aria-hidden="true"></span><input class="obs-reg-identity-team-input" id="reg-team" type="text" readonly aria-label="소속 팀" placeholder="팀 선택" /><select id="reg-team-select" class="obs-reg-identity-team-input obs-reg-team-select" aria-label="소속 팀 선택" hidden><option value="">팀 선택</option></select></div></div>
           </div>
 
           <!-- 명칭 -->

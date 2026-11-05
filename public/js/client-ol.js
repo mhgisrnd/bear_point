@@ -689,6 +689,8 @@
 
   let locateBtnEl = null;
   let watchId = null;
+  let myLocationGeneration = 0;
+  let myLocationStarting = false;
   let isMyVisible = false;
   let didMoveToMe = false;
   let lastLatLng = null;
@@ -4717,6 +4719,9 @@
 
   function setLocateButtonActive(active) {
     if (!locateBtnEl) return;
+    locateBtnEl.setAttribute("aria-busy", "false");
+    locateBtnEl.setAttribute("aria-pressed", String(!!active));
+    locateBtnEl.title = active ? "내 위치 끄기" : "내 위치 켜기";
     if (active) {
       locateBtnEl.classList.add("is-active");
       locateBtnEl.style.background = "#2b7cff";
@@ -4882,6 +4887,8 @@
   }
 
   function stopMyLocationTracking(showStatus) {
+    myLocationGeneration += 1;
+    myLocationStarting = false;
     stopCompass();
     if (watchId !== null) {
       navigator.geolocation.clearWatch(watchId);
@@ -4923,46 +4930,71 @@
 
   // 위치 추적 시작: 빠른 1회 획득 + watchPosition 지속 추적.
   async function startMyLocationTracking() {
+    const generation = ++myLocationGeneration;
+    myLocationStarting = true;
     if (USE_CAPTURE_MOCK_LOCATION) {
-      updateMyLocation(CAPTURE_MOCK_LAT_LNG[0], CAPTURE_MOCK_LAT_LNG[1]);
       isMyVisible = true;
+      updateMyLocation(CAPTURE_MOCK_LAT_LNG[0], CAPTURE_MOCK_LAT_LNG[1]);
+      myLocationStarting = false;
       setLocateButtonActive(true);
       return;
     }
 
     if (!navigator.geolocation) {
+      myLocationStarting = false;
       if (statusEl) statusEl.textContent = "🔴 위치 기능 미지원 브라우저";
       return;
     }
 
-    await startCompass();
-
+    // A failed orientation sensor must not prevent acquiring a GPS position.
+    void startCompass().then(function () {
+      if (generation !== myLocationGeneration && !myLocationStarting && watchId === null) stopCompass();
+    }).catch(function (error) { console.warn("나침반 시작 실패:", error); });
+    if (locateBtnEl) {
+      locateBtnEl.setAttribute("aria-busy", "true");
+      locateBtnEl.title = "현재 위치 수신 중 · 다시 누르면 취소";
+    }
 
     const optsFast = { enableHighAccuracy: false, timeout: 30000, maximumAge: 15000 };
     const optsWatch = { enableHighAccuracy: true, timeout: 30000, maximumAge: 5000 };
 
-    navigator.geolocation.getCurrentPosition(function (pos) {
+    const onPosition = function (pos) {
+      if (generation !== myLocationGeneration) return;
+      if (!Number.isFinite(pos?.coords?.latitude) || !Number.isFinite(pos?.coords?.longitude)) return;
+      isMyVisible = true;
+      myLocationStarting = false;
       updateGpsHeadingSample(pos.coords);
       updateMyLocation(pos.coords.latitude, pos.coords.longitude);
-      isMyVisible = true;
       setLocateButtonActive(true);
-    }, function () {
-      // 최초 실패는 watch에서 재시도
-    }, optsFast);
-
-    watchId = navigator.geolocation.watchPosition(function (pos) {
-      updateGpsHeadingSample(pos.coords);
-      updateMyLocation(pos.coords.latitude, pos.coords.longitude);
-      isMyVisible = true;
-      setLocateButtonActive(true);
-    }, function (err) {
+    };
+    try {
+      navigator.geolocation.getCurrentPosition(onPosition, function () {
+        // The continuous request can recover when the initial fix fails.
+      }, optsFast);
+      watchId = navigator.geolocation.watchPosition(onPosition, function (err) {
+        if (generation !== myLocationGeneration) return;
+        if (err.code === 1) {
+          stopMyLocationTracking(false);
+          if (statusEl) statusEl.textContent = "위치 권한이 없습니다. 기기 설정에서 BearMap의 위치 권한을 허용해주세요.";
+          return;
+        }
+        // TIMEOUT/POSITION_UNAVAILABLE can be temporary. Keep the watch and last fix.
+        if (locateBtnEl) {
+          locateBtnEl.setAttribute("aria-busy", "true");
+          locateBtnEl.title = "위치 수신 대기 · 기기의 위치 기능을 확인해주세요";
+        }
+        const text = "위치 수신 대기 중입니다. 기기의 위치 기능과 GPS 수신 상태를 확인해주세요.";
+        if (statusEl && statusEl.textContent !== text) statusEl.textContent = text;
+      }, optsWatch);
+    } catch (error) {
+      if (generation !== myLocationGeneration) return;
       stopMyLocationTracking(false);
-      if (statusEl) statusEl.textContent = "🔴 위치 오류: " + err.message;
-    }, optsWatch);
+      if (statusEl) statusEl.textContent = "위치를 시작하지 못했습니다: " + error.message;
+    }
   }
 
   async function toggleMyLocation() {
-    if (isMyVisible || watchId !== null) {
+    if (myLocationStarting || isMyVisible || watchId !== null) {
       stopMyLocationTracking(true);
       return;
     }

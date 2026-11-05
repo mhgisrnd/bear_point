@@ -3269,6 +3269,13 @@
 .obs-reg-team-badge { --team-color: #7e90a2; --team-background: #7e90a218; --team-border: #7e90a255; display: flex; align-items: center; gap: 5px; flex: 1; min-width: 0; height: 25px; padding: 0 6px; border: 1px solid var(--team-border); border-radius: 6px; background: var(--team-background); box-sizing: border-box; }
 .obs-reg-team-dot { width: 6px; height: 6px; flex: 0 0 6px; border-radius: 50%; background: var(--team-color); }
 .obs-reg-team-badge .obs-reg-identity-team-input { height: 23px; padding: 0; color: #30475c; font-weight: 700; }
+.obs-reg-identity.is-manual { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 8px; background: #fff; }
+.obs-reg-identity.is-manual .obs-reg-identity-owner { width: 100%; min-height: 28px; cursor: text; }
+.obs-reg-identity.is-manual .obs-reg-identity-team { grid-column: 1 / -1; width: 100%; flex-basis: auto; margin: 0; padding: 0; border: 0; gap: 8px; }
+.obs-reg-identity.is-manual .obs-reg-team-badge { min-height: 30px; }
+.obs-reg-identity.is-manual .obs-reg-team-select { height: 28px; font-size: 14px; }
+.obs-reg-team-select { appearance: auto; cursor: pointer !important; }
+.obs-reg-team-select[hidden] { display: none !important; }
 .analysis-registration-identity .obs-reg-identity-owner { flex-basis: 64px; }
 .analysis-registration-identity .obs-reg-identity-team { flex-basis: 98px; padding-left: 6px; gap: 3px; }
 .obs-reg-row.obs-reg-coordinate-row { display: grid; grid-template-columns: 62px minmax(0, 1fr); align-items: center; }
