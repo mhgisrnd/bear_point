@@ -2,15 +2,8 @@
   "use strict";
   const floor = -120;
 
-  function geometry(width) {
-    return { left: 48, right: width - 14, top: 28, bottom: 208 };
-  }
-
-  function frequencyAtX(x, width, centerHz, rateHz) {
-    if (!Number.isFinite(x) || !Number.isFinite(centerHz) || !Number.isFinite(rateHz) || rateHz <= 0) return null;
-    const { left, right } = geometry(Math.max(240, width));
-    const fraction = Math.max(0, Math.min(1, (x - left) / (right - left)));
-    return centerHz + (fraction - .5) * rateHz;
+  function geometry(width, height) {
+    return { left: 48, right: width - 14, top: 24, bottom: height - 36 };
   }
 
   function describe(bins, centerHz, rateHz) {
@@ -28,17 +21,17 @@
       peakHz: centerHz + (peak - middle) * rateHz / bins.length, peakDbfs: bins[peak] };
   }
 
-  function draw(canvas, data, centerHz, rateHz, state, listenHz, selectedHz) {
+  function draw(canvas, data, centerHz, rateHz, state, listenHz) {
     const ctx = typeof canvas.getContext === "function" ? canvas.getContext("2d") : null;
     if (!ctx) return;
-    const width = Math.max(240, canvas.clientWidth || 500), height = 240;
+    const width = Math.max(240, canvas.clientWidth || 500), height = Math.max(120, canvas.clientHeight || 240);
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     const pixelWidth = Math.round(width * dpr), pixelHeight = Math.round(height * dpr);
     if (canvas.width !== pixelWidth) canvas.width = pixelWidth;
     if (canvas.height !== pixelHeight) canvas.height = pixelHeight;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.fillStyle = "#f8fafc"; ctx.fillRect(0, 0, width, height);
-    const { left, right, top, bottom } = geometry(width);
+    const { left, right, top, bottom } = geometry(width, height);
     const span = right - left, y = db => top + Math.max(0, Math.min(120, -db)) / 120 * (bottom - top);
     ctx.font = "11px system-ui, sans-serif";
     ctx.fillStyle = "#526477"; ctx.textAlign = "left"; ctx.fillText("dBFS/bin", 6, 15);
@@ -80,15 +73,8 @@
     ctx.fillStyle = "#087b9118"; ctx.fill();
     const peakX = left + span * data.peakIndex / data.bins.length;
     ctx.beginPath(); ctx.arc(peakX, y(data.peakDbfs), 3, 0, Math.PI * 2); ctx.fillStyle = "#b45309"; ctx.fill();
-    if (Number.isFinite(selectedHz) && rateHz > 0 &&
-        selectedHz >= centerHz - rateHz / 2 && selectedHz <= centerHz + rateHz / 2) {
-      const x = left + span * (.5 + (selectedHz - centerHz) / rateHz);
-      ctx.strokeStyle = "#7c3aed"; ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.moveTo(x, top); ctx.lineTo(x, bottom); ctx.stroke();
-      ctx.fillStyle = "#7c3aed"; ctx.textAlign = "center";
-      ctx.fillText(`${(selectedHz / 1e6).toFixed(3)} MHz`, Math.max(left + 40, Math.min(right - 40, x)), top - 8);
-    }
+
   }
 
-  window.SdrSpectrumPlot = { describe, draw, frequencyAtX };
+  window.SdrSpectrumPlot = { describe, draw };
 })();

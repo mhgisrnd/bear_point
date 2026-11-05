@@ -107,6 +107,29 @@ test('registration folds the dock without resetting list state and restores it a
   registration.classList.add('hidden');env.trigger(registration);
   assert.equal(dock.classList.contains('is-expanded'),true);assert.equal(env.calls.open,1);
 });
+
+test('registration keeps observation markers visible and saving opens the observation menu after the form closes',()=>{
+  for(const tablet of [false,true]){
+    const env=environment(tablet),doc=env.document,registration=doc.getElementById('register-box');
+    env.api.select('bears');
+    registration.classList.remove('hidden');env.trigger(registration);
+    assert.equal(env.calls.mapVisible,true);
+    env.api.showObservationsAfterSave();
+    assert.equal(env.api.getActive(),'bears');
+    registration.classList.add('hidden');env.trigger(registration);
+    assert.equal(env.api.getActive(),'observations');
+    assert.equal(doc.getElementById('mobile-map-dock').classList.contains('is-expanded'),true);
+    assert.equal(env.calls.mapVisible,true);
+  }
+});
+
+test('cancelling registration from another menu restores that menu and hides observation markers',()=>{
+  const env=environment(),registration=env.document.getElementById('register-box');
+  env.api.select('tracking');registration.classList.remove('hidden');env.trigger(registration);
+  assert.equal(env.calls.mapVisible,true);
+  registration.classList.add('hidden');env.trigger(registration);
+  assert.equal(env.api.getActive(),'tracking');assert.equal(env.calls.mapVisible,false);
+});
 test('temporary status remains visible in other menus and default text adds no extra row',()=>{
   const env=environment(),doc=env.document;env.api.select('observations');
   const status=doc.getElementById('status'),notice=doc.getElementById('mobile-map-dock').querySelector('.mobile-dock-notice');

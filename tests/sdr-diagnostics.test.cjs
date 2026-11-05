@@ -104,7 +104,7 @@ test('manual frequency changes cannot register an unrelated selected animal',asy
   assert.equal(ui.dialog.querySelector('[data-animal-list]').children[0].textContent,'검색 결과가 없습니다.');
 });
 
-function setup(android = true, bridgeMode = 'injected', listenerAsync = false, catalog = null) {
+function setup(android = true, bridgeMode = 'injected', listenerAsync = false, catalog = null, storage = null) {
   const trigger = new Element(), body = new Element();
   const device = { deviceId: '/usb/1', name: 'RTL2832U', vendorId: 3034, productId: 10290, candidate: true, hasPermission: false, connected: false };
   const state = { hostSupported: true, state: 'idle', devices: [device] };
@@ -153,6 +153,7 @@ function setup(android = true, bridgeMode = 'injected', listenerAsync = false, c
   if (android && bridgeMode === 'registered') capacitor.registerPlugin = () => plugin;
   if (android && bridgeMode === 'throws') capacitor.registerPlugin = () => { throw new Error('bridge init failure'); };
   const appWindow = { Capacitor: capacitor };
+  if (storage) appWindow.localStorage = storage;
   if (catalog) appWindow.BearSdrAnimals = catalog;
   vm.runInNewContext(spectrumSource + '\n' + source, {
     document: { getElementById: () => trigger, createElement: () => new Element(), body },
@@ -395,70 +396,24 @@ test('a paused CW scan resumes with the same detector', async () => {
   assert.equal(ui.plugin.scans[1].resume,true);
 });
 
-test('stopped spectrum drag selects a frequency for the next fixed reception only', async () => {
-  const ui = setup(); ui.device.hasPermission = true;
-  await ui.trigger.click(); await ui.button().click(); await tick();
-  ui.dialog.querySelector('[data-frequency]').value='103.500';
-  const canvas = ui.dialog.querySelector('[data-spectrum]');
-  canvas.clientWidth = 320;
-  ui.state.fixedResultAvailable = true;
-  ui.state.receptionState = 'receiving';
-  ui.state.reception = { frequencyHz: 103500000, sampleRate: 1024000, spectrumDbfs: Array(1024).fill(-80) };
-  ui.emit();
-  canvas.events.pointerdown({ pointerId: 1, clientX: 241.5, clientY: 100 });
-  assert.equal(ui.dialog.querySelector('[data-frequency]').value, '103.500');
-  const reset = ui.dialog.querySelector('[data-spectrum-reset]');
-  assert.equal(reset.hidden, true);
-  ui.state.receptionState = 'idle'; ui.emit();
-  ui.dialog.querySelector('[data-frequency]').value = '103.600';
-  ui.dialog.querySelector('[data-frequency]').events.input();
-  canvas.events.pointerdown({ pointerId: 1, clientX: 241.5, clientY: 100 });
-  assert.equal(ui.dialog.querySelector('[data-frequency]').value, '103.600');
-  assert.equal(reset.hidden, true);
-  canvas.events.pointermove({ pointerId: 1, clientX: 253.5, clientY: 100 });
-  assert.equal(ui.dialog.querySelector('[data-frequency]').value, '103.601');
-  assert.equal(reset.hidden, false);
-  assert.match(ui.dialog.querySelector('[data-spectrum-tune]').textContent, /103.601 MHz/);
-  canvas.events.pointermove({ pointerId: 1, clientX: 177, clientY: 100 });
-  canvas.events.pointerup({ pointerId: 1 });
-  assert.equal(ui.dialog.querySelector('[data-frequency]').value, '103.595');
-  canvas.events.pointermove({ pointerId: 1, clientX: 300, clientY: 100 });
-  assert.equal(ui.dialog.querySelector('[data-frequency]').value, '103.595');
-  assert.equal(ui.plugin.starts.length, 0);
-  await reset.click();
-  assert.equal(ui.dialog.querySelector('[data-frequency]').value, '103.600');
-  assert.equal(reset.hidden, true);
-  await ui.dialog.querySelector('[data-start]').click(); await tick();
-  assert.equal(ui.plugin.starts[0].frequencyHz, 103600000);
-});
-
-test('spectrum fine drag uses CSS pixels across sample rates and stops after cancellation', async () => {
-  const ui = setup(); ui.device.hasPermission = true;
-  await ui.trigger.click(); await ui.button().click(); await tick();
-  const frequency = ui.dialog.querySelector('[data-frequency]');
-  const canvas = ui.dialog.querySelector('[data-spectrum]');
-  canvas.clientWidth = 320;
-  canvas.getBoundingClientRect = () => ({ left: 0, top: 0, width: 320, height: 160 });
-  for (const sampleRate of [250000, 2400000]) {
-    frequency.value = '148.241';
-    ui.state.fixedResultAvailable = true;
-    ui.state.receptionState = 'idle';
-    ui.state.reception = { frequencyHz: 148229000, sampleRate, spectrumDbfs: Array(1024).fill(-80) };
+test('spectrum remains display-only during reception and after stop or error', async () => {
+  const ui=setup();ui.device.hasPermission=true;
+  await ui.trigger.click();await ui.button().click();
+  const frequency=ui.dialog.querySelector('[data-frequency]'),canvas=ui.dialog.querySelector('[data-spectrum]');
+  frequency.value='148.24100';ui.state.fixedResultAvailable=true;
+  for(const state of ['receiving','idle','error']){
+    ui.state.receptionState=state;
+    ui.state.reception={mode:'cw',frequencyHz:148229000,listenFrequencyHz:148241000,sampleRate:1024000,spectrumDbfs:Array(1024).fill(-80)};
     ui.emit();
-    // CSS y=145 is below the plot, even though it falls within its backing-store coordinates.
-    canvas.events.pointerdown({ pointerId: 2, clientX: 100, clientY: 145 });
-    canvas.events.pointermove({ pointerId: 2, clientX: 160, clientY: 145 });
-    assert.equal(frequency.value, '148.241');
-    canvas.events.pointerdown({ pointerId: 2, clientX: 100, clientY: 100 });
-    canvas.events.pointermove({ pointerId: 2, clientX: 105, clientY: 100 });
-    assert.equal(frequency.value, '148.241');
-    canvas.events.pointermove({ pointerId: 2, clientX: 124, clientY: 100 });
-    assert.equal(frequency.value, '148.243');
-    canvas.events.pointercancel({ pointerId: 2 });
-    canvas.events.pointermove({ pointerId: 2, clientX: 200, clientY: 100 });
-    assert.equal(frequency.value, '148.243');
+    canvas.events.pointerdown?.({pointerId:1,clientX:100,clientY:100});
+    canvas.events.pointermove?.({pointerId:1,clientX:240,clientY:100});
+    canvas.events.pointerup?.({pointerId:1});
+    assert.equal(frequency.value,'148.24100');assert.equal(ui.plugin.starts.length,0);
+    assert.ok(ui.dialog.querySelector('[data-spectrum-summary]').textContent);
   }
-  assert.equal(ui.plugin.starts.length, 0);
+  assert.doesNotMatch(ui.dialog.innerHTML,/data-spectrum-reset|data-spectrum-tune/);
+  await ui.dialog.querySelector('[data-start]').click();
+  assert.equal(ui.plugin.starts[0].frequencyHz,148241000);
 });
 
 test('fixed reception stop becomes result reset without losing USB or tuning', async () => {
@@ -562,7 +517,8 @@ test('CW is fixed with no band or mode picker and scanning preserves CW', async 
   for (const mode of ['cw']) {
     const ui=setup(); ui.device.hasPermission=true;
     await ui.trigger.click(); await ui.button().click(); await tick();
-    assert.doesNotMatch(ui.dialog.innerHTML,/data-band|data-mode|<select|<details|<summary/);
+    assert.doesNotMatch(ui.dialog.innerHTML,/data-band|data-mode|<select/);
+    assert.equal(ui.dialog.querySelector('[data-advanced-settings]').open,false);
     await ui.dialog.querySelector('[data-task-scan]').click();
     ui.dialog.querySelector('[data-scan-start]').value='220';
     ui.dialog.querySelector('[data-scan-end]').value='221';
@@ -1111,8 +1067,9 @@ test('five decimal digit tuning preserves 10 Hz steps through editing and CW rec
   await ui.dialog.querySelector('[data-freq-down="100"]').click();
   assert.equal(frequency.value,'148.24114');
   await ui.dialog.querySelector('[data-frequency-edit]').click();
-  const last=ui.dialog.querySelector('[data-freq-digit="7"]');last.textContent='7';last.events.input();
-  await ui.dialog.querySelector('[data-frequency-edit]').click();
+  const last=ui.dialog.querySelector('[data-freq-digit="7"]');let blurs=0;last.blur=()=>{blurs++;};last.textContent='7';last.events.input();
+  assert.equal(blurs,1);
+  assert.equal(ui.dialog.querySelector('[data-frequency-edit]').textContent,'\uC9C1\uC811 \uC785\uB825');
   assert.equal(frequency.value,'148.24117');
   await ui.dialog.querySelector('[data-start]').click();
   assert.equal(ui.plugin.starts[0].frequencyHz,148241170);
@@ -1201,4 +1158,58 @@ test('disconnect while a live card switch is stopping prevents a new reception r
   const switching=slots()[1].click();await tick();
   ui.state.state='idle';ui.state.receptionState='idle';ui.state.devices=[];ui.emit();release();await switching;
   assert.equal(ui.plugin.starts.length,1);
+});
+
+
+test('favorites persist by code on this device and combine with code search without changing reception', async () => {
+  const saved=new Map(),storage={getItem:key=>saved.get(key)||null,setItem:(key,value)=>saved.set(key,value)};
+  const ui=setup(true,'injected',false,animalCatalog(),storage);ui.device.hasPermission=true;
+  await ui.trigger.click();await ui.button().click();await tick();
+  const list=ui.dialog.querySelector('[data-animal-list]'),filter=ui.dialog.querySelector('[data-animal-favorites-filter]');
+  await list.children[0].children[2].children[0].click();await ui.dialog.querySelector('[data-start]').click();
+  ui.state.receptionState='receiving';ui.state.reception={listenFrequencyHz:148241500};ui.emit();
+  const previousStarts=ui.plugin.starts.length;
+  await list.children[0].children[3].click();
+  assert.deepEqual(JSON.parse(saved.get('bearpoint.sdrAnimalFavorites.v1')),['KF-110']);
+  assert.equal(list.children[0].children[3].textContent,'\u2605');
+  await filter.click();assert.equal(list.children.length,1);assert.equal(list.children[0].children[0].textContent,'KF-110');
+  const search=ui.dialog.querySelector('[data-animal-search]');search.value='112';search.events.input();
+  assert.equal(list.children[0].children.length,0,'search must stay inside the favorite set');
+  search.value='';search.events.input();await list.children[0].children[3].click();
+  assert.equal(list.children[0].children.length,0,'removing the last favorite updates the filtered list');
+  assert.equal(ui.plugin.starts.length,previousStarts);assert.equal(ui.state.receptionState,'receiving');
+  await filter.click();await list.children[0].children[3].click();
+  const changedCatalog={formatHz:hz=>String(hz/1e6),load:async()=>{const result=await animalCatalog().load();result.items[0].id='999';result.items[0].frequencies[0].hz=148900000;return result;}};
+  const restored=setup(true,'injected',false,changedCatalog,storage);restored.device.hasPermission=true;
+  await restored.trigger.click();await restored.button().click();await tick();
+  assert.equal(restored.dialog.querySelector('[data-animal-list]').children[0].children[3].textContent,'\u2605');
+  const other=setup(true,'injected',false,animalCatalog(),{getItem:()=>null,setItem(){}});other.device.hasPermission=true;
+  await other.trigger.click();await other.button().click();await tick();
+  assert.equal(other.dialog.querySelector('[data-animal-list]').children[0].children[3].textContent,'\u2606');
+});
+
+test('invalid favorite storage does not stop the receiver and failed writes do not claim a saved favorite', async () => {
+  const ui=setup(true,'injected',false,animalCatalog(),{getItem:()=>'{broken',setItem(){throw Error('quota');}});ui.device.hasPermission=true;
+  await ui.trigger.click();await ui.button().click();await tick();
+  const star=ui.dialog.querySelector('[data-animal-list]').children[0].children[3];
+  assert.equal(star.textContent,'\u2606');await star.click();assert.equal(star.textContent,'\u2606');
+  assert.ok(ui.dialog.querySelector('.sdr-message').textContent);
+  assert.equal(ui.state.state,'connected');assert.equal(ui.plugin.starts.length,0);
+});
+
+
+test('frequency Done, final Tab and Android line-break actions exit editing without advancing to tuning inputs', async () => {
+  const ui=setup();ui.device.hasPermission=true;await ui.trigger.click();await ui.button().click();
+  const edit=ui.dialog.querySelector('[data-frequency-edit]'),first=ui.dialog.querySelector('[data-freq-digit="0"]'),last=ui.dialog.querySelector('[data-freq-digit="7"]');
+  let blurs=0,prevented=0,tuningFocus=0;last.blur=()=>{blurs++;};
+  ui.dialog.querySelector('[data-gain]').focus=ui.dialog.querySelector('[data-ppm]').focus=()=>{tuningFocus++;};
+  for(const action of ['Enter','Tab','lineBreak']){
+    await edit.click();
+    if(action==='lineBreak')first.events.beforeinput({inputType:'insertParagraph',preventDefault(){prevented++;}});
+    else last.events.keydown({key:action,preventDefault(){prevented++;}});
+    assert.equal(edit.textContent,'\uC9C1\uC811 \uC785\uB825');
+  }
+  assert.equal(blurs,3);assert.equal(prevented,3);assert.equal(tuningFocus,0);
+  await edit.click();ui.dialog.querySelector('[data-frequency]').value='0';last.textContent='0';last.events.input();
+  assert.equal(edit.textContent,'\uC644\uB8CC');assert.equal(blurs,3,'invalid frequency should remain editable');
 });

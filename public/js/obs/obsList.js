@@ -2050,6 +2050,10 @@ window.createObsListModule = function createObsListModule({
     },
     renderObservationMarkers,
     setMapVisible: visible => observationMarkersLayer.setVisible(visible),
+    prepareRegistrationMap: async () => {
+      if (!observationSamples.length) await loadObservationSamples();
+      renderObservationMarkers(getFilteredItems());
+    },
     refreshObservationList: refreshObservationData
   };
 };

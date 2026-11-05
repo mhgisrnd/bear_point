@@ -24,6 +24,24 @@ const options={owner:'Kim',team_id:'gurye',team_name:'구례팀',team_color:'#16
 const pos=(time,lat=35,lng=127,accuracy=5)=>({timestamp:time,coords:{latitude:lat,longitude:lng,accuracy}});
 const settle=()=>new Promise(resolve=>setImmediate(resolve));
 
+test('10m distance threshold stays fixed even when either GPS fix has a larger accuracy radius',()=>{
+  const now=Date.now();
+  for(const accuracy of [5,30,80,100]){
+    const last={lat:35,lng:127,accuracy,recorded_at:now-10000};
+    assert.equal(sample(last,pos(now,35.00008,127,accuracy),5,now),null);
+    assert.ok(sample(last,pos(now,35.0001,127,accuracy),5,now));
+  }
+  assert.equal(sample(null,pos(now,35,127,101),5,now),null);
+});
+
+test('Android and web recording thresholds remain consistent',()=>{
+  const {RECORDING_CONFIG}=require('../public/js/tracking/gps-track-store');
+  const java=require('node:fs').readFileSync('android/app/src/main/java/com/bearpoint/app/GpsTrackConfig.java','utf8');
+  for(const [native,key]of [['MIN_DISTANCE_METERS','minDistanceMeters'],['MAX_ACCURACY_METERS','maxAccuracyMeters'],['MAX_LOCATION_AGE_MS','maxLocationAgeMs'],['MAX_SPEED_METERS_PER_SECOND','maxSpeedMetersPerSecond']]){
+    assert.equal(Number(java.match(new RegExp(native+' = (\\d+)'))[1]),RECORDING_CONFIG[key]);
+  }
+});
+
 test('GPS samples reject stale, inaccurate, out-of-order, too-frequent and implausible jumps',()=>{
   const now=Date.now(),last={lat:35,lng:127,recorded_at:now-10000};
   assert.equal(sample(last,pos(now,36),10,now),null);
@@ -43,7 +61,7 @@ test('offline recorder saves samples before reporting them and stores start-time
   env.emit(pos(now));env.emit(pos(now+10000,35.0001));await settle();
   assert.equal((await env.recorder.status()).active.point_count,2);
   const ended=await env.recorder.stop();assert.equal(ended.status,'saved');assert.equal(env.watching(),false);
-  assert.equal(ended.owner,'Kim');assert.equal(ended.color,'#9333EA');
+  assert.equal(ended.owner,'Kim');assert.equal(ended.color,options.team_color);
   assert.equal((await env.recorder.detail({id:ended.id})).points.length,2);
   assert.equal((await env.recorder.status()).active,null);
 });
@@ -81,11 +99,45 @@ test('zero-fix sessions and legacy empty rows are never included in history or c
 });
 test('stationary fixes do not build a zigzag path; a real movement resumes the route',async()=>{
   const env=environment(),now=Date.now();await env.recorder.start(options);
-  env.emit(pos(now));env.emit(pos(now+10000));env.emit(pos(now+20000,35.00001,127));env.emit(pos(now+30000,35.00003,127,8));await settle();
+  env.emit(pos(now));env.emit(pos(now+10000));env.emit(pos(now+20000,35.000001,127));env.emit(pos(now+30000,35.000003,127,8));await settle();
   let track=await env.recorder.detail({id:'track-one'});assert.equal(track.point_count,1);assert.equal(track.distance,0);
   env.emit(pos(now+40000,35.0002,127));await settle();
   track=await env.recorder.detail({id:'track-one'});assert.equal(track.point_count,2);assert.ok(track.distance>20&&track.distance<23);
   assert.equal((await env.recorder.stop()).status,'saved');
   const stayed=environment();await stayed.recorder.start(options);stayed.emit(pos(now));await settle();
   const ended=await stayed.recorder.stop();assert.equal(ended.status,'saved');assert.equal(ended.point_count,1);assert.equal(ended.distance,0);
+});
+
+test('changing a running interval preserves the route and applies shorter and longer sampling immediately',async()=>{
+  const env=environment(),now=Date.now();
+  const started=await env.recorder.start({...options,owner:'Original',interval_seconds:30});
+  env.emit(pos(now));await settle();
+  env.emit(pos(now+10000,35.0001));await settle();
+  assert.equal((await env.recorder.status()).active.point_count,1);
+  await env.recorder.updateInterval({interval_seconds:5});
+  env.emit(pos(now+10000,35.0001));await settle();
+  assert.equal((await env.recorder.status()).active.point_count,2);
+  await env.recorder.updateInterval({interval_seconds:30});
+  env.emit(pos(now+20000,35.0002));await settle();
+  assert.equal((await env.recorder.status()).active.point_count,2);
+  env.emit(pos(now+40000,35.0003));await settle();
+  const track=await env.recorder.detail({id:started.id});
+  assert.equal(track.point_count,3);assert.equal(track.interval_seconds,30);
+  assert.equal(track.id,started.id);assert.equal(track.started_at,started.started_at);
+  assert.equal(track.owner,'Original');assert.equal(track.color,started.color);
+  assert.equal(track.points[0].recorded_at,now);assert.ok(track.distance>30);
+  assert.equal((await env.recorder.stop()).point_count,3);
+  assert.equal((await env.recorder.updateInterval({interval_seconds:10})).active,null);
+});
+
+test('failed or invalid interval changes leave a running recorder and its sampling unchanged',async()=>{
+  const env=environment(),now=Date.now();
+  await env.recorder.start({...options,interval_seconds:30});env.emit(pos(now));await settle();
+  await assert.rejects(()=>env.recorder.updateInterval({interval_seconds:1}));
+  env.failPut(true);
+  await assert.rejects(()=>env.recorder.updateInterval({interval_seconds:5}),/disk full/);
+  assert.equal((await env.recorder.status()).active.interval_seconds,30);
+  assert.equal(env.watching(),true);
+  env.failPut(false);env.emit(pos(now+10000,35.0001));await settle();
+  assert.equal((await env.recorder.status()).active.point_count,1);
 });

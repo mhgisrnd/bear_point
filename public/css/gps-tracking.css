@@ -7,7 +7,9 @@
 .gps-track-content { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; overflow: hidden; padding: 9px 12px; overscroll-behavior: contain; }
 .gps-track-header-actions { display: flex; align-items: center; gap: 5px; }
 .gps-track-header-actions button,.gps-track-panel .gps-track-header-actions button { width: auto; height: 30px; min-height: 30px; padding: 0 9px; border: 1px solid #d1def2; border-radius: 9px; background: #edf4ff; color: #285eb9; font: 700 11px/1.2 system-ui,sans-serif; cursor: pointer; white-space: nowrap; }
-.gps-track-header-actions [data-refresh],.gps-track-panel .gps-track-header-actions [data-refresh] { width: 30px; padding: 0; font-size: 20px; }
+.list-refresh-button { display: inline-flex; }
+.list-refresh-button, #btn-obs-refresh, #btn-bears-refresh, .gps-track-header-actions [data-refresh], .gps-track-panel .gps-track-header-actions [data-refresh] { align-items: center; justify-content: center; flex-shrink: 0; box-sizing: border-box; width: 30px; min-width: 30px; height: 30px; min-height: 30px; margin: 0; padding: 0; border: 1px solid #d1def2; border-radius: 9px; background: #edf4ff; color: #285eb9; font: 700 20px/1.2 system-ui, sans-serif; cursor: pointer; }
+#btn-obs-refresh:disabled, #btn-bears-refresh:disabled, .gps-track-header-actions [data-refresh]:disabled { opacity: .5; cursor: default; }
 .gps-track-header-actions [data-stop],.gps-track-panel .gps-track-header-actions [data-stop] { background: #fff0f2; border-color: #edc3c9; color: #b52b3c; }
 .gps-track-header-actions [hidden] { display: none !important; }
 .gps-track-header-actions button:disabled { opacity: .5; cursor: default; }

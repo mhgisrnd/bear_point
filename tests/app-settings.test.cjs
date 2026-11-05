@@ -26,14 +26,14 @@ for (const native of [false,true]) {
   test(`${native?'SQLite':'web'}: tracking options persist offline independently of profile and reject invalid/failed saves`,async t=>{
     const {win,db}=environment(native);t.after(()=>db.close());
     const store=createStore(win);await store.load();
-    assert.deepEqual(store.snapshot().tracking,{interval_seconds:10,color:'#2563EB'});
+    assert.deepEqual(store.snapshot().tracking,{interval_seconds:10});
     await store.save('Kim','gurye');
     await store.saveTracking({interval_seconds:'30',color:'#ab12ef'});
     const reboot=createStore(win);await reboot.load();
-    assert.deepEqual(reboot.snapshot().tracking,{interval_seconds:30,color:'#AB12EF'});
+    assert.deepEqual(reboot.snapshot().tracking,{interval_seconds:30});
     assert.equal(reboot.snapshot().profile.owner,'Kim');
     await assert.rejects(()=>reboot.saveTracking({interval_seconds:0,color:'#123456'}));
-    await assert.rejects(()=>reboot.saveTracking({interval_seconds:10,color:'red'}));
+    await reboot.saveTracking({interval_seconds:30});
     if(native)win.Capacitor.Plugins.CapacitorSQLite.run=async()=>{throw new Error('disk full');};
     else win.localStorage.setItem=()=>{throw new Error('quota full');};
     await assert.rejects(()=>reboot.saveTracking({interval_seconds:60,color:'#FFFFFF'}),/full/);

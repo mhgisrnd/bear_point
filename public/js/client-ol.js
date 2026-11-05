@@ -2266,6 +2266,22 @@
     return "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
   }
 
+  function createMyLocationIconDataUri(svgSize) {
+    const c = svgSize / 2;
+    const pointY = c + 11;
+    const arrow = 'M ' + c + ' 4 L ' + (c + 9) + ' ' + (c - 2) + ' L ' + c + ' ' + (c - 6) + ' L ' + (c - 9) + ' ' + (c - 2) + ' Z';
+    const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="' + svgSize + '" height="' + svgSize + '" viewBox="0 0 ' + svgSize + ' ' + svgSize + '">' +
+      '<defs><filter id="location-shadow" x="-50%" y="-50%" width="200%" height="200%"><feDropShadow dx="0" dy="1" stdDeviation="1.2" flood-color="#0f172a" flood-opacity="0.5"/></filter></defs>' +
+      '<g stroke-linejoin="round" filter="url(#location-shadow)">' +
+        '<circle cx="' + c + '" cy="' + pointY + '" r="9.5" fill="#ffffff" stroke="#15355d" stroke-width="0.8"/>' +
+        '<path d="' + arrow + '" fill="#0e5be9" stroke="#15355d" stroke-width="4.5"/>' +
+        '<path d="' + arrow + '" fill="#0e5be9" stroke="#ffffff" stroke-width="2.5"/>' +
+        '<circle cx="' + c + '" cy="' + pointY + '" r="6" fill="#0e5be9"/>' +
+      '</g>' +
+      '</svg>';
+    return "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
+  }
+
   const myLocationSource = new ol.source.Vector();
   let myLocationFeature = null;
   let editOriginFeature = null;
@@ -2279,7 +2295,7 @@
   const EDIT_ORIGIN_MOVE_DURATION_MS = 520;
   const EDIT_ORIGIN_MOVE_LAG_MS = 110;
   const MY_HEADING_ICON_SIZE = 48;
-  const myHeadingIconSrc = createHeadingIconDataUri(MY_HEADING_ICON_SIZE, "#0e5be9", 6);
+  const myHeadingIconSrc = createMyLocationIconDataUri(MY_HEADING_ICON_SIZE);
   const OBSERVATION_HEADING_ICON_SIZE = 40;
   const observationHeadingIconSrc = createHeadingIconDataUri(OBSERVATION_HEADING_ICON_SIZE, "#ea580c", 5.5);
   const observationHeadingEditIconSrc = createHeadingIconDataUri(OBSERVATION_HEADING_ICON_SIZE, "#16a34a", 5.5);
@@ -2488,6 +2504,7 @@
 
   const myLocationLayer = new ol.layer.Vector({
     source: myLocationSource,
+    zIndex: 1000,
     style: function (feature) {
       const markerKind = feature ? feature.get("markerKind") : "";
       const centerCoord = feature && feature.getGeometry() ? feature.getGeometry().getCoordinates() : null;
@@ -2575,7 +2592,7 @@
           src: myHeadingIconSrc,
           width: MY_HEADING_ICON_SIZE,
           height: MY_HEADING_ICON_SIZE,
-          anchor: [0.5, 0.5],
+          anchor: [0.5, (MY_HEADING_ICON_SIZE / 2 + 11) / MY_HEADING_ICON_SIZE],
           anchorXUnits: "fraction",
           anchorYUnits: "fraction",
           rotateWithView: true,
@@ -3072,7 +3089,8 @@
     layers: [osmBase, englishBase, largeBase, satelliteBase, mbtilesLayer, hillshadeOverlay, bearMarkerLayer, analysisPreviewLayer, analysisGuideLayer, analysisEstimateLayer, measureLayer, myLocationLayer],
     view: view,
     interactions: ol.interaction.defaults.defaults({
-      pinchRotate: false // 이 한 줄을 주석 처리하면 손가락 회전(핀치 회전) 활성
+      pinchRotate: true,
+      altShiftDragRotate: true
     }),
     controls: ol.control.defaults.defaults({
       zoom: false,
@@ -3105,6 +3123,7 @@
   })();
 
   const gpsTrackUi = window.createGpsTrackUi({ ol, map, project: mapCoordFromWgs84, insertBefore: bearMarkerLayer });
+  window.BearGpsTrackUi = gpsTrackUi;
   const controlsManager = window.createOlMapControlsManager ? window.createOlMapControlsManager({
     ol: ol,
     map: map,
@@ -3999,8 +4018,10 @@
   observationPopupCloseEl.style.fontSize = "18px";
   observationPopupCloseEl.style.lineHeight = "1";
   observationPopupCloseEl.style.cursor = "pointer";
+  observationPopupCloseEl.style.zIndex = "3";
 
   const observationPopupContentEl = document.createElement("div");
+  observationPopupContentEl.className = "map-detail-popup-content";
   //observationPopupContentEl.style.paddingRight = "16px";
 
   observationPopupEl.appendChild(observationPopupCloseEl);
@@ -4070,29 +4091,46 @@
     const pixel = map.getPixelFromCoordinate(coordinate);
     if (!pixel) return;
     const visual = window.visualViewport;
-    const screenLeft = Math.max(0, (visual ? visual.offsetLeft : 0) - rect.left);
-    const screenRight = Math.min(rect.width, (visual ? visual.offsetLeft + visual.width : window.innerWidth) - rect.left);
-    let left = screenLeft + 18;
-    const right = screenRight - 74;
-    const top = Math.max(18, (visual ? visual.offsetTop : 0) - rect.top + 18);
-    let bottom = Math.min(rect.height, (visual ? visual.offsetTop + visual.height : window.innerHeight) - rect.top) - 18;
-    const panel = window.BearMobileDock?.isMobile() ? document.getElementById('mobile-map-dock') : document.querySelector(".panel-bottom-left");
+    const safe = window.getComputedStyle(document.documentElement);
+    const screenLeft = Math.max(parseCssPx(safe.getPropertyValue("--safe-left")), (visual ? visual.offsetLeft : 0) - rect.left);
+    const screenRight = Math.min(rect.width - parseCssPx(safe.getPropertyValue("--safe-right")), (visual ? visual.offsetLeft + visual.width : window.innerWidth) - rect.left);
+    let left = Math.max(0, screenLeft) + 18;
+    let right = screenRight - 74;
+    let top = Math.max(0, parseCssPx(safe.getPropertyValue("--safe-top")), (visual ? visual.offsetTop : 0) - rect.top) + 18;
+    let bottom = Math.min(rect.height - parseCssPx(safe.getPropertyValue("--safe-bottom")), (visual ? visual.offsetTop + visual.height : window.innerHeight) - rect.top) - 18;
+    if (right - left < 180) right = screenRight - 18;
+    if (right <= left || bottom <= top) return;
+    const visible = { left, right, top, bottom };
+    const isCompactDetail = !!observationPopupContentEl.querySelector(".obs-popup-card--observation, .obs-popup-card--estimate");
+    const popupWidth = isCompactDetail ? 300 : 240;
+    const panel = window.BearMobileDock?.isDocked() ? document.getElementById('mobile-map-dock') : document.querySelector(".panel-bottom-left");
     if (panel && panel.getClientRects().length) {
       const panelRect = panel.getBoundingClientRect();
-      if (panelRect.height > rect.height * 0.65 && panelRect.width < rect.width * 0.65) {
-        left = Math.max(left, panelRect.right - rect.left + 18);
-      } else {
-        bottom = Math.min(bottom, panelRect.top - rect.top - 18);
+      const panelLeft = (panelRect.left ?? panelRect.right - panelRect.width) - rect.left;
+      const panelRight = panelRect.right - rect.left;
+      const panelTop = panelRect.top - rect.top;
+      const panelBottom = panelTop + panelRect.height;
+      if (panelRect.width > 0 && panelRect.height > 0 && panelLeft < right && panelRight > left && panelTop < bottom && panelBottom > top) {
+        const spaces = [
+          { ...visible, bottom: Math.min(bottom, panelTop - 18) },
+          { ...visible, left: Math.max(left, panelRight + 18) },
+          { ...visible, right: Math.min(right, panelLeft - 18) },
+          { ...visible, top: Math.max(top, panelBottom + 18) }
+        ].filter(space => space.right - space.left >= Math.min(180, visible.right - visible.left) &&
+          space.bottom - space.top >= Math.min(160, visible.bottom - visible.top));
+        spaces.sort((a, b) => Math.min(popupWidth, b.right - b.left) * (b.bottom - b.top) -
+          Math.min(popupWidth, a.right - a.left) * (a.bottom - a.top));
+        // A full-height/transitioning panel must never turn the popup into a zero-height strip.
+        // When no readable space remains beside it, use the visible map and scroll the popup body.
+        if (spaces.length) ({ left, right, top, bottom } = spaces[0]);
       }
     }
     observationPopupEl.style.boxSizing = "border-box";
-    const isCompactDetail = !!observationPopupContentEl.querySelector(".obs-popup-card--observation, .obs-popup-card--estimate");
-    const popupWidth = isCompactDetail ? 300 : 240;
     observationPopupEl.style.padding = isCompactDetail ? "9px 10px" : "12px 14px";
     observationPopupEl.style.width = `${Math.min(popupWidth, Math.max(0, right - left))}px`;
     observationPopupEl.style.minWidth = "0";
     observationPopupEl.style.maxWidth = `${popupWidth}px`;
-    observationPopupEl.style.maxHeight = "none";
+    observationPopupEl.style.maxHeight = `${Math.max(0, bottom - top)}px`;
     const card = observationPopupEl.getBoundingClientRect();
     const clamp = (value, min, max) => Math.max(min, Math.min(value, Math.max(min, max)));
     const sideY = clamp(pixel[1] - card.height / 2, top, bottom - card.height);
@@ -4111,7 +4149,7 @@
     }
     observationPopupOverlay.setPositioning("top-left");
     observationPopupOverlay.setOffset([position[0] - pixel[0], position[1] - pixel[1]]);
-    observationPopupEl.style.overflowY = "auto";
+    observationPopupEl.style.overflow = "hidden";
     observationPopupEl.style.overscrollBehavior = "contain";
   }
 
@@ -4130,7 +4168,7 @@
     observationPopupEl._bearEstimateData = feature ? (feature.get("bearEstimateData") || null) : null;
     observationPopupContentEl.innerHTML = popupHtml;
     observationPopupEl.style.visibility = "hidden";
-    observationPopupEl.style.display = "block";
+    observationPopupEl.style.display = "flex";
     // Make the overlay parent visible before measuring its contents.
     observationPopupOverlay.setPosition(coordinate);
     syncObservationPopupPlacement(coordinate);
@@ -4171,6 +4209,14 @@
   map.on("moveend", function () {
     if (observationPopupEl.style.display !== "none") syncObservationPopupPlacement();
   });
+  map.on("postrender", function () {
+    if (observationPopupEl.style.display !== "none") syncObservationPopupPlacement();
+  });
+  if (typeof ResizeObserver === "function") {
+    new ResizeObserver(function () {
+      if (observationPopupEl.style.display !== "none") syncObservationPopupPlacement();
+    }).observe(observationPopupContentEl);
+  }
 
   observationPopupCloseEl.addEventListener("click", function () {
     closeObservationPopup();
@@ -4183,6 +4229,7 @@
     window.visualViewport.addEventListener("resize", function () {
       syncObservationPopupPlacement();
     });
+    window.visualViewport.addEventListener("scroll", function () { syncObservationPopupPlacement(); });
   }
 
   let mapGesturePointerId = null;
@@ -4254,11 +4301,9 @@
     if (centerDistance <= MAP_COORD_DRAG_HIT_RADIUS_PX) return "center";
 
     const headingDeg = Number.isFinite(lastHeadingDeg) ? lastHeadingDeg : 0;
-    const headingRad = (headingDeg * Math.PI) / 180;
-    const handlePixel = [
-      centerPixel[0] + Math.sin(headingRad) * MAP_HEADING_HANDLE_LENGTH_PX,
-      centerPixel[1] - Math.cos(headingRad) * MAP_HEADING_HANDLE_LENGTH_PX
-    ];
+    const centerCoord = mapCoordFromWgs84(lastLatLng[0], lastLatLng[1]);
+    const handlePixel = map.getPixelFromCoordinate(getHeadingHandleCoordinate(centerCoord, headingDeg));
+    if (!Array.isArray(handlePixel)) return null;
 
     const dxHandle = event.pixel[0] - handlePixel[0];
     const dyHandle = event.pixel[1] - handlePixel[1];
@@ -4295,6 +4340,7 @@
 
   map.on("pointerdown", function (event) {
     stopManualMapGesture();
+    if (event.activePointers?.length > 1 || (event.originalEvent?.altKey && event.originalEvent?.shiftKey)) return;
     const hitType = getManualHitType(event);
     if (!hitType) return;
 
@@ -4321,6 +4367,9 @@
   });
 
   map.on("pointerdrag", function (event) {
+    if (event.activePointers?.length > 1 || (event.originalEvent?.altKey && event.originalEvent?.shiftKey)) {
+      stopManualMapGesture(); return;
+    }
     if (mapGesturePointerId !== null && Number.isFinite(event.pointerId) && event.pointerId !== mapGesturePointerId) return;
     if (!mapGestureMode) return;
 
@@ -4762,6 +4811,7 @@
       if (typeof obsListModule.markObservationFlash === "function") {
         obsListModule.markObservationFlash(payload.observation.id);
       }
+      window.BearMobileDock?.showObservationsAfterSave();
 
       if (payload.mode === "edit") {
         setCurrentEditingObservationId(null);
@@ -4864,9 +4914,6 @@
       });
     }
 
-    if (showStatus && statusEl) {
-      statusEl.textContent = "⚪ 내 위치 OFF";
-    }
   }
 
   // 캡처/시연용 고정 위치 모드.
@@ -4880,7 +4927,6 @@
       updateMyLocation(CAPTURE_MOCK_LAT_LNG[0], CAPTURE_MOCK_LAT_LNG[1]);
       isMyVisible = true;
       setLocateButtonActive(true);
-      if (statusEl) statusEl.textContent = "✅ 내 위치 ON (캡처용 고정 위치)";
       return;
     }
 
@@ -4891,7 +4937,6 @@
 
     await startCompass();
 
-    if (statusEl) statusEl.textContent = "📍 내 위치 잡는 중…";
 
     const optsFast = { enableHighAccuracy: false, timeout: 30000, maximumAge: 15000 };
     const optsWatch = { enableHighAccuracy: true, timeout: 30000, maximumAge: 5000 };
@@ -4901,7 +4946,6 @@
       updateMyLocation(pos.coords.latitude, pos.coords.longitude);
       isMyVisible = true;
       setLocateButtonActive(true);
-      if (statusEl) statusEl.textContent = "✅ 내 위치 ON";
     }, function () {
       // 최초 실패는 watch에서 재시도
     }, optsFast);
@@ -4911,7 +4955,6 @@
       updateMyLocation(pos.coords.latitude, pos.coords.longitude);
       isMyVisible = true;
       setLocateButtonActive(true);
-      if (statusEl) statusEl.textContent = "✅ 내 위치 ON";
     }, function (err) {
       stopMyLocationTracking(false);
       if (statusEl) statusEl.textContent = "🔴 위치 오류: " + err.message;
@@ -7151,7 +7194,8 @@
   }) : null;
 
   function openObservationRegistration(sdrContext, onCancel) {
-      if (!obsRegisterModule || (sdrContext && obsRegisterModule.isOpen())) return false;
+      if (!obsRegisterModule) return false;
+      if (sdrContext && obsRegisterModule.isOpen()) return obsRegisterModule.openFromSdr(sdrContext, onCancel);
       if (controlsManager && typeof controlsManager.deactivateMeasure === "function") {
         controlsManager.deactivateMeasure("menu");
       }

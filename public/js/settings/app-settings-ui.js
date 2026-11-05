@@ -10,7 +10,7 @@
       <button type="button" class="app-settings-tab" id="app-settings-profile-tab" role="tab" aria-selected="true" aria-controls="app-settings-profile-panel" tabindex="0">담당자·팀</button>
       <button type="button" class="app-settings-tab" id="app-settings-tracking-tab" role="tab" aria-selected="false" aria-controls="app-settings-tracking-panel" tabindex="-1">이동 기록</button>
     </div>
-    <section id="app-settings-profile-panel" role="tabpanel" aria-labelledby="app-settings-profile-tab">
+    <div class="app-settings-scroll"><section id="app-settings-profile-panel" role="tabpanel" aria-labelledby="app-settings-profile-tab">
     <form class="app-settings-body"><p class="app-settings-intro">담당자 이름과 소속 팀을 설정해주세요.</p>
       <label class="app-settings-field">담당자<input name="owner" required maxlength="100" autocomplete="name" placeholder="이름을 입력해주세요" /></label>
       <fieldset class="app-settings-teams"><legend>소속 팀</legend><div class="app-settings-team-grid"></div></fieldset>
@@ -20,20 +20,19 @@
     </form></section>
     <section id="app-settings-tracking-panel" role="tabpanel" aria-labelledby="app-settings-tracking-tab" hidden>
       <form class="app-settings-body app-settings-tracking-form">
-        <p class="app-settings-intro">이동 경로의 기록 방식을 설정합니다. 변경한 옵션은 다음 기록부터 적용됩니다.</p>
+        <p class="app-settings-intro">기록 간격은 저장하면 진행 중인 기록에도 적용됩니다. 경로는 팀 색상으로 표시됩니다.</p>
         <label class="app-settings-field">기록 간격<select name="interval"><option value="5">5초</option><option value="10">10초</option><option value="30">30초</option><option value="60">1분</option></select></label>
         <p class="app-settings-help">GPS 수신 상태에 따라 실제 기록 간격은 길어질 수 있습니다.</p>
-        <label class="app-settings-field">경로 색상<input type="color" name="color" value="#2563eb" /></label>
         <p class="app-settings-help">앱은 화면이 꺼져도 기록하며, 알림에서 종료·저장할 수 있습니다. 웹에서는 페이지가 열려 있을 때 기록합니다.</p>
         <p class="app-settings-tracking-status" role="status" aria-live="polite"></p>
         <div class="app-settings-actions"><button type="submit" class="app-settings-save">저장</button><button type="button" class="app-settings-cancel">취소</button></div>
       </form>
-    </section>`;
+    </section></div>`;
   document.body.append(dialog);
   const buildLabel = document.createElement("p");
   buildLabel.className = "app-settings-build";
   buildLabel.textContent = "앱 버전 " + (window.BEAR_BUILD_VERSION || "버전 정보 없음");
-  dialog.appendChild(buildLabel);
+  dialog.querySelector(".app-settings-scroll").appendChild(buildLabel);
   const tabs = [...dialog.querySelectorAll('[role="tab"]')];
   function selectTab(tab, focus = false) {
     if (tab.disabled) return;
@@ -67,7 +66,6 @@
   function paintTracking() {
     const options = store.snapshot().tracking;
     trackingForm.elements.interval.value = String(options.interval_seconds);
-    trackingForm.elements.color.value = options.color;
     trackingMessage.textContent = "";
     tabs[1].disabled = required || !loaded;
   }
@@ -150,10 +148,13 @@
   trackingForm.addEventListener("submit", async event => {
     event.preventDefault(); if (!loaded || saving || required) return;
     saving = true; const button = trackingForm.querySelector('[type="submit"]'); button.disabled = true;
+    let saved = false;
     try {
-      await store.saveTracking({ interval_seconds: trackingForm.elements.interval.value, color: trackingForm.elements.color.value });
+      const next = await store.saveTracking({ interval_seconds: trackingForm.elements.interval.value });
+      saved = true;
+      await window.BearGpsTrackUi?.updateInterval(next.interval_seconds);
       dialog.close(); trigger.focus();
-    } catch (error) { trackingMessage.textContent = "설정을 저장하지 못했습니다. " + error.message; }
+    } catch (error) { trackingMessage.textContent = (saved ? "기본 설정은 저장했지만 현재 기록에 간격을 적용하지 못했습니다. 다시 저장해주세요. " : "설정을 저장하지 못했습니다. ") + error.message; }
     finally { saving = false; button.disabled = false; }
   });
   form.addEventListener("submit", async event => {

@@ -4,8 +4,8 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover" />
   <title>지리산 반달곰 위치 분석</title>
-  <script src="js/startup-diagnostics.js?v=1.0.4-ui15"></script>
-  <script src="js/native-plugin-compat.js?v=1.0.4-ui15"></script>
+  <script src="js/startup-diagnostics.js?v=1.0.4-ui42"></script>
+  <script src="js/native-plugin-compat.js?v=1.0.4-ui42"></script>
 
   <link rel="stylesheet" href="vendor/ol/ol.css" />
   <link rel="stylesheet" href="css/styles.css" />
@@ -13,7 +13,7 @@
   <link rel="stylesheet" href="css/observation-sharing.css?v=20261102-table-cleanup-1" />
   <link rel="stylesheet" href="css/sdr-diagnostics.css" />
   <link rel="stylesheet" href="css/app-settings.css" />
-  <link rel="stylesheet" href="css/gps-tracking.css?v=20261102-table-cleanup-1" />
+  <link rel="stylesheet" href="css/gps-tracking.css?v=20261103-refresh-buttons" />
   <link rel="stylesheet" href="css/mobile-map-dock.css?v=20261103-table-edge-3" />
 </head>
 <body>
@@ -24,7 +24,7 @@
       <h2>관측점 목록</h2>
       <div class="obs-header-actions">
         <button class="obs-header-add" id="btn-obs-add-inline" type="button">+ 등록</button>
-        <button class="obs-header-refresh" id="btn-obs-refresh" type="button" aria-label="공유 관측점 새로고침" title="공유 관측점 새로고침"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5M6 7a7 7 0 0 1 12-1l2 3M4 15l2 3a7 7 0 0 0 12-1" /></svg></button>
+        <button class="obs-header-refresh list-refresh-button" id="btn-obs-refresh" type="button" aria-label="공유 관측점 새로고침" title="공유 관측점 새로고침">↻</button>
         <button class="obs-panel-icon-btn" id="btn-obs-list-peek" type="button" aria-label="최소화" title="최소화"><img src="css/svg/peek-collapse-white.svg" alt="" aria-hidden="true" /></button>
         <button class="obs-sheet-close" id="btn-obs-list-close" type="button" aria-label="닫기">
           <img src="css/svg/close-white.svg" alt="" aria-hidden="true" />
@@ -148,7 +148,7 @@
           <div class="obs-reg-row">
             <label class="obs-reg-label" for="reg-heading">방향각</label>
             <div class="obs-reg-heading-wrap">
-              <input class="obs-reg-input obs-reg-input--gps obs-reg-input--heading" id="reg-heading" type="text" placeholder="현재 GPS 값" readonly />
+              <input class="obs-reg-input obs-reg-input--gps obs-reg-input--heading" id="reg-heading" type="text" inputmode="decimal" placeholder="현재 GPS 값" readonly />
               <label class="obs-reg-lock-label" for="chk-reg-heading-lock">
                 <input id="chk-reg-heading-lock" type="checkbox" /> 각 고정
               </label>
@@ -264,7 +264,7 @@
       </div>
 
       <div class="panel-body" id="panel-body">
-        <div class="tracking-source-heading"><span>개체 추적</span><button class="tracking-refresh" id="btn-bears-refresh" type="button" title="공유 자료 새로고침" aria-label="개체 추적위치 새로고침">↻</button></div>
+        <div class="tracking-source-heading"><span>개체 추적</span><button class="tracking-refresh list-refresh-button" id="btn-bears-refresh" type="button" title="공유 자료 새로고침" aria-label="개체 추적위치 새로고침">↻</button></div>
         <form class="bear-code-search" id="bear-code-search-form" role="search" aria-label="개체 코드 검색">
           <input id="bear-code-query" type="search" placeholder="개체 코드 검색" aria-label="검색할 개체 코드" autocomplete="off" spellcheck="false" enterkeyhint="search" />
           <button type="submit" class="bear-code-search__submit">조회</button>

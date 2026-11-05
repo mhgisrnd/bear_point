@@ -317,11 +317,11 @@ window.createObsRegisterModule = function createObsRegisterModule({
   }
 
   function getBearEntityApiUrl() {
-    if (window.location && /^(localhost|127\.0\.0\.1)$/.test(window.location.hostname)) {
-      return "/api/realtime/bear-entities";
-    }
+    // Capacitor also uses localhost, so hostname cannot distinguish the app from a local web server.
+    var native = window.Capacitor && (window.Capacitor.isNativePlatform?.() || window.Capacitor.getPlatform?.() === "android");
+    if (!native) return "api/app-realtime/bear-entities";
     var config = window.BEAR_RUNTIME_CONFIG || {};
-    var base = String(config.realtimeApiBase || "/api/realtime").replace(/\/+$/, "");
+    var base = String(config.realtimeApiBase || window.BEAR_API_BASE || "https://bearmap.duckdns.org/api/realtime").replace(/\/+$/, "");
     return base + "/bear-entities";
   }
 
@@ -1094,6 +1094,10 @@ window.createObsRegisterModule = function createObsRegisterModule({
         regHeadingEl.classList.remove("obs-reg-input--gps");
         regHeadingEl.placeholder = "예: 270";
         var headingText = String(regHeadingEl.value || "").trim();
+        if (headingText.indexOf("°") !== -1) {
+          headingText = headingText.replace(/°/g, "").trim();
+          regHeadingEl.value = headingText;
+        }
         if (/대기중/.test(headingText)) {
           headingText = "";
           regHeadingEl.value = "";
@@ -1106,7 +1110,7 @@ window.createObsRegisterModule = function createObsRegisterModule({
         regHeadingEl.classList.add("obs-reg-input--gps");
         regHeadingEl.placeholder = "방향각 대기중";
         regHeadingEl.value = latestLive.isGpsActive && Number.isFinite(headingToShow)
-          ? Math.round(headingToShow) + "°"
+          ? String(Math.round(headingToShow))
           : "방향각 대기중";
       }
     }
@@ -1445,13 +1449,21 @@ window.createObsRegisterModule = function createObsRegisterModule({
   }
 
   function openFromSdr(context, onCancel) {
-    if (isRegisterPopupVisible() || isSubmitting) return false;
+    if (isSubmitting) return false;
     var code = String(context && context.bearCode || "").trim();
     var hz = Number(context && context.frequencyHz);
     if (!code || !Number.isInteger(hz) || hz < 100000 || hz > 999999000) return false;
-    resetFormState();
-    open();
+    var reuseDraft = isRegisterPopupVisible();
+    if (reuseDraft && formMode !== "create") return false;
+    if (reuseDraft) {
+      closeBearPicker();
+      setPeekMode(false);
+    } else {
+      resetFormState();
+      open();
+    }
     regBearEl.value = code;
+    clearCoreFieldError(regBearEl);
     regBearEl.readOnly = true;
     if (btnBearFind) btnBearFind.disabled = true;
     if (sdrSourceEl) {
@@ -1459,6 +1471,10 @@ window.createObsRegisterModule = function createObsRegisterModule({
       sdrSourceEl.hidden = false;
     }
     sdrReturn = typeof onCancel === "function" ? onCancel : null;
+    if (reuseDraft) {
+      applyMobileViewportSizing();
+      keepPopupInViewport(false);
+    }
     return true;
   }
 

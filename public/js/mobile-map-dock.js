@@ -36,13 +36,15 @@
       const controls=document.querySelector('.map-right-controls');
       if(controls)document.body.style.setProperty('--mobile-controls-height',Math.ceil(controls.getBoundingClientRect().height)+'px');
     }
+    let showObservationsOnSave=false;
     function paint(){
       if(mobile===null)return;
       if(!mobile)expanded=true;
       dock.dataset.menu=active;dock.classList.toggle('is-expanded',expanded);content.hidden=!expanded;
       dock.classList.toggle('is-full',expanded&&full);
       dock.classList.toggle('is-filtering',expanded&&active==='tracking'&&filtering);
-      observations.setMapVisible(active==='observations'&&expanded&&!registrationWasOpen&&(!tablet.matches||!document.body.classList.contains('bp-sidebar-collapsed')));
+      observations.setMapVisible(registrationWasOpen||(active==='observations'&&expanded&&(!tablet.matches||!document.body.classList.contains('bp-sidebar-collapsed'))));
+      gps.setMapVisible?.(active==='tracking'&&!registrationWasOpen);
       fold.disabled=!mobile;
       fold.setAttribute('aria-expanded',String(expanded));fold.setAttribute('aria-label',names[active]+(expanded?' 접기':' 펼치기'));
       title.textContent=names[active];
@@ -165,14 +167,21 @@
     const registrationObserver=new MutationObserver(()=>{
       const open=!registration.classList.contains('hidden');
       const previous=registrationWasOpen;registrationWasOpen=open;
-      if(open&&!previous){restoreExpanded=expanded;restoreFull=full;collapse();dock.classList.add('is-registering');}
-      else if(!open&&previous){dock.classList.remove('is-registering');expanded=restoreExpanded;full=restoreFull;paint();}
+      if(open&&!previous){restoreExpanded=expanded;restoreFull=full;collapse();dock.classList.add('is-registering');paint();void observations.prepareRegistrationMap?.();}
+      else if(!open&&previous){
+        dock.classList.remove('is-registering');expanded=restoreExpanded;full=restoreFull;
+        if(showObservationsOnSave){showObservationsOnSave=false;select('observations',{activate:false});}else paint();
+      }
     });registrationObserver.observe(registration,{attributes:true,attributeFilter:['class']});
     const size=new ResizeObserver(measure);size.observe(dock);
     const controls=document.querySelector('.map-right-controls');if(controls)size.observe(controls);
     const sidebarObserver=new MutationObserver(()=>{if(!mobile&&!restoring)paint();});sidebarObserver.observe(document.body,{attributes:true,attributeFilter:['class']});
     tablet.addEventListener('change',layout);root.addEventListener('resize',()=>{finishDrag(null,true);measure();});
     root.BearMobileDock={select,collapse,isMobile:()=>!!mobile,isDocked:()=>true,getActive:()=>active,handleBack:collapse,
+      showObservationsAfterSave(){
+        if(registrationWasOpen||(registration&&!registration.classList.contains('hidden')))showObservationsOnSave=true;
+        else select('observations',{activate:false});
+      },
       setFiltersOpen(value){if(active!=='tracking')return;filtering=!!value;paint();}};
     layout();return root.BearMobileDock;
   };

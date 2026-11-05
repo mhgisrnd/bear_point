@@ -8,12 +8,17 @@ test('stationary records show one location marker; actual movement shows line an
     'ol/style/Style.js','ol/style/Text.js','ol/style/Fill.js','ol/style/Stroke.js','ol/style/Circle.js'
   ].map(path=>import(path).then(module=>module.default)));
   const code=fs.readFileSync('public/js/tracking/gps-track-ui.js','utf8'),source=new Vector();
-  const context=vm.createContext({ol:{Feature,geom:{Point,LineString},style:{Style,Text,Fill,Stroke,Circle}},source,
+  const teams=[{id:'gurye',color:'#16A34A'}];
+  const context=vm.createContext({root:{BearAppSettings:{store:{snapshot:()=>({items:teams})}}},ol:{Feature,geom:{Point,LineString},style:{Style,Text,Fill,Stroke,Circle}},source,
     history:{querySelectorAll:()=>[]},project:(lat,lng)=>[lng,lat],paint(){},displayed:null,map:{getView:()=>({fit(){}})}});
   vm.runInContext(code.slice(code.indexOf('    function draw(track,fit) {'),code.indexOf('    async function show(')),context);
   const point={lat:35,lng:127};context.draw({id:'stationary',status:'saved',color:'#9333EA',points:[point]},true);
   assert.equal(source.getFeatures().length,1);assert.equal(source.getFeatures()[0].getGeometry().getType(),'Point');
   assert.equal(source.getFeatures()[0].getStyle().getText().getText(),'기록 위치');
-  context.draw({id:'moved',status:'saved',points:[point,{lat:35.001,lng:127.001}]},false);
+  const route={id:'moved',status:'saved',team_id:'gurye',team_color:'#000000',color:'#FF0000',points:[point,{lat:35.001,lng:127.001}]};
+  context.draw(route,false);
   assert.equal(source.getFeatures().length,3);assert.equal(source.getFeatures()[0].getGeometry().getType(),'LineString');
+  assert.equal(source.getFeatures()[0].getStyle()[1].getStroke().getColor(),'#16A34A');
+  teams[0].color='#123456';context.draw(route,false);
+  assert.equal(source.getFeatures()[0].getStyle()[1].getStroke().getColor(),'#123456');
 });

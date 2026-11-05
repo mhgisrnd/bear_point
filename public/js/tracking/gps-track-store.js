@@ -1,5 +1,11 @@
 (function (root) {
   "use strict";
+  const RECORDING_CONFIG = Object.freeze({
+    minDistanceMeters: 10, // 마지막 저장 위치에서 필요한 이동 거리(m).
+    maxAccuracyMeters: 100,
+    maxLocationAgeMs: 60000,
+    maxSpeedMetersPerSecond: 60
+  });
   const copy = value => JSON.parse(JSON.stringify(value));
   function distance(a, b) {
     const rad = Math.PI / 180, lat = (b.lat-a.lat)*rad, lng = (b.lng-a.lng)*rad;
@@ -9,14 +15,14 @@
   function sample(last, position, interval, now = Date.now()) {
     const c = position.coords || {};
     const point = { lat: c.latitude, lng: c.longitude, accuracy: c.accuracy, recorded_at: position.timestamp };
-    if (![point.lat,point.lng,point.accuracy,point.recorded_at].every(Number.isFinite) || Math.abs(point.lat)>90 || Math.abs(point.lng)>180 || point.accuracy<0 || point.accuracy>100 || Math.abs(now-point.recorded_at)>60000) return null;
+    if (![point.lat,point.lng,point.accuracy,point.recorded_at].every(Number.isFinite) || Math.abs(point.lat)>90 || Math.abs(point.lng)>180 || point.accuracy<0 || point.accuracy>RECORDING_CONFIG.maxAccuracyMeters || Math.abs(now-point.recorded_at)>RECORDING_CONFIG.maxLocationAgeMs) return null;
     let meters = 0;
     if (last) {
       const seconds = (point.recorded_at-last.recorded_at)/1000;
       if (seconds<interval) return null;
       meters = distance(last,point);
-      if (meters/seconds>60) return null;
-      if (meters<=Math.max(5,last.accuracy||0,point.accuracy)) return null;
+      if (meters/seconds>RECORDING_CONFIG.maxSpeedMetersPerSecond) return null;
+      if (meters<RECORDING_CONFIG.minDistanceMeters) return null;
     }
     return { point, meters };
   }
@@ -88,7 +94,7 @@
         if(!win.navigator.geolocation)throw new Error('GPS 위치 기능을 사용할 수 없습니다.');
         return enqueue(async()=>{
           if(active)throw new Error('이미 이동 기록 중입니다.');
-          const track={...options,id:win.crypto.randomUUID(),started_at:Date.now(),ended_at:null,status:'recording',distance:0,point_count:0};
+          const track={...options,color:/^#[0-9a-f]{6}$/i.test(options.team_color||'')?options.team_color:'#2563EB',id:win.crypto.randomUUID(),started_at:Date.now(),ended_at:null,status:'recording',distance:0,point_count:0};
           await repo.put(track);active=track;last=null;failure='';
           try {
             watch=win.navigator.geolocation.watchPosition(position=>{
@@ -107,6 +113,18 @@
         });
       },
       stop:()=>end(),
+      async updateInterval({interval_seconds}) {
+        const interval=Number(interval_seconds);
+        if(![5,10,30,60].includes(interval))throw new Error('기록 간격을 확인해주세요.');
+        await ready;
+        if(!owns)throw new Error('기록 중인 웹 창에서 간격을 변경해주세요.');
+        return enqueue(async()=>{
+          if(!active)return {active:null};
+          const updated={...active,interval_seconds:interval};
+          await repo.put(updated);active=updated;
+          return {active:copy(active)};
+        });
+      },
       async status(){await ready;await queue;return {active:active?copy(active):null,error:failure,other_tab:!owns};},
       async list(query={}){
         await ready;const rows=(await repo.list()).filter(track=>Number(track.point_count)>0&&track.status!=='discarded');
@@ -117,6 +135,6 @@
       async detail({id}){await ready;return repo.detail(id);}
     };
   }
-  const api={distance,sample,repository,createWebRecorder};
+  const api={RECORDING_CONFIG,distance,sample,repository,createWebRecorder};
   if(typeof module==='object'&&module.exports)module.exports=api;else root.BearGpsTracks=api;
 })(typeof window==='object'?window:globalThis);

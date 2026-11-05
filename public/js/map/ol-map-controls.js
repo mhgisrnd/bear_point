@@ -652,9 +652,11 @@ window.createOlMapControlsManager = function createOlMapControlsManager(options)
 
     const btnJiri = makeBtn(
       "leaflet-control-jiri-btn",
-      "지리산으로 이동",
+      "지리산으로 이동 · 회전 초기화",
       createMaskIconMarkup("css/svg/control-jiri.svg", 18),
       function () {
+        view.cancelAnimations();
+        view.setRotation(0);
         if (!moveToOfflineInitialView({ duration: 450 })) {
           if (!fitMbtilesCoverage()) {
             view.fit(extentMap, { padding: [20, 20, 20, 20], maxZoom: 14, duration: 450 });

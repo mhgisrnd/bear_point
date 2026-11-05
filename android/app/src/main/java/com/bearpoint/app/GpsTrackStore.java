@@ -37,6 +37,11 @@ final class GpsTrackStore extends SQLiteOpenHelper {
         values.put("started_at", System.currentTimeMillis()); values.put("status", "recording");
         getWritableDatabase().insertOrThrow("tracks", null, values); return detail(id, false);
     }
+    synchronized JSObject updateInterval(String id, int interval) throws Exception {
+        if (!(interval==5 || interval==10 || interval==30 || interval==60)) throw new IllegalArgumentException("기록 간격을 확인해주세요.");
+        getWritableDatabase().execSQL("UPDATE tracks SET interval_seconds=? WHERE id=? AND status='recording'", new Object[]{interval,id});
+        return detail(id,false);
+    }
     synchronized void finish(String id, String status, String error) {
         String emptyError=(error==null?"":error+" ")+"GPS 위치가 수신되지 않아 기록을 저장하지 않았습니다.";
         getWritableDatabase().execSQL("UPDATE tracks SET status=CASE WHEN point_count=0 THEN 'discarded' ELSE ? END,ended_at=?,error=CASE WHEN point_count=0 THEN ? ELSE ? END WHERE id=? AND status='recording'",new Object[]{status,System.currentTimeMillis(),emptyError,error,id});
@@ -99,20 +104,20 @@ final class GpsTrackStore extends SQLiteOpenHelper {
         }
         return result;
     }
-    synchronized boolean append(String id, Location location) throws Exception {
-        if (!location.hasAccuracy() || location.getAccuracy() > 100 || location.getAccuracy() < 0) return false;
-        if (!Double.isFinite(location.getLatitude()) || !Double.isFinite(location.getLongitude()) || Math.abs(location.getLatitude()) > 90 || Math.abs(location.getLongitude()) > 180) return false;
-        if (Math.abs(System.currentTimeMillis() - location.getTime()) > 60000) return false;
+    synchronized String append(String id, Location location) throws Exception {
+        if (!location.hasAccuracy() || location.getAccuracy() > GpsTrackConfig.MAX_ACCURACY_METERS || location.getAccuracy() < 0) return "accuracy";
+        if (!Double.isFinite(location.getLatitude()) || !Double.isFinite(location.getLongitude()) || Math.abs(location.getLatitude()) > 90 || Math.abs(location.getLongitude()) > 180) return "coordinates";
+        if (Math.abs(System.currentTimeMillis() - location.getTime()) > GpsTrackConfig.MAX_LOCATION_AGE_MS) return "stale";
         JSObject track = detail(id, false);
-        if (!"recording".equals(track.getString("status"))) return false;
+        if (!"recording".equals(track.getString("status"))) return "inactive";
         int count = track.getInt("point_count"); double distance = 0;
         try (Cursor last = getReadableDatabase().rawQuery("SELECT lat,lng,recorded_at,accuracy FROM points WHERE track_id=? ORDER BY seq DESC LIMIT 1", new String[]{id})) {
             if (last.moveToFirst()) {
                 long delta = location.getTime() - last.getLong(2);
-                if (delta < track.getInt("interval_seconds") * 1000L) return false;
+                if (delta < track.getInt("interval_seconds") * 1000L) return "interval";
                 float[] measured = new float[1]; Location.distanceBetween(last.getDouble(0), last.getDouble(1), location.getLatitude(), location.getLongitude(), measured);
-                if (measured[0] / (delta / 1000.0) > 60) return false;
-                if(measured[0]<=Math.max(5,Math.max(last.getDouble(3),location.getAccuracy())))return false;
+                if (measured[0] / (delta / 1000.0) > GpsTrackConfig.MAX_SPEED_METERS_PER_SECOND) return "speed";
+                if (measured[0] < GpsTrackConfig.MIN_DISTANCE_METERS) return "stationary";
                 distance = measured[0];
             }
         }
@@ -125,6 +130,6 @@ final class GpsTrackStore extends SQLiteOpenHelper {
             db.execSQL("UPDATE tracks SET distance=distance+?, point_count=point_count+1 WHERE id=?", new Object[]{distance,id});
             db.setTransactionSuccessful();
         } finally { db.endTransaction(); }
-        return true;
+        return "saved";
     }
 }

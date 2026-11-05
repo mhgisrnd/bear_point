@@ -6,7 +6,7 @@
   dialog.className = "sdr-dialog";
   dialog.setAttribute("aria-labelledby", "sdr-title");
   dialog.innerHTML = `
-    <div class="sdr-header"><h2 id="sdr-title">수신기 <span class="sdr-cw-label">CW</span></h2><button type="button" data-back hidden aria-label="탐색 재개">‹ 탐색</button><button type="button" data-close>닫기</button></div>
+    <div class="sdr-header"><h2 id="sdr-title">수신기 <span class="sdr-cw-label">CW</span></h2><button type="button" data-back hidden aria-label="탐색 재개">‹ 탐색</button><button type="button" data-close aria-label="탐색 닫기">×</button></div>
     <div class="sdr-body">
     <p class="sdr-status" role="status">연결 상태 확인 전</p>
     <p class="sdr-message" role="alert"></p>
@@ -17,8 +17,7 @@
           <div class="sdr-animal-heading"><strong>찾을 개체</strong><button type="button" data-animal-clear disabled>선택 해제</button><button type="button" data-animal-refresh>목록 새로고침</button></div>
           <div data-animal-results>
           <form data-animal-search-form role="search"><input type="search" data-animal-search aria-label="개체 번호 검색" placeholder="개체 번호 검색" autocomplete="off" enterkeyhint="search"></form>
-          <p data-animal-notice class="sdr-note" role="status"></p><p data-animal-count class="sdr-note" role="status"></p><div data-animal-list class="sdr-animal-list" aria-label="개체 검색 결과"></div></div>
-          <p data-animal-selection class="sdr-note">개체를 선택하거나 수신 주파수를 직접 설정하세요.</p>
+          <p data-animal-notice class="sdr-note" role="status"></p><div class="sdr-animal-list-tools"><p data-animal-count class="sdr-note" role="status"></p><button type="button" data-animal-favorites-filter aria-pressed="false">☆ 즐겨찾기</button></div><div data-animal-list class="sdr-animal-list" aria-label="개체 검색 결과"></div></div>
         </div>
       <fieldset data-settings class="sdr-settings" disabled>
         <div class="sdr-fields">
@@ -30,11 +29,12 @@
         </div>
         </div>
 
+        <details class="sdr-advanced" data-advanced-settings><summary>상세 설정<svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6 4 4 4-4"/></svg></summary>
         <div class="sdr-fields sdr-tuning-options">
         <label>감도 <span>Gain dB</span><input data-gain type="number" min="-10" max="50" step="0.1" value="10" inputmode="decimal"></label>
         <label>주파수 보정 <span>PPM</span><input data-ppm type="number" min="-100" max="100" step="1" value="0" inputmode="numeric"></label>
         <label data-threshold-field hidden>감지 기준 <span>주변 잡음 대비 dB</span><input data-threshold type="number" min="6" max="30" step="1" value="10" inputmode="numeric"></label>
-        </div><input data-rate type="hidden" value="1024000"><input data-dwell type="hidden" value="5000"><p data-window class="sdr-note" hidden></p>
+        </div></details><input data-rate type="hidden" value="1024000"><input data-dwell type="hidden" value="5000"><p data-window class="sdr-note" hidden></p>
       </fieldset>
     </section>
     <section data-result class="sdr-section" hidden>
@@ -42,12 +42,15 @@
       <div data-scan-results hidden><p data-scan-progress class="sdr-scan-progress">탐색 대기</p><div class="sdr-candidate-heading"><strong data-candidate-heading>신호 후보</strong><span data-candidate-count>0개</span></div><div data-candidates></div></div>
       <div data-fixed-results>
       <div class="sdr-readout-row"><p class="sdr-frequency-readout" data-frequency-readout aria-live="polite">수신 주파수 —</p><div data-audio-panel><button type="button" data-audio disabled aria-pressed="false">소리 켜기</button></div></div><p data-audio-status class="sdr-note" hidden></p>
-      <div class="sdr-strength"><div class="sdr-strength-heading"><strong>수신 신호 세기</strong><span data-strength-value>측정 대기</span></div><div class="sdr-strength-bars" data-strength-bars role="meter" aria-label="청취 주파수 상대 신호 세기" aria-valuemin="0" aria-valuemax="10" aria-valuenow="0">${Array.from({ length: 10 }, (_, i) => `<span data-strength-bar="${i}" style="height:${8 + i * 3}px"></span>`).join("")}</div><p class="sdr-note" data-strength-state>청취 주파수 주변의 상대 신호 세기</p></div>
+      <div class="sdr-signal-panels">
+      <div class="sdr-strength"><div class="sdr-strength-heading"><strong>수신 신호 세기</strong><span data-strength-value>측정 대기</span></div><div class="sdr-strength-bars" data-strength-bars role="meter" aria-label="청취 주파수 상대 신호 세기" aria-valuemin="0" aria-valuemax="10" aria-valuenow="0">${Array.from({ length: 10 }, (_, i) => `<span data-strength-bar="${i}" style="height:${8 + i * 3}px"></span>`).join("")}</div><p class="sdr-note" data-strength-state>청취 주파수 주변의 상대 신호 세기</p>
       <div class="sdr-metrics"><div><span>수신 데이터</span><strong data-throughput>—</strong></div><div><span>대역 전력</span><strong data-power>—</strong></div></div>
-      <figure class="sdr-spectrum"><figcaption><strong>스펙트럼</strong><span data-spectrum-tune hidden></span><button type="button" data-spectrum-reset hidden>되돌리기</button></figcaption>
+      </div>
+      <figure class="sdr-spectrum"><figcaption><strong>스펙트럼</strong></figcaption>
         <canvas data-spectrum role="img" aria-label="수신 시작 후 주파수별 전력 그래프가 표시됩니다."></canvas>
         <p data-spectrum-summary class="sdr-note">수신 대기</p>
       </figure>
+      </div>
       <p data-spectrum-info class="sdr-note" hidden></p>
       </div>
     </section>
@@ -75,9 +78,6 @@
   const audioButton = dialog.querySelector("[data-audio]");
   const spectrumCanvas = dialog.querySelector("[data-spectrum]");
   const spectrumSummary = dialog.querySelector("[data-spectrum-summary]");
-  const spectrumTune = dialog.querySelector("[data-spectrum-tune]");
-  const spectrumReset = dialog.querySelector("[data-spectrum-reset]");
-  let spectrumOriginalHz = null;
   const settingsSection = dialog.querySelector("[data-settings-section]");
   const footer = dialog.querySelector(".sdr-footer");
   const resultSection = dialog.querySelector("[data-result]");
@@ -98,6 +98,28 @@
   let animalSearchFocused = false;
   const animalList = dialog.querySelector("[data-animal-list]");
   const animalNotice = dialog.querySelector("[data-animal-notice]");
+  const favoriteStorageKey = "bearpoint.sdrAnimalFavorites.v1";
+  const favoriteCode = code => String(code).trim().toUpperCase();
+  let favoriteCodes = new Set();
+  let favoritesOnly = false, favoritesRevision = 0;
+  try {
+    const saved = JSON.parse(window.localStorage?.getItem(favoriteStorageKey) || "[]");
+    if (Array.isArray(saved)) favoriteCodes = new Set(saved.filter(code => typeof code === "string" && code.trim()).map(favoriteCode));
+  } catch (_) { /* A damaged or unavailable store must not prevent reception. */ }
+  const favoritesFilter = dialog.querySelector("[data-animal-favorites-filter]");
+  favoritesFilter.addEventListener("click", () => {
+    favoritesOnly = !favoritesOnly; animalList.scrollLeft = 0; renderAnimalPicker();
+  });
+  function toggleFavorite(code) {
+    const next = new Set(favoriteCodes), key = favoriteCode(code);
+    if (next.has(key)) next.delete(key); else next.add(key);
+    try {
+      if (!window.localStorage) throw new Error("Storage unavailable");
+      window.localStorage.setItem(favoriteStorageKey, JSON.stringify([...next].sort()));
+      favoriteCodes = next; favoritesRevision++;
+      finishAnimalSearch(); renderAnimalPicker();
+    } catch (_) { message.textContent = "기기에 즐겨찾기를 저장하지 못했습니다."; }
+  }
   const registerObservationButton = dialog.querySelector("[data-register-observation]");
   function animalFormat(hz) { return window.BearSdrAnimals?.formatHz(hz) || (hz / 1e6).toFixed(6).replace(/0+$/, "").replace(/\.(\d{0,2})$/, (_, digits) => "." + digits.padEnd(3, "0")); }
   function animalMatchesFrequency() {
@@ -142,10 +164,13 @@
     animalSearch.disabled = locked;
     dialog.querySelector("[data-animal-refresh]").disabled = locked || catalogLoading;
     const query = String(animalSearch.value || "").trim().toLowerCase();
-    const filtered = animalItems.filter(item => item.code.toLowerCase().includes(query));
+    const filtered = animalItems.filter(item => item.code.toLowerCase().includes(query) &&
+      (!favoritesOnly || favoriteCodes.has(favoriteCode(item.code))));
     dialog.querySelector("[data-animal-count]").textContent = catalogLoading ? "" :
-      `${query ? "검색 결과" : "전체"} ${filtered.length}개체`;
-    const renderKey = JSON.stringify([animalCatalogRevision, query, selectedAnimal?.code, selectedAnimalHz, locked, catalogLoading]);
+      `${favoritesOnly ? query ? "즐겨찾기 검색" : "즐겨찾기" : query ? "검색 결과" : "전체"} ${filtered.length}개체`;
+    favoritesFilter.setAttribute("aria-pressed", String(favoritesOnly));
+    favoritesFilter.textContent = favoritesOnly ? "★ 즐겨찾기" : "☆ 즐겨찾기";
+    const renderKey = JSON.stringify([animalCatalogRevision, query, selectedAnimal?.code, selectedAnimalHz, locked, catalogLoading, favoritesOnly, favoritesRevision]);
     // Preserve scroll position and avoid rebuilding a full catalog on every signal update.
     if (renderKey !== animalListRenderKey) {
       const oldScroll = animalList.scrollLeft || 0;
@@ -161,7 +186,7 @@
         button.dataset.selected = String(selectedAnimal?.id === item.id && selectedAnimal?.code === item.code);
         button.setAttribute("role", "group"); button.setAttribute("aria-label", item.code);
         button.disabled = locked || !item.frequencies.length;
-        button.setAttribute("aria-disabled", String(locked || !item.frequencies.length));
+        button.dataset.unavailable = String(!item.frequencies.length);
         const slots = document.createElement("div"); slots.className = "sdr-animal-slots";
         item.frequencies.forEach(f => {
           const slot = document.createElement("button"); slot.type = "button";
@@ -178,19 +203,26 @@
           slots.appendChild(slot);
         });
         button.appendChild(slots);
+        const favorite = document.createElement("button"); favorite.type = "button";
+        const isFavorite = favoriteCodes.has(favoriteCode(item.code));
+        favorite.className = "sdr-animal-favorite";
+        favorite.setAttribute("data-animal-favorite", item.code);
+        favorite.setAttribute("aria-label", `${item.code} 즐겨찾기 ${isFavorite ? "해제" : "추가"}`);
+        favorite.setAttribute("aria-pressed", String(isFavorite));
+        favorite.textContent = isFavorite ? "★" : "☆";
+        favorite.addEventListener("click", () => toggleFavorite(item.code));
+        button.appendChild(favorite);
         animalList.appendChild(button);
       });
       if (!filtered.length && !catalogLoading) {
         const empty = document.createElement("p"); empty.className = "sdr-note";
-        empty.textContent = animalItems.length ? "검색 결과가 없습니다." : "개체 목록 없음"; animalList.appendChild(empty);
+        empty.textContent = favoritesOnly && !query ? "즐겨찾기한 개체가 없습니다." : animalItems.length ? "검색 결과가 없습니다." : "개체 목록 없음"; animalList.appendChild(empty);
       }
       animalList.scrollLeft = oldScroll;
     }
     const selected = animalMatchesFrequency();
     dialog.querySelector("[data-animal-results]").hidden = false;
     dialog.querySelector("[data-animal-refresh]").hidden = false;
-    dialog.querySelector("[data-animal-selection]").textContent = selectedAnimal
-      ? `${selectedAnimal.code} · ${selected ? animalFormat(selectedAnimalHz) + " MHz" : "주파수 조정됨"}` : "개체를 선택하거나 수신 주파수를 직접 설정하세요.";
     dialog.querySelector("[data-animal-clear]").disabled = locked || !selectedAnimal;
     dialog.querySelector("[data-frequency-field]").hidden = task === "scan";
     dialog.querySelector("[data-animal-picker]").hidden = task !== "fixed";
@@ -335,11 +367,28 @@
   let frequencyBeforeEditing = "";
   function setFrequencyEditing(enabled) {
     editingFrequency = enabled;
+    if (!enabled) {
+      digitControls.forEach(({ digit }) => digit.blur?.());
+      frequency.blur?.();
+    }
     frequencyEditor.hidden = true;
     frequencyDigits.hidden = false;
     frequencyEditButton.textContent = enabled ? "완료" : "직접 입력";
     frequencyEditButton.setAttribute("aria-expanded", String(enabled));
     updateWindow();
+  }
+  function completeFrequencyEditing() {
+    if (settings.disabled) return false;
+    const bounds = frequencyBounds, value = Number(frequency.value);
+    if (!frequency.value.trim() || !Number.isFinite(value) || value < bounds.min || value > bounds.max) {
+      message.textContent = `${bounds.min}–${bounds.max} MHz 범위를 확인하세요.`;
+      digitControls[0].digit.focus?.();
+      return false;
+    }
+    frequency.value = animalFormat(Math.round(value * 1e6));
+    message.textContent = "";
+    setFrequencyEditing(false);
+    return true;
   }
   const digitControls = [100000000, 10000000, 1000000, 100000, 10000, 1000, 100, 10].map((step, index) => {
     const up = dialog.querySelector(`[data-freq-up="${step}"]`);
@@ -357,6 +406,7 @@
     up.addEventListener("click", () => adjust(1));
     down.addEventListener("click", () => adjust(-1));
     digit.setAttribute("inputmode", "numeric");
+    digit.setAttribute("enterkeyhint", "done");
     digit.setAttribute("role", "textbox");
     digit.setAttribute("aria-label", `${index + 1}번째 주파수 숫자`);
     digit.setAttribute("aria-hidden", "false");
@@ -365,19 +415,29 @@
       const range = document.createRange(); range.selectNodeContents(digit);
       const selection = window.getSelection(); selection.removeAllRanges(); selection.addRange(range);
     });
-    digit.addEventListener("input", () => {
+    digit.addEventListener("input", (event = {}) => {
+      if (event.isComposing) return;
       if (!editingFrequency || settings.disabled) { updateFrequencyDigits(); return; }
       const typed = String(digit.textContent).replace(/\D/g, "").slice(-1);
       if (!typed) { updateFrequencyDigits(); return; }
       const digits = Number(frequency.value).toFixed(5).padStart(9, "0").replace(".", "").split("");
       digits[index] = typed;
       frequency.value = animalFormat(Math.round(Number(`${digits.slice(0, 3).join("")}.${digits.slice(3).join("")}`) * 1e6));
-       updateWindow();
-      digitControls[index + 1]?.digit.focus?.();
+      updateWindow();
+      if (index === digitControls.length - 1) completeFrequencyEditing();
+      else digitControls[index + 1].digit.focus?.();
+    });
+    digit.addEventListener("beforeinput", event => {
+      if (!editingFrequency || event.isComposing) return;
+      if (["insertParagraph", "insertLineBreak"].includes(event.inputType)) {
+        event.preventDefault(); completeFrequencyEditing();
+      }
     });
     digit.addEventListener("keydown", event => {
-      if (!editingFrequency || settings.disabled) return;
-      if (event.key === "Enter") { event.preventDefault(); frequencyEditButton.click(); }
+      if (!editingFrequency || settings.disabled || event.isComposing) return;
+      if (event.key === "Enter" || event.keyCode === 13 || (event.key === "Tab" && !event.shiftKey && index === digitControls.length - 1)) {
+        event.preventDefault(); completeFrequencyEditing();
+      }
       if (event.key === "Escape") { event.preventDefault(); frequency.value = frequencyBeforeEditing;  setFrequencyEditing(false); }
     });
     return { step, up, down, digit };
@@ -402,21 +462,10 @@
 
   frequencyEditButton.addEventListener("click", () => {
     if (settings.disabled) return;
-    if (editingFrequency) {
-
-      const bounds = frequencyBounds, value = Number(frequency.value);
-      if (!frequency.value.trim() || !Number.isFinite(value) || value < bounds.min || value > bounds.max) {
-        message.textContent = `${bounds.min}–${bounds.max} MHz 범위를 확인하세요.`;
-        digitControls[0].digit.focus?.();
-        return;
-      }
-      frequency.value = animalFormat(Math.round(value * 1e6));
-      message.textContent = "";
-    }
-    if (!editingFrequency) frequencyBeforeEditing = frequency.value;
-    setFrequencyEditing(!editingFrequency);
-    if (editingFrequency) digitControls[0].digit.focus?.();
-    updateWindow();
+    if (editingFrequency) { completeFrequencyEditing(); return; }
+    frequencyBeforeEditing = frequency.value;
+    setFrequencyEditing(true);
+    digitControls[0].digit.focus?.();
   });
   frequency.addEventListener("keydown", event => {
     if (event.key === "Enter") { event.preventDefault(); if (editingFrequency) frequencyEditButton.click(); }
@@ -430,17 +479,8 @@
     const rateHz = Number.isFinite(rf.sampleRate) ? rf.sampleRate : Number(rate.value);
     const data = plot.describe(rf.spectrumDbfs, centerHz, rateHz);
     const state = snapshot && snapshot.receptionState;
-    if (["starting", "receiving"].includes(state) || !data) spectrumOriginalHz = null;
-    const canTune = task === "fixed" && !settings.disabled && !!data &&
-      ["idle", "error"].includes(state) && snapshot?.fixedResultAvailable;
-    const selectedHz = canTune ? Number(frequency.value) * 1e6 : null;
     const listenHz = state === "receiving" && ["wfm", "cw"].includes(rf.mode) ? rf.listenFrequencyHz : null;
-    spectrumCanvas.classList.toggle("sdr-spectrum-tunable", canTune);
-    spectrumTune.hidden = !canTune;
-    if (canTune) spectrumTune.textContent = `선택 ${animalFormat(selectedHz)} MHz · 드래그로 1 kHz씩 조정`;
-    spectrumReset.hidden = !canTune || spectrumOriginalHz === null ||
-      Math.round(selectedHz / 1000) === Math.round(spectrumOriginalHz / 1000);
-    plot.draw(spectrumCanvas, data, centerHz, rateHz, state, listenHz, selectedHz);
+    plot.draw(spectrumCanvas, data, centerHz, rateHz, state, listenHz);
     if (!data) {
       spectrumSummary.textContent = state === "receiving" ? "스펙트럼 대기 중" : "수신 대기";
       dialog.querySelector("[data-spectrum-info]").textContent = "";
@@ -452,53 +492,6 @@
     dialog.querySelector("[data-spectrum-info]").textContent = `${(data.startHz / 1e6).toFixed(3)}–${(data.endHz / 1e6).toFixed(3)} MHz · FFT ${data.binWidthHz.toFixed(0)} Hz${rf.spectrumPeakHold ? " · 순간 피크 유지" : ""}`;
     spectrumCanvas.setAttribute("aria-label", spectrumSummary.textContent);
   }
-
-  let spectrumPointer = null;
-  function canTuneSpectrum() {
-    const rf = current?.reception || {};
-    return task === "fixed" && !settings.disabled && current?.fixedResultAvailable &&
-      ["idle", "error"].includes(current.receptionState) &&
-      !!window.SdrSpectrumPlot?.describe(rf.spectrumDbfs, rf.frequencyHz, rf.sampleRate);
-  }
-  function tuneFromSpectrum(event) {
-    if (!spectrumPointer || !canTuneSpectrum()) return;
-    // Relative CSS pixels keep fine tuning independent of FFT width and sample rate.
-    const steps = Math.round((event.clientX - spectrumPointer.x) / 12);
-    const hz = spectrumPointer.hz + steps * 1000;
-    const selected = Math.max(frequencyBounds.min * 1e6, Math.min(frequencyBounds.max * 1e6, hz));
-    if (selected === Math.round(Number(frequency.value) * 1e6)) return;
-    if (spectrumOriginalHz === null) spectrumOriginalHz = spectrumPointer.hz;
-    frequency.value = animalFormat(selected);
-    updateWindow();
-  }
-  spectrumReset.addEventListener("click", () => {
-    if (spectrumReset.hidden || spectrumOriginalHz === null || settings.disabled) return;
-    frequency.value = animalFormat(spectrumOriginalHz);
-    spectrumOriginalHz = null;
-    updateWindow();
-  });
-  spectrumCanvas.addEventListener("pointerdown", event => {
-    if (spectrumPointer || !canTuneSpectrum() || (event.button != null && event.button !== 0)) return;
-    const rect = spectrumCanvas.getBoundingClientRect();
-    const x = event.clientX - rect.left;
-    const y = (event.clientY - rect.top) * 240 / rect.height;
-    if (x < 48 || x > rect.width - 14 || y < 28 || y > 208) return;
-    spectrumPointer = { id: event.pointerId, x: event.clientX, hz: Math.round(Number(frequency.value) * 1e6) };
-    spectrumCanvas.setPointerCapture?.(event.pointerId);
-    event.preventDefault?.();
-  });
-  spectrumCanvas.addEventListener("pointermove", event => {
-    if (event.pointerId !== spectrumPointer?.id) return;
-    tuneFromSpectrum(event);
-    event.preventDefault?.();
-  });
-  for (const name of ["pointerup", "pointercancel", "lostpointercapture"]) {
-    spectrumCanvas.addEventListener(name, event => {
-      if (event.pointerId === spectrumPointer?.id) spectrumPointer = null;
-    });
-  }
-
-
 
   function updateWindow() {
     updateRunButtons();
@@ -554,7 +547,6 @@
     lastScan = null;
     restoredFixed = false;
     candidateSelected = false;
-    spectrumOriginalHz = null;
     setTask("fixed", false);
     settingsSection.hidden = resultSection.hidden = footer.hidden = true;
   }
@@ -827,6 +819,7 @@
 
   trigger.addEventListener("click", async function () {
     if (dialog.open) return;
+    dialog.querySelector("[data-advanced-settings]").open = false;
     if (typeof window.__bpResetBackExit === "function") window.__bpResetBackExit();
     dialog.showModal();
     if (!catalogLoaded) void loadAnimals();
@@ -916,7 +909,7 @@
     // Native dialog modality must be released before the existing map form opens.
     dialog.close();
     try {
-      if (window.BearSdrRegistration.open(context, returnToReceiver) === false) throw new Error("작성 중인 관측점을 먼저 저장하거나 닫아주세요.");
+      if (window.BearSdrRegistration.open(context, returnToReceiver) === false) throw new Error("관측점 저장 또는 수정을 완료한 뒤 다시 시도해주세요.");
     } catch (error) { returnToReceiver(); throw error; }
   }));
   stopButton.addEventListener("click", () => run(async () => {

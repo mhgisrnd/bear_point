@@ -16,7 +16,7 @@
     const button = document.getElementById('btn-gps-tracking');
     const panel = document.createElement('section');
     panel.className='gps-track-panel'; panel.hidden=true; panel.setAttribute('aria-label','이동 기록');
-    panel.innerHTML=`<header><strong>이동 기록</strong><div class="gps-track-header-actions"><button type="button" data-start>기록 시작</button><button type="button" data-stop hidden>종료·저장</button><button type="button" data-refresh aria-label="기록 이력 새로고침" title="기록 이력 새로고침">↻</button></div><button type="button" data-close aria-label="이동 기록 닫기">×</button></header>
+    panel.innerHTML=`<header><strong>이동 기록</strong><div class="gps-track-header-actions"><button type="button" data-start>기록 시작</button><button type="button" data-stop hidden>종료·저장</button><button type="button" class="list-refresh-button" data-refresh aria-label="기록 이력 새로고침" title="기록 이력 새로고침">↻</button></div><button type="button" data-close aria-label="이동 기록 닫기">×</button></header>
       <div class="gps-track-content"><p class="gps-track-summary">기록을 시작하면 이동 경로가 지도에 표시됩니다.</p>
       <div class="gps-track-actions"><button type="button" data-hide hidden>경로 숨기기</button></div>
       <p class="gps-track-message" role="status" aria-live="polite"></p><div class="gps-track-actions"><button type="button" data-sync hidden>미전송 기록 전송</button></div><p class="gps-track-sync-message" role="status" aria-live="polite" hidden></p>
@@ -79,6 +79,7 @@
     let active=null,displayed=null,busy=false,polling=false,historyOffset=0,historyVersion=0,viewVersion=0,initial=true;
     const source=new ol.source.Vector();
     const layer=new ol.layer.Vector({source});
+    layer.setVisible(false);
     const index=map.getLayers().getArray().indexOf(insertBefore);
     if(index>=0)map.getLayers().insertAt(index,layer);else map.addLayer(layer);
     const km=value=>(Number(value||0)/1000).toFixed(2)+' km';
@@ -108,7 +109,9 @@
       displayed=track; source.clear();
       history.querySelectorAll('[data-track-id]').forEach(row=>row.classList.toggle('is-selected',row.dataset.trackId===String(track.id)));
       const points=(track.points||[]).map(point=>project(point.lat,point.lng));
-      const color=/^#[0-9a-f]{6}$/i.test(track.color||'')?track.color:'#2563EB';
+      const team=root.BearAppSettings?.store.snapshot().items.find(item=>item.id===track.team_id);
+      const teamColor=team?.color||track.team_color;
+      const color=/^#[0-9a-f]{6}$/i.test(teamColor||'')?teamColor:'#2563EB';
       if(points.length>1){
         const line=new ol.Feature(new ol.geom.LineString(points));
         line.setStyle([new ol.style.Style({stroke:new ol.style.Stroke({color:'#ffffff',width:6})}),new ol.style.Style({stroke:new ol.style.Stroke({color,width:3})})]); source.addFeature(line);
@@ -129,7 +132,7 @@
       if(!track)throw new Error('기록을 찾을 수 없습니다.');
       draw(track,fit);
       if(track.error)message.textContent=track.error;
-      else if(!track.point_count)message.textContent='저장된 GPS 지점이 없습니다.';
+      else if(!track.point_count)message.textContent=active?.id===track.id?'GPS 수신 대기 중입니다. 정확한 위치를 받으면 자동으로 기록합니다.':'저장된 GPS 지점이 없습니다.';
     }
     async function loadHistory(reset=true) {
       const version=++historyVersion;
@@ -177,6 +180,8 @@
         else if(result.error)message.textContent=result.error;
         if(active && (initial || displayed?.id===active.id || !displayed)) {
           if(displayed?.id!==active.id||displayed?.point_count!==active.point_count)await show(active.id,false);
+          if(result.location_warning)message.textContent=result.location_warning;
+          else if(!result.error)message.textContent=active.point_count?'':'GPS 수신 대기 중입니다. 정확한 위치를 받으면 자동으로 기록합니다.';
         } else if(previous&&!active){
           ++viewVersion;source.clear();displayed=null;
           const finished=await plugin.detail({id:previous.id});
@@ -207,8 +212,8 @@
       await loadHistory();
     }));
     hide.addEventListener('click',()=>{++viewVersion;source.clear();displayed=null;message.textContent='';paint();});
-    function close(){setFilterPanelOpen(false);panel.hidden=true;button.setAttribute('aria-expanded','false');if(root.BearMobileDock?.isMobile()&&root.BearMobileDock.getActive()==='tracking')root.BearMobileDock.collapse();}
-    function open(){panel.hidden=false;root.BearMobileDock?.select('tracking',{activate:false});setFilterPanelOpen(false);paint();void action(()=>loadHistory());void poll();}
+    function close(){layer.setVisible(false);setFilterPanelOpen(false);panel.hidden=true;button.setAttribute('aria-expanded','false');if(root.BearMobileDock?.isMobile()&&root.BearMobileDock.getActive()==='tracking')root.BearMobileDock.collapse();}
+    function open(){panel.hidden=false;layer.setVisible(true);displayed=null;++viewVersion;source.clear();root.BearMobileDock?.select('tracking',{activate:false});setFilterPanelOpen(false);paint();void action(()=>loadHistory()).then(()=>poll());}
     button.addEventListener('click',()=>{if(panel.hidden){open();(active?stop:start).focus();}else close();});
     panel.querySelector('[data-close]').addEventListener('click',close);
     refreshButton.addEventListener('click',()=>void action(()=>loadHistory()));
@@ -235,6 +240,15 @@
     root.addEventListener('resize',place);root.addEventListener('pageshow',event=>{if(event.persisted){root.location.reload();return;}void poll();});
     document.addEventListener('visibilitychange',()=>{if(!document.hidden)void poll();});
     const timer=setInterval(()=>void poll(),3000);root.addEventListener('pagehide',()=>clearInterval(timer),{once:true});
-    void poll();return {open,close,panel,refreshPlacement:paint,isOpen:()=>!panel.hidden};
+    async function updateInterval(interval_seconds) {
+      if(busy)throw new Error('이동 기록 작업을 마친 후 다시 저장해주세요.');
+      busy=true;paint();
+      try {
+        const result=await plugin.updateInterval({interval_seconds});
+        active=result.active||null;
+        if(active && displayed?.id===active.id)displayed={...displayed,interval_seconds:active.interval_seconds};
+      } finally {busy=false;paint();}
+    }
+    void poll();return {open,close,panel,refreshPlacement:paint,isOpen:()=>!panel.hidden,updateInterval,setMapVisible:visible=>layer.setVisible(visible)};
   };
 })(window);

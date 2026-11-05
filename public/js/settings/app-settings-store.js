@@ -7,10 +7,10 @@
     { id: "regional", name: "광역팀", color: "#9333EA" }
   ];
   const clone = value => JSON.parse(JSON.stringify(value));
-  const DEFAULT_TRACKING = { interval_seconds: 10, color: "#2563EB" };
+  const DEFAULT_TRACKING = { interval_seconds: 10 };
   function normalizeTracking(value) {
-    if (!value || ![5, 10, 30, 60].includes(Number(value.interval_seconds)) || !/^#[0-9a-f]{6}$/i.test(value.color || "")) throw new Error("이동 기록 설정을 확인해주세요.");
-    return { interval_seconds: Number(value.interval_seconds), color: value.color.toUpperCase() };
+    if (!value || ![5, 10, 30, 60].includes(Number(value.interval_seconds))) throw new Error("이동 기록 설정을 확인해주세요.");
+    return { interval_seconds: Number(value.interval_seconds) };
   }
   const decode = value => { try { return JSON.parse(value); } catch (_) { return null; } };
   function normalizeTeams(items) {

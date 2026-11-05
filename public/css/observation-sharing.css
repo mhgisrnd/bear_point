@@ -96,6 +96,11 @@
 .realtime-refresh-error { margin: 4px 0 8px; color: #a15a29; font-size: 11px; }
 
 /* Observation details use full-width label/value rows instead of small tiles. */
+.map-detail-popup { flex-direction: column; }
+.map-detail-popup-content { flex: 1 1 auto; min-height: 0; overflow: auto; overscroll-behavior: contain; }
+.map-detail-popup .obs-popup-card__actions { position: static; bottom: auto; }
+.map-detail-popup .obs-popup-card__eyebrow { position: sticky; top: 0; z-index: 2; background: #fff; }
+.map-detail-popup .obs-detail-table th, .map-detail-popup .obs-detail-table td { height: auto; line-height: 1.5; }
 .obs-popup-card--observation, .obs-popup-card--estimate { min-width: 0; max-width: none; width: 100%; }
 .map-detail-popup .obs-popup-card--observation .obs-popup-card__eyebrow,
 .map-detail-popup .obs-popup-card--estimate .obs-popup-card__eyebrow { margin: 0 0 6px; padding: 0 24px 6px 0; font-size: 13px; line-height: 1.3; overflow-wrap: anywhere; }

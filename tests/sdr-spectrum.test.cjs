@@ -48,3 +48,14 @@ test('redrawing a frame does not resize the canvas backing store', () => {
   plot.draw(canvas, data, 103500000, 1024000, 'receiving');
   assert.equal(resizes, 2);
 });
+
+test('compact spectrum uses its displayed height and keeps axis labels within the canvas', () => {
+  const plot=setup(),labels=[];
+  const ctx={setTransform(){},fillRect(){},beginPath(){},moveTo(){},lineTo(){},stroke(){},
+    fillText(text,x,y){labels.push({text,x,y});},setLineDash(){},closePath(){},fill(){},arc(){}};
+  const canvas={clientWidth:260,clientHeight:128,getContext:()=>ctx};
+  plot.draw(canvas,plot.describe(Array(1024).fill(-80),148229000,1024000),148229000,1024000,'receiving',148241000);
+  assert.equal(canvas.width,520);assert.equal(canvas.height,256);
+  assert.ok(labels.every(label=>label.x>=0&&label.x<=260&&label.y>=0&&label.y<128));
+  assert.ok(labels.some(label=>label.text==='MHz'));
+});
