@@ -21,6 +21,7 @@ final class SdrRuntime {
     UsbDeviceConnection connection;
     String connectedId;
     String serviceError = "";
+    long receiverUiRequestSerial, receiverUiRequestId;
     Runnable listener;
 
     private SdrRuntime(Context context) {

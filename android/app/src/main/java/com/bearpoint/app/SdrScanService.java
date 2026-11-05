@@ -27,6 +27,7 @@ import java.util.Locale;
 
 /** Keeps an explicitly started USB scan or fixed reception alive in the background. */
 public final class SdrScanService extends Service {
+    static final String ACTION_OPEN_RECEIVER = "com.bearpoint.app.OPEN_SDR_RECEIVER";
     private static final String CHANNEL = "sdr_scan";
     private static final String ACTION_START = "com.bearpoint.app.SDR_SCAN_START";
     private static final String ACTION_STOP = "com.bearpoint.app.SDR_SCAN_STOP";
@@ -84,7 +85,7 @@ public final class SdrScanService extends Service {
                 : "IQ 분석 · 대역 준비 중";
         }
         int hz = runtime.sdr.tunedFrequencyHz;
-        String mode = "wfm".equals(runtime.sdr.mode) ? "WFM" : "IQ 분석";
+        String mode = "cw".equals(runtime.sdr.mode) ? "CW" : "wfm".equals(runtime.sdr.mode) ? "WFM" : "IQ 분석";
         return hz > 0 ? mode + " · " + mhz(hz) + " MHz" : mode + " · 주파수 준비 중";
     }
 
@@ -215,8 +216,9 @@ public final class SdrScanService extends Service {
     }
 
     private Notification notification(String title) {
-        Intent open = new Intent(this, MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
-        PendingIntent openAction = PendingIntent.getActivity(this, 0, open, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+        Intent open = new Intent(this, MainActivity.class).setAction(ACTION_OPEN_RECEIVER)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+        PendingIntent openAction = PendingIntent.getActivity(this, 10, open, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
         Intent stop = new Intent(this, SdrScanService.class).setAction(ACTION_STOP);
         PendingIntent stopAction = PendingIntent.getService(this, 1, stop, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
         Intent dismissed = new Intent(ACTION_DISMISSED).setPackage(getPackageName());

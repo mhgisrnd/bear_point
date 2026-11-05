@@ -15,6 +15,7 @@ import android.os.Handler;
 import android.os.Looper;
 import android.os.Build;
 import androidx.core.content.ContextCompat;
+import androidx.core.content.FileProvider;
 import com.getcapacitor.annotation.Permission;
 import com.getcapacitor.annotation.PermissionCallback;
 import androidx.core.view.ViewCompat;
@@ -86,6 +87,7 @@ public class RtlSdrPlugin extends Plugin {
     @Override public void load() {
         runtime = SdrRuntime.get(getContext());
         sdr = runtime.sdr;
+        sdr.diagnosticStorage(getContext().getFilesDir(),getContext().getCacheDir());
         runtime.listener = runtimeListener;
         usb = runtime.usb;
         permissionAction = getContext().getPackageName() + ".RTL_USB_PERMISSION";
@@ -156,6 +158,8 @@ public class RtlSdrPlugin extends Plugin {
         result.put("scanResumeAvailable", sdr.hasScanSession());
         result.put("receptionError", runtime.serviceError.isEmpty() ? sdr.error : runtime.serviceError);
         result.put("audio", sdr.audio.snapshot());
+        result.put("diagnostic", sdr.diagnosticSnapshot());
+        result.put("receiverUiRequestId", runtime.receiverUiRequestId);
         result.put("viewportInsets", viewportInsets());
         return result;
     }
@@ -297,7 +301,7 @@ public class RtlSdrPlugin extends Plugin {
             if (runtime.connection == null) { call.reject("USB 연결을 먼저 확인하세요."); return; }
             int hz = call.getInt("frequencyHz", 150000000);
             int rate = call.getInt("sampleRate", 1024000);
-            int gain = call.getInt("gainTenthsDb", 100);
+            int gain = call.getInt("gainTenthsDb", 500);
             int ppm = call.getInt("ppm", 0);
             String mode = call.getString("mode", "iq"), band = call.getString("band", "vhf");
             int listen = call.getInt("listenFrequencyHz", hz), deemphasis = call.getInt("deemphasisUs", 75);
@@ -362,7 +366,7 @@ public class RtlSdrPlugin extends Plugin {
         execute(call, () -> {
             if (paused) { call.reject("앱 화면에서 탐색을 시작하세요."); return; }
             if (runtime.connection == null) { call.reject("USB 연결을 먼저 확인하세요."); return; }
-            int gain = call.getInt("gainTenthsDb", 100), ppm = call.getInt("ppm", 0);
+            int gain = call.getInt("gainTenthsDb", 500), ppm = call.getInt("ppm", 0);
             if (gain < -100 || gain > 500 || ppm < -100 || ppm > 100) {
                 call.reject("Gain·PPM 설정 범위를 확인하세요."); return;
             }
@@ -380,8 +384,46 @@ public class RtlSdrPlugin extends Plugin {
 
     @PluginMethod public void setAudio(PluginCall call) {
         execute(call, () -> {
-            sdr.setAudio(call.getBoolean("enabled"), call.getDouble("volume"));
+            sdr.setAudio(call.getBoolean("enabled"), call.getDouble("volume"), call.getInt("gainDb"));
             call.resolve(snapshot()); publish();
+        });
+    }
+    @PluginMethod public void startDiagnostic(PluginCall call) {
+        execute(call, () -> {
+            JSObject device=new JSObject();device.put("manufacturer",Build.MANUFACTURER);device.put("model",Build.MODEL);
+            device.put("androidSdk",Build.VERSION.SDK_INT);device.put("androidRelease",Build.VERSION.RELEASE);
+            device.put("webAssetRevision",MainActivity.WEB_ASSET_REVISION);
+            sdr.startDiagnostic(new java.io.File(getContext().getFilesDir(),"sdr-diagnostics"),device);
+            call.resolve(snapshot());publish();
+        });
+    }
+    @PluginMethod public void acknowledgeReceiverUi(PluginCall call) {
+        execute(call, () -> {
+            long requestId = call.getData().optLong("requestId", 0);
+            if (requestId > 0 && requestId == runtime.receiverUiRequestId) runtime.receiverUiRequestId = 0;
+            call.resolve();
+        });
+    }
+
+    @Override protected void handleOnNewIntent(Intent intent) {
+        if (intent == null || !SdrScanService.ACTION_OPEN_RECEIVER.equals(intent.getAction())) return;
+        intent.setAction(null); // Do not replay a consumed launch Intent after activity recreation.
+        main.post(() -> {
+            if (destroyed) return;
+            // Keep the request until the WebView opens the receiver, including cold launch.
+            runtime.receiverUiRequestId = ++runtime.receiverUiRequestSerial;
+            publish();
+        });
+    }
+
+    @PluginMethod public void shareDiagnostic(PluginCall call) {
+        execute(call, () -> {
+            String id=call.getString("id","");
+            java.io.File file=id.isEmpty()?sdr.diagnosticFile():sdr.diagnosticFile(id);
+            Uri uri=FileProvider.getUriForFile(getContext(),getContext().getPackageName()+".fileprovider",file);
+            Intent send=new Intent(Intent.ACTION_SEND).setType("application/zip").putExtra(Intent.EXTRA_STREAM,uri)
+                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            getActivity().startActivity(Intent.createChooser(send,"수신 진단 파일 공유"));call.resolve();
         });
     }
 

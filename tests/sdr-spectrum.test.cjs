@@ -10,6 +10,20 @@ function setup() {
   return window.SdrSpectrumPlot;
 }
 
+test('CW zoom centers the selected carrier, includes zero offset and draws precise frequency ticks',()=>{
+  const plot=setup(),bins=Array(128).fill(-100);bins[64]=-78;
+  const data=plot.describe(bins,148241000,6000,{narrow:true});
+  assert.equal(data.peakHz,148241000);assert.equal(data.binWidthHz,46.875);
+  assert.equal(data.startHz,148238000);assert.equal(data.endHz,148244000);
+  const labels=[];
+  const ctx={setTransform(){},fillRect(){},beginPath(){},moveTo(){},lineTo(){},stroke(){},
+    fillText(text,x,y){labels.push({text,x,y});},setLineDash(){},closePath(){},fill(){},arc(){}};
+  plot.draw({clientWidth:260,clientHeight:128,getContext:()=>ctx},data,148241000,6000,'receiving',148241000);
+  for(const text of ['148.238','148.241','148.244','대상','-60','-120'])assert.ok(labels.some(x=>x.text===text),text);
+  assert.ok(!labels.some(x=>x.text==='148.229'));
+  assert.ok(labels.every(x=>x.x>=0&&x.x<=260&&x.y>=0&&x.y<128));
+});
+
 test('FFT-shift mapping puts negative offsets on the left and positive offsets on the right', () => {
   const plot = setup();
   for (const [index, expected] of [[256, 103244000], [768, 103756000]]) {

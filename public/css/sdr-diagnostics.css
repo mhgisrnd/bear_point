@@ -263,6 +263,7 @@
 .sdr-tuning-options { margin-top: 8px; grid-template-columns: 104px 120px; justify-content: start; column-gap: 12px; }
 .sdr-tuning-options label { display: grid; grid-template-columns: 1fr auto; gap: 2px 4px; align-items: baseline; }
 .sdr-tuning-options input { grid-column: 1 / -1; width: 84px; max-width: 84px; justify-self: start; }
+.sdr-tuning-options [data-gain-info] { grid-column: 1 / -1; min-width: 0; font-size: 10px; line-height: 1.4; color: #526477; overflow-wrap: anywhere; }
 .sdr-tuning-options [data-threshold-field] { grid-column: 1 / -1; }
 .sdr-advanced { margin-top: 8px; padding-top: 4px; border-top: 1px solid #dce6eb; }
 .sdr-advanced > summary { display: flex; align-items: center; justify-content: flex-start; gap: 6px; min-height: 36px; margin: 0; color: #145d75; font-size: 13px; font-weight: 600; list-style: none; cursor: pointer; }
@@ -279,6 +280,13 @@
 .sdr-readout-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px; margin-bottom: 6px; }
 .sdr-frequency-readout { min-width: 0; margin: 0; padding: 0; border-radius: 0; background: transparent; font-size: clamp(13px, 3.7vw, 19px); }
 .sdr-readout-row [data-audio] { min-height: 44px; width: auto; padding: 4px 8px; font-size: 12px; white-space: nowrap; }
+.sdr-listening-level { display: flex; align-items: center; justify-content: flex-end; gap: 6px; margin: 0 0 6px; color: #526477; font-size: 11px; }
+.sdr-listening-level select { min-height: 32px; width: 90px; border: 1px solid #c7dce2; border-radius: 6px; padding: 3px 6px; background: #fff; color: #145d75; font: inherit; }
+.sdr-reception-diagnostic { margin-top: 6px; font-size: 11px; color: #526477; }
+.sdr-reception-diagnostic summary { cursor: pointer; padding: 4px 0; }
+.sdr-reception-diagnostic select { display: block; width: 100%; min-width: 0; min-height: 34px; margin-top: 6px; border: 1px solid #c7dce2; border-radius: 6px; padding: 4px; font: inherit; color: #145d75; background: #fff; }
+.sdr-reception-diagnostic > div { display: flex; gap: 6px; margin-top: 4px; }
+.sdr-reception-diagnostic button { min-height: 32px; padding: 4px 8px; font-size: 11px; }
 .sdr-strength { padding: 8px; margin-bottom: 8px; border-radius: 6px; }
 .sdr-strength-heading { font-size: 13px; }
 .sdr-strength-bars { margin-top: 3px; }

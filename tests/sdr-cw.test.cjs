@@ -140,3 +140,87 @@ test('CW noise reference suppresses the old noise-only floor while retaining wea
     assert.ok(10*Math.log10(peak/r.api.noisePower())<6);
   }
 });
+
+test('complex channel selection is symmetric around the requested carrier',()=>{
+  const amplitudes=[];
+  for(const error of [-1000,1000]){
+    const r=receiver();r.api.configure(1024000,12000,0);
+    const pcm=r.decode(keyed(1024000,12000+error));
+    amplitudes.push(rms(pcm,.203,.219));
+  }
+  assert.ok(Math.abs(20*Math.log10(amplitudes[0]/amplitudes[1]))<.5);
+});
+
+test('CW meter shares the symmetric complex RF channel instead of the audio beat filter',()=>{
+  const powers=[];
+  for(const error of [-1000,1000]){
+    const r=receiver();r.api.configure(1024000,12000,0);r.decode(keyed(1024000,12000+error));
+    powers.push(r.api.signalPeak());
+  }
+  assert.ok(Math.abs(10*Math.log10(powers[0]/powers[1]))<.1,'equal RF offsets must have equal meter response');
+});
+
+test('weak noisy CW remains within 3dB of an independent ideal 1.8kHz channel receiver',()=>{
+  const {referenceCw}=require('./cw-reference.cjs');
+  const quality=pcm=>{
+    let re=0,im=0;const a=2160,b=2640;
+    for(let i=a;i<b;i++){re+=pcm[i]*Math.cos(2*Math.PI*700*i/48000);im+=pcm[i]*Math.sin(2*Math.PI*700*i/48000);}
+    return 10*Math.log10(2*(re*re+im*im)/((b-a)**2)/rms(pcm,.07,.09)**2);
+  };
+  for(const amplitude of [.3,.6,2]){
+    let seed=124;const random=()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return(seed+.5)/4294967296;};
+    const iq=noisyBeacon(amplitude,2,random),r=receiver();r.api.configure(1024000,12000,0);
+    const actual=quality(r.decode(iq)),reference=quality(referenceCw(iq,1024000,12000));
+    assert.ok(actual>=reference-3,JSON.stringify({amplitude,actual,reference}));
+  }
+});
+
+test('audio gain makes weak pulses audible without changing RF measurements or generating pulses',()=>{
+  let seed=124;const random=()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return(seed+.5)/4294967296;};
+  const iq=noisyBeacon(.5,2,random),raw=receiver(),auto=receiver(),manual=receiver();
+  raw.api.configure(1024000,12000,0);auto.api.configure(1024000,12000,-1);manual.api.configure(1024000,12000,24);
+  // Establish the level on identical pre-roll noise before the short real pulse.
+  const noise=noisyBeacon(0,2,random);
+  for(let i=0;i<10;i++){raw.decode(noise);auto.decode(noise);manual.decode(noise);}
+  raw.api.signalPeak();auto.api.signalPeak();manual.api.signalPeak();
+  const original=raw.decode(iq),boosted=auto.decode(iq),fixed=manual.decode(iq);
+  assert.ok(rms(boosted,.045,.055)>rms(original,.045,.055)*20);
+  assert.ok(rms(fixed,.045,.055)>rms(original,.045,.055)*15);
+  assert.equal(raw.api.signalPeak(),auto.api.signalPeak());assert.equal(raw.api.noisePower(),manual.api.noisePower());
+  const silent=receiver();silent.api.configure(1024000,12000,-1);
+  const silence=silent.decode(new Uint8Array(1024000).fill(128));
+  assert.ok(rms(silence,.3,.4)<1,'no generated confirmation beep');
+  assert.ok(silent.api.audioGain()<=64);
+});
+
+test('automatic audio gain limits sudden strong signals and manual settings update without retuning',()=>{
+  const r=receiver();r.api.configure(1024000,12000,-1);
+  r.decode(new Uint8Array(2048000).fill(128));
+  const pcm=r.decode(keyed(1024000));
+  assert.ok(Math.max(...pcm.map(Math.abs))<32767*.96);
+  assert.equal(r.api.setAudioGainDb(37),0);assert.equal(r.api.setAudioGainDb(-2),0);
+  assert.equal(r.api.setAudioGainDb(12),1);assert.ok(Math.abs(r.api.audioGain()-3.981)<.01);
+});
+
+test('zoom spectrum exports the target complex channel before listening gain and BFO',()=>{
+  const raw=receiver(),boosted=receiver();
+  raw.api.configure(1024000,12000,0);boosted.api.configure(1024000,12000,36);
+  const iq=keyed(1024000,12600);
+  raw.decode(iq);boosted.decode(iq);
+  const channel=r=>Array.from(new Float64Array(r.api.memory.buffer,r.api.channelBuffer(),r.api.channelLength()));
+  assert.deepEqual(channel(raw),channel(boosted),'audio gain cannot change plotted RF values');
+  // Examine an active pulse rather than the final silent block.
+  raw.api.configure(1024000,12000,0);raw.decode(iq.subarray(0,458752));
+  const samples=channel(raw),n=samples.length/2;
+  assert.ok(n>1000 && n<1600);
+  let best=0,peak=0;
+  for(let hz=300;hz<=1000;hz+=10){
+    let re=0,im=0;
+    for(let i=0;i<n;i++){
+      const phase=2*Math.PI*hz*i/48000,c=Math.cos(phase),s=Math.sin(phase);
+      re+=samples[i*2]*c+samples[i*2+1]*s;im+=samples[i*2+1]*c-samples[i*2]*s;
+    }
+    if(re*re+im*im>best){best=re*re+im*im;peak=hz;}
+  }
+  assert.ok(Math.abs(peak-600)<=10,'RF offset remains 600 Hz, without the 700 Hz audio beat');
+});

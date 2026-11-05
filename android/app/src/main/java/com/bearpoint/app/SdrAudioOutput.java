@@ -14,6 +14,7 @@ import com.getcapacitor.JSObject;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 
 /** Media playback is isolated from USB reads. Main thread owns focus and UI state. */
 final class SdrAudioOutput {
@@ -24,6 +25,14 @@ final class SdrAudioOutput {
         .setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build();
     private volatile Playback playback;
     private volatile float volume = 1f;
+    private volatile int gainDb = -1;
+    private final AtomicLong offeredSamples = new AtomicLong(), writtenSamples = new AtomicLong(), droppedSamples = new AtomicLong();
+    private final AtomicInteger droppedTotal = new AtomicInteger(), underruns = new AtomicInteger(), emptyPolls = new AtomicInteger();
+    int gainDb() { return gainDb; }
+    void setGainDb(int value) {
+        if (value < -1 || value > 36) throw new IllegalArgumentException("청취 증폭은 자동 또는 0–36dB로 설정하세요.");
+        gainDb = value;
+    }
     private String output = "Android 미디어 출력", notice = "";
     private AudioFocusRequest focusRequest;
     private final AudioManager.OnAudioFocusChangeListener focusListener = change -> {
@@ -80,10 +89,13 @@ final class SdrAudioOutput {
 
     void offer(short[] samples) {
         Playback active = playback;
-        if (active != null && active.running && samples != null && samples.length > 0 && !active.queue.offer(samples)) {
+        if (active == null || !active.running || samples == null || samples.length == 0) return;
+        offeredSamples.addAndGet(samples.length);
+        if (!active.queue.offer(samples)) {
             // Keep live audio recent when playback falls behind USB reception.
-            if (active.queue.poll() != null) active.dropped.incrementAndGet();
-            if (!active.queue.offer(samples)) active.dropped.incrementAndGet();
+            short[] removed = active.queue.poll();
+            if (removed != null) { active.dropped.incrementAndGet(); droppedTotal.incrementAndGet(); droppedSamples.addAndGet(removed.length); }
+            if (!active.queue.offer(samples)) { active.dropped.incrementAndGet(); droppedTotal.incrementAndGet(); droppedSamples.addAndGet(samples.length); }
         }
     }
 
@@ -108,8 +120,15 @@ final class SdrAudioOutput {
         Playback active = playback;
         JSObject result = new JSObject();
         result.put("enabled", active != null); result.put("volume", volume);
+        result.put("gainDb", gainDb);
         result.put("output", output); result.put("notice", notice);
         result.put("droppedBlocks", active == null ? 0 : active.dropped.get());
+        result.put("offeredSamplesTotal", offeredSamples.get());result.put("writtenSamplesTotal", writtenSamples.get());
+        result.put("droppedSamplesTotal", droppedSamples.get());result.put("droppedBlocksTotal", droppedTotal.get());
+        result.put("underrunsTotal", underruns.get());result.put("emptyPollsTotal", emptyPolls.get());
+        result.put("queueBlocks", active == null ? 0 : active.queue.size());
+        result.put("mediaVolume", manager.getStreamVolume(AudioManager.STREAM_MUSIC));
+        result.put("mediaVolumeMax", manager.getStreamMaxVolume(AudioManager.STREAM_MUSIC));
         return result;
     }
 
@@ -146,6 +165,7 @@ final class SdrAudioOutput {
         final Thread thread = new Thread(this, "sdr-audio");
         volatile boolean running = true;
         volatile int externalRouteId = -1;
+        int lastUnderruns;
         @Override public void run() {
             AudioTrack track = null;
             try {
@@ -161,7 +181,7 @@ final class SdrAudioOutput {
                 main.post(() -> updateRoute(this, routedTrack));
                 while (running) {
                     short[] block = queue.poll(100, TimeUnit.MILLISECONDS);
-                    if (block == null) continue;
+                    if (block == null) { emptyPolls.incrementAndGet(); continue; }
                     track.setVolume(volume);
                     int offset = 0;
                     while (running && offset < block.length) {
@@ -169,6 +189,11 @@ final class SdrAudioOutput {
                         if (written < 0) throw new IllegalStateException("오디오 출력 오류: " + written);
                         if (written == 0) Thread.sleep(2);
                         offset += written;
+                        writtenSamples.addAndGet(written);
+                    }
+                    if (Build.VERSION.SDK_INT >= 24) {
+                        int currentUnderruns = track.getUnderrunCount();
+                        underruns.addAndGet(Math.max(0, currentUnderruns - lastUnderruns));lastUnderruns = currentUnderruns;
                     }
                 }
             } catch (InterruptedException ignored) {

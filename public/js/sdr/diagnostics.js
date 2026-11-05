@@ -31,7 +31,7 @@
 
         <details class="sdr-advanced" data-advanced-settings><summary>상세 설정<svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6 4 4 4-4"/></svg></summary>
         <div class="sdr-fields sdr-tuning-options">
-        <label>감도 <span>Gain dB</span><input data-gain type="number" min="-10" max="50" step="0.1" value="10" inputmode="decimal"></label>
+        <label>감도 <span>Gain dB</span><input data-gain type="number" min="-10" max="50" step="0.1" value="50" inputmode="decimal"><small data-gain-info>기본 최대 요청 · 튜너 지원값으로 적용</small></label>
         <label>주파수 보정 <span>PPM</span><input data-ppm type="number" min="-100" max="100" step="1" value="0" inputmode="numeric"></label>
         <label data-threshold-field hidden>감지 기준 <span>주변 잡음 대비 dB</span><input data-threshold type="number" min="6" max="30" step="1" value="10" inputmode="numeric"></label>
         </div></details><input data-rate type="hidden" value="1024000"><input data-dwell type="hidden" value="5000"><p data-window class="sdr-note" hidden></p>
@@ -41,7 +41,7 @@
       <p data-animal-target class="sdr-animal-target" hidden></p>
       <div data-scan-results hidden><p data-scan-progress class="sdr-scan-progress">탐색 대기</p><div class="sdr-candidate-heading"><strong data-candidate-heading>신호 후보</strong><span data-candidate-count>0개</span></div><div data-candidates></div></div>
       <div data-fixed-results>
-      <div class="sdr-readout-row"><p class="sdr-frequency-readout" data-frequency-readout aria-live="polite">수신 주파수 —</p><div data-audio-panel><button type="button" data-audio disabled aria-pressed="false">소리 켜기</button></div></div><p data-audio-status class="sdr-note" hidden></p>
+      <div class="sdr-readout-row"><p class="sdr-frequency-readout" data-frequency-readout aria-live="polite">수신 주파수 —</p><div data-audio-panel><button type="button" data-audio disabled aria-pressed="false">소리 켜기</button></div></div><label class="sdr-listening-level">청취 증폭<select data-audio-gain aria-label="CW 청취 증폭"><option value="-1">자동</option><option value="0">원음</option><option value="6">2배</option><option value="12">4배</option><option value="18">8배</option><option value="24">16배</option><option value="30">32배</option><option value="36">64배</option></select></label><p data-audio-status class="sdr-note" hidden></p>
       <div class="sdr-signal-panels">
       <div class="sdr-strength"><div class="sdr-strength-heading"><strong>수신 신호 세기</strong><span data-strength-value>측정 대기</span></div><div class="sdr-strength-bars" data-strength-bars role="meter" aria-label="청취 주파수 상대 신호 세기" aria-valuemin="0" aria-valuemax="10" aria-valuenow="0">${Array.from({ length: 10 }, (_, i) => `<span data-strength-bar="${i}" style="height:${8 + i * 3}px"></span>`).join("")}</div><p class="sdr-note" data-strength-state>청취 주파수 주변의 상대 신호 세기</p>
       <div class="sdr-metrics"><div><span>수신 데이터</span><strong data-throughput>—</strong></div><div><span>대역 전력</span><strong data-power>—</strong></div></div>
@@ -53,6 +53,9 @@
       </div>
       <p data-spectrum-info class="sdr-note" hidden></p>
       </div>
+    </section>
+    <section data-diagnostic-section class="sdr-section" hidden>
+      <details class="sdr-reception-diagnostic"><summary>수신 진단</summary><div><button type="button" data-diagnostic-start>10초 기록</button><button type="button" data-diagnostic-share disabled>파일 공유</button></div><select data-diagnostic-record aria-label="저장된 수신 진단 기록" hidden></select><p data-diagnostic-status class="sdr-note">원본 I/Q와 청취 소리를 기기에만 기록합니다.</p></details>
     </section>
 
     </div>
@@ -92,6 +95,7 @@
   let sequence = 0;
   let connectionAttempt = 0;
   let task = "fixed", lastScan = null, restoredFixed = false, candidateSelected = false;
+  let handledReceiverUiRequest = 0;
   let animalItems = [], selectedAnimal = null, selectedAnimalHz = null, catalogLoading = false, catalogLoaded = false;
   let animalCatalogRevision = 0, animalListRenderKey = "";
   const animalSearch = dialog.querySelector("[data-animal-search]");
@@ -315,6 +319,7 @@
         if (snapshot.state !== "connected" && current?.state === "connected") resetDisconnectedUi();
         current = snapshot; renderMapStatus(snapshot);
       }
+      handleReceiverUiRequest(snapshot);
     })).then(value => { listener = value; }).catch(error => { listenerPromise = null; throw error; });
     await listenerPromise;
   }
@@ -475,11 +480,12 @@
     const plot = window.SdrSpectrumPlot;
     if (!plot) return;
     const rf = snapshot && snapshot.reception || {};
-    const centerHz = Number.isFinite(rf.frequencyHz) ? rf.frequencyHz : Number(frequency.value) * 1e6;
-    const rateHz = Number.isFinite(rf.sampleRate) ? rf.sampleRate : Number(rate.value);
-    const data = plot.describe(rf.spectrumDbfs, centerHz, rateHz);
+    const narrow = Number.isFinite(rf.spectrumCenterHz) && rf.spectrumSpanHz === 6000;
+    const centerHz = narrow ? rf.spectrumCenterHz : Number.isFinite(rf.frequencyHz) ? rf.frequencyHz : Number(frequency.value) * 1e6;
+    const rateHz = narrow ? rf.spectrumSpanHz : Number.isFinite(rf.sampleRate) ? rf.sampleRate : Number(rate.value);
+    const data = plot.describe(rf.spectrumDbfs, centerHz, rateHz, { narrow });
     const state = snapshot && snapshot.receptionState;
-    const listenHz = state === "receiving" && ["wfm", "cw"].includes(rf.mode) ? rf.listenFrequencyHz : null;
+    const listenHz = narrow ? rf.spectrumCenterHz : state === "receiving" && ["wfm", "cw"].includes(rf.mode) ? rf.listenFrequencyHz : null;
     plot.draw(spectrumCanvas, data, centerHz, rateHz, state, listenHz);
     if (!data) {
       spectrumSummary.textContent = state === "receiving" ? "스펙트럼 대기 중" : "수신 대기";
@@ -488,8 +494,8 @@
       return;
     }
     const prefix = state === "receiving" ? "수신 중" : state === "error" ? "수신 오류 · 마지막 측정" : "정지됨 · 마지막 측정";
-    spectrumSummary.textContent = `${prefix} · 최대 ${(data.peakHz / 1e6).toFixed(3)} MHz · ${data.peakDbfs.toFixed(1)} dBFS/bin`;
-    dialog.querySelector("[data-spectrum-info]").textContent = `${(data.startHz / 1e6).toFixed(3)}–${(data.endHz / 1e6).toFixed(3)} MHz · FFT ${data.binWidthHz.toFixed(0)} Hz${rf.spectrumPeakHold ? " · 순간 피크 유지" : ""}`;
+    spectrumSummary.textContent = `${prefix} · ${narrow ? "대상 주변 최대" : "최대"} ${(data.peakHz / 1e6).toFixed(narrow ? 5 : 3)} MHz · ${data.peakDbfs.toFixed(1)} dBFS/bin`;
+    dialog.querySelector("[data-spectrum-info]").textContent = `${(data.startHz / 1e6).toFixed(narrow ? 5 : 3)}–${(data.endHz / 1e6).toFixed(narrow ? 5 : 3)} MHz · FFT ${data.binWidthHz.toFixed(0)} Hz${rf.spectrumPeakHold ? " · 순간 피크 유지" : ""}`;
     spectrumCanvas.setAttribute("aria-label", spectrumSummary.textContent);
   }
 
@@ -544,6 +550,7 @@
   }
 
   function resetDisconnectedUi() {
+    gain.value = "50";
     lastScan = null;
     restoredFixed = false;
     candidateSelected = false;
@@ -659,14 +666,16 @@
     const strengthValid = rf.hasSamples && Number.isFinite(rf.signalDbfs);
     const cwStrength = rf.mode === "cw";
     const noiseReady = Number.isFinite(rf.noiseDbfs) && Number.isFinite(rf.signalExcessDb);
-    // CW: fixed 3 dB steps above a 6 dB noise margin. WFM keeps its RF scale.
+    // Current APKs supply the channel meter's curve and short peak hold. Keep legacy snapshots readable.
     const strengthLevel = strengthValid ? cwStrength
-      ? noiseReady ? Math.max(0, Math.min(10, Math.ceil((rf.signalExcessDb - 6) / 3))) : 0
+      ? Number.isInteger(rf.signalLevel) ? Math.max(0, Math.min(10, rf.signalLevel))
+        : noiseReady ? Math.max(0, Math.min(10, Math.ceil((rf.signalExcessDb - 6) / 3))) : 0
       : Math.max(0, Math.min(10, Math.ceil((rf.signalDbfs + 90) / 8))) : 0;
+    const peakHeld = cwStrength && !!rf.signalLevelHeld && snapshot.receptionState === "receiving";
     const strengthBars = dialog.querySelector("[data-strength-bars]");
     strengthBars.setAttribute("aria-valuenow", String(strengthLevel));
     strengthBars.setAttribute("aria-valuetext", strengthValid ? cwStrength && noiseReady
-      ? `${strengthLevel}/10 · 잡음 대비 ${rf.signalExcessDb.toFixed(1)} dB`
+      ? `${strengthLevel}/10 · ${peakHeld ? "최근 피크 유지" : `잡음 대비 ${rf.signalExcessDb.toFixed(1)} dB`}`
       : cwStrength ? "잡음 수준 측정 중" : `${strengthLevel}/10 · ${rf.signalDbfs.toFixed(1)} dBFS` : "측정 대기");
     strengthBars.dataset.state = snapshot.receptionState === "receiving" ? "live" : "stopped";
     for (let i = 0; i < 10; i++) dialog.querySelector(`[data-strength-bar="${i}"]`).classList.toggle("is-active", i < strengthLevel);
@@ -674,7 +683,7 @@
     dialog.querySelector("[data-strength-state]").textContent = strengthValid
       ? snapshot.receptionState === "receiving" ? rf.clippingPercent > 1 ? "입력 포화 · Gain을 낮춰 확인하세요."
         : cwStrength ? noiseReady
-          ? `${strengthLevel ? "신호 상승" : "잡음 수준"} · 잡음 대비 +${rf.signalExcessDb.toFixed(1)} dB · 배경 ${rf.noiseDbfs.toFixed(1)} dBFS`
+          ? `${peakHeld ? "최근 피크 유지" : strengthLevel ? "신호 상승" : "잡음 수준"} · 잡음 대비 +${rf.signalExcessDb.toFixed(1)} dB · 배경 ${rf.noiseDbfs.toFixed(1)} dBFS`
           : "배경 잡음 측정 중…" : "청취 주파수 주변 · 상대 신호 세기"
         : "수신 정지 · 마지막 측정값"
       : rf.mode === "iq" ? "CW 또는 WFM에서 신호 세기를 측정합니다." : "신호 세기 측정 대기";
@@ -691,6 +700,39 @@
     if (["scanning", "receiving"].includes(snapshot.receptionState)) status.dataset.activity = snapshot.receptionState;
     else delete status.dataset.activity;
     const audio = snapshot.audio || {};
+    const diagnostic = snapshot.diagnostic || {};
+    const capturing = ["waiting", "recording", "packaging"].includes(diagnostic.state);
+    const records = Array.isArray(diagnostic.records) ? diagnostic.records : [];
+    const recordSelect = dialog.querySelector("[data-diagnostic-record]");
+    const recordKeys = records.map(record => record.id).join(",");
+    if (recordSelect.dataset.keys !== recordKeys) {
+      const previous = recordSelect.value;recordSelect.replaceChildren();
+      for (const record of records) {
+        const option = document.createElement("option");option.value = record.id;
+        option.textContent = `${new Date(record.time).toLocaleString("ko-KR")} · ${(record.sizeBytes / 1e6).toFixed(1)} MB`;
+        recordSelect.append(option);
+      }
+      recordSelect.value = diagnostic.state === "ready" || !records.some(record => record.id === previous) ? records[0]?.id || "" : previous;
+      recordSelect.dataset.keys = recordKeys;
+    }
+    recordSelect.hidden = !records.length;recordSelect.disabled = capturing || busy;
+    dialog.querySelector("[data-diagnostic-section]").hidden = !connected && !capturing && !records.length && diagnostic.state !== "ready";
+    const audioGain = dialog.querySelector("[data-audio-gain]");
+    if (Number.isInteger(audio.gainDb)) audioGain.value = String(audio.gainDb);
+    audioGain.disabled = busy || capturing || typeof plugin?.setAudio !== "function" || snapshot.receptionState === "stopping";
+    dialog.querySelector(".sdr-listening-level").hidden = task !== "fixed";
+    dialog.querySelector("[data-diagnostic-start]").disabled = busy || capturing || snapshot.receptionState !== "receiving" || rf.mode !== "cw" || typeof plugin?.startDiagnostic !== "function";
+    dialog.querySelector("[data-diagnostic-share]").disabled = busy || capturing || (!records.length && diagnostic.state !== "ready") || typeof plugin?.shareDiagnostic !== "function";
+    dialog.querySelector("[data-diagnostic-status]").textContent = diagnostic.state === "error" ? `진단 기록 실패: ${diagnostic.error}`
+      : diagnostic.state === "ready" ? "기록 완료 · 파일을 공유해 수신 상태를 비교할 수 있습니다."
+      : diagnostic.state === "packaging" ? "진단 파일 준비 중…"
+      : capturing ? `원본 수신 기록 중 · ${(Number(diagnostic.iqBytes || 0) / 1e6).toFixed(1)} MB`
+      : records.length ? `저장된 기록 ${records.length}개 · 선택한 기록을 공유할 수 있습니다.` : "원본 I/Q와 청취 소리를 기기에만 기록합니다.";
+    const tunerMetrics = task === "scan" && snapshot.scan?.tuner ? snapshot.scan : rf;
+    dialog.querySelector("[data-gain-info]").textContent = tunerMetrics?.tuner && Number.isFinite(tunerMetrics.gainDb)
+      ? `${tunerMetrics.tuner} · 적용 ${tunerMetrics.gainDb.toFixed(1)} dB` +
+        (Number.isFinite(tunerMetrics.gainMaxDb) ? ` · 최대 ${tunerMetrics.gainMaxDb.toFixed(1)} dB` : "")
+      : "기본 최대 요청 · 튜너 지원값으로 적용";
     dialog.querySelector("[data-audio-status]").hidden = !audio.notice;
     const wfm = ["wfm", "cw"].includes(rf.mode) && snapshot.receptionState === "receiving";
     audioButton.disabled = busy || !wfm || !plugin || typeof plugin.setAudio !== "function";
@@ -801,6 +843,7 @@
     if (request === sequence) {
       if (dialog.open) render(snapshot);
       else { current = snapshot; renderMapStatus(snapshot); }
+      handleReceiverUiRequest(snapshot);
     }
   }
 
@@ -817,7 +860,22 @@
     }
   }
 
-  trigger.addEventListener("click", async function () {
+  function handleReceiverUiRequest(snapshot) {
+    const requestId = Number(snapshot.receiverUiRequestId);
+    if (!Number.isSafeInteger(requestId) || requestId <= handledReceiverUiRequest) return;
+    handledReceiverUiRequest = requestId;
+    restoredFixed = false; candidateSelected = false;
+    const scan = snapshot.backgroundScanning || snapshot.receptionState === "scanning" ||
+      (snapshot.scanResumeAvailable && !snapshot.fixedResultAvailable);
+    setTask(scan ? "scan" : "fixed", false);
+    void openReceiver().then(async () => {
+      if (!dialog.open) return;
+      if (current) render(current);
+      if (typeof plugin?.acknowledgeReceiverUi === "function") await plugin.acknowledgeReceiverUi({ requestId });
+    }).catch(error => { message.textContent = error.message || String(error); });
+  }
+
+  async function openReceiver() {
     if (dialog.open) return;
     dialog.querySelector("[data-advanced-settings]").open = false;
     if (typeof window.__bpResetBackExit === "function") window.__bpResetBackExit();
@@ -852,7 +910,8 @@
       status.textContent = "USB 연결 기능을 초기화하지 못했습니다.";
       message.textContent = error.message || String(error);
     }
-  });
+  }
+  trigger.addEventListener("click", openReceiver);
   refreshButton.addEventListener("click", () => run(refresh));
   async function startFixedReception() {
     const hz = Number(frequency.value) * 1e6, sampleRate = Number(rate.value);
@@ -892,6 +951,15 @@
 
   }));
   audioButton.addEventListener("click", () => run(() => plugin.setAudio({ enabled: !(current && current.audio && current.audio.enabled), volume: 1 })));
+  dialog.querySelector("[data-audio-gain]").addEventListener("change", () => {
+    const gainDb = Number(dialog.querySelector("[data-audio-gain]").value);
+    return run(() => plugin.setAudio({ gainDb }));
+  });
+  dialog.querySelector("[data-diagnostic-start]").addEventListener("click", () => run(() => plugin.startDiagnostic()));
+  dialog.querySelector("[data-diagnostic-share]").addEventListener("click", () => {
+    const id = dialog.querySelector("[data-diagnostic-record]").value;
+    return run(() => plugin.shareDiagnostic(id ? { id } : {}));
+  });
   registerObservationButton.addEventListener("click", () => run(async () => {
     if (registerObservationButton.hidden || !animalMatchesFrequency() || !current?.reception?.hasSamples) return;
     if (typeof window.BearSdrRegistration?.open !== "function") throw new Error("관측점 등록 화면을 준비하지 못했습니다. 앱을 다시 열어주세요.");

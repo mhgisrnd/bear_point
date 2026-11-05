@@ -5,9 +5,15 @@
 #include <cstdio>
 #include <vector>
 #include <cstring>
+#include <chrono>
+#include <cstdint>
 #include "cw_demod.h"
 extern "C" int rtlsdr_open_fd(rtlsdr_dev_t **, int);
 extern "C" int rtlsdr_read_sync_timeout(rtlsdr_dev_t *, void *, int, int *);
+extern "C" int rtlsdr_diagnostic_registers(rtlsdr_dev_t *, int *, int *);
+static double monotonicMs() {
+    return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now().time_since_epoch()).count();
+}
 static void error(JNIEnv *env, const char *step, int code) {
     char message[160]; snprintf(message, sizeof(message), "%s failed (%d)", step, code);
     env->ThrowNew(env->FindClass("java/io/IOException"), message);
@@ -41,14 +47,19 @@ fail:
 }
 extern "C" JNIEXPORT jobject JNICALL
 Java_com_bearpoint_app_SdrNative_read(JNIEnv *env, jclass, jlong handle, jboolean captureSpectrum, jlong demodulator, jboolean continuousSpectrum) {
+    double began = monotonicMs();
     auto *dev = reinterpret_cast<rtlsdr_dev_t *>(handle);
     unsigned char buffer[65536]; int n = 0;
     int r = rtlsdr_read_sync_timeout(dev, buffer, sizeof(buffer), &n);
+    double usbEnded = monotonicMs();
     if (r < 0 && r != -7) { error(env, "USB IQ read", r); return nullptr; }
-    double square = 0, clipped = 0;
+    double square = 0, clipped = 0, sumI = 0, sumQ = 0;
+    int low = 255, high = 0;
     for (int i = 0; i < n; ++i) {
         double v = (buffer[i] - 127.5) / 127.5;
         square += v * v;
+        if (i % 2) sumQ += v; else sumI += v;
+        low = std::min(low, int(buffer[i])); high = std::max(high, int(buffer[i]));
         if (buffer[i] == 0 || buffer[i] == 255) clipped++;
     }
     // Linear sum/count allow accurate aggregation across arbitrary buffer sizes.
@@ -66,6 +77,7 @@ Java_com_bearpoint_app_SdrNative_read(JNIEnv *env, jclass, jlong handle, jboolea
         env->SetDoubleArrayRegion(result, 7, iqLength, iq.data());
     }
     jshortArray audio = nullptr;
+    double demodBegan = monotonicMs();
     if (demodulator && n > 0) {
         short pcm[8192];
         int count = reinterpret_cast<SdrDemod *>(demodulator)->process(buffer, n, pcm, 8192);
@@ -73,12 +85,48 @@ Java_com_bearpoint_app_SdrNative_read(JNIEnv *env, jclass, jlong handle, jboolea
         if (!audio) return nullptr;
         env->SetShortArrayRegion(audio, 0, count, pcm);
     }
+    double demodEnded = monotonicMs();
     jclass block = env->FindClass("com/bearpoint/app/SdrBlock");
     if (!block) return nullptr;
-    jmethodID ctor = env->GetMethodID(block, "<init>", "([D[SDD)V");
+    jmethodID ctor = env->GetMethodID(block, "<init>", "([D[SDD[D[D)V");
+    jdoubleArray channel = nullptr;
+    if (demodulator && n > 0 && reinterpret_cast<SdrDemod *>(demodulator)->cw) {
+        auto &cw = reinterpret_cast<SdrDemod *>(demodulator)->beacon;
+        channel = env->NewDoubleArray(cw.spectrumLength());
+        if (!channel) return nullptr;
+        env->SetDoubleArrayRegion(channel, 0, cw.spectrumLength(), cw.spectrumSamples());
+    }
     double signalPower = demodulator ? reinterpret_cast<SdrDemod *>(demodulator)->takeSignalPeak() : -1;
     double noisePower = demodulator ? reinterpret_cast<SdrDemod *>(demodulator)->noisePower() : -1;
-    return ctor ? env->NewObject(block, ctor, result, audio, signalPower, noisePower) : nullptr;
+    double diagnostic[] = {usbEnded - began, demodEnded - demodBegan, monotonicMs() - usbEnded,
+        double(r), double(n > 0 ? low : -1), double(n > 0 ? high : -1),
+        n > 0 ? sumI / ((n + 1) / 2) : 0, n > 1 ? sumQ / (n / 2) : 0,
+        n > 0 ? sqrt(square / n) : 0};
+    jdoubleArray detail = env->NewDoubleArray(9);
+    if (!detail) return nullptr;
+    env->SetDoubleArrayRegion(detail, 0, 9, diagnostic);
+    return ctor ? env->NewObject(block, ctor, result, audio, signalPower, noisePower, channel, detail) : nullptr;
+}
+extern "C" JNIEXPORT jintArray JNICALL
+Java_com_bearpoint_app_SdrNative_diagnosticRegisters(JNIEnv *env, jclass, jlong handle) {
+    int values[5] = {-1,-1,-1,-1,-1}, status[5] = {-99,-99,-99,-99,-99};
+    rtlsdr_diagnostic_registers(reinterpret_cast<rtlsdr_dev_t *>(handle), values, status);
+    jint data[10];for(int i=0;i<5;i++){data[i*2]=values[i];data[i*2+1]=status[i];}
+    jintArray result=env->NewIntArray(10);if(result)env->SetIntArrayRegion(result,0,10,data);return result;
+}
+extern "C" JNIEXPORT jdoubleArray JNICALL
+Java_com_bearpoint_app_SdrNative_describeTuner(JNIEnv *env, jclass, jlong handle) {
+    auto *dev = reinterpret_cast<rtlsdr_dev_t *>(handle);
+    int count = rtlsdr_get_tuner_gains(dev, nullptr);
+    if (count <= 0) { error(env, "Tuner gain range", count); return nullptr; }
+    std::vector<int> gains(count);
+    rtlsdr_get_tuner_gains(dev, gains.data());
+    double values[] = {double(rtlsdr_get_tuner_type(dev)),
+        *std::min_element(gains.begin(), gains.end()) / 10.0,
+        *std::max_element(gains.begin(), gains.end()) / 10.0};
+    jdoubleArray result = env->NewDoubleArray(3);
+    if (result) env->SetDoubleArrayRegion(result, 0, 3, values);
+    return result;
 }
 extern "C" JNIEXPORT void JNICALL
 Java_com_bearpoint_app_SdrNative_tune(JNIEnv *env, jclass, jlong handle, jint hz) {
@@ -105,6 +153,11 @@ Java_com_bearpoint_app_SdrNative_createDemodulator(JNIEnv *env, jclass, jstring 
 extern "C" JNIEXPORT void JNICALL
 Java_com_bearpoint_app_SdrNative_closeDemodulator(JNIEnv *, jclass, jlong handle) {
     delete reinterpret_cast<SdrDemod *>(handle);
+}
+extern "C" JNIEXPORT void JNICALL
+Java_com_bearpoint_app_SdrNative_setAudioGain(JNIEnv *env, jclass, jlong handle, jint db) {
+    auto *processor = reinterpret_cast<SdrDemod *>(handle);
+    if (processor && processor->cw && !processor->beacon.setAudioGainDb(db)) error(env, "CW audio gain", -1);
 }
 extern "C" JNIEXPORT void JNICALL
 Java_com_bearpoint_app_SdrNative_close(JNIEnv *, jclass, jlong handle) {

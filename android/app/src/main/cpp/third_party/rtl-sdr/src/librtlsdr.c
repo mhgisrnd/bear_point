@@ -1162,6 +1162,28 @@ int rtlsdr_set_agc_mode(rtlsdr_dev_t *dev, int on)
 	return rtlsdr_demod_write_reg(dev, 0, 0x19, on ? 0x25 : 0x05, 1);
 }
 
+/* Read-only diagnostic snapshot, called once on the owning USB thread per capture.
+ * Preserve transport status: a failed read is never presented as register zero. */
+int rtlsdr_diagnostic_registers(rtlsdr_dev_t *dev, int *values, int *status)
+{
+	unsigned char value = 0;
+	int i, result;
+	const uint8_t registers[] = {0x0d, 0x13, 0x14, 0x1d};
+	if (!dev) return -1;
+	result = libusb_control_transfer(dev->devh, CTRL_IN, 0, (0x19 << 8) | 0x20, 0, &value, 1, CTRL_TIMEOUT);
+	status[0] = result; values[0] = result == 1 ? value : -1;
+	if (dev->tuner_type != RTLSDR_TUNER_FC0013) return 0;
+	rtlsdr_set_i2c_repeater(dev, 1);
+	for (i = 0; i < 4; i++) {
+		uint8_t reg = registers[i];
+		result = rtlsdr_i2c_write(dev, FC0013_I2C_ADDR, &reg, 1);
+		if (result == 1) result = rtlsdr_i2c_read(dev, FC0013_I2C_ADDR, &value, 1);
+		status[i+1] = result; values[i+1] = result == 1 ? value : -1;
+	}
+	rtlsdr_set_i2c_repeater(dev, 0);
+	return 0;
+}
+
 int rtlsdr_set_direct_sampling(rtlsdr_dev_t *dev, int on)
 {
 	int r = 0;

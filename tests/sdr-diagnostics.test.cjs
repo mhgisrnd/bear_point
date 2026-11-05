@@ -27,6 +27,125 @@ const animalCatalog = () => ({formatHz:hz=>String(hz/1e6),load:async()=>({notice
   {id:'2',code:'KF-112',frequencies:[]}
 ]})});
 
+test('notification request reopens live fixed reception without reconnecting, retuning or restarting audio',async()=>{
+  const ui=setup();ui.device.hasPermission=true;
+  await ui.trigger.click();await ui.button().click();await tick();
+  await ui.dialog.querySelector('[data-start]').click();await tick();
+  ui.state.receptionState='receiving';ui.state.backgroundReceiving=true;
+  ui.state.reception={mode:'cw',frequencyHz:148229000,listenFrequencyHz:148241000,sampleRate:1024000,gainDb:19.7,ppm:0};
+  ui.state.audio={enabled:true,gainDb:36};ui.emit();await ui.dialog.close();
+  ui.state.receiverUiRequestId=1;ui.emit();await tick();await tick();
+  assert.equal(ui.dialog.open,true);assert.equal(ui.dialog.querySelector('[data-frequency]').value,'148.241');
+  assert.equal(ui.plugin.starts.length,1);assert.equal(ui.counts().openCount,1);assert.equal(ui.plugin.audios.length,0);
+  assert.deepEqual(ui.plugin.acknowledged,[1]);assert.equal(ui.state.audio.enabled,true);
+  await ui.dialog.close();ui.state.receiverUiRequestId=1;ui.emit();await tick();
+  assert.equal(ui.dialog.open,false,'a delayed duplicate event cannot reopen a closed dialog');
+  ui.state.receiverUiRequestId=2;ui.emit();await tick();await tick();
+  assert.equal(ui.dialog.open,true);assert.deepEqual(ui.plugin.acknowledged,[1,2]);
+  await ui.dialog.close();ui.state.receiverUiRequestId=1;ui.emit();await tick();
+  assert.equal(ui.dialog.open,false,'an older request must not reopen the dialog after a newer one');
+});
+
+test('a notification request present before the JS listener is ready opens on initial status',async()=>{
+  const ui=setup(true,'injected',true);
+  ui.state.state='connected';ui.device.connected=true;ui.device.hasPermission=true;
+  ui.state.receptionState='receiving';ui.state.backgroundReceiving=true;ui.state.fixedResultAvailable=true;
+  ui.state.reception={mode:'cw',frequencyHz:148229000,listenFrequencyHz:148241000,sampleRate:1024000};
+  ui.state.receiverUiRequestId=3;await tick();await tick();
+  assert.equal(ui.dialog.open,true);assert.deepEqual(ui.plugin.acknowledged,[3]);
+  assert.equal(ui.plugin.starts.length,0);assert.equal(ui.counts().openCount,0);
+});
+
+test('normal status does not open the receiver; scan notification selects the live scan without restarting it',async()=>{
+  const ui=setup();await tick();assert.notEqual(ui.dialog.open,true);
+  ui.state.state='connected';ui.device.connected=true;ui.device.hasPermission=true;
+  ui.state.receptionState='scanning';ui.state.backgroundScanning=true;ui.state.scanResumeAvailable=true;
+  ui.state.receiverUiRequestId=4;ui.emit();await tick();await tick();
+  assert.equal(ui.dialog.open,true);assert.equal(ui.dialog.querySelector('[data-scan-results]').hidden,false);
+  assert.equal(ui.plugin.scans.length,0);assert.equal(ui.state.receptionState,'scanning');
+});
+
+test('saved diagnostics remain available without a receiver and sharing uses the selected archive',async()=>{
+  const ui=setup();await ui.trigger.click();await tick();
+  ui.state.diagnostic={state:'idle',records:[
+    {id:'sdr-diagnostic-new',time:1730790000000,sizeBytes:20000000},
+    {id:'sdr-diagnostic-old',time:1730780000000,sizeBytes:19000000}
+  ]};ui.emit();
+  const section=ui.dialog.querySelector('[data-diagnostic-section]'),select=ui.dialog.querySelector('[data-diagnostic-record]');
+  assert.equal(section.hidden,false);assert.equal(select.children.length,2);
+  assert.equal(ui.dialog.querySelector('[data-result]').hidden,true);
+  assert.equal(ui.dialog.querySelector('[data-diagnostic-start]').disabled,true);
+  assert.equal(ui.dialog.querySelector('[data-diagnostic-share]').disabled,false);
+  await select.change('sdr-diagnostic-old');ui.emit();
+  assert.equal(select.value,'sdr-diagnostic-old','status refresh must preserve the archive selection');
+  await ui.dialog.querySelector('[data-diagnostic-share]').click();await tick();
+  assert.equal(ui.plugin.sharedId,'sdr-diagnostic-old');
+});
+
+test('CW gauge displays native weak levels and labels a held peak without depending on listening volume',async()=>{
+  const ui=setup();ui.device.hasPermission=true;
+  await ui.trigger.click();await ui.button().click();await tick();
+  ui.state.receptionState='receiving';
+  ui.state.reception={mode:'cw',hasSamples:true,powerDbfs:-33,signalDbfs:-58,noiseDbfs:-62,signalExcessDb:3.7,signalLevel:2};
+  const active=[];for(let i=0;i<10;i++)ui.dialog.querySelector(`[data-strength-bar="${i}"]`).classList.toggle=(_,on)=>active[i]=on;
+  ui.emit();assert.equal(active.filter(Boolean).length,2);
+  ui.state.audio={enabled:true,gainDb:36};ui.emit();assert.equal(active.filter(Boolean).length,2);
+  ui.state.reception.signalExcessDb=2;ui.state.reception.signalLevelHeld=true;ui.emit();
+  assert.match(ui.dialog.querySelector('[data-strength-state]').textContent,/최근 피크 유지/);
+  ui.state.reception.signalLevel=0;ui.state.reception.signalLevelHeld=false;ui.emit();assert.equal(active.filter(Boolean).length,0);
+});
+
+test('live listening gain does not retune or alter measured RF strength; local capture locks gain and shares only on request',async()=>{
+  const ui=setup();ui.device.hasPermission=true;
+  await ui.trigger.click();await ui.button().click();await tick();
+  await ui.dialog.querySelector('[data-start]').click();await tick();
+  ui.state.receptionState='receiving';ui.state.backgroundReceiving=true;
+  ui.state.reception={mode:'cw',listenFrequencyHz:150000000,hasSamples:true,powerDbfs:-65,signalDbfs:-65,noiseDbfs:-75,signalExcessDb:10};
+  ui.state.audio={enabled:true,gainDb:-1};ui.emit();
+  const gain=ui.dialog.querySelector('[data-audio-gain]');assert.equal(gain.value,'-1');
+  await gain.change('24');await tick();
+  assert.equal(ui.state.audio.gainDb,24);assert.equal(ui.plugin.starts.length,1);
+  assert.equal(ui.state.reception.signalDbfs,-65);
+  const record=ui.dialog.querySelector('[data-diagnostic-start]'),share=ui.dialog.querySelector('[data-diagnostic-share]');
+  assert.equal(record.disabled,false);assert.equal(share.disabled,true);
+  await record.click();await tick();assert.equal(gain.disabled,true);assert.equal(record.disabled,true);
+  assert.equal(ui.plugin.shared,undefined);
+  ui.state.diagnostic={state:'ready',iqBytes:20480000};ui.emit();
+  assert.equal(gain.disabled,false);assert.equal(share.disabled,false);
+  await share.click();await tick();assert.equal(ui.plugin.shared,1);
+  await ui.plugin.stopReception();assert.equal(record.disabled,true);
+});
+
+test('default gain requests tuner maximum and reports the actual FC0013 step; manual gain remains available',async()=>{
+  const ui=setup();ui.device.hasPermission=true;
+  await ui.trigger.click();await ui.button().click();await tick();
+  assert.equal(ui.dialog.querySelector('[data-gain]').value,'50');
+  await ui.dialog.querySelector('[data-start]').click();await tick();
+  assert.equal(ui.plugin.starts[0].gainTenthsDb,500);
+  ui.state.receptionState='receiving';ui.state.backgroundReceiving=true;
+  ui.state.reception={mode:'cw',tuner:'FC0013',frequencyHz:149988000,listenFrequencyHz:150000000,sampleRate:1024000,gainDb:19.7,gainMinDb:-9.9,gainMaxDb:19.7,ppm:0};
+  ui.emit();
+  assert.match(ui.dialog.querySelector('[data-gain-info]').textContent,/FC0013.*19\.7.*19\.7/);
+  assert.equal(ui.dialog.querySelector('[data-gain]').value,'19.7');
+  await ui.plugin.stopReception();ui.dialog.querySelector('[data-gain]').value='7.1';
+  await ui.dialog.querySelector('[data-start]').click();await tick();
+  assert.equal(ui.plugin.starts.at(-1).gainTenthsDb,71);
+});
+
+test('fixed CW spectrum uses the selected target metadata rather than the USB center, including after stop',async()=>{
+  const ui=setup();ui.device.hasPermission=true;
+  await ui.trigger.click();await ui.button().click();await tick();
+  const bins=Array(128).fill(-100);bins[64]=-78;
+  ui.state.receptionState='receiving';ui.state.fixedResultAvailable=true;
+  ui.state.reception={mode:'cw',frequencyHz:148229500,listenFrequencyHz:148241500,sampleRate:1024000,
+    spectrumCenterHz:148241500,spectrumSpanHz:6000,spectrumDbfs:bins,spectrumPeakHold:true};
+  ui.emit();
+  const caption=ui.dialog.querySelector('[data-spectrum-summary]');
+  assert.match(caption.textContent,/148\.24150 MHz/);assert.doesNotMatch(caption.textContent,/148\.229/);
+  assert.match(ui.dialog.querySelector('[data-spectrum-info]').textContent,/148\.23850–148\.24450 MHz.*47 Hz/);
+  await ui.plugin.stopReception();assert.match(caption.textContent,/148\.24150 MHz/);
+});
+
 test('animal catalog includes all records in the scrollable list and searches without a six-row cap',async()=>{
   const items=Array.from({length:14},(_,i)=>({id:String(i+1),code:'KF-'+(100+i),frequencies:[{slot:'A',hz:148000000+i*10000}]}));
   const catalog={formatHz:hz=>String(hz/1e6),load:async()=>({notice:'',items})};
@@ -111,12 +230,20 @@ function setup(android = true, bridgeMode = 'injected', listenerAsync = false, c
   let callback, permission, openCount = 0, permissionCount = 0;
   const plugin = {
     starts: [], scans: [], audios: [],
+    acknowledged: [],
+    async acknowledgeReceiverUi({requestId}) {
+      this.acknowledged.push(requestId);
+      if(state.receiverUiRequestId===requestId)state.receiverUiRequestId=0;
+    },
     async setAudio(options) {
       this.audios.push(options); state.audio ||= { enabled: false, volume: .25 };
       if (options.enabled != null) state.audio.enabled = options.enabled;
       if (options.volume != null) state.audio.volume = options.volume;
+      if (options.gainDb != null) state.audio.gainDb = options.gainDb;
       callback(structuredClone(state));
     },
+    async startDiagnostic() { state.diagnostic={state:'recording',iqBytes:1024000}; callback(structuredClone(state)); },
+    async shareDiagnostic(options={}) { this.shared=(this.shared||0)+1;this.sharedId=options.id; },
     async startReception(options) { this.starts.push(options); state.receptionState = 'starting'; state.fixedResultAvailable = true; callback(structuredClone(state)); },
     async startScan(options) {
       if (options.resume && !state.scanResumeAvailable) throw new Error('이어갈 탐색 없음');
@@ -160,7 +287,7 @@ function setup(android = true, bridgeMode = 'injected', listenerAsync = false, c
     window: appWindow, console
   });
   const dialog = body.children[0];
-  for (const [key, value] of Object.entries({frequency: '150.000', rate: '1024000', gain: '10', ppm: '0'})) {
+  for (const [key, value] of Object.entries({frequency: '150.000', rate: '1024000', gain: '50', ppm: '0'})) {
     dialog.querySelector(`[data-${key}]`).value = value;
   }
   return {
@@ -517,7 +644,7 @@ test('CW is fixed with no band or mode picker and scanning preserves CW', async 
   for (const mode of ['cw']) {
     const ui=setup(); ui.device.hasPermission=true;
     await ui.trigger.click(); await ui.button().click(); await tick();
-    assert.doesNotMatch(ui.dialog.innerHTML,/data-band|data-mode|<select/);
+    assert.doesNotMatch(ui.dialog.innerHTML,/data-band|data-mode/);
     assert.equal(ui.dialog.querySelector('[data-advanced-settings]').open,false);
     await ui.dialog.querySelector('[data-task-scan]').click();
     ui.dialog.querySelector('[data-scan-start]').value='220';
@@ -715,7 +842,7 @@ test('a recreated screen restores the running scan settings from native state', 
 test('band scan sends explicit options, stays silent, opens candidates and locks tuning', async () => {
   const ui = await scanningUi();
   assert.deepEqual(JSON.parse(JSON.stringify(ui.plugin.scans[0])), {band:'wide',mode:'cw',startHz:103000000,endHz:104000000,
-    sampleRate:1024000,gainTenthsDb:100,ppm:0,dwellMs:5000,thresholdDb:10});
+    sampleRate:1024000,gainTenthsDb:500,ppm:0,dwellMs:5000,thresholdDb:10});
   assert.equal(ui.plugin.starts.length,0); assert.equal(ui.plugin.audios.length,0);
   assert.equal(ui.dialog.querySelector('[data-audio-panel]').hidden,true);
   assert.equal(ui.dialog.querySelector('[data-task-fixed]').disabled,true);
@@ -744,7 +871,7 @@ test('candidate waits for native stop, then fixed CW can resume original scan se
   await ui.dialog.querySelector('[data-back]').click(); await tick();
   assert.equal(ui.plugin.scans.length,2);
   assert.deepEqual(JSON.parse(JSON.stringify(ui.plugin.scans[1])),JSON.parse(JSON.stringify({...ui.plugin.scans[0],resume:true})));
-  assert.equal(ui.dialog.querySelector('[data-gain]').value,'10');
+  assert.equal(ui.dialog.querySelector('[data-gain]').value,'50');
   assert.equal(ui.dialog.querySelector('[data-start]').textContent,'탐색 중');
 });
 

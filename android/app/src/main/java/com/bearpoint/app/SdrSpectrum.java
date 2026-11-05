@@ -12,15 +12,19 @@ final class SdrSpectrum {
 
     /** Short peak hold for transient visibility; never feeds audio or scan detection. */
     static final class PeakHold {
-        private final double[] levels = new double[SIZE];
-        private final long[] heldUntil = new long[SIZE];
+        private final double[] levels;
+        private final long[] heldUntil;
         private long updated = -1;
 
-        PeakHold() { java.util.Arrays.fill(levels, -120); }
+        PeakHold() { this(SIZE); }
+        PeakHold(int size) {
+            levels = new double[size]; heldUntil = new long[size];
+            java.util.Arrays.fill(levels, -120);
+        }
 
         double[] observe(double[] bins, long now) {
-            if (bins.length != SIZE) return new double[0];
-            for (int i = 0; i < SIZE; i++) {
+            if (bins.length != levels.length) return new double[0];
+            for (int i = 0; i < levels.length; i++) {
                 long elapsed = updated < 0 ? 0 : Math.max(0, now - Math.max(updated, heldUntil[i]));
                 levels[i] = Math.max(-120, levels[i] - elapsed * .036);
                 if (bins[i] >= levels[i]) {
