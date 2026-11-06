@@ -11,6 +11,7 @@ import java.util.zip.Deflater;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 import java.util.zip.ZipFile;
+import java.util.concurrent.atomic.AtomicLong;
 
 /** Bounded local capture of existing IQ/PCM buffers. Failures never stop reception. */
 final class SdrDiagnosticCapture {
@@ -23,6 +24,9 @@ final class SdrDiagnosticCapture {
     private long started, firstAudioOffset = -1, usbBytes, audioSamples;
     private double writeMs;
     private int sampleRate;
+    private final AtomicLong writerDroppedBytes=new AtomicLong(),writerDroppedBlocks=new AtomicLong();
+    void writerDrop(long count){writerDroppedBytes.addAndGet(count);writerDroppedBlocks.incrementAndGet();}
+    long writerDroppedBlocks(){return writerDroppedBlocks.get();}
     private File directory;
     private OutputStream iq, pcm, index, telemetry;
     private String receiver = "{}";
@@ -54,6 +58,25 @@ final class SdrDiagnosticCapture {
         for(Saved record:saved)if(record.id.equals(id)&&record.file.isFile())return record.file;
         throw new IllegalStateException("저장된 진단 파일을 찾지 못했습니다.");
     }
+    synchronized void delete(String id) throws IOException {
+        if ("waiting".equals(state) || "recording".equals(state) || "packaging".equals(state))
+            throw new IllegalStateException("진단 기록이 완료된 후 삭제하세요.");
+        File archive=file(id),folder=archive.getParentFile().getCanonicalFile();
+        boolean owned=false;
+        for(File root:roots)if(root.getCanonicalFile().equals(folder.getParentFile()))owned=true;
+        if(!owned || !folder.getName().startsWith("sdr-diagnostic-") ||
+                !archive.getCanonicalFile().equals(new File(folder,"sdr-diagnostic.zip")))
+            throw new IOException("진단 저장 위치를 확인하지 못했습니다.");
+        if(!archive.delete())throw new IOException("선택한 진단 기록을 삭제하지 못했습니다.");
+        folder.delete(); // Only remove an empty directory; never recursively delete other files.
+        refreshSaved();
+        if(path.equals(archive.getAbsolutePath())) {
+            path=saved.length==0?"":saved[0].file.getAbsolutePath();
+            state=path.isEmpty()?"idle":"ready";error="";
+            bytes=omitted=0;writerDroppedBytes.set(0);writerDroppedBlocks.set(0);
+        }
+        changed.run();
+    }
     synchronized void noteTelemetry(long now,String data) {
         recent.addLast(new String[]{Long.toString(now),data});
         while(recent.size()>30 || (!recent.isEmpty() && now-Long.parseLong(recent.peekFirst()[0])>3000))recent.removeFirst();
@@ -78,12 +101,16 @@ final class SdrDiagnosticCapture {
         directory = new File(cache,"sdr-diagnostic-" + UUID.randomUUID());
         if (!directory.mkdirs()) throw new IOException("진단 기록 저장 공간을 만들지 못했습니다.");
         bytes = omitted = usbBytes = audioSamples = 0;writeMs=0;sampleRate=0;firstAudioOffset = -1; path = error = "";
+        writerDroppedBytes.set(0);writerDroppedBlocks.set(0);
         state = "waiting"; changed.run();
     }
     synchronized void observe(double[] values, short[] audio, long now, String settings) {
         observe(values,audio,now,settings,"{}");
     }
     synchronized void observe(double[] values, short[] audio, long now, String settings,String details) {
+        observe(values,audio,now,settings,details,null);
+    }
+    synchronized void observe(double[] values, short[] audio, long now, String settings,String details,byte[] originalIq) {
         if (!"waiting".equals(state) && !"recording".equals(state)) return;
         try {
             if ("waiting".equals(state)) {
@@ -97,13 +124,16 @@ final class SdrDiagnosticCapture {
             lastReceiver=settings;
             long writeBegan=System.nanoTime();
             int received = (int)values[0];
-            int count = (int)Math.max(0, Math.min(Math.min(received,values.length-7),limit-bytes));
+            int available=originalIq==null?values.length-7:originalIq.length;
+            int count = (int)Math.max(0, Math.min(Math.min(received,available),limit-bytes));
             count -= count % 2; // Preserve complete I/Q pairs, including at the byte limit.
             // Native FFT export truncates incomplete frames. Record every gap explicitly.
             index.write((bytes+","+usbBytes+","+received+","+count+","+(now-started)+"\n").getBytes(StandardCharsets.UTF_8));
-            byte[] raw = new byte[count];
-            for (int i=0;i<count;i++) raw[i]=(byte)Math.round(values[i+7]*127.5+127.5);
-            iq.write(raw); bytes += count; omitted += received-count;
+            if(originalIq!=null)iq.write(originalIq,0,count);
+            else {
+                byte[] raw=new byte[count];for(int i=0;i<count;i++)raw[i]=(byte)Math.round(values[i+7]*127.5+127.5);iq.write(raw);
+            }
+            bytes += count; omitted += received-count;
             if (audio != null && audio.length>0) {
                 if (firstAudioOffset<0) firstAudioOffset=usbBytes;
                 byte[] data = new byte[audio.length*2];
@@ -129,12 +159,13 @@ final class SdrDiagnosticCapture {
         try {
             closeStreams();
             if (bytes==0) throw new IOException("진단 기록에 수신 데이터가 없습니다.");
-            String metadata="{\"schema_version\":2,\"format\":\"unsigned 8-bit interleaved IQ, 127.5 midpoint\",\"receiver\":"+receiver+
+            String metadata="{\"schema_version\":3,\"format\":\"unsigned 8-bit interleaved IQ, 127.5 midpoint\",\"receiver\":"+receiver+
+                ",\"writer_dropped_blocks\":"+writerDroppedBlocks.get()+",\"writer_dropped_bytes\":"+writerDroppedBytes.get()+
                 ",\"receiver_last\":"+lastReceiver+",\"audio_samples\":"+audioSamples+",\"sample_duration_ms\":"+(sampleRate>0?bytes*500.0/sampleRate:0)+
                 ",\"delivered_duration_ms\":"+(sampleRate>0?usbBytes*500.0/sampleRate:0)+",\"capture_write_total_ms\":"+writeMs+
                 ",\"captured_iq_bytes\":"+bytes+",\"omitted_iq_bytes\":"+omitted+",\"duration_ms\":"+(now-started)+
                 ",\"audio_start_usb_offset\":"+firstAudioOffset+",\"reason\":\""+reason+"\","+
-                "\"continuity\":\"blocks.csv indexes delivered USB bytes, not hardware sequence numbers. Unreceived hardware samples cannot be counted directly. telemetry.jsonl includes baseline and capture timing.\"}";
+                "\"continuity\":\"blocks.csv uses decoded byte offsets. telemetry sourceByteOffset and sourceSequence refer to USB callbacks. Queue drops are counted separately; hardware losses cannot be counted directly.\"}";
             try (OutputStream file=output("metadata.json")) { file.write(metadata.getBytes(StandardCharsets.UTF_8)); }
             state="packaging"; changed.run();
             final File folder=directory;

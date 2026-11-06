@@ -55,7 +55,7 @@
       </div>
     </section>
     <section data-diagnostic-section class="sdr-section" hidden>
-      <details class="sdr-reception-diagnostic"><summary>수신 진단</summary><div><button type="button" data-diagnostic-start>10초 기록</button><button type="button" data-diagnostic-share disabled>파일 공유</button></div><select data-diagnostic-record aria-label="저장된 수신 진단 기록" hidden></select><p data-diagnostic-status class="sdr-note">원본 I/Q와 청취 소리를 기기에만 기록합니다.</p></details>
+      <details class="sdr-reception-diagnostic"><summary>수신 진단</summary><div><button type="button" data-diagnostic-start>10초 기록</button><button type="button" data-diagnostic-share disabled>파일 공유</button><button type="button" data-diagnostic-delete disabled>선택 삭제</button></div><select data-diagnostic-record aria-label="저장된 수신 진단 기록" hidden></select><p data-diagnostic-status class="sdr-note">원본 I/Q와 청취 소리를 기기에만 기록합니다.</p></details>
     </section>
 
     </div>
@@ -486,7 +486,8 @@
     const data = plot.describe(rf.spectrumDbfs, centerHz, rateHz, { narrow });
     const state = snapshot && snapshot.receptionState;
     const listenHz = narrow ? rf.spectrumCenterHz : state === "receiving" && ["wfm", "cw"].includes(rf.mode) ? rf.listenFrequencyHz : null;
-    plot.draw(spectrumCanvas, data, centerHz, rateHz, state, listenHz);
+    const candidateHz = rf.cwCandidateTracked && Number.isFinite(rf.cwCandidateHz) ? rf.cwCandidateHz : null;
+    plot.draw(spectrumCanvas, data, centerHz, rateHz, state, listenHz, candidateHz);
     if (!data) {
       spectrumSummary.textContent = state === "receiving" ? "스펙트럼 대기 중" : "수신 대기";
       dialog.querySelector("[data-spectrum-info]").textContent = "";
@@ -495,6 +496,7 @@
     }
     const prefix = state === "receiving" ? "수신 중" : state === "error" ? "수신 오류 · 마지막 측정" : "정지됨 · 마지막 측정";
     spectrumSummary.textContent = `${prefix} · ${narrow ? "대상 주변 최대" : "최대"} ${(data.peakHz / 1e6).toFixed(narrow ? 5 : 3)} MHz · ${data.peakDbfs.toFixed(1)} dBFS/bin`;
+    if (Number.isFinite(candidateHz)) spectrumSummary.textContent = `${prefix} · CW 후보 ${(candidateHz / 1e6).toFixed(5)} MHz`;
     dialog.querySelector("[data-spectrum-info]").textContent = `${(data.startHz / 1e6).toFixed(narrow ? 5 : 3)}–${(data.endHz / 1e6).toFixed(narrow ? 5 : 3)} MHz · FFT ${data.binWidthHz.toFixed(0)} Hz${rf.spectrumPeakHold ? " · 순간 피크 유지" : ""}`;
     spectrumCanvas.setAttribute("aria-label", spectrumSummary.textContent);
   }
@@ -687,6 +689,22 @@
           : "배경 잡음 측정 중…" : "청취 주파수 주변 · 상대 신호 세기"
         : "수신 정지 · 마지막 측정값"
       : rf.mode === "iq" ? "CW 또는 WFM에서 신호 세기를 측정합니다." : "신호 세기 측정 대기";
+    if (cwStrength && rf.cwDetectorRevision) {
+      const measured = Number.isFinite(rf.cwDirectionDbfs) && rf.cwPulseCount > 0 &&
+        (rf.cwCandidateTracked || snapshot.receptionState !== "receiving");
+      const level = rf.hasSamples && Number.isInteger(rf.cwDirectionLevel) ? Math.max(0, Math.min(10, rf.cwDirectionLevel)) : 0;
+      const live = snapshot.receptionState === "receiving";
+      strengthBars.setAttribute("aria-valuenow", String(level));
+      strengthBars.setAttribute("aria-label", "CW 후보의 상대 신호 전력");
+      strengthBars.setAttribute("aria-valuetext", `${level}/10 · CW 후보 전력 · IC-R30 보정값 아님`);
+      for (let i = 0; i < 10; i++) dialog.querySelector(`[data-strength-bar="${i}"]`).classList.toggle("is-active", i < level);
+      dialog.querySelector("[data-strength-value]").textContent = measured ? `${rf.cwDirectionDbfs.toFixed(1)} dBFS` : "—";
+      dialog.querySelector("[data-strength-state]").textContent = !live ? "수신 정지 · 마지막 CW 측정값"
+        : rf.clippingPercent > 1 ? "입력 포화 · Gain을 낮춰 확인하세요."
+        : !rf.cwDetectorReady ? "CW 배경 잡음 측정 중…"
+        : rf.cwCandidateTracked ? `${rf.cwPulseRecent ? rf.cwConfidence >= 2 ? "반복 CW 후보" : "CW 후보" : "최근 CW 후보"} · SNR ${Number.isFinite(rf.cwSnrDb) ? rf.cwSnrDb.toFixed(1) : "—"} dB`
+        : "CW 후보 탐색 중";
+    }
     const receivedHz = rf.listenFrequencyHz || rf.frequencyHz;
     const receptionLabel = snapshot.receptionState === "receiving" ? "수신 중" :
       snapshot.receptionState === "stopping" ? "정지 중" : snapshot.receptionState === "error" ? "수신 오류" : "정지됨";
@@ -723,8 +741,9 @@
     dialog.querySelector(".sdr-listening-level").hidden = task !== "fixed";
     dialog.querySelector("[data-diagnostic-start]").disabled = busy || capturing || snapshot.receptionState !== "receiving" || rf.mode !== "cw" || typeof plugin?.startDiagnostic !== "function";
     dialog.querySelector("[data-diagnostic-share]").disabled = busy || capturing || (!records.length && diagnostic.state !== "ready") || typeof plugin?.shareDiagnostic !== "function";
+    dialog.querySelector("[data-diagnostic-delete]").disabled = busy || capturing || !records.length || typeof plugin?.deleteDiagnostic !== "function";
     dialog.querySelector("[data-diagnostic-status]").textContent = diagnostic.state === "error" ? `진단 기록 실패: ${diagnostic.error}`
-      : diagnostic.state === "ready" ? "기록 완료 · 파일을 공유해 수신 상태를 비교할 수 있습니다."
+      : diagnostic.state === "ready" ? diagnostic.writerDroppedBlocks > 0 ? "저장 지연으로 일부만 기록됨 · 파일 공유 가능" : "기록 완료 · 파일을 공유해 수신 상태를 비교할 수 있습니다."
       : diagnostic.state === "packaging" ? "진단 파일 준비 중…"
       : capturing ? `원본 수신 기록 중 · ${(Number(diagnostic.iqBytes || 0) / 1e6).toFixed(1)} MB`
       : records.length ? `저장된 기록 ${records.length}개 · 선택한 기록을 공유할 수 있습니다.` : "원본 I/Q와 청취 소리를 기기에만 기록합니다.";
@@ -959,6 +978,14 @@
   dialog.querySelector("[data-diagnostic-share]").addEventListener("click", () => {
     const id = dialog.querySelector("[data-diagnostic-record]").value;
     return run(() => plugin.shareDiagnostic(id ? { id } : {}));
+  });
+  dialog.querySelector("[data-diagnostic-delete]").addEventListener("click", () => {
+    const select = dialog.querySelector("[data-diagnostic-record]");
+    const id = select.value;
+    if (!id || typeof plugin?.deleteDiagnostic !== "function") return;
+    const label = [...select.children].find(option => option.value === id)?.textContent || "";
+    if (!window.confirm(`선택한 수신 진단 기록을 삭제할까요?\n${label}\n삭제한 기록은 복구할 수 없습니다.`)) return;
+    return run(() => plugin.deleteDiagnostic({ id }));
   });
   registerObservationButton.addEventListener("click", () => run(async () => {
     if (registerObservationButton.hidden || !animalMatchesFrequency() || !current?.reception?.hasSamples) return;

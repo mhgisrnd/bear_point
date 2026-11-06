@@ -93,8 +93,14 @@ public:
 
 struct SdrDemod {
     bool cw = false;
+    int sampleRate=0, channelOffset=0, deemphasis=75, audioGainDb=-1;
     CwDemod beacon;
     WfmDemod broadcast;
+    bool configure(int rate,int offset,int tau) {
+        sampleRate=rate;channelOffset=offset;deemphasis=tau;
+        return cw ? beacon.configure(rate,offset)&&beacon.setAudioGainDb(audioGainDb) : broadcast.configure(rate,offset,tau);
+    }
+    void reset() {configure(sampleRate,channelOffset,deemphasis);}
     double takeSignalPeak() { return cw ? beacon.takeSignalPeak() : broadcast.takeSignalPeak(); }
     double noisePower() const { return cw ? beacon.noisePower() : -1; }
     int process(const unsigned char *in, int length, short *out, int capacity) {

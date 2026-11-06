@@ -27,6 +27,27 @@ const animalCatalog = () => ({formatHz:hz=>String(hz/1e6),load:async()=>({notice
   {id:'2',code:'KF-112',frequencies:[]}
 ]})});
 
+test('CW detector uses directional power independently of confidence and keeps the target frequency',async()=>{
+  const ui=setup();ui.device.hasPermission=true;
+  await ui.trigger.click();await ui.button().click();await tick();
+  ui.state.receptionState='receiving';
+  ui.state.reception={mode:'cw',hasSamples:true,powerDbfs:-30,signalDbfs:-40,signalLevel:10,signalExcessDb:25,
+    noiseDbfs:-65,listenFrequencyHz:148241000,spectrumCenterHz:148241000,spectrumSpanHz:6000,
+    spectrumDbfs:Array(128).fill(-80),cwDetectorRevision:'cw-pulse-v1',cwDetectorReady:true,
+    cwPulseCount:3,cwPulseRecent:true,cwCandidateTracked:true,cwCandidateHz:148241609,
+    cwDirectionDbfs:-80,cwDirectionLevel:4,cwSnrDb:6.2,cwConfidence:1};
+  const active=[];for(let i=0;i<10;i++)ui.dialog.querySelector(`[data-strength-bar="${i}"]`).classList.toggle=(_,on)=>active[i]=on;
+  ui.emit();assert.equal(active.filter(Boolean).length,4);
+  assert.equal(ui.dialog.querySelector('[data-strength-value]').textContent,'-80.0 dBFS');
+  assert.match(ui.dialog.querySelector('[data-spectrum-summary]').textContent,/CW 후보 148.24161/);
+  ui.state.reception.cwConfidence=2;ui.emit();assert.equal(active.filter(Boolean).length,4);
+  assert.match(ui.dialog.querySelector('[data-strength-state]').textContent,/반복 CW 후보/);
+  ui.state.reception.cwPulseCount=0;ui.state.reception.cwCandidateTracked=false;ui.state.reception.cwDirectionLevel=0;
+  ui.emit();assert.equal(active.filter(Boolean).length,0);
+  assert.equal(ui.dialog.querySelector('[data-strength-value]').textContent,'—');
+  assert.match(ui.dialog.querySelector('[data-strength-state]').textContent,/CW 후보 탐색/);
+});
+
 test('notification request reopens live fixed reception without reconnecting, retuning or restarting audio',async()=>{
   const ui=setup();ui.device.hasPermission=true;
   await ui.trigger.click();await ui.button().click();await tick();
@@ -80,6 +101,40 @@ test('saved diagnostics remain available without a receiver and sharing uses the
   assert.equal(select.value,'sdr-diagnostic-old','status refresh must preserve the archive selection');
   await ui.dialog.querySelector('[data-diagnostic-share]').click();await tick();
   assert.equal(ui.plugin.sharedId,'sdr-diagnostic-old');
+});
+
+test('selected diagnostic deletion confirms, cancels and refreshes without requiring a USB receiver',async()=>{
+  const ui=setup();await ui.trigger.click();await tick();
+  ui.state.diagnostic={state:'ready',records:[{id:'new',time:1730790000000,sizeBytes:20e6},{id:'old',time:1730780000000,sizeBytes:19e6}]};
+  const deleted=[];ui.plugin.deleteDiagnostic=async({id})=>{deleted.push(id);ui.state.diagnostic.records=ui.state.diagnostic.records.filter(r=>r.id!==id);if(!ui.state.diagnostic.records.length)ui.state.diagnostic.state='idle';};
+  ui.emit();const select=ui.dialog.querySelector('[data-diagnostic-record]'),button=ui.dialog.querySelector('[data-diagnostic-delete]');
+  select.value='old';let prompt='';ui.window.confirm=text=>{prompt=text;return false;};
+  await button.click();assert.equal(deleted.length,0);assert.match(prompt,/삭제.*복구/s);
+  ui.window.confirm=()=>true;await button.click();await tick();assert.deepEqual(deleted,['old']);
+  assert.equal(select.children.length,1);assert.equal(select.value,'new');
+  await button.click();await tick();assert.deepEqual(deleted,['old','new']);assert.equal(button.disabled,true);
+  assert.equal(ui.dialog.querySelector('[data-diagnostic-share]').disabled,true);
+  assert.equal(ui.counts().openCount,0);assert.equal(ui.plugin.starts.length,0);
+});
+
+test('diagnostic deletion is disabled while recording and failure preserves the selected record',async()=>{
+  const ui=setup();await ui.trigger.click();await tick();
+  ui.state.diagnostic={state:'recording',records:[{id:'keep',time:1730790000000,sizeBytes:20e6}]};
+  ui.plugin.deleteDiagnostic=async()=>{throw Error('삭제 실패');};ui.window.confirm=()=>true;ui.emit();
+  const button=ui.dialog.querySelector('[data-diagnostic-delete]');assert.equal(button.disabled,true);
+  ui.state.diagnostic.state='idle';ui.emit();await button.click();await tick();
+  assert.equal(ui.state.diagnostic.records.length,1);assert.equal(ui.dialog.querySelector('[data-diagnostic-record]').value,'keep');
+  assert.equal(button.disabled,false);
+});
+
+test('a recorder overflow is shown as partial while sharing and live reception remain available',async()=>{
+  const ui=setup();ui.device.hasPermission=true;
+  await ui.trigger.click();await ui.button().click();await tick();
+  ui.state.receptionState='receiving';ui.state.reception={mode:'cw',frequencyHz:148229000,listenFrequencyHz:148241000};
+  ui.state.diagnostic={state:'ready',writerDroppedBlocks:1};ui.emit();
+  assert.match(ui.dialog.querySelector('[data-diagnostic-status]').textContent,/일부만 기록/);
+  assert.equal(ui.dialog.querySelector('[data-diagnostic-share]').disabled,false);
+  assert.equal(ui.state.receptionState,'receiving');assert.equal(ui.plugin.starts.length,0);
 });
 
 test('CW gauge displays native weak levels and labels a held peak without depending on listening volume',async()=>{

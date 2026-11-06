@@ -416,6 +416,14 @@ public class RtlSdrPlugin extends Plugin {
         });
     }
 
+    @PluginMethod public void deleteDiagnostic(PluginCall call) {
+        execute(call, () -> {
+            String id=call.getString("id","");
+            if(id.isEmpty())throw new IllegalArgumentException("삭제할 진단 기록을 선택하세요.");
+            sdr.deleteDiagnostic(id);call.resolve(snapshot());publish();
+        });
+    }
+
     @PluginMethod public void shareDiagnostic(PluginCall call) {
         execute(call, () -> {
             String id=call.getString("id","");

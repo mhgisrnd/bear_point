@@ -10,11 +10,12 @@ import android.media.AudioManager;
 import android.media.AudioTrack;
 import android.os.Build;
 import android.os.Handler;
+import android.os.SystemClock;
+import android.os.Process;
 import com.getcapacitor.JSObject;
-import java.util.concurrent.ArrayBlockingQueue;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.ArrayDeque;
 
 /** Media playback is isolated from USB reads. Main thread owns focus and UI state. */
 final class SdrAudioOutput {
@@ -28,12 +29,15 @@ final class SdrAudioOutput {
     private volatile int gainDb = -1;
     private final AtomicLong offeredSamples = new AtomicLong(), writtenSamples = new AtomicLong(), droppedSamples = new AtomicLong();
     private final AtomicInteger droppedTotal = new AtomicInteger(), underruns = new AtomicInteger(), emptyPolls = new AtomicInteger();
+    private final AtomicInteger rebufferings=new AtomicInteger();
+    private final AtomicLong flushedSamples=new AtomicLong();
+    private static final int PREFILL_SAMPLES=3072;
     int gainDb() { return gainDb; }
     void setGainDb(int value) {
         if (value < -1 || value > 36) throw new IllegalArgumentException("청취 증폭은 자동 또는 0–36dB로 설정하세요.");
         gainDb = value;
     }
-    private String output = "Android 미디어 출력", notice = "";
+    private volatile String output = "Android 미디어 출력", notice = "";
     private AudioFocusRequest focusRequest;
     private final AudioManager.OnAudioFocusChangeListener focusListener = change -> {
         if (change < 0) stopWithNotice("다른 앱의 소리 사용으로 음소거되었습니다. 다시 소리를 켜주세요.");
@@ -87,17 +91,17 @@ final class SdrAudioOutput {
         catch (IllegalStateException unavailable) { stopWithNotice(unavailable.getMessage()); }
     }
 
-    void offer(short[] samples) {
+    void offer(short[] samples,long sequence,double receivedMs) {
         Playback active = playback;
         if (active == null || !active.running || samples == null || samples.length == 0) return;
         offeredSamples.addAndGet(samples.length);
-        if (!active.queue.offer(samples)) {
-            // Keep live audio recent when playback falls behind USB reception.
-            short[] removed = active.queue.poll();
-            if (removed != null) { active.dropped.incrementAndGet(); droppedTotal.incrementAndGet(); droppedSamples.addAndGet(removed.length); }
-            if (!active.queue.offer(samples)) { active.dropped.incrementAndGet(); droppedTotal.incrementAndGet(); droppedSamples.addAndGet(samples.length); }
-        }
+        discard(active,active.queue.offer(new SdrPlaybackBuffer.Packet(samples,sequence,receivedMs)));
     }
+    private void discard(Playback active,SdrPlaybackBuffer.Dropped dropped){active.dropped.addAndGet(dropped.blocks);droppedTotal.addAndGet(dropped.blocks);droppedSamples.addAndGet(dropped.samples);}
+    void discontinuity(){Playback active=playback;if(active!=null){discard(active,active.queue.clear());active.resetRequested=true;}}
+    private double hardwareQueuedNow(Playback active){return Math.max(0,active.hardwareQueuedMs-Math.max(0,SystemClock.elapsedRealtime()-active.hardwareMeasuredAt));}
+    int presentationDelayMs(){Playback active=playback;return active==null?0:(int)Math.min(150,Math.max(0,active.queue.samples()/48.0+hardwareQueuedNow(active)));}
+    long playingSequence(){Playback active=playback;return active==null?0:active.playingSequence;}
 
     private void abandonFocus() {
         if (Build.VERSION.SDK_INT >= 26 && focusRequest != null) manager.abandonAudioFocusRequest(focusRequest);
@@ -127,6 +131,15 @@ final class SdrAudioOutput {
         result.put("droppedSamplesTotal", droppedSamples.get());result.put("droppedBlocksTotal", droppedTotal.get());
         result.put("underrunsTotal", underruns.get());result.put("emptyPollsTotal", emptyPolls.get());
         result.put("queueBlocks", active == null ? 0 : active.queue.size());
+        result.put("queueSamples",active==null?0:active.queue.samples());
+        result.put("hardwareQueuedMs",active==null?0:hardwareQueuedNow(active));
+        result.put("presentationDelayMs",presentationDelayMs());
+        result.put("presentationDelayClamped",active!=null&&active.queue.samples()/48.0+hardwareQueuedNow(active)>150);
+        result.put("lastWrittenSourceSequence",active==null?0:active.lastSequence);
+        result.put("playingSourceSequence",playingSequence());
+        result.put("sourceToOutputEstimateMs",active==null?0:active.sourceToOutputMs);
+        result.put("rebufferingsTotal",rebufferings.get());
+        result.put("flushedSamplesTotal",flushedSamples.get());
         result.put("mediaVolume", manager.getStreamVolume(AudioManager.STREAM_MUSIC));
         result.put("mediaVolumeMax", manager.getStreamMaxVolume(AudioManager.STREAM_MUSIC));
         return result;
@@ -160,15 +173,26 @@ final class SdrAudioOutput {
     }
 
     private final class Playback implements Runnable {
-        final ArrayBlockingQueue<short[]> queue = new ArrayBlockingQueue<>(3);
+        final SdrPlaybackBuffer queue = new SdrPlaybackBuffer();
         final AtomicInteger dropped = new AtomicInteger();
         final Thread thread = new Thread(this, "sdr-audio");
         volatile boolean running = true;
         volatile int externalRouteId = -1;
+        volatile boolean resetRequested;
+        volatile double hardwareQueuedMs,sourceToOutputMs;
+        volatile long hardwareMeasuredAt;
+        volatile long lastSequence;
+        volatile long playingSequence;
+        final ArrayDeque<long[]> sourceFrames=new ArrayDeque<>();
+        private void updatePlaying(long head){
+            while(!sourceFrames.isEmpty()&&sourceFrames.peekFirst()[1]<=head)sourceFrames.removeFirst();
+            playingSequence=sourceFrames.isEmpty()?0:sourceFrames.peekFirst()[2];
+        }
         int lastUnderruns;
         @Override public void run() {
             AudioTrack track = null;
             try {
+                Process.setThreadPriority(Process.THREAD_PRIORITY_AUDIO);
                 int minimum = AudioTrack.getMinBufferSize(48000, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT);
                 if (minimum <= 0) throw new IllegalStateException("48 kHz 오디오 출력 미지원");
                 track = new AudioTrack.Builder().setAudioAttributes(attributes)
@@ -177,20 +201,49 @@ final class SdrAudioOutput {
                     .setTransferMode(AudioTrack.MODE_STREAM).setBufferSizeInBytes(Math.max(minimum, 4800)).build();
                 AudioTrack routedTrack = track;
                 track.addOnRoutingChangedListener(ignored -> updateRoute(this, routedTrack), main);
-                track.setVolume(volume); track.play();
+                track.setVolume(volume);
                 main.post(() -> updateRoute(this, routedTrack));
+                boolean playing=false;long prefillDeadline=SystemClock.elapsedRealtime()+120,writtenFrames=0,headWrap=0,previousHead=0;
                 while (running) {
-                    short[] block = queue.poll(100, TimeUnit.MILLISECONDS);
-                    if (block == null) { emptyPolls.incrementAndGet(); continue; }
+                    if(resetRequested){
+                        track.pause();long head=track.getPlaybackHeadPosition()&0xffffffffL;if(head<previousHead)headWrap+=1L<<32;
+                        flushedSamples.addAndGet(Math.max(0,writtenFrames-head-headWrap));track.flush();
+                        playing=false;writtenFrames=headWrap=previousHead=0;hardwareQueuedMs=0;hardwareMeasuredAt=SystemClock.elapsedRealtime();
+                        sourceFrames.clear();playingSequence=0;
+                        resetRequested=false;prefillDeadline=SystemClock.elapsedRealtime()+120;rebufferings.incrementAndGet();
+                    }
+                    if(!playing&&queue.samples()<PREFILL_SAMPLES&&SystemClock.elapsedRealtime()<prefillDeadline){Thread.sleep(2);continue;}
+                    SdrPlaybackBuffer.Packet packet=queue.poll(25);
+                    if(packet==null){
+                        emptyPolls.incrementAndGet();long head=track.getPlaybackHeadPosition()&0xffffffffL;
+                        if(head<previousHead)headWrap+=1L<<32;previousHead=head;
+                        hardwareQueuedMs=Math.max(0,(writtenFrames-head-headWrap)/48.0);
+                        hardwareMeasuredAt=SystemClock.elapsedRealtime();
+                        updatePlaying(head+headWrap);
+                        if(playing&&hardwareQueuedMs<=1){track.pause();playing=false;prefillDeadline=SystemClock.elapsedRealtime()+120;rebufferings.incrementAndGet();}
+                        continue;
+                    }
+                    short[] block=packet.samples;
                     track.setVolume(volume);
                     int offset = 0;
-                    while (running && offset < block.length) {
+                    long sourceStartFrame=writtenFrames;
+                    while (running && !resetRequested && offset < block.length) {
                         int written = track.write(block, offset, block.length - offset, AudioTrack.WRITE_NON_BLOCKING);
                         if (written < 0) throw new IllegalStateException("오디오 출력 오류: " + written);
+                        if(written>0&&!playing){track.play();playing=true;}
                         if (written == 0) Thread.sleep(2);
                         offset += written;
                         writtenSamples.addAndGet(written);
+                        writtenFrames+=written;
                     }
+                    if(resetRequested&&offset<block.length){activeDrop(block.length-offset);}
+                    if(writtenFrames>sourceStartFrame)sourceFrames.addLast(new long[]{sourceStartFrame,writtenFrames,packet.sequence});
+                    long head=track.getPlaybackHeadPosition()&0xffffffffL;if(head<previousHead)headWrap+=1L<<32;previousHead=head;
+                    hardwareQueuedMs=Math.max(0,(writtenFrames-head-headWrap)/48.0);
+                    hardwareMeasuredAt=SystemClock.elapsedRealtime();
+                    updatePlaying(head+headWrap);
+                    lastSequence=packet.sequence;
+                    sourceToOutputMs=packet.receivedMs>0?Math.max(0,SystemClock.elapsedRealtime()-packet.receivedMs+hardwareQueuedMs):0;
                     if (Build.VERSION.SDK_INT >= 24) {
                         int currentUnderruns = track.getUnderrunCount();
                         underruns.addAndGet(Math.max(0, currentUnderruns - lastUnderruns));lastUnderruns = currentUnderruns;
@@ -204,5 +257,6 @@ final class SdrAudioOutput {
                 if (track != null) track.release();
             }
         }
+        private void activeDrop(int count){dropped.incrementAndGet();droppedTotal.incrementAndGet();droppedSamples.addAndGet(count);}
     }
 }

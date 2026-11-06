@@ -21,7 +21,7 @@
       peakHz: centerHz + (peak - middle) * rateHz / bins.length, peakDbfs: bins[peak] };
   }
 
-  function draw(canvas, data, centerHz, rateHz, state, listenHz) {
+  function draw(canvas, data, centerHz, rateHz, state, listenHz, candidateHz) {
     const ctx = typeof canvas.getContext === "function" ? canvas.getContext("2d") : null;
     if (!ctx) return;
     const width = Math.max(240, canvas.clientWidth || 500), height = Math.max(120, canvas.clientHeight || 240);
@@ -81,6 +81,13 @@
     ctx.fillStyle = "#087b9118"; ctx.fill();
     const peakX = left + span * data.peakIndex / data.bins.length;
     ctx.beginPath(); ctx.arc(peakX, y(data.peakDbfs), 3, 0, Math.PI * 2); ctx.fillStyle = "#b45309"; ctx.fill();
+    if (Number.isFinite(candidateHz) && Math.abs(candidateHz - centerHz) < rateHz / 2) {
+      const x = left + span * (.5 + (candidateHz - centerHz) / rateHz);
+      ctx.setLineDash([3, 3]); ctx.strokeStyle = "#15803d";
+      ctx.beginPath(); ctx.moveTo(x, top); ctx.lineTo(x, bottom); ctx.stroke(); ctx.setLineDash([]);
+      ctx.fillStyle = "#15803d"; ctx.textAlign = "center";
+      ctx.fillText("CW", Math.max(left + 12, Math.min(right - 12, x)), top + 13);
+    }
 
   }
 

@@ -25,6 +25,40 @@ public class SdrDiagnosticCaptureTest {
             byte[] buffer=new byte[1024];int n;while((n=input.read(buffer))!=-1)output.write(buffer,0,n);return output.toByteArray();
         }
     }
+    @Test public void deletingSelectedArchivePreservesOtherRecordsAndUnrelatedFiles() throws Exception {
+        File root=temporary.newFolder("diagnostics");
+        File unrelated=new File(root,"observations.db");assertTrue(unrelated.createNewFile());
+        SdrDiagnosticCapture capture=new SdrDiagnosticCapture(()->{},10,100);
+        try {
+            capture.storage(root);capture.request(root);
+            capture.observe(frame(2,1,2),null,0,"{}");capture.finish(10,"completed");
+            File first=ready(capture);String firstId=first.getParentFile().getName();
+            File sibling=new File(first.getParentFile(),"keep.txt");assertTrue(sibling.createNewFile());
+            capture.request(root);capture.observe(frame(2,3,4),null,20,"{}");capture.finish(30,"completed");
+            File second=ready(capture);String secondId=second.getParentFile().getName();
+            capture.delete(firstId);
+            assertFalse(first.exists());assertTrue(second.isFile());assertTrue(sibling.isFile());assertTrue(unrelated.isFile());
+            assertEquals(1,capture.saved().length);assertEquals(second,capture.readyFile());
+            capture.delete(secondId);assertEquals(0,capture.saved().length);assertEquals("idle",capture.state());
+            assertTrue(unrelated.isFile());
+            try {capture.readyFile();fail("Deleted archive remained shareable");}catch(IllegalStateException expected){}
+            SdrDiagnosticCapture restored=new SdrDiagnosticCapture(()->{},10,100);
+            try {restored.storage(root);assertEquals(0,restored.saved().length);}finally{restored.shutdown(0);}
+        } finally {capture.shutdown(40);}
+    }
+    @Test public void deletionRejectsUnknownPathsAndActiveCapture() throws Exception {
+        File root=temporary.newFolder("diagnostics");
+        SdrDiagnosticCapture capture=new SdrDiagnosticCapture(()->{},10,100);
+        try {
+            capture.storage(root);capture.request(root);capture.observe(frame(2,1,2),null,0,"{}");capture.finish(10,"completed");
+            File archive=ready(capture);String id=archive.getParentFile().getName();
+            try {capture.delete("../observations.db");fail("Arbitrary path accepted");}catch(IllegalStateException expected){}
+            assertTrue(archive.isFile());
+            capture.request(root);
+            try {capture.delete(id);fail("Deletion accepted during capture");}catch(IllegalStateException expected){}
+            assertTrue(archive.isFile());
+        }finally{capture.shutdown(11);}
+    }
     @Test public void archivePreservesIqAudioSettingsAndExplicitGaps() throws Exception {
         SdrDiagnosticCapture capture=new SdrDiagnosticCapture(()->{},10,100);
         try {
@@ -39,7 +73,7 @@ public class SdrDiagnosticCaptureTest {
                 assertTrue(metadata.contains("\"omitted_iq_bytes\":2"));
                 assertTrue(metadata.contains("\"sampleRate\":1024000"));
                 assertTrue(metadata.contains("\"duration_ms\":10"));
-                assertTrue(metadata.contains("\"schema_version\":2"));
+                assertTrue(metadata.contains("\"schema_version\":3"));
                 assertTrue(metadata.contains("\"audio_samples\":2"));
                 assertTrue(metadata.contains("\"sample_duration_ms\":0.0029296875"));
                 assertTrue(metadata.contains("\"delivered_duration_ms\":0.00390625"));
