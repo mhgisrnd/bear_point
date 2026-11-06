@@ -680,6 +680,26 @@ test('strength bars use fixed channel-power thresholds independent of volume and
   assert.equal(active.filter(Boolean).length,0);
 });
 
+test('call interruption shows stopped reception and requires a manual new start',async()=>{
+  const ui=setup();ui.device.hasPermission=true;
+  await ui.trigger.click();await ui.button().click();await tick();
+  await ui.dialog.querySelector('[data-start]').click();await tick();
+  const starts=ui.plugin.starts.length;
+  ui.state.reception={frequencyHz:148229000,listenFrequencyHz:148241000,mode:'cw'};
+  ui.state.receptionState='stopping';ui.state.backgroundReceiving=false;ui.state.fixedResultAvailable=true;
+  ui.state.audio={enabled:false,gainDb:-1,notice:'통화로 수신을 정지했습니다. 통화 종료 후 수신 시작을 눌러주세요.'};ui.emit();
+  assert.equal(ui.dialog.querySelector('[data-start]').disabled,true);
+  ui.state.receptionState='idle';ui.emit();
+  assert.match(ui.dialog.querySelector('[data-frequency-readout]').textContent,/정지됨/);
+  assert.match(ui.dialog.querySelector('[data-audio-status]').textContent,/통화.*수신 시작/);
+  assert.equal(ui.dialog.querySelector('[data-audio]').disabled,true);
+  assert.equal(ui.dialog.querySelector('[data-start]').hidden,false);
+  assert.equal(ui.dialog.querySelector('[data-start]').disabled,false);
+  await ui.dialog.close();await ui.trigger.click();await tick();
+  assert.equal(ui.plugin.starts.length,starts,'returning to the app must not restart reception');
+  await ui.dialog.querySelector('[data-start]').click();await tick();assert.equal(ui.plugin.starts.length,starts+1);
+});
+
 test('result header shows actual CW listening frequency above metrics and labels stopped results', async () => {
   const ui=setup(); ui.device.hasPermission=true;
   await ui.trigger.click(); await ui.button().click(); await tick();
@@ -1159,18 +1179,61 @@ test('opening SDR cancels the map exit prompt; closing it requires two fresh map
   assert.equal(flow.toasts[0].style.opacity,'1');
   assert.equal(flow.exits(),0);
   flow.advance(100); flow.back();
+  await tick();
   assert.equal(flow.exits(),1);
   assert.equal(flow.toasts[0].style.opacity,'0');
   assert.equal(flow.timers.size,0);
 });
 
-test('Android back presses during startup loading do not close background panels or arm app exit',()=>{
+test('Android back presses during startup loading do not close background panels or arm app exit',async()=>{
   const ui=setup(),flow=attachExitFlow(ui);
   ui.window.BearStartupLoading=true;
   flow.back();flow.back();assert.equal(flow.exits(),0);assert.equal(flow.context.lastBackPressAt,0);
   ui.window.BearStartupLoading=false;
   flow.back();assert.equal(flow.exits(),0);
-  flow.back();assert.equal(flow.exits(),1);
+  flow.back();await tick();assert.equal(flow.exits(),1);
+});
+
+test('app exit cancellation leaves reception running and requires a new double back press',async()=>{
+  const ui=setup(),flow=attachExitFlow(ui);let prompts=0;
+  ui.state.receptionState='receiving';ui.state.backgroundReceiving=true;
+  ui.plugin.prepareAppExit=async()=>{prompts++;return {confirmed:false};};
+  flow.back();flow.advance(100);flow.back();await tick();
+  assert.equal(prompts,1);assert.equal(flow.exits(),0);
+  assert.equal(ui.state.receptionState,'receiving');assert.equal(ui.state.backgroundReceiving,true);
+  assert.equal(flow.context.lastBackPressAt,0);
+  flow.back();await tick();assert.equal(prompts,1);
+  flow.advance(100);flow.back();await tick();assert.equal(prompts,2);assert.equal(flow.exits(),0);
+});
+
+test('confirmed app exit waits for native SDR cleanup and ignores repeated requests',async()=>{
+  const ui=setup(),flow=attachExitFlow(ui);let release,prompts=0;
+  ui.plugin.prepareAppExit=()=>{prompts++;return new Promise(resolve=>{release=()=>{ui.state.receptionState='idle';ui.state.backgroundReceiving=false;resolve({confirmed:true});};});};
+  ui.state.receptionState='scanning';ui.state.backgroundScanning=true;
+  flow.back();flow.advance(100);flow.back();await tick();
+  assert.equal(prompts,1);assert.equal(flow.exits(),0);
+  flow.back();flow.back();await tick();assert.equal(prompts,1);
+  release();await tick();assert.equal(flow.exits(),1);
+  assert.equal(ui.state.receptionState,'idle');
+});
+
+test('native exit cleanup failure prevents Activity exit and permits retry',async()=>{
+  const ui=setup();let exits=0,notice='';ui.window.alert=text=>notice=text;
+  ui.plugin.prepareAppExit=async()=>{throw Error('USB cleanup failed');};
+  await ui.window.SdrDiagnostics.exitAppSafely(()=>exits++);
+  assert.equal(exits,0);assert.match(notice,/USB cleanup failed/);
+  ui.plugin.prepareAppExit=async()=>({confirmed:true});
+  await ui.window.SdrDiagnostics.exitAppSafely(()=>exits++);assert.equal(exits,1);
+});
+
+test('older native bridges confirm active reception and close USB before app exit',async()=>{
+  const ui=setup();let exits=0,closes=0;
+  ui.state.receptionState='receiving';ui.state.backgroundReceiving=true;
+  ui.plugin.closeDevice=async()=>{closes++;};ui.window.confirm=()=>false;
+  await ui.window.SdrDiagnostics.exitAppSafely(()=>exits++);assert.equal(exits,0);assert.equal(closes,0);
+  ui.window.confirm=()=>true;
+  await ui.window.SdrDiagnostics.exitAppSafely(()=>{assert.equal(closes,1);exits++;});
+  assert.equal(exits,1);
 });
 
 test('map exit eligibility lasts exactly as long as its visible prompt', () => {

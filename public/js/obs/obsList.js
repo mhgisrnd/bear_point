@@ -117,6 +117,8 @@ window.createObsListModule = function createObsListModule({
   const obsListCountEl = document.getElementById("obs-list-count");
   const obsSelectedCountEl = document.getElementById("obs-selected-count");
   const searchFieldEl = document.getElementById("search-field");
+  const searchFieldButtonEl = document.getElementById("btn-obs-search-field");
+  const searchOptionsEl = document.getElementById("obs-search-options");
   const searchQueryEl = document.getElementById("search-query");
   const btnSearchClearEl = document.getElementById("btn-search-clear");
   const btnFilterEl = document.getElementById("btn-obs-filter");
@@ -1705,9 +1707,10 @@ window.createObsListModule = function createObsListModule({
 
   // 목록의 검색/선택/렌더 상태를 초기값으로 되돌린다.
   function resetList() {
+    setSearchOptionsOpen(false);
     setFiltersOpen(false);
     if (searchQueryEl) searchQueryEl.value = "";
-    if (searchFieldEl) searchFieldEl.value = "obs";
+    setSearchField("obs");
     selectedObsIds.clear();
     observationMarkersLayer.clearLayers();
     observationMarkers.length = 0;
@@ -1717,6 +1720,7 @@ window.createObsListModule = function createObsListModule({
 
   // 등록 팝업이 열리는 동안 목록 패널을 일시적으로 숨긴다 (currentTab 유지).
   function hidePanel() {
+    setSearchOptionsOpen(false);
     setFiltersOpen(false);
     if (obsSheetEl) obsSheetEl.classList.add("hidden");
     if (obsListPanelEl) obsListPanelEl.classList.add("hidden");
@@ -1781,6 +1785,55 @@ window.createObsListModule = function createObsListModule({
   }
 
   // UI 이벤트(탭/검색/선택/삭제/스크롤 차단)를 바인딩한다.
+  function setSearchField(value) {
+    if (!searchFieldEl || !searchFieldButtonEl || !searchOptionsEl) return;
+    searchFieldEl.value = value;
+    for (const option of searchOptionsEl.querySelectorAll("[data-search-field]")) {
+      const selected = option.dataset.searchField === value;
+      option.setAttribute("aria-pressed", String(selected));
+      if (selected) {
+        searchFieldButtonEl.textContent = option.textContent;
+        searchFieldButtonEl.setAttribute("aria-label", "검색 항목: " + option.textContent);
+      }
+    }
+  }
+
+  function setSearchOptionsOpen(open) {
+    if (!searchFieldButtonEl || !searchOptionsEl) return;
+    searchOptionsEl.hidden = !open;
+    searchFieldButtonEl.setAttribute("aria-expanded", String(open));
+  }
+
+  function bindSearchOptions() {
+    if (!searchFieldButtonEl || !searchOptionsEl) return;
+    const picker = searchFieldButtonEl.parentElement;
+    searchFieldButtonEl.addEventListener("click", () => {
+      setSearchOptionsOpen(searchOptionsEl.hidden);
+      if (!searchOptionsEl.hidden) searchOptionsEl.querySelector('[aria-pressed="true"]')?.focus();
+    });
+    searchOptionsEl.addEventListener("click", (event) => {
+      const option = event.target.closest("[data-search-field]");
+      if (!option) return;
+      setSearchField(option.dataset.searchField);
+      searchFieldButtonEl.focus();
+      setSearchOptionsOpen(false);
+      applySearch();
+    });
+    picker.addEventListener("keydown", (event) => {
+      if (event.key !== "Escape" || searchOptionsEl.hidden) return;
+      event.preventDefault();
+      event.stopPropagation();
+      searchFieldButtonEl.focus();
+      setSearchOptionsOpen(false);
+    });
+    picker.addEventListener("focusout", (event) => {
+      if (!picker.contains(event.relatedTarget)) setSearchOptionsOpen(false);
+    });
+    document.addEventListener("pointerdown", (event) => {
+      if (!searchOptionsEl.hidden && !picker.contains(event.target)) setSearchOptionsOpen(false);
+    });
+  }
+
   function bindEvents() {
     const onLayoutChange = () => {
       // A phone drag position must not override the tablet popup's CSS anchor.
@@ -1902,7 +1955,7 @@ window.createObsListModule = function createObsListModule({
     }
 
     if (searchQueryEl) searchQueryEl.addEventListener("input", applySearch);
-    if (searchFieldEl) searchFieldEl.addEventListener("change", applySearch);
+    bindSearchOptions();
     if (btnFilterEl) btnFilterEl.addEventListener("click", () => setFiltersOpen(filterPanelEl.hidden));
     if (filterSummaryEl) filterSummaryEl.addEventListener("click", () => setFiltersOpen(filterPanelEl.hidden));
     if (ownerFilterEl) ownerFilterEl.addEventListener("change", applySearch);
@@ -1917,7 +1970,7 @@ window.createObsListModule = function createObsListModule({
     if (btnFilterDoneEl) btnFilterDoneEl.addEventListener("click", () => { setFiltersOpen(false); btnFilterEl?.focus(); });
     if (btnSearchClearEl) btnSearchClearEl.addEventListener("click", () => {
       if (searchQueryEl) searchQueryEl.value = "";
-      if (searchFieldEl) searchFieldEl.value = "obs";
+      setSearchField("obs");
       clearObservationFilters();
       setFiltersOpen(false);
       applySearch();

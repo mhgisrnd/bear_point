@@ -22,6 +22,8 @@ final class SdrAudioOutput {
     private final AudioManager manager;
     private final Handler main;
     private final Runnable changed;
+    private final SdrAudioInterruption interruptions;
+    private final CallModeMonitor callModeMonitor;
     private final AudioAttributes attributes = new AudioAttributes.Builder()
         .setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build();
     private volatile Playback playback;
@@ -39,9 +41,15 @@ final class SdrAudioOutput {
     }
     private volatile String output = "Android 미디어 출력", notice = "";
     private AudioFocusRequest focusRequest;
+    private volatile int lastFocusChange;
+    private volatile boolean ducked;
     private final AudioManager.OnAudioFocusChangeListener focusListener = change -> {
-        if (change < 0) stopWithNotice("다른 앱의 소리 사용으로 음소거되었습니다. 다시 소리를 켜주세요.");
+        lastFocusChange = change;
+        if (change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK) ducked = true;
+        else if (change == AudioManager.AUDIOFOCUS_GAIN) ducked = false;
+        onFocusChanged(change);
     };
+    private void onFocusChanged(int change) { interruptions.focusChanged(change); changed.run(); }
     private final AudioDeviceCallback devices = new AudioDeviceCallback() {
         @Override public void onAudioDevicesRemoved(AudioDeviceInfo[] removed) {
             Playback active = playback;
@@ -53,11 +61,27 @@ final class SdrAudioOutput {
         }
     };
 
-    SdrAudioOutput(Context context, Handler main, Runnable changed) {
+    SdrAudioOutput(Context context, Handler main, Runnable changed, SdrAudioInterruption interruptions) {
         this.main = main; this.changed = changed;
+        this.interruptions = interruptions;
         manager = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
         manager.registerAudioDeviceCallback(devices, main);
+        callModeMonitor = Build.VERSION.SDK_INT >= 31 ? new CallModeMonitor(manager, main, interruptions) : null;
     }
+
+    // Isolate API 31 types from devices on Android 6..11. No phone-state permission is required.
+    @android.annotation.TargetApi(31)
+    private static final class CallModeMonitor {
+        private final AudioManager manager;
+        private final AudioManager.OnModeChangedListener listener;
+        CallModeMonitor(AudioManager manager, Handler main, SdrAudioInterruption interruptions) {
+            this.manager=manager; listener=interruptions::modeChanged;
+            manager.addOnModeChangedListener(main::post,listener);
+        }
+        void close() { manager.removeOnModeChangedListener(listener); }
+    }
+
+    void interruptionNotice(String reason) { notice = reason; }
 
     void set(Boolean enabled, Double requestedVolume) {
         if (requestedVolume != null) {
@@ -67,6 +91,11 @@ final class SdrAudioOutput {
         }
         if (Boolean.FALSE.equals(enabled)) stop();
         if (Boolean.TRUE.equals(enabled) && playback == null) {
+            int mode=manager.getMode();
+            if(SdrAudioInterruption.isCallMode(mode)) {
+                interruptions.modeChanged(mode);
+                throw new IllegalStateException("통화 종료 후 수신 시작을 눌러주세요.");
+            }
             int result;
             if (Build.VERSION.SDK_INT >= 26) {
                 focusRequest = new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
@@ -80,6 +109,7 @@ final class SdrAudioOutput {
                 throw new IllegalStateException("오디오 출력을 사용할 수 없습니다. 다른 앱의 재생을 확인하세요.");
             }
             notice = "";
+            ducked = false;
             Playback active = new Playback();
             playback = active;
             active.thread.start();
@@ -114,6 +144,7 @@ final class SdrAudioOutput {
         playback = null;
         if (active != null) { active.running = false; active.queue.clear(); active.thread.interrupt(); }
         abandonFocus();
+        ducked = false;
     }
 
     private void stopWithNotice(String reason) {
@@ -126,6 +157,7 @@ final class SdrAudioOutput {
         result.put("enabled", active != null); result.put("volume", volume);
         result.put("gainDb", gainDb);
         result.put("output", output); result.put("notice", notice);
+        result.put("lastFocusChange",lastFocusChange);result.put("audioMode",manager.getMode());
         result.put("droppedBlocks", active == null ? 0 : active.dropped.get());
         result.put("offeredSamplesTotal", offeredSamples.get());result.put("writtenSamplesTotal", writtenSamples.get());
         result.put("droppedSamplesTotal", droppedSamples.get());result.put("droppedBlocksTotal", droppedTotal.get());
@@ -145,7 +177,7 @@ final class SdrAudioOutput {
         return result;
     }
 
-    void shutdown() { stop(); manager.unregisterAudioDeviceCallback(devices); }
+    void shutdown() { stop(); manager.unregisterAudioDeviceCallback(devices); if(callModeMonitor!=null)callModeMonitor.close(); }
 
     private void updateRoute(Playback active, AudioTrack track) {
         if (playback != active) return;
@@ -201,7 +233,7 @@ final class SdrAudioOutput {
                     .setTransferMode(AudioTrack.MODE_STREAM).setBufferSizeInBytes(Math.max(minimum, 4800)).build();
                 AudioTrack routedTrack = track;
                 track.addOnRoutingChangedListener(ignored -> updateRoute(this, routedTrack), main);
-                track.setVolume(volume);
+                track.setVolume(volume*(ducked?.2f:1f));
                 main.post(() -> updateRoute(this, routedTrack));
                 boolean playing=false;long prefillDeadline=SystemClock.elapsedRealtime()+120,writtenFrames=0,headWrap=0,previousHead=0;
                 while (running) {
@@ -224,7 +256,7 @@ final class SdrAudioOutput {
                         continue;
                     }
                     short[] block=packet.samples;
-                    track.setVolume(volume);
+                    track.setVolume(volume*(ducked?.2f:1f));
                     int offset = 0;
                     long sourceStartFrame=writtenFrames;
                     while (running && !resetRequested && offset < block.length) {

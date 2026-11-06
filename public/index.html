@@ -4,17 +4,17 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover" />
   <title>지리산 반달곰 위치 분석</title>
-  <script src="js/startup-diagnostics.js?v=1.0.4-ui53"></script>
-  <script src="js/native-plugin-compat.js?v=1.0.4-ui53"></script>
+  <script src="js/startup-diagnostics.js?v=1.0.4-ui55"></script>
+  <script src="js/native-plugin-compat.js?v=1.0.4-ui55"></script>
 
   <link rel="stylesheet" href="vendor/ol/ol.css" />
   <link rel="stylesheet" href="css/styles.css" />
   <link rel="stylesheet" href="css/panel.css?v=20261102-table-cleanup-1" />
-  <link rel="stylesheet" href="css/observation-sharing.css?v=20261102-table-cleanup-1" />
+  <link rel="stylesheet" href="css/observation-sharing.css?v=20261106-search-menu" />
   <link rel="stylesheet" href="css/sdr-diagnostics.css" />
   <link rel="stylesheet" href="css/app-settings.css" />
   <link rel="stylesheet" href="css/gps-tracking.css?v=20261103-refresh-buttons" />
-  <link rel="stylesheet" href="css/mobile-map-dock.css?v=20261103-table-edge-3" />
+  <link rel="stylesheet" href="css/mobile-map-dock.css?v=20261106-inline-filter" />
 </head>
 <body>
 
@@ -33,10 +33,14 @@
     </div>
 
     <div class="obs-search-bar">
-      <select class="obs-search-select" id="search-field" aria-label="검색 항목">
-        <option value="obs">관측점</option>
-        <option value="bear">코드</option>
-      </select>
+      <div class="obs-search-picker">
+        <input type="hidden" id="search-field" value="obs" />
+        <button class="obs-search-select" id="btn-obs-search-field" type="button" aria-label="검색 항목: 관측점" aria-expanded="false" aria-controls="obs-search-options">관측점</button>
+        <div class="obs-search-options" id="obs-search-options" role="group" aria-label="검색 항목" hidden>
+          <button type="button" data-search-field="obs" aria-pressed="true">관측점</button>
+          <button type="button" data-search-field="bear" aria-pressed="false">코드</button>
+        </div>
+      </div>
       <input class="obs-search-input" id="search-query" type="text" placeholder="검색..." aria-label="관측점 검색어" autocomplete="off" />
       <button class="obs-filter-toggle" id="btn-obs-filter" type="button" aria-expanded="false" aria-controls="obs-filter-panel">필터</button>
       <button class="obs-search-clear" id="btn-search-clear" type="button">초기화</button>
@@ -373,7 +377,7 @@
   <script src="js/realtime/realtimeList.js"></script>
   <script src="js/realtime/bear-estimate-store.js"></script>
   <script src="js/progressive-list.js"></script>
-  <script src="js/obs/obsList.js"></script>
+  <script src="js/obs/obsList.js?v=20261106-search-menu"></script>
   <script src="js/obs/observation-filters.js"></script>
   <script src="js/obs/observation-sync.js"></script>
   <script src="js/obs/obsRegister.js"></script>

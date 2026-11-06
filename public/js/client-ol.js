@@ -3537,7 +3537,9 @@
       const now = Date.now();
       if (lastBackPressAt > 0 && now - lastBackPressAt <= BACK_EXIT_DOUBLE_PRESS_MS) {
         resetBackExitState();
-        appPlugin.exitApp();
+        if (typeof window.SdrDiagnostics?.exitAppSafely === "function") {
+          void window.SdrDiagnostics.exitAppSafely(() => appPlugin.exitApp());
+        } else appPlugin.exitApp();
         return;
       }
 

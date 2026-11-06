@@ -27,7 +27,15 @@ final class SdrRuntime {
     private SdrRuntime(Context context) {
         usb = (UsbManager) context.getSystemService(Context.USB_SERVICE);
         sdr = new SdrReceiver(main, this::changed);
-        sdr.audio = new SdrAudioOutput(context, main, this::changed);
+        SdrAudioInterruption interruptions = new SdrAudioInterruption(
+            () -> "starting".equals(sdr.state) || "receiving".equals(sdr.state) || "scanning".equals(sdr.state),
+            reason -> {
+                SdrScanService.release(); // Drop foreground notification ownership, retain the USB connection.
+                sdr.stop();
+                sdr.audio.interruptionNotice(reason);
+                changed();
+            });
+        sdr.audio = new SdrAudioOutput(context, main, this::changed, interruptions);
     }
 
     void changed() {
@@ -36,7 +44,11 @@ final class SdrRuntime {
     }
 
     void closeUsb() {
-        sdr.closeUsb(connection);
+        closeUsb(null);
+    }
+
+    void closeUsb(SdrReceiver.CloseCompletion complete) {
+        sdr.closeUsb(connection,complete);
         connection = null;
         connectedId = null;
         changed();

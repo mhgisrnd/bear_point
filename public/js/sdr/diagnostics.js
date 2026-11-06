@@ -1031,7 +1031,34 @@
   }
   dialog.querySelector("[data-back]").addEventListener("click", () => run(resumeLastScan));
 
+  let appExitPending = false;
+  async function exitAppSafely(exit) {
+    if (appExitPending) return;
+    appExitPending = true;
+    try {
+      if (!plugin && window.Capacitor?.getPlatform?.() === "android") plugin = getAndroidPlugin();
+      if (typeof plugin?.prepareAppExit === "function") {
+        const result = await plugin.prepareAppExit();
+        if (!result?.confirmed) return;
+      } else if (plugin) {
+        // Compatibility for an older native bridge: stop SDR before finishing its Activity.
+        const snapshot = await plugin.getStatus();
+        const active = ["starting", "receiving", "scanning", "stopping"].includes(snapshot.receptionState) ||
+          snapshot.backgroundReceiving || snapshot.backgroundScanning;
+        if (active && !window.confirm("수신·탐색을 종료하고 앱을 닫을까요?")) return;
+        if (typeof plugin.closeDevice === "function") await plugin.closeDevice();
+        else if (active) throw new Error("수신 종료를 지원하는 최신 APK를 설치하세요.");
+      }
+      await exit();
+    } catch (error) {
+      const reason = `앱을 종료하지 못했습니다. ${error.message || String(error)}`;
+      message.textContent = reason;
+      if (typeof window.alert === "function") window.alert(reason);
+    } finally { appExitPending = false; }
+  }
+
   function handleBackNavigation() {
+    if (appExitPending) return true;
     if (!dialog.open) return false;
     if (busy) return true;
     if (editingFrequency) {
@@ -1044,7 +1071,7 @@
     }
     return true;
   }
-  window.SdrDiagnostics = { handleBackNavigation };
+  window.SdrDiagnostics = { handleBackNavigation, exitAppSafely };
   dialog.addEventListener("cancel", event => { event.preventDefault(); handleBackNavigation(); });
 
   function updateDialogViewport(snapshot = current) {

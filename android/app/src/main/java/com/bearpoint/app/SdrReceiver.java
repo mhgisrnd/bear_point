@@ -424,6 +424,12 @@ final class SdrReceiver {
     }
 
     void closeUsb(UsbDeviceConnection connection) {
+        closeUsb(connection,null);
+    }
+
+    interface CloseCompletion { void finished(RuntimeException failure); }
+
+    void closeUsb(UsbDeviceConnection connection,CloseCompletion complete) {
         tunerInfo = new double[0];
         if (audio != null) audio.stop();
         generation.incrementAndGet(); state = "idle"; metrics = new JSObject(); scan = new JSObject(); error = "";
@@ -431,7 +437,14 @@ final class SdrReceiver {
         fixedResultAvailable = false;
         tunedFrequencyHz = 0;
         // FIFO: stop the loop, close librtlsdr, then release the Java-owned descriptor.
-        if (connection != null) worker.execute(connection::close);
+        worker.execute(() -> {
+            RuntimeException failure=null;
+            try {if(connection!=null)connection.close();}
+            catch(RuntimeException error){failure=error;}
+            RuntimeException result=failure;
+            if(complete!=null)main.post(() -> complete.finished(result));
+            else if(failure!=null)android.util.Log.w("SdrReceiver","USB close failed",failure);
+        });
     }
 
     void clearScanHistory() {

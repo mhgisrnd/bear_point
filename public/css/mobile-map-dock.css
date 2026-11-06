@@ -18,7 +18,8 @@ body.bp-map-dock #mobile-map-dock { position: fixed; left: var(--safe-left,0px);
 #mobile-map-dock:not(.is-expanded) .mobile-dock-actions { display: none; }
 .mobile-dock-content { display: flex; flex-direction: column; min-height: 0; max-height: calc(var(--mobile-sheet-height) - 48px); overflow: hidden; }
 .mobile-dock-content[hidden] { display: none !important; }
-body.bp-map-dock #mobile-map-dock.is-filtering { --mobile-sheet-height: min(56dvh,480px); }
+body.bp-map-dock #mobile-map-dock.is-filtering,
+body.bp-map-dock #mobile-map-dock.is-expanded:where([data-menu="observations"]:has(.obs-sheet--filtering)) { --mobile-sheet-height: min(56dvh,480px); }
 body.bp-map-dock #mobile-map-dock.is-full { --mobile-sheet-height: calc(100dvh - 76px - var(--safe-top,0px) - var(--safe-bottom,0px)); height: calc(100dvh - var(--safe-top,0px) - 12px); }
 #mobile-map-dock.is-full .mobile-dock-content { flex: 1 1 auto; max-height: none; }
 body.bp-map-dock #mobile-map-dock.is-dragging { --mobile-sheet-height: calc(100dvh - 76px - var(--safe-top,0px) - var(--safe-bottom,0px)); height: auto; }
@@ -43,7 +44,10 @@ body.bp-map-dock #mobile-map-dock .obs-table-wrap { overflow: auto; min-height: 
 body.bp-map-dock #mobile-map-dock .obs-search-bar { padding: 4px 10px; }
 body.bp-map-dock #mobile-map-dock .obs-list-status { padding: 3px 10px; }
 body.bp-map-dock #mobile-map-dock .obs-table { margin: 0; }
-body.bp-map-dock #mobile-map-dock .obs-filter-panel { max-height: 20dvh; }
+@media (max-height: 480px) {
+  body.bp-map-dock #mobile-map-dock .obs-sheet--filtering { overflow-y: auto; }
+  body.bp-map-dock #mobile-map-dock .obs-sheet--filtering .obs-table-wrap { min-height: 80px; }
+}
 body.bp-map-dock #mobile-map-dock #panel .panel-header { padding: 0 10px 4px; min-height: 0; flex: 0 0 auto; }
 body.bp-map-dock #mobile-map-dock #panel #status { font-size: 11px; max-width: none; }
 body.bp-map-dock #mobile-map-dock #btn-panel-toggle { display: none; }

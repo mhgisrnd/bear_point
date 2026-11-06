@@ -1,6 +1,7 @@
 package com.bearpoint.app;
 
 import android.app.PendingIntent;
+import android.app.AlertDialog;
 import android.Manifest;
 import android.content.BroadcastReceiver;
 import android.content.Context;
@@ -49,6 +50,8 @@ public class RtlSdrPlugin extends Plugin {
     private boolean registered;
     private boolean destroyed;
     private boolean paused;
+    private AlertDialog exitDialog;
+    private PluginCall exitCall;
     private String lastError;
     private final Runnable timeout = () -> {
         reconcilePermission();
@@ -189,8 +192,12 @@ public class RtlSdrPlugin extends Plugin {
     private void execute(PluginCall call, Runnable action) {
         main.post(() -> {
             if (destroyed) { call.reject("플러그인이 종료되었습니다.", "USB_CLOSED"); return; }
+            if(exitCall!=null && !"getStatus".equals(call.getMethodName()) && !"prepareAppExit".equals(call.getMethodName())) {
+                call.reject("앱 종료를 확인하거나 수신을 정리하고 있습니다.","EXIT_PENDING");return;
+            }
             try { action.run(); }
             catch (Exception error) {
+                if(exitCall==call){if(exitDialog!=null)exitDialog.dismiss();exitDialog=null;exitCall=null;}
                 if (permissionCall == call) clearPermission();
                 lastError = "USB_ERROR";
                 call.reject("USB 처리 실패: " + error.getMessage(), "USB_ERROR", error);
@@ -272,6 +279,46 @@ public class RtlSdrPlugin extends Plugin {
 
     private void closeConnection() {
         runtime.closeUsb();
+    }
+
+    @PluginMethod public void prepareAppExit(PluginCall call) {
+        execute(call, () -> {
+            if(exitCall!=null){call.reject("앱 종료를 확인하고 있습니다.", "EXIT_PENDING");return;}
+            exitCall=call;
+            boolean active="starting".equals(sdr.state)||"receiving".equals(sdr.state)||
+                "scanning".equals(sdr.state)||"stopping".equals(sdr.state)||SdrScanService.isRunning()||
+                pendingReceptionCall!=null||pendingScanCall!=null;
+            if(!active){completeAppExit();return;}
+            exitDialog=new AlertDialog.Builder(getActivity()).setTitle("앱 종료")
+                .setMessage("수신·탐색을 종료하고 앱을 닫을까요?")
+                .setPositiveButton("종료",(dialog,which)->completeAppExit())
+                .setNegativeButton("취소",(dialog,which)->cancelAppExit())
+                .setOnCancelListener(dialog->cancelAppExit()).create();
+            exitDialog.show();
+        });
+    }
+
+    private void cancelAppExit() {
+        exitDialog=null;
+        PluginCall call=exitCall;exitCall=null;
+        if(call!=null){JSObject result=new JSObject();result.put("confirmed",false);call.resolve(result);}
+    }
+
+    private void completeAppExit() {
+        exitDialog=null;
+        PluginCall call=exitCall;
+        if(call==null)return;
+        if(pendingReceptionCall!=null){pendingReceptionCall.reject("앱 종료로 수신 시작을 취소했습니다.");pendingReceptionCall=null;}
+        if(pendingScanCall!=null){pendingScanCall.reject("앱 종료로 탐색 시작을 취소했습니다.");pendingScanCall=null;}
+        failPermission("USB_CANCELLED","앱 종료로 권한 요청을 취소했습니다.");
+        SdrScanService.release();
+        runtime.closeUsb(failure -> {
+            if(exitCall!=call)return;
+            exitCall=null;
+            if(failure!=null){call.reject("USB 연결 정리 실패: "+failure.getMessage(),"USB_CLOSE_FAILED",failure);return;}
+            JSObject result=new JSObject();result.put("confirmed",true);call.resolve(result);
+        });
+        publish();
     }
 
     @PluginMethod public void startReception(PluginCall call) {
@@ -503,12 +550,16 @@ public class RtlSdrPlugin extends Plugin {
     }
 
     @Override protected void handleOnDestroy() {
+        boolean finishing=getActivity()!=null&&getActivity().isFinishing()&&!getActivity().isChangingConfigurations();
         main.post(() -> {
             destroyed = true;
+            if(exitDialog!=null){exitDialog.dismiss();exitDialog=null;}
+            if(exitCall!=null){exitCall.reject("앱이 종료되었습니다.");exitCall=null;}
             if (pendingReceptionCall != null) { pendingReceptionCall.reject("Plugin has been destroyed."); pendingReceptionCall = null; }
             if (pendingScanCall != null) { pendingScanCall.reject("앱이 종료되어 탐색을 시작하지 않았습니다."); pendingScanCall = null; }
             failPermission("USB_CLOSED", "플러그인이 종료되었습니다.");
-            if (!SdrScanService.isRunning()) closeConnection();
+            if(finishing){SdrScanService.release();closeConnection();}
+            else if (!SdrScanService.isRunning()) closeConnection();
             if (registered) getContext().unregisterReceiver(receiver);
             registered = false;
             if (runtime.listener == runtimeListener) runtime.listener = null;
