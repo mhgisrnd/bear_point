@@ -5118,28 +5118,13 @@
   async function markBearEstimatesShared(ids) {
     const idSet = new Set((Array.isArray(ids) ? ids : []).filter(Boolean).map(String));
     if (!idSet.size) return;
-    const sqlite = getCapacitorSQLitePlugin();
-    if (sqlite && !currentBearEstimateFallbackMode) {
-      const dbName = window.BearSQLiteConfig && window.BearSQLiteConfig.dbName
-        ? window.BearSQLiteConfig.dbName : "BearPointData";
-      const sharedAt = getKstSqliteTimestamp();
-      for (const id of idSet) {
-        await sqlite.run({
-          database: dbName,
-          statement: "UPDATE bear_estimates SET shared_at = COALESCE(shared_at, ?) WHERE id = ?",
-          values: [sharedAt, id],
-          transaction: true,
-          readonly: false
-        });
+    const sharedAt = getKstSqliteTimestamp();
+    await localEstimateStore.markShared([...idSet], sharedAt);
+    for (const item of localBearEstimateItems) {
+      if (idSet.has(String(item.id))) {
+        item.shared_at ||= sharedAt;
+        item.share_pending = 0;
       }
-      localBearEstimateItems.forEach(function (item) {
-        if (idSet.has(String(item.id)) && !item.shared_at) item.shared_at = sharedAt;
-      });
-    } else {
-      await localEstimateStore.markShared([...idSet], getKstSqliteTimestamp());
-      localBearEstimateItems.forEach(function (item) {
-        if (idSet.has(String(item.id)) && !item.shared_at) item.shared_at = getKstSqliteTimestamp();
-      });
     }
     repaintUnifiedBearList();
   }
@@ -5166,34 +5151,37 @@
       && !remoteSharedEstimateIds.has(id) && !pendingBearUploads.has(id) && !pendingBearDeletions.has(id);
   }
 
-  async function uploadUnsharedBearEstimates(targets) {
+  async function uploadUnsharedBearEstimates(targets, { automatic = false } = {}) {
     if (!realtimeListModule) return;
-    const eligible = targets.filter(canModifyUnsharedBearEstimate);
+    const eligible = targets.filter(item => canModifyUnsharedBearEstimate(item) && (!automatic || Number(item.share_pending) === 1));
     if (!eligible.length) return;
-    const ok = await confirmRealtimeUpload("미공유 추적위치 " + eligible.length + "건을 공유할까요?", "");
-    if (!ok) return;
+    if (!automatic && !await confirmRealtimeUpload("미공유 추적위치 " + eligible.length + "건을 공유할까요?", "")) return;
     const requestedIds = new Set(eligible.map(item => String(item.id)));
     const reserved = currentBearEstimateItems.filter(it => requestedIds.has(String(it.id)) && canModifyUnsharedBearEstimate(it));
     if (!reserved.length) return;
+    if (automatic) reserved.sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)));
     reserved.forEach(it => pendingBearUploads.add(String(it.id)));
     repaintUnifiedBearList();
     let count = 0, failed = 0;
     try {
       // Check previous receipts before retrying an upload whose response may have been lost.
-      const refreshed = await realtimeListModule.refresh({ silent: true });
-      if (!refreshed.ok) throw new Error(refreshed.message);
+      if (!automatic) {
+        const refreshed = await realtimeListModule.refresh({ silent: true });
+        if (!refreshed.ok) throw new Error(refreshed.message);
+      }
       for (const item of reserved) {
         const latest = currentBearEstimateItems.find(row => String(row.id) === String(item.id));
         if (!latest || latest.shared_at || remoteSharedEstimateIds.has(String(item.id))) continue;
-        const result = await realtimeListModule.sendEstimate(latest);
+        const { share_pending, ...payload } = latest;
+        const result = await realtimeListModule.sendEstimate(payload, { silent: automatic });
         if (result && result.ok) {
           count++;
           await markBearEstimatesShared([item.id]);
         } else failed++;
       }
-      if (statusEl) statusEl.textContent = count + "건 공유 완료" + (failed ? ", " + failed + "건 공유 실패 (다시 시도 가능)" : "");
+      if (!automatic && statusEl) statusEl.textContent = count + "건 공유 완료" + (failed ? ", " + failed + "건 공유 실패 (다시 시도 가능)" : "");
     } catch (error) {
-      if (statusEl) statusEl.textContent = "공유하지 못했습니다. 다시 시도해주세요: " + (error.message || error);
+      if (!automatic && statusEl) statusEl.textContent = "공유하지 못했습니다. 다시 시도해주세요: " + (error.message || error);
     } finally {
       reserved.forEach(it => pendingBearUploads.delete(String(it.id)));
       repaintUnifiedBearList();
@@ -5382,7 +5370,12 @@
     if (btnBearsRefresh) btnBearsRefresh.disabled = true;
     try {
       await refreshBearEstimatePanel();
-      if (realtimeListModule) await realtimeListModule.refresh({ silent: !!(options && options.silent) });
+      if (realtimeListModule && navigator.onLine !== false) {
+        const result = await realtimeListModule.refresh({ silent: !!options?.silent });
+        if (result.ok) {
+          await uploadUnsharedBearEstimates(currentBearEstimateItems, { automatic: true });
+        }
+      }
     } catch (error) {
       console.warn("[bear_estimates] refresh failed", error);
     } finally {
@@ -6007,14 +6000,16 @@
           admin_region: adminRegion, lat: point.lat, lng: point.lng, lat_dms: latDms, lng_dms: lngDms,
           intersections_count: intersectionsCount, source_observation_ids: sourceIds, source_observations_json: sourceObservationsJson,
           analysis_rays_json: analysisRaysJson, intersections_json: intersectionsJson, analysis_options_json: analysisOptionsJson,
-          analysis_diagnostics_json: analysisDiagnosticsJson, created_at: createdAtKst });
+          analysis_diagnostics_json: analysisDiagnosticsJson, created_at: createdAtKst, share_pending: shareRealtime });
         localSaved = true;
         if (shareRealtime) pendingBearUploads.add(String(id));
         clearAnalysisEstimateVisuals();
         realtimeListModule?.openRealtimeTab();
         if (statusEl) statusEl.textContent = `✅ 곰 추정위치(${bearCode}) 저장 완료`;
         await refreshBearEstimatePanel();
-        if (shareRealtime) {
+        if (shareRealtime && navigator.onLine === false) {
+          if (statusEl) statusEl.textContent = "기기에 저장했습니다. 연결되면 공유합니다.";
+        } else if (shareRealtime) {
           if (!realtimeListModule || typeof realtimeListModule.sendEstimate !== "function") {
             if (statusEl) statusEl.textContent = "⚠️ 로컬에만 저장되었습니다. 실시간 공유 기능을 사용할 수 없습니다.";
           } else {
@@ -7001,6 +6996,7 @@
               analysis_rays: parseBearEstimateJson(row.analysis_rays_json, "array"),
               analysis_intersections: parseBearEstimateJson(row.intersections_json, "array"),
               shared_at: row.shared_at || null,
+              share_pending: row.share_pending,
               created_at: row.created_at
             };
           });
@@ -7196,6 +7192,7 @@
     });
   }
   bootWithSQLiteGate();
+  void window.BearStartupReady.then(() => refreshUnifiedBearList({ silent: true }));
   setupAndroidBackButtonExit().catch(function (error) {
     console.error("안드로이드 뒤로가기 초기화 오류:", error);
   });

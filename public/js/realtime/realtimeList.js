@@ -714,7 +714,7 @@
       return normalizeItem(Object.assign({}, payload || {}, response.item || {}));
     }
 
-    async function sendEstimate(payload) {
+    async function sendEstimate(payload, { silent = false } = {}) {
       const normalized = normalizeItem(payload);
       if (!normalized) {
         return {
@@ -735,13 +735,13 @@
         }
 
         notifyItemsChanged();
-        setStatus("실시간 목록에 업로드했습니다.", "ok");
+        if (!silent) setStatus("실시간 목록에 업로드했습니다.", "ok");
         return {
           ok: true,
           item: savedItem,
         };
       } catch (error) {
-        setStatus(error && error.message ? error.message : "실시간 업로드에 실패했습니다.", "error");
+        if (!silent) setStatus(error && error.message ? error.message : "실시간 업로드에 실패했습니다.", "error");
         return {
           ok: false,
           reason: error && error.isNetworkError ? "network-error" : "request-failed",

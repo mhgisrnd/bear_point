@@ -497,7 +497,7 @@ window.createObsListModule = function createObsListModule({
       obsListCountEl.textContent = `${getFilteredItems().length}건`;
       if (syncNoteEl) {
         syncNoteEl.hidden = !remoteError && unshared < 1;
-        syncNoteEl.textContent = remoteError ? "공유 상태를 확인하지 못했습니다. 기존 목록을 표시합니다." : `미공유 ${unshared}건 · 빨간 관측점을 체크한 뒤 ‘선택 공유’로 전송하세요.`;
+        syncNoteEl.textContent = remoteError ? "공유 상태를 확인하지 못했습니다. 기존 목록을 표시합니다." : `미공유 ${unshared}건 · 연결되면 다시 전송합니다. ‘선택 공유’로도 전송할 수 있습니다.`;
         syncNoteEl.title = remoteError || "";
       }
     } else {
@@ -517,19 +517,38 @@ window.createObsListModule = function createObsListModule({
 
   async function refreshObservationData(options = {}) {
     await loadObservationSamples();
-    selectedObsIds.clear();
+    if (!options.background) selectedObsIds.clear();
+    else {
+      const visibleIds = new Set(observationSamples.map(item => item._obsKey));
+      for (const id of selectedObsIds) if (!visibleIds.has(id)) selectedObsIds.delete(id);
+    }
     applySearch();
     renderObservationMarkers(getFilteredItems());
     updateSelectionUI();
 
     updateObservationSummary();
-    updateMainStatusForList();
+    if (!options.background) updateMainStatusForList();
     if (!options.localOnly) {
-      remoteError = "";
-      try { await window.BearObservationSync.pull(); }
-      catch (error) { remoteError = error.message; }
-      await refreshObservationData({ localOnly: true });
+      await syncObservationList();
     }
+  }
+
+  let observationListSync;
+  function syncObservationList() {
+    if (navigator.onLine === false) {
+      remoteError = "인터넷에 연결되어 있지 않습니다.";
+      updateObservationSummary();
+      return;
+    }
+    if (!observationListSync) observationListSync = (async () => {
+      remoteError = "";
+      try {
+        await window.BearObservationSync.pull();
+        await window.BearObservationSync.retryPending();
+      } catch (error) { remoteError = error.message; }
+      await refreshObservationData({ localOnly: true, background: true });
+    })().finally(() => { observationListSync = null; });
+    return observationListSync;
   }
 
   // 목록 패널 최소화/복원 상태를 토글하고 아이콘 상태를 동기화한다.
@@ -1857,7 +1876,14 @@ window.createObsListModule = function createObsListModule({
     if (btnSendSelected) btnSendSelected.addEventListener("click", () => {
       void sendItems(observationSamples.filter(item => selectedObsIds.has(item._obsKey)));
     });
-    window.addEventListener("observations-changed", () => { void refreshObservationData({ localOnly: true }); });
+    window.addEventListener("observations-changed", () => { void refreshObservationData({ localOnly: true, background: true }); });
+    const refreshWhenVisible = () => {
+      if (!document.hidden && navigator.onLine !== false) void syncObservationList();
+    };
+    window.addEventListener("online", refreshWhenVisible);
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+    window.setInterval(refreshWhenVisible, 30000);
+    refreshWhenVisible();
     map.on("zoomend", () => {
       if (currentTab === "list") {
         updateObservationMarkerScale();

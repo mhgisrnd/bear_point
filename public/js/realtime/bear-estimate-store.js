@@ -85,7 +85,7 @@
     const native = () => !!window.Capacitor?.isNativePlatform();
     const database = () => window.BearSQLiteConfig?.dbName || "BearPointData";
     const sqlite = () => window.Capacitor.Plugins.CapacitorSQLite;
-    const columns = ["id","bear_code","owner","team_id","team_name","team_color","place","admin_region","lat","lng","lat_dms","lng_dms","intersections_count","source_observation_ids","source_observations_json","analysis_rays_json","intersections_json","analysis_options_json","analysis_diagnostics_json","created_at","shared_at"];
+    const columns = ["id","bear_code","owner","team_id","team_name","team_color","place","admin_region","lat","lng","lat_dms","lng_dms","intersections_count","source_observation_ids","source_observations_json","analysis_rays_json","intersections_json","analysis_options_json","analysis_diagnostics_json","created_at","shared_at","share_pending"];
     let queue = Promise.resolve();
     function serialize(action) { const result = queue.then(action); queue = result.catch(() => {}); return result; }
     function readWeb() {
@@ -100,6 +100,7 @@
     }
     function insert(input) {
       const row = Object.fromEntries(columns.map(column => [column, input[column] ?? null]));
+      row.share_pending = input.share_pending ? 1 : 0;
       return serialize(async () => {
         await ready();
         if (!row.id || !Number.isFinite(row.lat) || !Number.isFinite(row.lng)) throw new Error("개체 위치 정보를 확인해주세요.");
@@ -115,8 +116,8 @@
     function markShared(ids, timestamp) {
       return serialize(async () => {
         await ready();
-        if (native()) for (const id of ids) await sqlite().run({database:database(),readonly:false,transaction:true,statement:"UPDATE bear_estimates SET shared_at=COALESCE(shared_at,?) WHERE id=?",values:[timestamp,id]});
-        else window.localStorage.setItem(key,JSON.stringify(readWeb().map(row=>ids.includes(String(row.id))?{...row,shared_at:row.shared_at||timestamp}:row)));
+        if (native()) for (const id of ids) await sqlite().run({database:database(),readonly:false,transaction:true,statement:"UPDATE bear_estimates SET shared_at=COALESCE(shared_at,?),share_pending=0 WHERE id=?",values:[timestamp,id]});
+        else window.localStorage.setItem(key,JSON.stringify(readWeb().map(row=>ids.includes(String(row.id))?{...row,shared_at:row.shared_at||timestamp,share_pending:0}:row)));
       });
     }
     function removeUnshared(ids) {

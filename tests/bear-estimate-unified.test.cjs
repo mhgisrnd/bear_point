@@ -95,3 +95,34 @@ test('failed preflight never posts and releases pending rows for a manual retry'
   assert.equal(context.pendingBearUploads.size, 0);
   assert.match(context.statusEl.textContent, /다시 시도/);
 });
+
+test('reconnect refreshes the list before sending only explicitly queued estimates', async () => {
+  const rows = [
+    { id: 'local-only', share_pending: 0 },
+    { id: 'legacy' },
+    { id: 'queued', share_pending: 1 },
+    { id: 'receipt', share_pending: 1 },
+    { id: 'deleting', share_pending: 1 }
+  ];
+  const calls = [];
+  const context = vm.createContext({
+    currentBearEstimateItems: rows, pendingBearUploads: new Set(), pendingBearDeletions: new Set(['deleting']),
+    remoteSharedEstimateIds: new Set(), navigator: {onLine:false}, btnBearsRefresh:null,
+    console, repaintUnifiedBearList(){}, refreshBearEstimatePanel:async()=>{},
+    markBearEstimatesShared:async ids=>{ rows.find(row=>row.id===ids[0]).shared_at='now'; },
+    realtimeListModule:{
+      refresh:async()=>{calls.push('refresh');context.remoteSharedEstimateIds.add('receipt');return {ok:true};},
+      sendEstimate:async(item,{silent})=>{assert.equal(silent,true);assert.equal(item.share_pending,undefined);calls.push(item.id);return {ok:true};}
+    }
+  });
+  const start = source.indexOf('  function canModifyUnsharedBearEstimate(');
+  const refresh = source.indexOf('  let bearRefreshInProgress = false;');
+  vm.runInContext(source.slice(start, source.indexOf('  async function downloadAllBearEstimatesXls(', start))
+    + source.slice(refresh, source.indexOf('  if (btnBearsRefresh) btnBearsRefresh.addEventListener', refresh)), context);
+  await context.refreshUnifiedBearList({silent:true});
+  assert.deepEqual(calls, []);
+  context.navigator.onLine = true;
+  await context.refreshUnifiedBearList({silent:true});
+  assert.deepEqual(calls, ['refresh', 'queued']);
+  assert.equal(context.pendingBearUploads.size, 0);
+});

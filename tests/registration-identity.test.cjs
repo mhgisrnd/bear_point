@@ -11,7 +11,7 @@ function setup(native) {
   vm.runInNewContext(fs.readFileSync('public/js/db/sqlite-migrations.js','utf8'),config);
   db.exec('CREATE TABLE observations (id TEXT PRIMARY KEY,bear_code TEXT,owner TEXT,place TEXT,admin_region TEXT,lat REAL,lng REAL,heading REAL,detectors_json TEXT,created_at TEXT,updated_at TEXT)');
   const migrations=config.window.BearSQLiteConfig.migrations;
-  for(const version of [7,8,11,13,14,16,17,18]) for(const sql of migrations[version])db.exec(sql);
+  for(const version of [7,8,11,13,14,16,17,18,19]) for(const sql of migrations[version])db.exec(sql);
   let transport=async()=>{throw new Error('offline');};
   const win={Capacitor:{isNativePlatform:()=>native,Plugins:{CapacitorSQLite:{
     run:async({statement,values})=>({changes:{changes:db.prepare(statement).run(...values).changes}}),
@@ -34,7 +34,7 @@ for(const native of [false,true]) {
     await sync.saveDraft({id:'offline-observation',bearCode:'KF-58',place:'Site',lat:35,lng:127,heading:90,...identity},[]);
     assert.equal((await sync.upload('offline-observation')).ok,false);
     let estimates=createLocalStore(f.win);
-    await estimates.insert({id:'offline-estimate',bear_code:'KF-58',place:'Result',lat:35.1,lng:127.1,created_at:'2026-11-02 12:00:00',...identity});
+    await estimates.insert({id:'offline-estimate',bear_code:'KF-58',place:'Result',lat:35.1,lng:127.1,created_at:'2026-11-02 12:00:00',...identity,share_pending:true});
     await settings.save('New staff','namwon');
     sync=f.observations();estimates=createLocalStore(f.win);
     assert.equal((await sync.find('offline-observation')).team_id,'gurye');
@@ -47,7 +47,7 @@ for(const native of [false,true]) {
     });
     assert.equal((await sync.upload('offline-observation')).ok,true);
     assert.equal(posted.owner,'Original staff');assert.equal(posted.team_id,'gurye');assert.equal(posted.team_color,'#16A34A');
-    const recovered=(await estimates.list())[0];assert.equal(recovered.owner,'Original staff');assert.equal(recovered.team_name,'구례팀');
+    const recovered=(await estimates.list())[0];assert.equal(recovered.owner,'Original staff');assert.equal(recovered.team_name,'구례팀');assert.equal(recovered.share_pending,1);
     const source=fs.readFileSync('public/js/realtime/realtimeList.js','utf8');
     const el=()=>({dataset:{},style:{},classList:{add(){},remove(){}},addEventListener(){},setAttribute(){}});
     const document={body:el(),getElementById:()=>el()};
@@ -60,7 +60,7 @@ for(const native of [false,true]) {
     const shared=await realtime.sendEstimate(recovered);assert.equal(shared.ok,true);
     assert.equal(estimatePayload.team_id,'gurye');assert.equal(estimatePayload.owner,'Original staff');
     await estimates.markShared([recovered.id],'2026-11-02 13:00:00');
-    const restarted=(await createLocalStore(f.win).list())[0];assert.ok(restarted.shared_at);assert.equal(restarted.team_id,'gurye');
+    const restarted=(await createLocalStore(f.win).list())[0];assert.ok(restarted.shared_at);assert.equal(restarted.team_id,'gurye');assert.equal(restarted.share_pending,0);
     const merged=merge([restarted],[{id:'remote',bear_estimate_id:recovered.id,bear_code:'KF-58',owner:'Original staff',lat:35.1,lng:127.1,payload:estimatePayload}]);
     assert.equal(merged.length,1);assert.equal(merged[0].team_color,'#16A34A');
     await sync.saveDraft({id:'old-no-team',bearCode:'KF-47',owner:'Legacy staff',place:'Old',lat:35,lng:127,heading:90},[]);

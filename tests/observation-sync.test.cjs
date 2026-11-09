@@ -62,6 +62,28 @@ test("a dedicated observation API override remains supported", async () => {
 });
 
 for (const native of [false, true]) {
+  test(`${native ? "SQLite" : "web"}: reconnect uploads offline observations once after restart`, async () => {
+    const f = fixture(native);
+    try {
+      const first = f.boot();
+      await first.saveDraft(draft(), []);
+      assert.equal((await first.upload("obs-test")).ok, false);
+      assert.equal((await first.find("obs-test")).share_state, "failed");
+      const restarted = f.boot();
+      let posts = 0;
+      f.setTransport(async (_url, options) => {
+        posts++;
+        assert.equal(options.method, "POST");
+        assert.equal(JSON.parse(options.body).id, "obs-test");
+        return response({ item: remote() });
+      });
+      await Promise.all([restarted.retryPending(), restarted.retryPending()]);
+      assert.equal((await restarted.find("obs-test")).share_state, "shared");
+      await restarted.retryPending();
+      assert.equal(posts, 1);
+    } finally { f.db.close(); }
+  });
+
   test(`${native ? "SQLite" : "web"}: shared editing preserves offline drafts, resolves conflicts explicitly and respects deletion`, async () => {
     const f = fixture(native); let sync = f.boot();
     try {

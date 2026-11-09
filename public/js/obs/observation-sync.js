@@ -4,6 +4,7 @@
   const database = () => window.BearSQLiteConfig?.dbName || "BearPointData";
   let ready;
   let pulling;
+  let retrying;
   let merging = Promise.resolve();
   const sending = new Set();
   const newMutationId = () => window.crypto?.randomUUID?.() || "edit-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2);
@@ -226,6 +227,16 @@
     })().finally(() => { pulling = null; });
     return pulling;
   }
+  function retryPending() {
+    if (!retrying) retrying = (async () => {
+      for (const row of await all()) {
+        if (!row.server_deleted && !row.conflict_json && ["local", "failed"].includes(row.share_state)) {
+          await upload(row.id);
+        }
+      }
+    })().finally(() => { retrying = null; });
+    return retrying;
+  }
   async function removeDraft(id) {
     await init();
     return serialize(async () => {
@@ -273,5 +284,5 @@
       throw new Error(error.status === 409 ? error.message : "삭제하지 못했습니다. 자료는 기기에 유지됩니다. " + error.message);
     } finally { sending.delete(id); changed(); }
   }
-  window.BearObservationSync = { init, all, find, saveDraft, upload, pull, assertEditable, removeDraft, locked, deletable, revision, resolveConflict, remove };
+  window.BearObservationSync = { init, all, find, saveDraft, upload, pull, retryPending, assertEditable, removeDraft, locked, deletable, revision, resolveConflict, remove };
 })();
