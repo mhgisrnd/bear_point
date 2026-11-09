@@ -4,4 +4,6 @@
     <string name="title_activity_main">BearMap</string>
     <string name="package_name">com.bearpoint.app</string>
     <string name="custom_url_scheme">com.bearpoint.app</string>
+    <string name="bear_tracking_notification_channel_id" translatable="false">bear_tracking_updates</string>
+    <string name="bear_tracking_notification_channel_name">개체 추적 공유</string>
 </resources>

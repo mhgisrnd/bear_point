@@ -49,6 +49,18 @@ async function setup(overrides = {}) {
   return { get, calls, module, click };
 }
 
+test('opening the unified list activates the tracking view as well as refreshing its rows', async () => {
+  const events = [];
+  const { module } = await setup({
+    unified: true,
+    onTabActivated: tab => events.push(tab),
+    onItemsChanged: () => events.push('items'),
+  });
+  events.length = 0;
+  module.openRealtimeTab();
+  assert.deepEqual(events, ['realtime', 'items']);
+});
+
 test('native list TXT and XLS clicks use export callbacks without reporting a premature save', async () => {
   const { get, calls, module, click } = await setup();
   click('txt');

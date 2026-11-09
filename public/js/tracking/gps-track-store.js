@@ -129,7 +129,7 @@
       async list(query={}){
         await ready;const rows=(await repo.list()).filter(track=>Number(track.point_count)>0&&track.status!=='discarded');
         const filters=win.BearGpsTrackFilters || (typeof require==='function'?require('./gps-track-filters.js'):null);
-        const matches=filters.filter(rows,query),offset=Math.max(0,Number(query.offset)||0);
+        const matches=filters.sortHistory(filters.filter(rows,query)),offset=Math.max(0,Number(query.offset)||0);
         return {items:matches.slice(offset,offset+30),total:matches.length,teams:filters.teams(rows)};
       },
       async detail({id}){await ready;return repo.detail(id);}

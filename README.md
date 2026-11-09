@@ -202,7 +202,14 @@ PostgreSQL 실시간 목록 DB 연동
 - 공유 완료는 초록색 표시, 미공유는 빨간색 공유 버튼입니다. 선택 공유는 선택한 미공유 자료만 처리하고, 일부 전송 실패 시 성공 자료를 재전송하지 않습니다.
 - 공유 목록은 처음 진입, 새로고침, 온라인 복귀 및 화면 표시 중 30초마다 갱신합니다. 미공유 자료의 재전송은 사용자 조작으로 진행합니다.
 - SQLite v15의 bear_estimate_remote_cache에 서버 자료를 별도로 보관합니다. 웹은 localStorage를 사용합니다. 통신 실패 시 기존 목록을 유지하며, 전체 서버 목록을 확인한 경우에만 삭제된 자료를 반영합니다. 웹 샘플 자료는 통합 목록에서 제외합니다.
-- 재전송 전 원본 ID의 기존 서버 등록 여부를 확인합니다. 서버 자체의 중복 삽입 방지는 원격 API의 별도 고유키/멱등 처리에 달려 있습니다.
+- 재전송 전 원본 ID의 기존 서버 등록 여부를 확인합니다. 이 저장소의 공유 API는 같은 원본 ID로 다시 등록하면 기존 서버 결과를 반환합니다.
+
+개체 추적 공유 푸시 (Android)
+
+- 실제 공유 API인 Java `bear-admin`과 동일한 PostgreSQL DB를 사용하도록 발송 작업의 `PG_HOST`, `PG_DATABASE`, `PG_USER`, `PG_PASSWORD`를 설정합니다. 두 프로세스가 `public` 스키마의 푸시 테이블을 공유하며, DB 계정에는 테이블 생성 또는 접근 권한이 필요합니다.
+- `FCM_PROJECT_ID`에 Android 앱의 Firebase 프로젝트 ID를 설정하고 같은 프로젝트의 Cloud Messaging API(HTTP v1)와 서버 서비스 계정 권한을 준비합니다. 서비스 계정 키 파일을 쓰는 환경에서는 서버의 `GOOGLE_APPLICATION_CREDENTIALS`에 경로를 설정합니다. `npm ci` 후 최신 `node scripts/run-bear-push-worker.js`를 상시 실행해 DB 테이블과 App Check 인증 컬럼을 준비합니다.
+- Firebase 콘솔에서 배포 APK의 서명 지문으로 Play Integrity를 등록합니다. 이후 `bear-admin`에 `BEAR_PUSH_ENABLED=true`, `BEAR_PUSH_APP_CHECK_PROJECT_NUMBER`, `BEAR_PUSH_APP_CHECK_APP_ID`를 설정하여 배포합니다. 현재 Firebase 구성에서 프로젝트 번호는 `1044895273644`, Android 앱 ID는 `1:1044895273644:android:9076746c49dcc2dc250509`입니다. 다른 Firebase 구성을 사용하면 해당 프로젝트 번호와 Android 앱 ID를 입력합니다.
+- 두 기기에 새 APK를 설치하고 앱을 열어 알림을 허용합니다. 앱은 Play Integrity 검증을 거쳐 기기를 자동 등록합니다. 한 기기에서 위치분석 결과를 처음 실시간 공유하면 그 기기를 제외하고 알림을 허용한 다른 인증 기기에 발송합니다. 인증 정보가 없는 기존 앱도 위치를 공유할 수 있으며, 이전에 수동 등록한 기기는 새 앱을 열 때 자동 등록으로 전환됩니다.
 - 검증: node --test tests/bear-estimate-store.test.cjs tests/bear-estimate-unified.test.cjs tests/realtime-gateway.test.cjs tests/realtime-download.test.cjs
 - 웹 지도는 api/app-realtime 중계 경로를 사용해 설정된 원격 실시간 API를 호출합니다. Android는 기존 원격 주소를 직접 사용합니다. 관리자용 /api/realtime의 로컬 데이터 조회·수정 경로는 유지합니다.
 - 저장: POST /api/realtime/bear-estimates

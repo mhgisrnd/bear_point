@@ -137,8 +137,8 @@
     },
     onTabActivated: function () {
       closeObservationPopup();
-      // 목록 패널이 접힌 상태에서 탭을 눌러도 실제 목록이 보이도록 강제로 펼친다.
-      ensureBearEstimatePanelVisible();
+      if (window.BearMobileDock?.isDocked()) window.BearMobileDock.select("bears");
+      else ensureBearEstimatePanelVisible();
       syncBearMarkersForActiveTab();
     },
     onItemsChanged: function (items, activeTab) {
@@ -6087,6 +6087,7 @@
         localSaved = true;
         if (shareRealtime) pendingBearUploads.add(String(id));
         clearAnalysisEstimateVisuals();
+        realtimeListModule?.openRealtimeTab();
         if (statusEl) statusEl.textContent = `✅ 곰 추정위치(${bearCode}) 저장 완료`;
         await refreshBearEstimatePanel();
         if (shareRealtime) {
@@ -6115,7 +6116,6 @@
             });
             if (sendResult && sendResult.ok) {
               await markBearEstimatesShared([id]);
-              realtimeListModule.openRealtimeTab();
             } else if (statusEl) {
               const reason = sendResult && sendResult.reason === "network-error"
                 ? "인터넷 또는 서버 연결을 확인해 주세요."

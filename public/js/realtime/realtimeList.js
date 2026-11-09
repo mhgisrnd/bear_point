@@ -95,6 +95,34 @@
     }
 
     const API_BASE = resolveApiBase();
+    const pushPlugin = isNativeCapacitorRuntime() && /^https:\/\//i.test(API_BASE)
+      ? window.Capacitor?.Plugins?.BearPush : null;
+    let pushRegistrationPending;
+    let pushRegistered = false;
+
+    function syncPushDevice() {
+      if (pushRegistrationPending) return pushRegistrationPending;
+      pushRegistrationPending = (async () => {
+        try {
+          const { credential, app_check_token: appCheckToken, ...registration } = await pushPlugin.getRegistration();
+          await requestJson("/push-devices", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: "Bearer " + credential,
+              "X-Firebase-AppCheck": appCheckToken,
+            },
+            body: JSON.stringify(registration),
+            redirect: "error",
+            signal: window.AbortSignal?.timeout?.(10000),
+          });
+          pushRegistered = true;
+        } catch (_) {
+          // Retry on the next activation, network reconnect or periodic refresh.
+        }
+      })().finally(() => { pushRegistrationPending = null; });
+      return pushRegistrationPending;
+    }
     const MAX_ITEMS = 200;
     const onRemoteEstimatesLoaded = typeof options.onRemoteEstimatesLoaded === "function"
       ? options.onRemoteEstimatesLoaded : null;
@@ -619,7 +647,11 @@
     }
 
     function activateRealtime() {
-      if (unified) { notifyItemsChanged(); return; }
+      if (unified) {
+        notifyTabActivated("realtime");
+        notifyItemsChanged();
+        return;
+      }
       setTab("realtime");
     }
 
@@ -629,13 +661,24 @@
 
     async function uploadEstimate(payload) {
       if (refreshPromise) await refreshPromise;
+      let credentials;
+      if (pushPlugin) {
+        if (!pushRegistered) {
+          await Promise.race([syncPushDevice(), new Promise(resolve => window.setTimeout(resolve, 3000))]);
+        }
+        try { credentials = await pushPlugin.getCredentials(); }
+        catch (_) { /* Sharing is available even if the push bridge is unavailable. */ }
+      }
+      const authorization = credentials?.credential ? "Bearer " + credentials.credential : null;
       const response = await requestJson("/bear-estimates", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Accept: "application/json",
+          ...(authorization ? { Authorization: authorization } : {}),
         },
-        body: JSON.stringify(payload || {}),
+        ...(authorization ? { redirect: "error" } : {}),
+        body: JSON.stringify({ ...payload, push_installation_id: authorization ? credentials.installation_id : undefined }),
       });
 
       if (onRemoteEstimatesLoaded && response.item) await onRemoteEstimatesLoaded([response.item], { complete: false });
@@ -858,6 +901,14 @@
       else selectedItemIds.delete(id);
       renderRealtimeList();
     });
+
+    if (pushPlugin) {
+      void syncPushDevice();
+      window.addEventListener("online", syncPushDevice);
+      const refreshPushDevice = () => { if (!document.hidden) void syncPushDevice(); };
+      document.addEventListener("visibilitychange", refreshPushDevice);
+      window.setInterval(refreshPushDevice, 30 * 60 * 1000);
+    }
 
     return {
       sendEstimate,

@@ -1,6 +1,6 @@
 const {test}=require('node:test');
 const assert=require('node:assert/strict');
-const {buildQuery,filter,today,teams}=require('../public/js/tracking/gps-track-filters');
+const {buildQuery,filter,today,teams,sortHistory}=require('../public/js/tracking/gps-track-filters');
 const {createWebRecorder}=require('../public/js/tracking/gps-track-store');
 
 test('day/month/year ranges use Korean midnight and exclusive upper boundaries',()=>{
@@ -35,7 +35,21 @@ test('web history filters the complete set before pagination and exposes the ful
   const query=buildQuery({owner:'구례',team_id:'gurye',period:'day',day:'2026-11-02'});
   const first=await recorder.list(query),second=await recorder.list({...query,offset:30});
   assert.equal(first.total,32);assert.equal(first.items.length,30);assert.equal(second.items.length,2);
-  assert.equal(first.teams.length,2);assert.equal(first.items[0].id,'40');
+  assert.equal(first.teams.length,2);assert.equal(first.items[0].id,'71');
   assert.equal(new Set([...first.items,...second.items].map(row=>row.id)).size,32);
   assert.equal((await recorder.list(buildQuery({owner:'없는 담당자'}))).total,0);
+});
+
+test('history uses recording start time descending with deterministic ID ties without mutating input',()=>{
+  const rows=[{id:'old',started_at:100,ended_at:900},{id:'a',started_at:300},{id:'z',started_at:300},{id:'middle',started_at:200}];
+  assert.deepEqual(sortHistory(rows).map(row=>row.id),['z','a','middle','old']);
+  assert.deepEqual(rows.map(row=>row.id),['old','a','z','middle']);
+});
+
+test('web history sorts the complete matching set before paging even when storage returns shuffled rows',async()=>{
+  const rows=Array.from({length:65},(_,i)=>({id:String(i),status:'saved',point_count:1,started_at:i,team_id:i%2?'selected':'other'}));
+  const recorder=createWebRecorder({navigator:{locks:{request:(_n,_o,fn)=>Promise.resolve(fn(null))}},addEventListener(){}},{list:async()=>rows});
+  const first=await recorder.list({team_id:'selected'}),second=await recorder.list({team_id:'selected',offset:30});
+  assert.equal(first.total,32);
+  assert.deepEqual([...first.items,...second.items].map(row=>row.started_at),Array.from({length:32},(_,i)=>63-i*2));
 });

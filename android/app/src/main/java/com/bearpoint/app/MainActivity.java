@@ -1,14 +1,21 @@
 package com.bearpoint.app;
 
+import android.Manifest;
+import android.content.SharedPreferences;
+import android.content.pm.PackageManager;
+import android.os.Build;
 import android.os.Bundle;
 import android.util.Log;
 import androidx.core.splashscreen.SplashScreen;
 import com.getcapacitor.BridgeActivity;
+import com.google.firebase.FirebaseApp;
+import com.google.firebase.appcheck.FirebaseAppCheck;
+import com.google.firebase.appcheck.playintegrity.PlayIntegrityAppCheckProviderFactory;
 
 public class MainActivity extends BridgeActivity {
 	private static final String TAG = "BearPointMain";
 	private static final long LAUNCH_SPLASH_MIN_DURATION_MS = 1500L;
-	static final String WEB_ASSET_REVISION = "1.0.4-ui55";
+	static final String WEB_ASSET_REVISION = "1.0.4-ui57";
 
 	@Override
 	protected void load() {
@@ -26,9 +33,13 @@ public class MainActivity extends BridgeActivity {
 	@Override
 	public void onCreate(Bundle savedInstanceState) {
 		Log.d(TAG, "onCreate start");
+		if (!FirebaseApp.getApps(this).isEmpty()) {
+			FirebaseAppCheck.getInstance().installAppCheckProviderFactory(PlayIntegrityAppCheckProviderFactory.getInstance());
+		}
 		registerPlugin(NativeTxtSharePlugin.class);
 		registerPlugin(RtlSdrPlugin.class);
 		registerPlugin(GpsTrackingPlugin.class);
+		registerPlugin(BearPushPlugin.class);
 		Log.d(TAG, "registerPlugin NativeTxtSharePlugin called");
 
 		try {
@@ -40,6 +51,21 @@ public class MainActivity extends BridgeActivity {
 		}
 
 		super.onCreate(savedInstanceState);
+		if (!FirebaseApp.getApps(this).isEmpty()) {
+			BearMessagingService.createChannel(this);
+			requestPushPermissionOnce();
+		}
 		Log.d(TAG, "onCreate end");
+	}
+
+	private void requestPushPermissionOnce() {
+		if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU
+				|| checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) {
+			return;
+		}
+		SharedPreferences settings = getSharedPreferences("bearpoint_push", MODE_PRIVATE);
+		if (settings.getBoolean("permission_requested", false)) return;
+		settings.edit().putBoolean("permission_requested", true).apply();
+		requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, 408);
 	}
 }

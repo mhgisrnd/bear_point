@@ -1,4 +1,4 @@
-const { pgQuery } = require("../db/postgres");
+const { pgQuery, pgTransaction } = require("../db/postgres");
 
 const KST_TIMESTAMP_SQL = "YYYY-MM-DD HH24:MI:SS";
 const KST_NOW_SQL = "(NOW() AT TIME ZONE 'Asia/Seoul')";
@@ -248,10 +248,26 @@ async function listRealtimeBearEstimates(options) {
 }
 
 // 실시간 항목 1건을 저장하고 생성 결과를 반환한다.
-async function insertRealtimeBearEstimate(body) {
+async function insertRealtimeBearEstimate(body, { onInsert } = {}) {
   const payload = normalizeInsertPayload(body);
+  if (!payload.bearEstimateId && !onInsert) return insertEstimateRow(pgQuery, payload);
+  return pgTransaction(async query => {
+    if (payload.bearEstimateId) {
+      await query("SELECT pg_advisory_xact_lock(hashtext('bear_estimates_realtime'), hashtext($1))", [payload.bearEstimateId]);
+      const existing = await query(
+        `${BEAR_ESTIMATE_SELECT_SQL} WHERE bear_estimate_id = $1 ORDER BY id DESC LIMIT 1`,
+        [payload.bearEstimateId]
+      );
+      if (existing.rows.length) return existing.rows[0];
+    }
+    const item = await insertEstimateRow(query, payload);
+    if (onInsert && payload.bearEstimateId) await onInsert(query, item);
+    return item;
+  });
+}
 
-  const result = await pgQuery(
+async function insertEstimateRow(query, payload) {
+  const result = await query(
     `
       INSERT INTO bear_estimates_realtime (
         bear_estimate_id,

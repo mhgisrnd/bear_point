@@ -36,7 +36,7 @@ function createApp(rootDir, options = {}) {
     }
 
     res.setHeader("Access-Control-Allow-Methods", "GET,POST,PATCH,DELETE,OPTIONS");
-    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Accept, Authorization");
+    res.setHeader("Access-Control-Allow-Headers", "Content-Type, Accept, Authorization, X-Firebase-AppCheck");
     res.setHeader("Access-Control-Max-Age", "600");
 
     if (req.method === "OPTIONS") {

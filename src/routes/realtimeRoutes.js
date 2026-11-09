@@ -1,5 +1,6 @@
 const express = require("express");
 const { pgQuery } = require("../db/postgres");
+const { pushEnabled, registerPushDevice, authenticatedPushSender, enqueueEstimatePush } = require("../services/bearEstimatePush");
 const {
   listRealtimeBearEstimates,
   insertRealtimeBearEstimate,
@@ -45,9 +46,25 @@ function createRealtimeRouter() {
     }
   });
 
+  router.post("/push-devices", async (req, res) => {
+    if (!pushEnabled()) return res.status(503).json({ ok: false });
+    try {
+      await registerPushDevice(req.body?.installation_id, req.body?.token, req.get("Authorization"), req.get("X-Firebase-AppCheck"));
+      res.json({ ok: true });
+    } catch (error) {
+      res.status(error.statusCode || 500).json({ ok: false });
+    }
+  });
+
   router.post("/bear-estimates", async (req, res) => {
     try {
-      const item = await insertRealtimeBearEstimate(req.body);
+      const { push_installation_id: sender, ...estimate } = req.body || {};
+      let onInsert;
+      if (pushEnabled()) {
+        const installationId = await authenticatedPushSender(sender, req.get("Authorization"));
+        if (installationId) onInsert = (query, item) => enqueueEstimatePush(query, item, installationId);
+      }
+      const item = await insertRealtimeBearEstimate(estimate, { onInsert });
       res.json({ ok: true, item });
     } catch (error) {
       const statusCode = Number(error && error.statusCode) || 500;

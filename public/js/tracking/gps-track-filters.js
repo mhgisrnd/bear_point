@@ -35,5 +35,14 @@
     for(const row of rows){const id=row.team_id||'__unassigned__';if(!result.has(id))result.set(id,{id,name:row.team_name||'미지정',color:row.team_color||'#7e90a2'});}
     return [...result.values()];
   }
-  const api={today,buildQuery,filter,teams};if(typeof module==='object'&&module.exports)module.exports=api;else root.BearGpsTrackFilters=api;
+  // Match the native/admin history order: recording start time, then ID, newest first.
+  function sortHistory(rows){
+    return [...rows].sort((a,b)=>{
+      const time=Number(b.started_at)-Number(a.started_at);
+      if(Number.isFinite(time)&&time!==0)return time;
+      const left=String(a.id),right=String(b.id);
+      return left===right?0:left<right?1:-1;
+    });
+  }
+  const api={today,buildQuery,filter,teams,sortHistory};if(typeof module==='object'&&module.exports)module.exports=api;else root.BearGpsTrackFilters=api;
 })(typeof window==='object'?window:globalThis);

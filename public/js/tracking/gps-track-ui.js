@@ -134,16 +134,21 @@
       if(track.error)message.textContent=track.error;
       else if(!track.point_count)message.textContent=active?.id===track.id?'GPS 수신 대기 중입니다. 정확한 위치를 받으면 자동으로 기록합니다.':'저장된 GPS 지점이 없습니다.';
     }
+    let historyRows=[];
     async function loadHistory(reset=true) {
       const version=++historyVersion;
-      if(reset){historyOffset=0;history.replaceChildren();}
+      if(reset){historyOffset=0;historyRows=[];history.replaceChildren();}
       more.disabled=true;
       try {
         const result=await plugin.list({...appliedQuery,offset:historyOffset});if(version!==historyVersion)return;
         const rows=result.items||[];
+        const byId=new Map(historyRows.map(track=>[String(track.id),track]));
+        rows.forEach(track=>byId.set(String(track.id),track));
+        historyRows=filters.sortHistory([...byId.values()]);
+        history.replaceChildren();
         historyLoaded=true;count.textContent=Number(result.total||0)+'건';if(reset)paintTeams(result.teams);
         if(reset&&!rows.length){const empty=document.createElement('tr'),cell=document.createElement('td');cell.colSpan=5;cell.className='gps-history-empty';cell.textContent=appliedQuery.owner||appliedQuery.team_id||appliedQuery.from!=null?'검색 결과가 없습니다.':'저장된 기록이 없습니다.';empty.append(cell);history.append(empty);}
-        rows.forEach(track=>{
+        historyRows.forEach(track=>{
           const row=document.createElement('tr');row.dataset.trackId=String(track.id);
           row.classList.toggle('is-selected',String(displayed?.id)===String(track.id));
           function cell(text,className=''){

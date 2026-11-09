@@ -30,6 +30,21 @@ async function pgQuery(text, values) {
   return pool.query(text, values || []);
 }
 
+async function pgTransaction(work) {
+  const client = await getPgPool().connect();
+  try {
+    await client.query("BEGIN");
+    const result = await work(client.query.bind(client));
+    await client.query("COMMIT");
+    return result;
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => {});
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 // DB 연결 상태와 기본 메타 정보를 조회한다.
 async function checkPostgresHealth() {
   const result = await pgQuery(
@@ -48,6 +63,7 @@ async function closePgPool() {
 module.exports = {
   PG_CONFIG,
   pgQuery,
+  pgTransaction,
   checkPostgresHealth,
   closePgPool,
 };

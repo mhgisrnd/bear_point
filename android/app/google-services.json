@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "1044895273644",
+    "project_id": "fcm-test-20ce2",
+    "storage_bucket": "fcm-test-20ce2.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1044895273644:android:9076746c49dcc2dc250509",
+        "android_client_info": {
+          "package_name": "com.bearpoint.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBY0tQzFuwf9RcEq1vYxdotYwgFxjZHQnw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1044895273644:android:18bb2d89f0127b81250509",
+        "android_client_info": {
+          "package_name": "com.company.AwesomeProject"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBY0tQzFuwf9RcEq1vYxdotYwgFxjZHQnw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
