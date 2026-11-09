@@ -54,6 +54,17 @@ public final class BearPushPlugin extends Plugin {
     }
 
     @PluginMethod
+    public void getAppCheckToken(PluginCall call) {
+        if (FirebaseApp.getApps(getContext()).isEmpty()) {
+            call.reject("Firebase 설정을 사용할 수 없습니다.", "FIREBASE_CONFIG");
+            return;
+        }
+        FirebaseAppCheck.getInstance().getAppCheckToken(false)
+            .addOnSuccessListener(attestation -> call.resolve(new JSObject().put("token", attestation.getToken())))
+            .addOnFailureListener(error -> call.reject("앱 인증에 실패했습니다.", "APP_CHECK"));
+    }
+
+    @PluginMethod
     public void getRegistration(PluginCall call) {
         Context context = getContext();
         if (FirebaseApp.getApps(context).isEmpty()) {

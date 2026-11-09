@@ -69,7 +69,7 @@ function createApp(rootDir, options = {}) {
   rootRouter.use("/api/db/postgres", createPostgresRouter());
   rootRouter.use("/api/realtime", createRealtimeRouter());
   const appApiConfig = getRuntimeConfig(process.env);
-  rootRouter.use("/api/app-realtime", createAppRealtimeRouter({ apiBase: appApiConfig.realtimeApiBase, teamsApiUrl: appApiConfig.webTeamsApiUrl, movementApiUrl: appApiConfig.webMovementApiUrl }));
+  rootRouter.use("/api/app-realtime", createAppRealtimeRouter({ apiBase: appApiConfig.realtimeApiBase, teamsApiUrl: appApiConfig.webTeamsApiUrl, movementApiUrl: appApiConfig.webMovementApiUrl, movementReadKey: process.env.MOVEMENT_READ_KEY }));
   rootRouter.use("/api/observations", createObservationRouter());
   rootRouter.use("/api/admin/auth", createAdminAuthRouter({ adminSessionStore }));
   rootRouter.use("/api/admin/users", createAdminUserRouter());

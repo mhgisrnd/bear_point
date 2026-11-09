@@ -1383,6 +1383,8 @@
   color: #ffffff;
 }
 
+#btn-bears-delete-unshared[hidden] { display: none !important; }
+
 .bears-toolbar-btn--ghost {
   background: rgba(255,255,255,0.86);
   border-color: rgba(148,163,184,0.45);
@@ -3155,6 +3157,7 @@
   border-radius: 7px;
   box-shadow: 0 1px 4px rgba(15, 23, 42, .06);
 }
+.bears-item--unified.is-selected { background: #f5f8fd; }
 .bears-item--unified:last-child { margin-bottom: 0; }
 .bears-item--unified .bears-item__select { grid-column: 1; grid-row: 1; align-self: center; padding-top: 0; }
 .bears-item--unified .bears-item__main { grid-column: 2; grid-row: 1; align-self: center; padding-right: 0; }

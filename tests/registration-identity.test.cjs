@@ -15,6 +15,8 @@ function setup(native) {
   let transport=async()=>{throw new Error('offline');};
   const win={Capacitor:{isNativePlatform:()=>native,Plugins:{CapacitorSQLite:{
     run:async({statement,values})=>({changes:{changes:db.prepare(statement).run(...values).changes}}),
+    executeSet:async({set})=>({changes:{changes:db.transaction(()=>set.reduce(
+      (count,{statement,values})=>count+db.prepare(statement).run(...values).changes,0))()}}),
     query:async({statement,values})=>({values:db.prepare(statement).all(...values)})
   }}},BearSQLite:{initialize:async()=>({ready:true})},localStorage:{getItem:k=>storage.get(k)||null,setItem:(k,v)=>storage.set(k,v)}};
   function observations() {
@@ -72,6 +74,16 @@ for(const native of [false,true]) {
     else f.win.localStorage.setItem=()=>{throw new Error('full');};
     await assert.rejects(()=>estimates.insert({id:'failed',bear_code:'KF-58',lat:35,lng:127}),/full/);
     assert.equal((await estimates.list()).length,0);
+  });
+  test(`${native?'SQLite':'web'} estimate deletion only removes selected unshared rows`,async t=>{
+    const f=setup(native);t.after(()=>f.db.close());
+    const estimates=createLocalStore(f.win);
+    for(const id of ['draft','shared','unselected']) {
+      await estimates.insert({id,bear_code:'KF-58',lat:35,lng:127,created_at:'2026-11-02 12:00:00'});
+    }
+    await estimates.markShared(['shared'],'2026-11-02 13:00:00');
+    assert.equal(await estimates.removeUnshared(['draft','shared','missing']),1);
+    assert.deepEqual((await estimates.list()).map(row=>row.id).sort(),['shared','unselected']);
   });
 }
 test('observation payload uses fixed profile identity instead of an editable owner value',()=>{

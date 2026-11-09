@@ -119,14 +119,28 @@
         else window.localStorage.setItem(key,JSON.stringify(readWeb().map(row=>ids.includes(String(row.id))?{...row,shared_at:row.shared_at||timestamp}:row)));
       });
     }
-    function remove(ids) {
+    function removeUnshared(ids) {
+      const targets = new Set(ids.map(String));
+      if (!targets.size) return Promise.resolve(0);
       return serialize(async () => {
         await ready();
-        if (native()) for (const id of ids) await sqlite().run({database:database(),readonly:false,transaction:true,statement:"DELETE FROM bear_estimates WHERE id=? AND shared_at IS NULL",values:[id]});
-        else window.localStorage.setItem(key,JSON.stringify(readWeb().filter(row=>!ids.includes(String(row.id))||row.shared_at)));
+        if (native()) {
+          const result = await sqlite().executeSet({
+            database: database(), readonly: false, transaction: true,
+            set: [...targets].map(id => ({
+              statement: "DELETE FROM bear_estimates WHERE id = ? AND shared_at IS NULL",
+              values: [id]
+            }))
+          });
+          return result.changes?.changes || 0;
+        }
+        const rows = readWeb();
+        const remaining = rows.filter(row => row.shared_at != null || !targets.has(String(row.id)));
+        if (remaining.length !== rows.length) window.localStorage.setItem(key, JSON.stringify(remaining));
+        return rows.length - remaining.length;
       });
     }
-    return {list,insert,markShared,remove};
+    return {list,insert,markShared,removeUnshared};
   }
   const api = { merge, originId, createStore, createLocalStore };
   if (typeof module === "object" && module.exports) module.exports = api;

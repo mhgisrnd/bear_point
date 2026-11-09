@@ -70,7 +70,7 @@ test("animal detail uses compact full-width rows and retains export/delete permi
   assert.match(html, /&lt;script&gt;/); assert.doesNotMatch(html, /<script>/);
   assert.match(html, /<summary>좌표·등록정보<\/summary>/);
   assert.doesNotMatch(html, /<details[^>]*\sopen[\s>]/);
-  assert.match(html, /data-bear-action="txt"/); assert.match(html, /data-bear-action="xls"/); assert.match(html, /data-bear-action="delete"/);
+  assert.match(html, /data-bear-action="txt"/); assert.match(html, /data-bear-action="xls"/); assert.doesNotMatch(html, /data-bear-action="delete"/);
   assert.doesNotMatch(context.buildBearEstimatePopupHtml({ ...item, isRealtime: true }), /data-bear-action="delete"/);
   assert.doesNotMatch(context.buildBearEstimatePopupHtml({ ...item, _unsaved: true }), /data-bear-action="xls"|data-bear-action="delete"/);
 });

@@ -9,6 +9,7 @@
     <div class="app-settings-tabs" role="tablist" aria-label="설정 메뉴">
       <button type="button" class="app-settings-tab" id="app-settings-profile-tab" role="tab" aria-selected="true" aria-controls="app-settings-profile-panel" tabindex="0">담당자·팀</button>
       <button type="button" class="app-settings-tab" id="app-settings-tracking-tab" role="tab" aria-selected="false" aria-controls="app-settings-tracking-panel" tabindex="-1">이동 기록</button>
+      <button type="button" class="app-settings-tab" id="app-settings-version-tab" role="tab" aria-selected="false" aria-controls="app-settings-version-panel" tabindex="-1">앱 버전</button>
     </div>
     <div class="app-settings-scroll"><section id="app-settings-profile-panel" role="tabpanel" aria-labelledby="app-settings-profile-tab">
     <form class="app-settings-body"><p class="app-settings-intro">담당자 이름과 소속 팀을 설정해주세요.</p>
@@ -34,8 +35,9 @@
         <p class="app-settings-tracking-status" role="status" aria-live="polite"></p>
         <div class="app-settings-actions"><button type="submit" class="app-settings-save">저장</button><button type="button" class="app-settings-cancel">취소</button></div>
       </form>
-    </section></div>`;
+    </section><section id="app-settings-version-panel" role="tabpanel" aria-labelledby="app-settings-version-tab" hidden></section></div>`;
   document.body.append(dialog);
+  window.BearAppUpdates?.mount(dialog.querySelector('#app-settings-version-panel'));
   const pushRegistration = window.BearPushRegistrationStatus;
   if (pushRegistration) {
     const pushSection = dialog.querySelector(".app-settings-push");

@@ -41,3 +41,28 @@ test('failure to persist an acknowledgement is reported as retryable rather than
  const result=await f.sync.sync();assert.equal(result.uploaded,1);assert.equal(result.remaining,1);assert.match(notice(result),/보관하지 못했습니다/);
  assert.equal(f.tracks.length,1);
 });
+test('shared history merges server pages with local tracks, stays available offline, and fetches shared details',async()=>{
+ const f=fixture();
+ const local=f.tracks[0];
+ const remote={id:'other-device',owner:'서버 담당자',team_id:'gurye',started_at:20,point_count:1,status:'saved'};
+ let offline=false;
+ const requests=[];
+ f.win.Capacitor={isNativePlatform:()=>true,Plugins:{BearPush:{getAppCheckToken:async()=>({token:'app-proof'})}}};
+ const client=create({win:f.win,plugin:{list:async()=>({items:f.tracks})},fetchImpl:async(url,options)=>{
+  requests.push({url,options});
+  if(offline)throw new Error('offline');
+  const data=url.endsWith('/other-device')?{...remote,points:local.points}:{
+   ok:true,total:2,pageSize:1,items:[url.endsWith('page=1')?remote:{...local,owner:'server duplicate'}]
+  };
+  return {ok:true,json:async()=>data};
+ }});
+ await client.refreshShared();
+ assert.deepEqual((await client.list({})).items.map(row=>[row.id,!!row.sharedOnly]),[[remote.id,true],[local.id,false]]);
+ assert.equal((await client.list({team_id:'gurye'})).total,1);
+ assert.equal((await client.list({owner:'Kim'})).total,1);
+ assert.deepEqual((await client.sharedDetail(remote.id)).points,local.points);
+ assert.ok(requests.every(({options})=>options.headers['X-Firebase-AppCheck']==='app-proof'&&options.credentials==='omit'));
+ offline=true;
+ await assert.rejects(client.refreshShared(),/offline/);
+ assert.equal((await client.list({})).total,2);
+});

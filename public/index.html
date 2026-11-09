@@ -4,17 +4,17 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover" />
   <title>지리산 반달곰 위치 분석</title>
-  <script src="js/startup-diagnostics.js?v=1.0.4-ui56"></script>
-  <script src="js/native-plugin-compat.js?v=1.0.4-ui56"></script>
+  <script src="js/startup-diagnostics.js?v=1.0.4-ui64"></script>
+  <script src="js/native-plugin-compat.js?v=1.0.4-ui64"></script>
 
   <link rel="stylesheet" href="vendor/ol/ol.css" />
   <link rel="stylesheet" href="css/styles.css" />
-  <link rel="stylesheet" href="css/panel.css?v=20261102-table-cleanup-1" />
-  <link rel="stylesheet" href="css/observation-sharing.css?v=20261106-search-menu" />
+  <link rel="stylesheet" href="css/panel.css?v=20261109-tracking-selection" />
+  <link rel="stylesheet" href="css/observation-sharing.css?v=20261109-list-filter" />
   <link rel="stylesheet" href="css/sdr-diagnostics.css" />
-  <link rel="stylesheet" href="css/app-settings.css" />
-  <link rel="stylesheet" href="css/gps-tracking.css?v=20261103-refresh-buttons" />
-  <link rel="stylesheet" href="css/mobile-map-dock.css?v=20261106-inline-filter" />
+  <link rel="stylesheet" href="css/app-settings.css?v=20261109-update-1" />
+  <link rel="stylesheet" href="css/gps-tracking.css?v=20261109-list-filter" />
+  <link rel="stylesheet" href="css/mobile-map-dock.css?v=20261109-tracking-selection" />
 </head>
 <body>
 
@@ -42,18 +42,18 @@
         </div>
       </div>
       <input class="obs-search-input" id="search-query" type="text" placeholder="검색..." aria-label="관측점 검색어" autocomplete="off" />
-      <button class="obs-filter-toggle" id="btn-obs-filter" type="button" aria-expanded="false" aria-controls="obs-filter-panel">필터</button>
+      <button class="list-filter-button" id="btn-obs-filter" type="button" aria-expanded="false" aria-controls="obs-filter-panel">필터<span class="list-filter-count" id="obs-filter-count" hidden></span></button>
       <button class="obs-search-clear" id="btn-search-clear" type="button">초기화</button>
     </div>
 
     <section class="obs-filter-panel" id="obs-filter-panel" aria-label="관측점 상세 필터" hidden>
       <div class="obs-filter-body">
         <div class="obs-filter-field">
-          <label for="obs-filter-owner">담당자 <small>담당자명 기준</small></label>
+          <label for="obs-filter-owner">담당자</label>
           <div class="obs-filter-control-row"><select id="obs-filter-owner"><option value="">전체 담당자</option></select><button id="btn-obs-filter-mine" type="button" title="이 기기에서 마지막으로 등록할 때 입력한 담당자">내 담당자</button></div>
         </div>
         <div class="obs-filter-field">
-          <label for="obs-filter-period">등록 기간 <small>한국 시간 기준</small></label>
+          <label for="obs-filter-period">등록 기간</label>
           <div class="obs-filter-control-row">
             <select id="obs-filter-period"><option value="all">전체 기간</option><option value="today">오늘</option><option value="day">일별</option><option value="month">월별</option><option value="year">년별</option></select>
             <input id="obs-filter-day" type="date" aria-label="등록일 선택" hidden />
@@ -297,7 +297,7 @@
                 </label>
                 <div class="bears-toolbar__actions" id="bears-toolbar-actions">
                   <span class="bears-selection-count" id="bears-selection-count">0개 선택</span>
-                  <button class="bears-toolbar-btn bears-toolbar-btn--danger" id="btn-bears-delete-selected" type="button" disabled>선택 삭제</button>
+                  <button class="bears-toolbar-btn bears-toolbar-btn--danger" id="btn-bears-delete-unshared" type="button" hidden disabled>선택 삭제</button>
                 </div>
               </div>
             </div>
@@ -375,23 +375,24 @@
   <script src="runtime-config.js"></script>
   <script src="js/analysis/bear-position-analysis.js"></script>
   <script src="js/realtime/realtimeList.js?v=20261109-push-error-detail"></script>
-  <script src="js/realtime/bear-estimate-store.js"></script>
+  <script src="js/realtime/bear-estimate-store.js?v=20261109-delete-unshared"></script>
   <script src="js/progressive-list.js"></script>
-  <script src="js/obs/obsList.js?v=20261106-search-menu"></script>
+  <script src="js/obs/obsList.js?v=20261109-list-filter"></script>
   <script src="js/obs/observation-filters.js"></script>
   <script src="js/obs/observation-sync.js"></script>
   <script src="js/obs/obsRegister.js"></script>
   <script src="js/map/ol-map-controls.js?v=20261103-offline-switcher-1"></script>
   <script src="js/tracking/gps-track-filters.js?v=20261109-history-order"></script>
   <script src="js/tracking/gps-track-store.js?v=20261109-history-order"></script>
-  <script src="js/tracking/gps-track-sync.js"></script>
-  <script src="js/tracking/gps-track-ui.js?v=20261109-history-order"></script>
+  <script src="js/tracking/gps-track-sync.js?v=20261109-shared-history"></script>
+  <script src="js/tracking/gps-track-ui.js?v=20261109-shared-history"></script>
   <script src="js/mobile-map-dock.js?v=20261103-tablet-1"></script>
-  <script src="js/client-ol.js?v=20261106-estimate-navigation"></script>
+  <script src="js/client-ol.js?v=20261109-delete-unshared"></script>
   <script src="js/sdr/spectrum.js"></script>
   <script src="js/sdr/animal-catalog.js"></script>
   <script src="js/sdr/diagnostics.js"></script>
   <script src="js/settings/app-settings-store.js"></script>
-  <script src="js/settings/app-settings-ui.js?v=20261109-push-status"></script>
+  <script src="js/settings/app-updates.js?v=20261109-update-1"></script>
+  <script src="js/settings/app-settings-ui.js?v=20261109-update-1"></script>
 </body>
 </html>

@@ -55,7 +55,6 @@ body.bp-map-dock #mobile-map-dock #panel .panel-body, body.bp-map-dock #mobile-m
 body.bp-map-dock #mobile-map-dock #bears-box { display: flex; flex-direction: column; min-height: 0; flex: 1 1 auto; overflow: hidden; margin: 0; padding: 0; border: 0; border-radius: 0; box-shadow: none; background: #fff; }
 body.bp-map-dock #mobile-map-dock #bears-list { flex: 1 1 auto; min-height: 0; max-height: none; overflow-y: auto; padding: 0; }
 body.bp-map-dock #mobile-map-dock .bears-item.bears-item--unified { margin: 0; padding: 6px 0; border: 0; border-bottom: 1px solid #dfe7f0; border-radius: 0; box-shadow: none; }
-body.bp-map-dock #mobile-map-dock .bears-item--unified.is-selected { background: #edf4ff; box-shadow: inset 2px 0 #4075db; }
 body.bp-map-dock #mobile-map-dock .bears-item__detail-frame { border: 0; border-radius: 0; }
 body.bp-map-dock #mobile-map-dock .bear-code-search { flex: 0 0 auto; }
 body.bp-map-dock #mobile-map-dock .gps-track-content { min-height: 0; overflow: hidden; padding: 4px 0 0; }

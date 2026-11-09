@@ -58,10 +58,10 @@ test('unified transport starts without a toggle, paginates completely, and retai
 });
 
 test('selected upload skips shared and in-flight rows, reconciles lost receipts, and retains partial failures for retry', async () => {
-  const rows = [{ id: 'a' }, { id: 'b', shared_at: 'shared' }, { id: 'c' }, { id: 'd' }, { id: 'e' }];
+  const rows = [{ id: 'a' }, { id: 'b', shared_at: 'shared' }, { id: 'c' }, { id: 'd' }, { id: 'e' }, { id: 'f' }];
   const sent = [], marked = [];
   const context = vm.createContext({
-    currentBearEstimateItems: rows, pendingBearUploads: new Set(['e']), remoteSharedEstimateIds: new Set(),
+    currentBearEstimateItems: rows, pendingBearUploads: new Set(['e']), pendingBearDeletions: new Set(['f']), remoteSharedEstimateIds: new Set(),
     selectedBearEstimateIds: new Set(rows.map(it => it.id)), statusEl: {},
     confirmRealtimeUpload: async () => true, repaintUnifiedBearList() {},
     markBearEstimatesShared: async ids => { marked.push(...ids); rows.find(row => row.id === ids[0]).shared_at = 'now'; },
@@ -70,7 +70,7 @@ test('selected upload skips shared and in-flight rows, reconciles lost receipts,
       sendEstimate: async item => { sent.push(item.id); return { ok: item.id !== 'd' }; }
     }
   });
-  const start = source.indexOf('  async function uploadUnsharedBearEstimates(');
+  const start = source.indexOf('  function canModifyUnsharedBearEstimate(');
   const end = source.indexOf('  async function downloadAllBearEstimatesXls(', start);
   vm.runInContext(source.slice(start, end), context);
   await context.handleUploadSelectedBearEstimates();
@@ -83,12 +83,12 @@ test('selected upload skips shared and in-flight rows, reconciles lost receipts,
 
 test('failed preflight never posts and releases pending rows for a manual retry', async () => {
   let posts = 0;
-  const context = vm.createContext({ currentBearEstimateItems: [{ id: 'a' }], pendingBearUploads: new Set(),
+  const context = vm.createContext({ currentBearEstimateItems: [{ id: 'a' }], pendingBearUploads: new Set(), pendingBearDeletions: new Set(),
     remoteSharedEstimateIds: new Set(), selectedBearEstimateIds: new Set(['a']), statusEl: {},
     confirmRealtimeUpload: async () => true, repaintUnifiedBearList() {},
     realtimeListModule: { refresh: async () => ({ ok: false, message: 'offline' }), sendEstimate: async () => { posts++; } }
   });
-  const start = source.indexOf('  async function uploadUnsharedBearEstimates(');
+  const start = source.indexOf('  function canModifyUnsharedBearEstimate(');
   vm.runInContext(source.slice(start, source.indexOf('  async function downloadAllBearEstimatesXls(', start)), context);
   await context.handleUploadSelectedBearEstimates();
   assert.equal(posts, 0);

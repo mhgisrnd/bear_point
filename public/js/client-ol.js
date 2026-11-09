@@ -36,7 +36,7 @@
   const bearsSelectionCountEl = document.getElementById("bears-selection-count");
   const btnBearsDownloadAllXlsEl = document.getElementById("btn-bears-download-all-xls");
   const btnBearsUploadSelectedEl = document.getElementById("btn-bears-upload-selected");
-  const btnBearsDeleteSelectedEl = document.getElementById("btn-bears-delete-selected");
+  const btnBearsDeleteUnsharedEl = document.getElementById("btn-bears-delete-unshared");
   const bearCodeSearchFormEl = document.getElementById("bear-code-search-form");
   const bearCodeSearchEl = document.getElementById("bear-code-query");
   const btnBearCodeClearEl = document.getElementById("btn-bear-code-clear");
@@ -62,6 +62,7 @@
   const unifiedBearStore = window.BearEstimateStore.createStore(window);
   const localEstimateStore = window.BearEstimateStore.createLocalStore(window);
   const pendingBearUploads = new Set();
+  const pendingBearDeletions = new Set();
   let currentBearEstimateFallbackMode = false;
   let remoteSharedEstimateIds = new Set();
   let sharedStatusSyncInProgress = false;
@@ -2938,7 +2939,6 @@
       return `<tr><th scope="row">${label}</th><td><span class="obs-detail-value${mono ? ' obs-detail-value--mono' : ''}" title="${text}">${text}</span></td></tr>`;
     };
     const unsaved = !!(item && item._unsaved);
-    const isRealtime = !!(item && item.isRealtime);
     return `
       <div class="obs-popup-card obs-popup-card--estimate">
         <div class="obs-popup-card__eyebrow">${escapeHtml(bearCode)}</div>
@@ -2963,7 +2963,6 @@
         <div class="obs-popup-card__actions">
           <button type="button" class="obs-popup-card__action-btn obs-popup-card__action-btn--file" data-bear-action="txt">TXT</button>
           ${!unsaved ? '<button type="button" class="obs-popup-card__action-btn obs-popup-card__action-btn--xls" data-bear-action="xls">XLS</button>' : ''}
-          ${!unsaved && !isRealtime && !item.shared_at ? '<button type="button" class="obs-popup-card__action-btn obs-popup-card__action-btn--delete" data-bear-action="delete">삭제</button>' : ''}
         </div>
       </div>
     `;
@@ -4031,7 +4030,7 @@
   observationPopupEl.appendChild(observationPopupCloseEl);
   observationPopupEl.appendChild(observationPopupContentEl);
 
-  // 상세 팝업 내부의 수정/삭제 버튼(관측점) 및 파일/삭제 버튼(곰 추정위치) 클릭을 처리한다.
+  // 상세 팝업의 관측점 수정 및 개체 추적 파일 버튼을 처리한다.
   observationPopupContentEl.addEventListener("click", function (event) {
     const obsActionButton = event && event.target && typeof event.target.closest === "function"
       ? event.target.closest("[data-observation-action]")
@@ -4057,7 +4056,7 @@
       return;
     }
 
-    // ── 곰 추정위치 TXT 저장 / 삭제 ──
+    // ── 곰 추정위치 파일 저장 ──
     if (bearActionButton) {
       const action = String(bearActionButton.getAttribute("data-bear-action") || "").trim();
       const bearData = observationPopupEl._bearEstimateData || null;
@@ -4072,9 +4071,6 @@
         closeObservationPopup();
         void downloadAllBearEstimatesXls([bearData]);
         return;
-      }
-      if (action === "delete" && !bearData._unsaved && !bearData.isRealtime && !bearData.shared_at) {
-        void handleDeleteSingleBearEstimate(bearData);
       }
     }
   });
@@ -5060,7 +5056,7 @@
     });
   }
 
-  // 현재 목록에 존재하지 않는 선택 id를 정리해 삭제/재조회 후 선택 상태를 동기화한다.
+  // 현재 목록에 없는 선택 ID를 정리한다.
   function syncSelectedBearEstimateIds(items) {
     const validIds = new Set((items || []).map(function (it) { return String(it.id); }));
     Array.from(selectedBearEstimateIds).forEach(function (id) {
@@ -5094,14 +5090,17 @@
       btnBearsDownloadAllXlsEl.disabled = totalCount === 0;
     }
 
+    const eligible = list.filter(it => selectedBearEstimateIds.has(String(it.id)) && canModifyUnsharedBearEstimate(it)).length;
     if (btnBearsUploadSelectedEl) {
-      const eligible = list.filter(it => selectedBearEstimateIds.has(String(it.id)) && !it.shared_at && !it.remoteOnly && !pendingBearUploads.has(String(it.id))).length;
       btnBearsUploadSelectedEl.disabled = eligible === 0;
       btnBearsUploadSelectedEl.hidden = eligible === 0;
       btnBearsUploadSelectedEl.title = "미공유 " + eligible + "건 공유";
     }
-
-    if (btnBearsDeleteSelectedEl) btnBearsDeleteSelectedEl.disabled = selectedCount === 0;
+    if (btnBearsDeleteUnsharedEl) {
+      btnBearsDeleteUnsharedEl.hidden = eligible === 0;
+      btnBearsDeleteUnsharedEl.disabled = eligible === 0;
+      btnBearsDeleteUnsharedEl.textContent = "선택 삭제 " + eligible + "건";
+    }
   }
 
   async function confirmRealtimeUpload(message, detail) {
@@ -5161,13 +5160,21 @@
     }
   };
 
+  function canModifyUnsharedBearEstimate(item) {
+    const id = String(item.id);
+    return !item.shared_at && !item.remoteOnly && !item.isRealtime
+      && !remoteSharedEstimateIds.has(id) && !pendingBearUploads.has(id) && !pendingBearDeletions.has(id);
+  }
+
   async function uploadUnsharedBearEstimates(targets) {
     if (!realtimeListModule) return;
-    const eligible = targets.filter(it => !it.shared_at && !it.remoteOnly && !pendingBearUploads.has(String(it.id)));
+    const eligible = targets.filter(canModifyUnsharedBearEstimate);
     if (!eligible.length) return;
     const ok = await confirmRealtimeUpload("미공유 추적위치 " + eligible.length + "건을 공유할까요?", "");
     if (!ok) return;
-    const reserved = eligible.filter(it => !pendingBearUploads.has(String(it.id)));
+    const requestedIds = new Set(eligible.map(item => String(item.id)));
+    const reserved = currentBearEstimateItems.filter(it => requestedIds.has(String(it.id)) && canModifyUnsharedBearEstimate(it));
+    if (!reserved.length) return;
     reserved.forEach(it => pendingBearUploads.add(String(it.id)));
     repaintUnifiedBearList();
     let count = 0, failed = 0;
@@ -5195,6 +5202,40 @@
 
   async function handleUploadSelectedBearEstimates() {
     await uploadUnsharedBearEstimates(currentBearEstimateItems.filter(it => selectedBearEstimateIds.has(String(it.id))));
+  }
+
+  async function deleteSelectedUnsharedBearEstimates() {
+    const requestedIds = new Set(currentBearEstimateItems
+      .filter(it => selectedBearEstimateIds.has(String(it.id)) && canModifyUnsharedBearEstimate(it))
+      .map(it => String(it.id)));
+    if (!requestedIds.size) return;
+
+    const confirmed = await showStyledConfirmDialog({
+      title: "미공유 추적위치 삭제",
+      message: "선택한 미공유 추적위치 " + requestedIds.size + "건을 이 기기에서 삭제할까요?",
+      detail: "이 작업은 되돌릴 수 없습니다.",
+      confirmText: "삭제",
+      cancelText: "취소",
+      tone: "danger"
+    });
+    if (!confirmed) return;
+
+    const ids = currentBearEstimateItems
+      .filter(it => requestedIds.has(String(it.id)) && canModifyUnsharedBearEstimate(it))
+      .map(it => String(it.id));
+    if (!ids.length) return;
+    ids.forEach(id => pendingBearDeletions.add(id));
+    try {
+      const removed = await localEstimateStore.removeUnshared(ids);
+      ids.forEach(id => selectedBearEstimateIds.delete(id));
+      await refreshBearEstimatePanel();
+      if (statusEl) statusEl.textContent = "미공유 추적위치 " + removed + "건을 삭제했습니다.";
+    } catch (error) {
+      if (statusEl) statusEl.textContent = "미공유 추적위치 삭제에 실패했습니다: " + (error.message || error);
+    } finally {
+      ids.forEach(id => pendingBearDeletions.delete(id));
+      repaintUnifiedBearList();
+    }
   }
 
   async function downloadAllBearEstimatesXls(items) {
@@ -5305,119 +5346,6 @@
     }
   }
 
-  async function deleteBearEstimateRows(ids, isFallback, deleteAll) {
-    if (!isNativeCapacitorPlatform()) {
-      const targets = deleteAll ? (await localEstimateStore.list()).map(row => String(row.id)) : (ids || []).map(String);
-      await localEstimateStore.remove(targets);
-      return;
-    }
-    if (isFallback) {
-      if (deleteAll) {
-        bearsDataCache = [];
-        return;
-      }
-
-      const idSet = new Set((ids || []).map(function (id) { return String(id); }));
-      bearsDataCache = bearsDataCache.filter(function (row, index) {
-        const fallbackId = row && row.id ? String(row.id) : ("web-bear-" + index);
-        return !idSet.has(fallbackId);
-      });
-      return;
-    }
-
-    const sqlite = getCapacitorSQLitePlugin();
-    if (!sqlite) throw new Error("SQLite 플러그인을 찾지 못했습니다.");
-
-    const dbName = window.BearSQLiteConfig && window.BearSQLiteConfig.dbName
-      ? window.BearSQLiteConfig.dbName
-      : "BearPointData";
-
-    let statements = "DELETE FROM bear_estimates";
-    if (!deleteAll) {
-      const safeIds = (ids || []).map(function (id) {
-        return "'" + String(id).replace(/'/g, "''") + "'";
-      });
-      if (!safeIds.length) return;
-      statements = "DELETE FROM bear_estimates WHERE id IN (" + safeIds.join(", ") + ")";
-    }
-
-    await sqlite.execute({
-      database: dbName,
-      statements: statements,
-      transaction: true,
-      readonly: false
-    });
-  }
-
-  // 체크된 곰 추정위치 행들을 사용자 확인 후 일괄 삭제한다.
-  let bearDeletionPending = false;
-  async function handleDeleteSelectedBearEstimates() {
-    if (bearDeletionPending) return;
-    bearDeletionPending = true;
-    try { return await deleteSelectedBearEstimates(); }
-    finally { bearDeletionPending = false; }
-  }
-  async function deleteSelectedBearEstimates() {
-    const targetIds = currentBearEstimateItems.filter(function (it) {
-      return selectedBearEstimateIds.has(String(it.id)) && !it.shared_at && !it.remoteOnly && !pendingBearUploads.has(String(it.id));
-    }).map(function (it) {
-      return String(it.id);
-    });
-
-    if (!targetIds.length) return;
-
-    const ok = await showStyledConfirmDialog({
-      title: "삭제 확인",
-      message: "선택한 곰 추정위치 " + targetIds.length + "건을 삭제할까요?",
-      detail: "이 작업은 되돌릴 수 없습니다.",
-      confirmText: "삭제",
-      cancelText: "취소",
-      tone: "danger"
-    });
-    if (!ok) return;
-
-    try {
-      await deleteBearEstimateRows(targetIds, currentBearEstimateFallbackMode, false);
-      selectedBearEstimateIds.clear();
-      await refreshBearEstimatePanel();
-      if (statusEl) statusEl.textContent = "🗑️ 선택한 곰 추정위치 " + targetIds.length + "건을 삭제했습니다";
-    } catch (error) {
-      console.warn("[bear_estimates] 선택 삭제 실패:", error);
-      if (statusEl) statusEl.textContent = "🔴 선택 삭제 실패: " + (error && error.message ? error.message : String(error));
-    }
-  }
-
-  // 팝업에서 곰 추정위치 단건을 삭제한다. 확인 다이얼로그 → DB 삭제 → 목록 갱신.
-  async function handleDeleteSingleBearEstimate(item) {
-    if (bearDeletionPending) return;
-    bearDeletionPending = true;
-    try { return await deleteSingleBearEstimate(item); }
-    finally { bearDeletionPending = false; }
-  }
-  async function deleteSingleBearEstimate(item) {
-    if (item.shared_at || item.isRealtime || pendingBearUploads.has(String(item.id))) return;
-    const bearCode = item.bear_code || item.bearCode || item.id || "-";
-    const ok = await showStyledConfirmDialog({
-      title: "삭제 확인",
-      message: "곰 추정위치 [" + bearCode + "]를 삭제할까요?",
-      detail: "이 작업은 되돌릴 수 없습니다.",
-      confirmText: "삭제",
-      cancelText: "취소",
-      tone: "danger"
-    });
-    if (!ok) return;
-
-    try {
-      await deleteBearEstimateRows([String(item.id)], currentBearEstimateFallbackMode, false);
-      closeObservationPopup();
-      await refreshBearEstimatePanel();
-      if (statusEl) statusEl.textContent = "🗑️ 곰 추정위치 [" + bearCode + "]를 삭제했습니다";
-    } catch (error) {
-      console.warn("[bear_estimate] 단건 삭제 실패:", error);
-      if (statusEl) statusEl.textContent = "🔴 삭제 실패: " + (error && error.message ? error.message : String(error));
-    }
-  }
-
   if (bearsSelectAllEl) {
     bearsSelectAllEl.addEventListener("change", function () {
       selectedBearEstimateIds.clear();
@@ -5471,14 +5399,6 @@
     if (!document.hidden && navigator.onLine !== false) void refreshUnifiedBearList({ silent: true });
   }, 30000);
 
-  if (btnBearsDeleteSelectedEl) {
-    btnBearsDeleteSelectedEl.addEventListener("click", function (event) {
-      event.preventDefault();
-      event.stopPropagation();
-      handleDeleteSelectedBearEstimates();
-    });
-  }
-
   if (btnBearsDownloadAllXlsEl) {
     btnBearsDownloadAllXlsEl.addEventListener("click", function (event) {
       event.preventDefault();
@@ -5493,6 +5413,10 @@
       event.stopPropagation();
       handleUploadSelectedBearEstimates();
     });
+  }
+
+  if (btnBearsDeleteUnsharedEl) {
+    btnBearsDeleteUnsharedEl.addEventListener("click", () => { void deleteSelectedUnsharedBearEstimates(); });
   }
 
   function bearTeamColor(item) {
@@ -6258,7 +6182,7 @@
       lat: point.lat,
       lng: point.lng,
       created_at: null,
-      _unsaved: true  // 아직 저장되지 않은 임시 분석점이므로 삭제 버튼을 숨긴다
+      _unsaved: true
     };
     feature.set("popupHtml", buildBearEstimatePopupHtml(_analysisItem));
     feature.set("bearEstimateData", _analysisItem);

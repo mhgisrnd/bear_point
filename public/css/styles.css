@@ -488,11 +488,6 @@ a.leaflet-control-locate-btn.is-active svg{
   color: #167344;
 }
 
-.map-detail-popup .obs-popup-card__action-btn--delete {
-  background: #fff1f2;
-  color: #be123c;
-}
-
 .obs-popup-det-table {
   display: flex;
   flex-direction: column;
@@ -553,10 +548,6 @@ a.leaflet-control-locate-btn.is-active svg{
 
 .obs-popup-card__action-btn--edit {
   background: linear-gradient(180deg, #2563eb 0%, #1d4ed8 100%);
-}
-
-.obs-popup-card__action-btn--delete {
-  background: linear-gradient(180deg, #dc2626 0%, #b91c1c 100%);
 }
 
 .obs-popup-card__action-btn--file {

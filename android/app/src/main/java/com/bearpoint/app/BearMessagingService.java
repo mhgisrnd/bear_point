@@ -43,7 +43,7 @@ public class BearMessagingService extends FirebaseMessagingService {
         NotificationCompat.Builder builder = new NotificationCompat.Builder(
             this, getString(R.string.bear_tracking_notification_channel_id)
         )
-            .setSmallIcon(R.drawable.ic_sdr_notification)
+            .setSmallIcon(R.drawable.ic_bearmap_notification)
             .setContentTitle(notification.getTitle() == null ? getString(R.string.app_name) : notification.getTitle())
             .setContentText(notification.getBody())
             .setContentIntent(openApp)

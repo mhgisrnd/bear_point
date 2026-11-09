@@ -172,7 +172,7 @@ test('web local and realtime XLS open a preview before generating a download', a
   const singleStart = client.indexOf('  async function downloadBearEstimateXls(');
   const singleEnd = client.indexOf('    function buildXlsPreviewHtml(', singleStart);
   const bulkStart = client.indexOf('  async function downloadAllBearEstimatesXls(');
-  const bulkEnd = client.indexOf('  async function deleteBearEstimateRows(', bulkStart);
+  const bulkEnd = client.indexOf('  if (bearsSelectAllEl)', bulkStart);
   let preview;
   let loads = 0;
   const context = vm.createContext({

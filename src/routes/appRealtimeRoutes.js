@@ -2,7 +2,7 @@ const express = require("express");
 
 // The browser calls its own host; the server reaches the configured remote API.
 // This keeps the remote dataset, without changing the administrator's local API.
-function createAppRealtimeRouter({ apiBase, teamsApiUrl, movementApiUrl, fetchImpl = fetch }) {
+function createAppRealtimeRouter({ apiBase, teamsApiUrl, movementApiUrl, movementReadKey, fetchImpl = fetch }) {
   const router = express.Router();
   const base = new URL(apiBase);
   if (!["http:", "https:"].includes(base.protocol)) throw new Error("Invalid realtime API protocol");
@@ -39,6 +39,28 @@ function createAppRealtimeRouter({ apiBase, teamsApiUrl, movementApiUrl, fetchIm
         headers:{Accept:"application/json","Content-Type":"application/json"},body:JSON.stringify(req.body)});
       res.status(response.status).json(await response.json());
     } catch(_) {res.status(502).json({ok:false,message:"이동기록 서버에 연결할 수 없습니다."});}
+  });
+  router.get(["/movement-tracks", "/movement-tracks/:id"], async (req, res) => {
+    res.set("Cache-Control", "no-store");
+    if (!req.adminSession || !movementReadKey) {
+      return res.status(403).json({ok:false, message:"공유 이동 기록을 보려면 관리자 로그인이 필요합니다."});
+    }
+    const id = req.params.id;
+    if (id && !/^[\da-f]{8}(-[\da-f]{4}){3}-[\da-f]{12}$/i.test(id)) return res.status(400).json({ok:false});
+    try {
+      const target = new URL(movementApiUrl || targetBase + "/movement-tracks");
+      if (!["http:", "https:"].includes(target.protocol)) throw new Error("Invalid movement API protocol");
+      if (id) target.pathname = target.pathname.replace(/\/$/, "") + "/" + id;
+      else target.searchParams.set("page", String(Math.max(1, Math.floor(Number(req.query.page) || 1))));
+      const response = await fetchImpl(target.href, {
+        method:"GET", redirect:"error", signal:AbortSignal.timeout(10000),
+        headers:{Accept:"application/json", Authorization:"Bearer " + movementReadKey}
+      });
+      const result = await response.json().catch(() => ({ok:false}));
+      res.status(response.status).json(result);
+    } catch (_) {
+      res.status(502).json({ok:false, message:"공유 이동 기록 서버에 연결할 수 없습니다."});
+    }
   });
   router.get("/bear-estimates", forward);
   router.get("/bear-entities", async (req, res) => {

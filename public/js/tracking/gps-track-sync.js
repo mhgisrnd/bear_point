@@ -7,8 +7,56 @@
   }
   function create({plugin,win=root,fetchImpl=win.fetch.bind(win)}) {
     let pending;
+    let sharedRows = new Map(), refreshing;
     const key=id=>'bearpoint.gps-uploaded.'+id;
     const acknowledged=id=>{try{return win.localStorage.getItem(key(id))==='1';}catch(_){return false;}};
+    async function readShared(path = "", page) {
+      const native = !!win.Capacitor?.isNativePlatform?.();
+      const headers = {Accept:"application/json"};
+      if (native) {
+        const proof = await win.Capacitor.Plugins.BearPush.getAppCheckToken();
+        headers["X-Firebase-AppCheck"] = proof.token;
+      }
+      const response = await fetchImpl(endpoint(win) + path + (page ? "?page=" + page : ""), {
+        credentials: native ? "omit" : "same-origin", redirect:"error", headers, signal:AbortSignal.timeout(12000)
+      });
+      if (response.status === 403) {
+        sharedRows = new Map();
+        throw new Error(native ? "앱 인증으로 공유 이동 기록을 확인할 수 없습니다." : "공유 이동 기록에 접근할 수 없습니다.");
+      }
+      if (!response.ok) throw new Error("공유 이동 기록을 불러오지 못했습니다.");
+      return response.json();
+    }
+    function refreshShared() {
+      if (!refreshing) refreshing = (async () => {
+        const next = new Map();
+        for (let page = 1; ; page++) {
+          const result = await readShared("", page);
+          if (!result.ok || !Array.isArray(result.items) || !Number.isInteger(result.pageSize)
+              || result.pageSize < 1 || !Number.isSafeInteger(result.total)) {
+            throw new Error("공유 이동 기록 응답이 올바르지 않습니다.");
+          }
+          for (const row of result.items) next.set(String(row.id), row);
+          if (page * result.pageSize >= result.total || !result.items.length) break;
+        }
+        sharedRows = next;
+      })().finally(() => { refreshing = null; });
+      return refreshing;
+    }
+    async function list(query, limit = 30) {
+      const filters = win.BearGpsTrackFilters || (typeof require === "function" ? require("./gps-track-filters") : null);
+      const rows = new Map([...sharedRows].map(([id, row]) => [id, {...row, sharedOnly:true}]));
+      for (let offset = 0; ; ) {
+        const {items = []} = await plugin.list({offset});
+        for (const row of items) rows.set(String(row.id), row);
+        if (items.length < 30) break;
+        offset += items.length;
+      }
+      const all = [...rows.values()];
+      const matches = filters.sortHistory(filters.filter(all, query));
+      const offset = query.offset || 0;
+      return {items:matches.slice(offset, offset + limit), total:matches.length, teams:filters.teams(all)};
+    }
     async function run() {
       let offset=0,uploaded=0,eligible=0,remaining=0,skipped=0;
       // status() also recovers interrupted native/web records before listing.
@@ -45,7 +93,8 @@
       }
       return {uploaded,eligible,remaining,skipped};
     }
-    return {sync(){if(!pending)pending=run().finally(()=>{pending=null;});return pending;},acknowledged};
+    return {sync(){if(!pending)pending=run().finally(()=>{pending=null;});return pending;},acknowledged,
+      refreshShared, list, sharedDetail:id=>readShared("/"+encodeURIComponent(id))};
   }
   function notice(result,manual=false){
     if(result.remaining>0)return '서버 수신은 완료했지만 기기에 전송 완료 상태를 보관하지 못했습니다. 다시 전송해주세요.';

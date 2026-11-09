@@ -9,7 +9,7 @@ test('history renders newest first across loaded pages and refresh resets previo
   let response={items:[{id:'old',started_at:100},{id:'new',started_at:300}],total:4};
   const context={history,historyVersion:0,historyOffset:0,historyLoaded:false,more:{},count:{},appliedQuery:{},displayed:null,
     filters:require('../public/js/tracking/gps-track-filters'),document:{createElement:element},date:String,elapsed:()=>'',paintTeams(){},place(){},
-    plugin:{list:async query=>{requests.push(query.offset);return response;}}};
+    syncClient:{list:async query=>{requests.push(query.offset);return response;}}};
   vm.createContext(context);
   const code=fs.readFileSync('public/js/tracking/gps-track-ui.js','utf8');
   vm.runInContext(code.slice(code.indexOf('    let historyRows=[];'),code.indexOf('    async function action(')),context);

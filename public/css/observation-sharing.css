@@ -11,12 +11,8 @@
 .obs-search-options button[aria-pressed="true"] { color: #2257c5; background: #edf3ff; }
 .obs-search-options button:focus-visible { outline: 2px solid #739de5; outline-offset: -2px; }
 .obs-sheet .obs-search-clear { padding: 0 6px; flex-shrink: 0; }
-.obs-filter-toggle { flex-shrink: 0; min-height: 34px; padding: 0 7px; border: 1px solid #d9e2ee; border-radius: 9px; font-size: 11px; font-weight: 700; color: #4b6078; background: #fff; cursor: pointer; }
-.obs-filter-toggle[aria-expanded="true"],
-.obs-filter-toggle.is-active { color: #fff; background: #2c5dde; border-color: #2c5dde; }
-.obs-filter-toggle:focus-visible { outline: 2px solid #7597e5; outline-offset: 2px; }
 .obs-sheet.obs-sheet--filtering { max-height: min(88dvh, 560px); }
-.obs-sheet > .obs-filter-panel { flex: 0 0 auto; margin: 0 10px 4px; border: 1px solid #dce5ef; border-radius: 8px; background: #f6f9fd; }
+.obs-sheet > .obs-filter-panel { flex: 0 0 auto;  border: 1px solid #dce5ef; border-radius: 8px; background: #f6f9fd; }
 .obs-filter-body { padding: 6px; }
 .obs-filter-field { display: grid; grid-template-columns: 62px minmax(0, 1fr); align-items: center; column-gap: 6px; }
 .obs-filter-field + .obs-filter-field { margin-top: 4px; }

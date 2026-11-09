@@ -20,7 +20,7 @@
       <div class="gps-track-content"><p class="gps-track-summary">기록을 시작하면 이동 경로가 지도에 표시됩니다.</p>
       <div class="gps-track-actions"><button type="button" data-hide hidden>경로 숨기기</button></div>
       <p class="gps-track-message" role="status" aria-live="polite"></p><div class="gps-track-actions"><button type="button" data-sync hidden>미전송 기록 전송</button></div><p class="gps-track-sync-message" role="status" aria-live="polite" hidden></p>
-      <form class="gps-history-search" role="search" aria-label="이동 기록 검색"><div class="gps-history-search-row"><input type="search" name="owner" placeholder="담당자 검색" aria-label="담당자 검색" autocomplete="off"><button type="submit">조회</button><button type="button" data-filter aria-expanded="false" aria-controls="gps-history-filters"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M7 3v4m10-4v4M4 10h16"/><rect x="4" y="5" width="16" height="16" rx="2"/><path d="M8 14h2m4 0h2m-8 3h2"/></svg>필터</button><button type="button" data-reset>초기화</button></div>
+      <form class="gps-history-search" role="search" aria-label="이동 기록 검색"><div class="gps-history-search-row"><input type="search" name="owner" placeholder="담당자 검색" aria-label="담당자 검색" autocomplete="off"><button type="submit">조회</button><button class="list-filter-button" type="button" data-filter aria-expanded="false" aria-controls="gps-history-filters">필터</button><button type="button" data-reset>초기화</button></div>
       <div class="gps-history-filters" id="gps-history-filters" hidden><div class="gps-history-filter-row"><span class="gps-history-filter-label" id="gps-period-label">기간</span><div class="gps-history-chips" role="group" aria-labelledby="gps-period-label"><button type="button" data-period="all" aria-pressed="true">전체</button><button type="button" data-period="today" aria-pressed="false">오늘</button><button type="button" data-period="day" aria-pressed="false">일별</button><button type="button" data-period="month" aria-pressed="false">월별</button><button type="button" data-period="year" aria-pressed="false">년별</button></div></div><div class="gps-history-date-row" hidden><input type="date" name="day" aria-label="조회 날짜" hidden><input type="month" name="month" aria-label="조회 월" hidden><input type="number" name="year" min="1900" max="9999" step="1" inputmode="numeric" placeholder="연도" aria-label="조회 연도" hidden></div><div class="gps-history-filter-row"><span class="gps-history-filter-label" id="gps-team-label">팀</span><div class="gps-history-chips gps-history-team-chips" role="group" aria-labelledby="gps-team-label"><button type="button" data-team="" aria-pressed="true">전체</button></div></div></div></form>
       <section class="gps-track-history" aria-label="기록 이력"><div class="gps-history-overview"><strong>기록 이력</strong><span data-history-count>0건</span></div><div class="gps-track-history-frame"><table class="gps-track-history-table" aria-label="이동 기록 이력"><colgroup><col style="width:25%"><col style="width:18%"><col style="width:22%"><col style="width:15%"><col style="width:20%"></colgroup><thead><tr><th scope="col">기록일시</th><th scope="col">담당자</th><th scope="col">팀명</th><th scope="col">시간</th><th scope="col">거리<span class="gps-history-unit">(km)</span></th></tr></thead><tbody class="gps-track-history-items"></tbody></table></div><button type="button" data-more hidden>더 보기</button></section></div>`;
     document.body.append(panel);
@@ -28,7 +28,7 @@
     const message=panel.querySelector('.gps-track-message'),summary=panel.querySelector('.gps-track-summary');
     const history=panel.querySelector('.gps-track-history-items'),more=panel.querySelector('[data-more]');
     const search=panel.querySelector('.gps-history-search'),filterButton=panel.querySelector('[data-filter]'),filterPanel=panel.querySelector('.gps-history-filters');
-    const filterBadge=document.createElement('span');filterBadge.className='gps-filter-count';filterBadge.hidden=true;filterButton.append(filterBadge);
+    const filterBadge=document.createElement('span');filterBadge.className='list-filter-count';filterBadge.hidden=true;filterButton.append(filterBadge);
     const refreshButton=panel.querySelector('[data-refresh]'),count=panel.querySelector('[data-history-count]');
     const filters=root.BearGpsTrackFilters;
     let appliedQuery=filters.buildQuery(),historyLoaded=false,period='all',teamId='';
@@ -125,9 +125,9 @@
       if(fit&&points.length)map.getView().fit(source.getExtent(),{padding:[70,70,100,70],maxZoom:16,duration:450});
       paint();
     }
-    async function show(id,fit) {
+    async function show(id,fit,sharedOnly=false) {
       const version=++viewVersion;
-      const track=await plugin.detail({id});
+      const track=await (sharedOnly ? syncClient.sharedDetail(id) : plugin.detail({id}));
       if(version!==viewVersion)return;
       if(!track)throw new Error('기록을 찾을 수 없습니다.');
       draw(track,fit);
@@ -135,12 +135,12 @@
       else if(!track.point_count)message.textContent=active?.id===track.id?'GPS 수신 대기 중입니다. 정확한 위치를 받으면 자동으로 기록합니다.':'저장된 GPS 지점이 없습니다.';
     }
     let historyRows=[];
-    async function loadHistory(reset=true) {
+    async function loadHistory(reset=true, limit=30) {
       const version=++historyVersion;
-      if(reset){historyOffset=0;historyRows=[];history.replaceChildren();}
       more.disabled=true;
       try {
-        const result=await plugin.list({...appliedQuery,offset:historyOffset});if(version!==historyVersion)return;
+        const result=await syncClient.list({...appliedQuery,offset:reset?0:historyOffset},limit);if(version!==historyVersion)return;
+        if(reset){historyOffset=0;historyRows=[];}
         const rows=result.items||[];
         const byId=new Map(historyRows.map(track=>[String(track.id),track]));
         rows.forEach(track=>byId.set(String(track.id),track));
@@ -167,10 +167,26 @@
           const team=cell(track.team_name||'미지정','gps-history-team');
           const dot=document.createElement('i');dot.setAttribute('aria-hidden','true');dot.style.background=/^#[0-9a-f]{6}$/i.test(track.team_color||'')?track.team_color:'#7e90a2';team.prepend(dot);
           cell(elapsed(track),'gps-history-number');cell((Number(track.distance||0)/1000).toFixed(2),'gps-history-number');
-          row.addEventListener('click',()=>void action(async()=>{message.textContent='';await show(track.id,true);}));history.append(row);
+          row.addEventListener('click',()=>void action(async()=>{message.textContent='';await show(track.id,true,track.sharedOnly);}));history.append(row);
         });
         historyOffset+=rows.length;more.hidden=historyOffset>=Number(result.total||0);
-      } finally {more.disabled=false;place();}
+      } finally {if(version===historyVersion){more.disabled=false;place();}}
+    }
+    let refreshingShared=false,lastSharedRefresh=0;
+    async function refreshSharedHistory(force=false) {
+      if(panel.hidden||document.hidden||refreshingShared||(!force&&Date.now()-lastSharedRefresh<15000))return;
+      refreshingShared=true;lastSharedRefresh=Date.now();
+      try {
+        await syncClient.refreshShared();
+        count.removeAttribute('title');
+        if(!panel.hidden&&!busy)await loadHistory(true,Math.max(30,historyOffset));
+      } catch (_) {
+        if(!panel.hidden&&!busy) {
+          await loadHistory(true,Math.max(30,historyOffset)).catch(()=>{});
+          const empty=history.querySelector('.gps-history-empty');
+          if(empty)empty.textContent='기기 기록이 없고 공유 기록을 불러오지 못했습니다.';
+        }
+      } finally {refreshingShared=false;}
     }
     async function action(fn) {
       if(busy)return;busy=true;paint();
@@ -194,7 +210,7 @@
           void syncRecords(false,true);
           if(historyLoaded)await loadHistory();
         }
-        initial=false;paint();void syncRecords();
+      initial=false;paint();void syncRecords();void refreshSharedHistory();
       }catch(error){message.textContent=error.message||String(error);}
       finally{polling=false;}
     }
@@ -218,10 +234,10 @@
     }));
     hide.addEventListener('click',()=>{++viewVersion;source.clear();displayed=null;message.textContent='';paint();});
     function close(){layer.setVisible(false);setFilterPanelOpen(false);panel.hidden=true;button.setAttribute('aria-expanded','false');if(root.BearMobileDock?.isMobile()&&root.BearMobileDock.getActive()==='tracking')root.BearMobileDock.collapse();}
-    function open(){panel.hidden=false;layer.setVisible(true);displayed=null;++viewVersion;source.clear();root.BearMobileDock?.select('tracking',{activate:false});setFilterPanelOpen(false);paint();void action(()=>loadHistory()).then(()=>poll());}
+    function open(){panel.hidden=false;layer.setVisible(true);displayed=null;++viewVersion;source.clear();root.BearMobileDock?.select('tracking',{activate:false});setFilterPanelOpen(false);paint();void action(()=>loadHistory()).then(()=>refreshSharedHistory(true)).then(()=>poll());}
     button.addEventListener('click',()=>{if(panel.hidden){open();(active?stop:start).focus();}else close();});
     panel.querySelector('[data-close]').addEventListener('click',close);
-    refreshButton.addEventListener('click',()=>void action(()=>loadHistory()));
+    refreshButton.addEventListener('click',()=>void action(()=>loadHistory()).then(()=>refreshSharedHistory(true)));
     filterButton.addEventListener('click',()=>setFilterPanelOpen(filterPanel.hidden));
     async function applyFilters(close=false){
       const next=filters.buildQuery({owner:search.elements.owner.value,team_id:teamId,period,day:search.elements.day.value,month:search.elements.month.value,year:search.elements.year.value});

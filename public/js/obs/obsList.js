@@ -122,6 +122,7 @@ window.createObsListModule = function createObsListModule({
   const searchQueryEl = document.getElementById("search-query");
   const btnSearchClearEl = document.getElementById("btn-search-clear");
   const btnFilterEl = document.getElementById("btn-obs-filter");
+  const filterCountEl = document.getElementById("obs-filter-count");
   const filterPanelEl = document.getElementById("obs-filter-panel");
   const ownerFilterEl = document.getElementById("obs-filter-owner");
   const periodFilterEl = document.getElementById("obs-filter-period");
@@ -1023,7 +1024,11 @@ window.createObsListModule = function createObsListModule({
     const description = window.BearObservationFilters.summary(current);
     if (filterSummaryEl) { filterSummaryEl.hidden = !description; filterSummaryEl.textContent = description + " ▾"; filterSummaryEl.title = description; }
     const count = (current.owner ? 1 : 0) + (current.period !== "all" ? 1 : 0);
-    if (btnFilterEl) { btnFilterEl.textContent = count ? `필터 ${count}` : "필터"; btnFilterEl.classList.toggle("is-active", count > 0); }
+    btnFilterEl?.classList.toggle("has-filters", count > 0);
+    if (filterCountEl) {
+      filterCountEl.hidden = count === 0;
+      filterCountEl.textContent = String(count);
+    }
   }
 
   function ensureAnalysisOptionsDialog() {

@@ -97,6 +97,34 @@ test("movement gateway sends GPS records only to its configured administrator en
  try {
   const response=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json',Cookie:'local-only'},body:JSON.stringify({id:'track',points:[]})});
   assert.equal(response.status,200);assert.equal(calls[0].url,'https://admin.test/base/api/realtime/movement-tracks');assert.equal(calls[0].options.headers.Cookie,undefined);
-  assert.equal((await fetch(url)).status,404);
+  assert.equal((await fetch(url)).status,403);
  }finally{await new Promise(resolve=>server.close(resolve));}
+});
+
+test("movement gateway forwards shared reads only for signed-in web users", async () => {
+  const calls = [], app = express();
+  app.use((req, res, next) => { if (req.headers.cookie === "local-admin") req.adminSession = {}; next(); });
+  app.use(createAppRealtimeRouter({
+    apiBase: "https://admin.test/api/realtime", movementReadKey: "server-only-key",
+    fetchImpl: async (url, options) => {
+      calls.push({url, options});
+      return {status: 200, json: async () => ({ok: true, items: []})};
+    }
+  }));
+  const server = app.listen(0, "127.0.0.1");
+  await new Promise(resolve => server.once("listening", resolve));
+  try {
+    const base = `http://127.0.0.1:${server.address().port}/movement-tracks`;
+    assert.equal((await fetch(base)).status, 403);
+    assert.equal(calls.length, 0);
+    const headers = {Cookie: "local-admin"};
+    assert.equal((await fetch(base + "?page=2", {headers})).status, 200);
+    const id = "127ef8a9-9b43-4c4a-8e36-f8dc244a39df";
+    assert.equal((await fetch(base + "/" + id, {headers})).status, 200);
+    assert.deepEqual(calls.map(call => call.url), [
+      "https://admin.test/api/realtime/movement-tracks?page=2",
+      "https://admin.test/api/realtime/movement-tracks/" + id
+    ]);
+    assert.ok(calls.every(call => call.options.headers.Authorization === "Bearer server-only-key" && !call.options.headers.Cookie));
+  } finally { await new Promise(resolve => server.close(resolve)); }
 });

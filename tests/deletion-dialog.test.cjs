@@ -76,14 +76,33 @@ test('observation deletion locks popup, row and bulk requests through confirmati
   finishRemoval();assert.equal((await first).confirmed,true);assert.equal(closed,1);assert.equal(c.observationSamples.length,0);
   const retry=c.deleteObservations([item]);answer(false);assert.equal((await retry).confirmed,false);assert.equal(confirmations,2);
 });
-test('single and bulk animal delete share a lock that resets after rejection',async()=>{
-  let finish,calls=0;
-  const c=vm.createContext({deleteSelectedBearEstimates:()=>{calls++;return new Promise(resolve=>{finish=resolve;});},
-    deleteSingleBearEstimate:async()=>{calls++;throw new Error('server failure');}});
-  vm.runInContext('let bearDeletionPending=false;'+extractFunction(client,'handleDeleteSelectedBearEstimates')+extractFunction(client,'handleDeleteSingleBearEstimate'),c);
-  const first=c.handleDeleteSelectedBearEstimates();
-  await c.handleDeleteSingleBearEstimate({id:'one'});assert.equal(calls,1);
-  finish();await first;
-  await assert.rejects(()=>c.handleDeleteSingleBearEstimate({id:'one'}),/server failure/);
-  const retry=c.handleDeleteSelectedBearEstimates();assert.equal(calls,3);finish();await retry;
+test('tracking deletion is available through the selection toolbar only',()=>{
+  const html=fs.readFileSync('public/index.html','utf8');
+  assert.match(html,/id="btn-delete-selected"/);
+  assert.match(html,/id="btn-bears-delete-unshared" type="button" hidden disabled/);
+  assert.doesNotMatch(client,/data-bear-action="delete"|DELETE FROM bear_estimates/);
+});
+test('tracking deletion protects shared, remote and uploading rows even when sharing changes during confirmation',async()=>{
+  const rows=[{id:'draft'},{id:'shared',shared_at:'now'},{id:'remote',remoteOnly:true},
+    {id:'receipt'},{id:'uploading'},{id:'changed'}];
+  const removed=[];
+  const context=vm.createContext({
+    currentBearEstimateItems:rows,selectedBearEstimateIds:new Set(rows.map(row=>row.id)),
+    remoteSharedEstimateIds:new Set(['receipt']),pendingBearUploads:new Set(['uploading']),
+    pendingBearDeletions:new Set(),statusEl:{},
+    showStyledConfirmDialog:async({message})=>{
+      assert.match(message,/2건/);
+      rows.find(row=>row.id==='changed').shared_at='just shared';
+      return true;
+    },
+    localEstimateStore:{async removeUnshared(ids){removed.push(...ids);return ids.length;}},
+    async refreshBearEstimatePanel(){},repaintUnifiedBearList(){}
+  });
+  const start=client.indexOf('  function canModifyUnsharedBearEstimate(');
+  vm.runInContext(client.slice(start,client.indexOf('  async function downloadAllBearEstimatesXls(',start)),context);
+  await context.deleteSelectedUnsharedBearEstimates();
+  assert.deepEqual(removed,['draft']);
+  assert.equal(context.selectedBearEstimateIds.has('shared'),true);
+  assert.equal(context.pendingBearDeletions.size,0);
+  assert.match(context.statusEl.textContent,/1건/);
 });

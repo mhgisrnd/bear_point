@@ -49,5 +49,14 @@ body:has(.sdr-dialog[open]) #btn-sdr-diagnostics,
 .app-settings-dialog button:disabled { opacity: .5; cursor: default; }
 .app-settings-dialog [hidden] { display: none !important; }
 .app-settings-build { margin: 0; padding: 0 20px 12px; color: #607080; font-size: 11px; }
+.app-update-versions { margin: 18px 0 12px; }
+.app-update-versions > div { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 10px 0; border-bottom: 1px solid #e2e9f1; }
+.app-update-versions dt { color: #64768a; flex-shrink: 0; }
+.app-update-versions dd { margin: 0; font-weight: 700; text-align: right; overflow-wrap: anywhere; }
+.app-update-notes { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 160px; overflow-y: auto; }
+.app-update-message { color: #315c70; overflow-wrap: anywhere; }
+.app-update-body progress { width: 100%; accent-color: #2365c8; }
+.app-update-dismiss { display: block; margin: 12px auto 0; padding: 8px 16px; background: none; border: 0; color: #64768a; font: inherit; cursor: pointer; }
+.app-update-dialog .app-settings-head { padding-bottom: 4px; }
 .app-settings-dialog :focus-visible, #btn-app-settings:focus-visible { outline: 3px solid #86b6fb; outline-offset: 2px; }
 @media (max-height: 480px) { .app-settings-head { padding-top: 12px; } .app-settings-intro { margin-bottom: 10px; } .app-settings-teams { margin-top: 10px; } .app-settings-team { min-height: 42px; } }
