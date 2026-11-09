@@ -14,21 +14,25 @@ function element() {
   };
 }
 
-async function setup(overrides = {}) {
+async function setup(overrides = {}, runtime = {}) {
   const elements = new Map();
   const get = id => {
     if (!elements.has(id)) elements.set(id, element());
     return elements.get(id);
   };
   const calls = [];
-  const window = { Capacitor: { isNativePlatform: () => true } };
+  const window = {
+    Capacitor: { isNativePlatform: () => true },
+    Event, dispatchEvent() {}, addEventListener() {}, setInterval() {},
+    ...runtime.window,
+  };
   const records = [
     { id: 1, bear_code: '002', lat: 35.308129, lng: 127.704584, timestamp: 1781658443000, place: '개발검수', owner: '개발 담당자' },
     { id: 2, bear_code: '005', lat: 35.3187076, lng: 127.5968011, timestamp: 1780392863000 },
   ];
   vm.runInNewContext(source, {
-    window, document: { getElementById: get, body: element() }, navigator: {},
-    fetch: async () => ({ ok: true, json: async () => ({ items: records }) }),
+    window, document: { getElementById: get, body: element(), addEventListener() {} }, navigator: {},
+    fetch: runtime.fetch || (async () => ({ ok: true, json: async () => ({ items: records }) })),
   });
   const module = window.createRealtimeListModule({
     onDownloadTxt: item => calls.push(['txt', item]),
@@ -46,8 +50,41 @@ async function setup(overrides = {}) {
     });
     assert.equal(stopped, true);
   }
-  return { get, calls, module, click };
+  return { get, calls, module, click, window };
 }
+
+test('automatic push registration reports App Check failure, server rejection, and successful retry', async () => {
+  let failure = true;
+  let denied = true;
+  const requests = [];
+  const push = {
+    async getRegistration() {
+      if (failure) throw Object.assign(new Error("진단: Play Integrity 오류 코드 -16"), { code: "APP_CHECK" });
+      return { installation_id: "install", token: "fcm", app_check_token: "attestation", credential: "credential" };
+    },
+  };
+  const { window } = await setup({ unified: true, apiBase: "https://example.test/api/realtime" }, {
+    window: { Capacitor: { isNativePlatform: () => true, Plugins: { BearPush: push } } },
+    fetch: async (url, options) => {
+      if (!url.endsWith("/push-devices")) return { ok: true, json: async () => ({ items: [] }) };
+      requests.push(options);
+      return { ok: !denied, status: denied ? 403 : 200, json: async () => ({ ok: !denied }) };
+    },
+  });
+  const status = window.BearPushRegistrationStatus;
+  assert.match(status.snapshot().message, /Play Integrity 앱 인증에 실패/);
+  assert.match(status.snapshot().message, /오류 코드 -16/);
+  assert.equal(requests.length, 0);
+  failure = false;
+  await status.retry();
+  assert.match(status.snapshot().message, /HTTP 403/);
+  assert.deepEqual(JSON.parse(requests[0].body), { installation_id: "install", token: "fcm" });
+  assert.equal(requests[0].headers["X-Firebase-AppCheck"], "attestation");
+  denied = false;
+  await status.retry();
+  assert.match(status.snapshot().message, /기기 등록 완료/);
+  assert.equal(status.snapshot().busy, false);
+});
 
 test('opening the unified list activates the tracking view as well as refreshing its rows', async () => {
   const events = [];

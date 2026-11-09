@@ -206,9 +206,20 @@ PostgreSQL 실시간 목록 DB 연동
 
 개체 추적 공유 푸시 (Android)
 
-- 실제 공유 API인 Java `bear-admin`과 동일한 PostgreSQL DB를 사용하도록 발송 작업의 `PG_HOST`, `PG_DATABASE`, `PG_USER`, `PG_PASSWORD`를 설정합니다. 두 프로세스가 `public` 스키마의 푸시 테이블을 공유하며, DB 계정에는 테이블 생성 또는 접근 권한이 필요합니다.
-- `FCM_PROJECT_ID`에 Android 앱의 Firebase 프로젝트 ID를 설정하고 같은 프로젝트의 Cloud Messaging API(HTTP v1)와 서버 서비스 계정 권한을 준비합니다. 서비스 계정 키 파일을 쓰는 환경에서는 서버의 `GOOGLE_APPLICATION_CREDENTIALS`에 경로를 설정합니다. `npm ci` 후 최신 `node scripts/run-bear-push-worker.js`를 상시 실행해 DB 테이블과 App Check 인증 컬럼을 준비합니다.
-- Firebase 콘솔에서 배포 APK의 서명 지문으로 Play Integrity를 등록합니다. 이후 `bear-admin`에 `BEAR_PUSH_ENABLED=true`, `BEAR_PUSH_APP_CHECK_PROJECT_NUMBER`, `BEAR_PUSH_APP_CHECK_APP_ID`를 설정하여 배포합니다. 현재 Firebase 구성에서 프로젝트 번호는 `1044895273644`, Android 앱 ID는 `1:1044895273644:android:9076746c49dcc2dc250509`입니다. 다른 Firebase 구성을 사용하면 해당 프로젝트 번호와 Android 앱 ID를 입력합니다.
+- Java `bear-admin`을 배포하면 같은 서버 프로세스가 앱 기기를 등록하고 발송 대기 알림을 Firebase로 보냅니다. 서버는 기존 공유 DB의 `public` 스키마에 푸시 테이블과 App Check 인증 컬럼을 준비합니다. 배포 DB 계정에 해당 테이블을 만들고 갱신할 권한이 필요합니다.
+- 실행 프로필에 맞는 `config/application-local.properties` 또는 `config/application-prod.properties`의 **개체 추적 공유 푸시** 블록에서 설정합니다. 아래는 현재 Firebase 프로젝트를 사용하는 예입니다.
+
+  ```properties
+  bear.push.enabled=true
+  bear.push.project-id=fcm-test-20ce2
+  bear.push.app-check.project-number=1044895273644
+  bear.push.app-check.app-id=1:1044895273644:android:9076746c49dcc2dc250509
+  bear.push.credentials-file=./secrets/firebase-service-account.json
+  ```
+
+- 상대 경로는 `bear-admin` 실행 폴더 기준입니다. 키 파일 경로를 생략하면 기존 Google 기본 인증(`GOOGLE_APPLICATION_CREDENTIALS` 등)을 사용합니다. 기존 `FCM_PROJECT_ID`, `BEAR_PUSH_APP_CHECK_PROJECT_NUMBER`, `BEAR_PUSH_APP_CHECK_APP_ID`는 대응하는 `bear.push.*` 키를 생략했을 때 계속 읽으며, `BEAR_PUSH_ENABLED`가 지정돼 있으면 켜기·끄기 설정에서 우선합니다.
+- 같은 Firebase 프로젝트에서 Cloud Messaging API(HTTP v1)와 서버 서비스 계정 권한을 준비하고, 배포 APK의 서명 지문으로 Play Integrity를 등록합니다. 키 내용은 서버 파일에만 보관합니다.
+- 서버 로그에 `[bear-push] database ready`와 `[bear-push] Firebase delivery initialized`가 표시되는지 확인합니다. 이전 별도 Node 발송 작업을 실행 중이었다면 새 `bear-admin`으로 전환할 때 종료합니다.
 - 두 기기에 새 APK를 설치하고 앱을 열어 알림을 허용합니다. 앱은 Play Integrity 검증을 거쳐 기기를 자동 등록합니다. 한 기기에서 위치분석 결과를 처음 실시간 공유하면 그 기기를 제외하고 알림을 허용한 다른 인증 기기에 발송합니다. 인증 정보가 없는 기존 앱도 위치를 공유할 수 있으며, 이전에 수동 등록한 기기는 새 앱을 열 때 자동 등록으로 전환됩니다.
 - 검증: node --test tests/bear-estimate-store.test.cjs tests/bear-estimate-unified.test.cjs tests/realtime-gateway.test.cjs tests/realtime-download.test.cjs
 - 웹 지도는 api/app-realtime 중계 경로를 사용해 설정된 원격 실시간 API를 호출합니다. Android는 기존 원격 주소를 직접 사용합니다. 관리자용 /api/realtime의 로컬 데이터 조회·수정 경로는 유지합니다.

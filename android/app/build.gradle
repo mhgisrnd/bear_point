@@ -46,6 +46,8 @@ dependencies {
     // Messaging 26.x requires Android API 24; this app still supports API 23.
     implementation 'com.google.firebase:firebase-messaging:25.0.1'
     implementation 'com.google.firebase:firebase-appcheck-playintegrity:19.0.1'
+    // The App Check provider includes Integrity at runtime; diagnostics also use its typed errors at compile time.
+    implementation 'com.google.android.play:integrity:1.4.0'
     implementation fileTree(include: ['*.jar'], dir: 'libs')
     implementation "androidx.appcompat:appcompat:$androidxAppCompatVersion"
     implementation "androidx.coordinatorlayout:coordinatorlayout:$androidxCoordinatorLayoutVersion"

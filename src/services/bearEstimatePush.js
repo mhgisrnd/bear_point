@@ -136,7 +136,7 @@ async function enqueueEstimatePush(query, item, senderInstallationId) {
   `, [String(item.id), title, body, typeof senderInstallationId === "string" ? senderInstallationId.toLowerCase() : null]);
 }
 
-function startPushWorker({ keepAlive = false } = {}) {
+function startPushWorker() {
   if (!pushEnabled()) return;
   const { GoogleAuth } = require("google-auth-library");
   const auth = new GoogleAuth({ scopes: ["https://www.googleapis.com/auth/firebase.messaging"] });
@@ -217,8 +217,7 @@ function startPushWorker({ keepAlive = false } = {}) {
   }
 
   void tick();
-  const timer = setInterval(tick, 5000);
-  if (!keepAlive) timer.unref();
+  setInterval(tick, 5000).unref();
 }
 
 module.exports = { pushEnabled, preparePushSchema, registerPushDevice, authenticatedPushSender, enqueueEstimatePush, startPushWorker, formatEstimateNotification };

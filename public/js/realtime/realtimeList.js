@@ -95,16 +95,35 @@
     }
 
     const API_BASE = resolveApiBase();
-    const pushPlugin = isNativeCapacitorRuntime() && /^https:\/\//i.test(API_BASE)
-      ? window.Capacitor?.Plugins?.BearPush : null;
+    const nativePushRuntime = isNativeCapacitorRuntime();
+    const securePushEndpoint = /^https:\/\//i.test(API_BASE);
+    const pushPlugin = nativePushRuntime && securePushEndpoint ? window.Capacitor?.Plugins?.BearPush : null;
     let pushRegistrationPending;
     let pushRegistered = false;
+    let pushStatus = {
+      message: !securePushEndpoint ? "자동 등록에는 HTTPS 공유 서버가 필요합니다."
+        : !pushPlugin ? "이 APK에서 푸시 등록 기능을 찾을 수 없습니다."
+        : "기기 등록 확인 대기 중",
+      busy: false,
+    };
+
+    function reportPushStatus(message, busy = false) {
+      pushStatus = { message, busy };
+      window.dispatchEvent(new window.Event("bearpoint:push-registration-changed"));
+    }
 
     function syncPushDevice() {
+      if (!pushPlugin) return Promise.resolve();
       if (pushRegistrationPending) return pushRegistrationPending;
+      reportPushStatus("앱 인증 및 기기 등록 확인 중…", true);
       pushRegistrationPending = (async () => {
         try {
           const { credential, app_check_token: appCheckToken, ...registration } = await pushPlugin.getRegistration();
+          if (!appCheckToken || !credential) {
+            reportPushStatus("앱에서 등록에 필요한 인증 정보를 받지 못했습니다.");
+            return;
+          }
+          reportPushStatus("공유 서버에 기기 등록 중…", true);
           await requestJson("/push-devices", {
             method: "POST",
             headers: {
@@ -117,8 +136,17 @@
             signal: window.AbortSignal?.timeout?.(10000),
           });
           pushRegistered = true;
-        } catch (_) {
-          // Retry on the next activation, network reconnect or periodic refresh.
+          reportPushStatus(registration.token ? "기기 등록 완료 · 알림 수신 허용"
+            : "기기 등록 완료 · Android 설정에서 개체 추적 공유 알림을 허용해 주세요.");
+        } catch (error) {
+          if (error?.code === "APP_CHECK") {
+            const detail = error.message?.startsWith("진단: ") ? " " + error.message : "";
+            reportPushStatus("Play Integrity 앱 인증에 실패했습니다." + detail);
+          }
+          else if (error?.code === "FCM_TOKEN") reportPushStatus("Firebase 푸시 수신 정보를 가져오지 못했습니다.");
+          else if (error?.code === "FIREBASE_CONFIG") reportPushStatus("이 APK의 Firebase 설정을 읽지 못했습니다.");
+          else if (error?.statusCode) reportPushStatus("공유 서버가 기기 등록을 거부했습니다. (HTTP " + error.statusCode + ")");
+          else reportPushStatus("기기 등록을 확인하지 못했습니다. 인터넷 연결과 공유 서버 주소를 확인해 주세요.");
         }
       })().finally(() => { pushRegistrationPending = null; });
       return pushRegistrationPending;
@@ -902,6 +930,12 @@
       renderRealtimeList();
     });
 
+    if (nativePushRuntime) {
+      window.BearPushRegistrationStatus = {
+        snapshot: () => pushStatus,
+        retry: pushPlugin ? syncPushDevice : null,
+      };
+    }
     if (pushPlugin) {
       void syncPushDevice();
       window.addEventListener("online", syncPushDevice);

@@ -17,7 +17,14 @@
       <div class="app-settings-catalog-row"><p class="app-settings-catalog-note"></p><button type="button" class="app-settings-refresh">새로고침</button></div>
       <p class="app-settings-status" role="status" aria-live="polite"></p>
       <div class="app-settings-actions"><button type="submit" class="app-settings-save">저장하고 시작</button><button type="button" class="app-settings-cancel">취소</button></div>
-    </form></section>
+    </form>
+    <section class="app-settings-body app-settings-push" aria-label="개체 추적 공유 알림" hidden>
+      <strong>개체 추적 공유 알림</strong>
+      <div class="app-settings-catalog-row">
+        <p class="app-settings-help app-settings-push-status" role="status" aria-live="polite"></p>
+        <button type="button" class="app-settings-refresh app-settings-push-retry">다시 확인</button>
+      </div>
+    </section></section>
     <section id="app-settings-tracking-panel" role="tabpanel" aria-labelledby="app-settings-tracking-tab" hidden>
       <form class="app-settings-body app-settings-tracking-form">
         <p class="app-settings-intro">기록 간격은 저장하면 진행 중인 기록에도 적용됩니다. 경로는 팀 색상으로 표시됩니다.</p>
@@ -29,6 +36,21 @@
       </form>
     </section></div>`;
   document.body.append(dialog);
+  const pushRegistration = window.BearPushRegistrationStatus;
+  if (pushRegistration) {
+    const pushSection = dialog.querySelector(".app-settings-push");
+    const pushMessage = pushSection.querySelector(".app-settings-push-status");
+    const pushRetry = pushSection.querySelector(".app-settings-push-retry");
+    pushSection.hidden = false;
+    function paintPushRegistration() {
+      const status = pushRegistration.snapshot();
+      pushMessage.textContent = status.message;
+      pushRetry.disabled = status.busy || !pushRegistration.retry;
+    }
+    paintPushRegistration();
+    window.addEventListener("bearpoint:push-registration-changed", paintPushRegistration);
+    pushRetry.addEventListener("click", () => { void pushRegistration.retry?.(); });
+  }
   const buildLabel = document.createElement("p");
   buildLabel.className = "app-settings-build";
   buildLabel.textContent = "앱 버전 " + (window.BEAR_BUILD_VERSION || "버전 정보 없음");
