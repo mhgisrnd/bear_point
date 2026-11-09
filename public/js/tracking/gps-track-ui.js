@@ -184,7 +184,7 @@
         if(!panel.hidden&&!busy) {
           await loadHistory(true,Math.max(30,historyOffset)).catch(()=>{});
           const empty=history.querySelector('.gps-history-empty');
-          if(empty)empty.textContent='기기 기록이 없고 공유 기록을 불러오지 못했습니다.';
+          if(empty)empty.textContent='기록을 불러오지 못했습니다.';
         }
       } finally {refreshingShared=false;}
     }

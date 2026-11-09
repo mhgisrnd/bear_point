@@ -53,10 +53,6 @@
     window.addEventListener("bearpoint:push-registration-changed", paintPushRegistration);
     pushRetry.addEventListener("click", () => { void pushRegistration.retry?.(); });
   }
-  const buildLabel = document.createElement("p");
-  buildLabel.className = "app-settings-build";
-  buildLabel.textContent = "앱 버전 " + (window.BEAR_BUILD_VERSION || "버전 정보 없음");
-  dialog.querySelector(".app-settings-scroll").appendChild(buildLabel);
   const tabs = [...dialog.querySelectorAll('[role="tab"]')];
   function selectTab(tab, focus = false) {
     if (tab.disabled) return;

@@ -8,22 +8,39 @@
   }
   function createController(plugin,apiUrl,onChange=()=>{}){
     let state={phase:'idle',current:null,update:null,message:'업데이트를 확인해주세요.',received:0,total:0,readyHash:null};
+    let confirmedHash; // Undefined until a successful server check; null means no published offer.
     const paint=patch=>{state={...state,...patch};onChange({...state});};
     const busy=()=>['checking','downloading','installing'].includes(state.phase);
     return {
       snapshot:()=>({...state}),
-      async initialize(){const current=await plugin.getInfo();paint({current});},
+      async initialize(){return this.recover();},
+      async recover(){
+        if(busy())return false;
+        const current=await plugin.getInfo();
+        if(current.downloadReady&&current.update&&(confirmedHash===undefined||confirmedHash===current.update.fileSha256)){
+          paint({current,update:current.update,phase:'ready',readyHash:current.update.fileSha256,message:'다운로드한 APK가 준비되어 있습니다. 설치를 계속할 수 있습니다.'});
+          return true;
+        }
+        if(current.downloadReady===false&&state.phase==='ready')paint({current,phase:'idle',readyHash:null,message:'APK 파일을 다시 다운로드해주세요.'});
+        else paint({current});
+        return false;
+      },
       async check(){
         if(busy())return false;
+        const previous={...state};
         paint({phase:'checking',message:'최신 버전을 확인하고 있습니다.'});
         try{
           const result=await plugin.check({apiUrl});
           const update=result.update||null;
-          paint({phase:state.readyHash&&state.readyHash===update?.fileSha256?'ready':'idle',current:result,update,
-            readyHash:state.readyHash===update?.fileSha256?state.readyHash:null,
-            message:update?'새 버전을 다운로드할 수 있습니다.':'현재 제공 중인 새 업데이트가 없습니다.'});
+          confirmedHash=update?.fileSha256||null;
+          const ready=!!update&&(typeof result.downloadReady==='boolean'?result.downloadReady:state.readyHash===update.fileSha256);
+          paint({phase:ready?'ready':'idle',current:result,update,readyHash:ready?update.fileSha256:null,
+            message:ready?'다운로드한 APK가 준비되어 있습니다. 설치를 계속할 수 있습니다.':update?'새 버전을 다운로드할 수 있습니다.':'현재 제공 중인 새 업데이트가 없습니다.'});
           return !!update;
-        }catch(error){paint({phase:'idle',update:null,readyHash:null,message:error.message||'업데이트를 확인하지 못했습니다.'});return false;}
+        }catch(error){
+          if(previous.readyHash&&previous.update){paint({...previous,message:'최신 버전 확인에 실패했습니다. 다운로드한 APK는 설치를 계속할 수 있습니다.'});return true;}
+          paint({phase:'idle',update:null,readyHash:null,message:error.message||'업데이트를 확인하지 못했습니다.'});return false;
+        }
       },
       progress(value){if(state.phase==='downloading')paint({received:Number(value.received)||0,total:Number(value.total)||0});},
       async download(){
@@ -39,8 +56,8 @@
         paint({phase:'installing',message:'설치 파일을 확인하고 있습니다.'});
         try{
           const result=await plugin.install();
-          paint({phase:'ready',message:result.permissionRequired?'이 출처의 앱 설치를 허용한 뒤 돌아와서 ‘설치 계속’을 눌러주세요.':'설치 화면을 열었습니다. 설치를 취소했다면 다시 진행할 수 있습니다.'});
-        }catch(error){paint({phase:'ready',message:error.message||'설치 화면을 열지 못했습니다.'});}
+          paint({phase:result.installed?'idle':'ready',message:result.installed?'설치가 완료되었습니다.':result.permissionRequired?'이 출처의 앱 설치가 허용되지 않았습니다. 설치 계속을 눌러 권한을 허용해주세요.':result.cancelled?'설치를 취소했습니다. 다시 설치할 수 있습니다.':'설치 화면을 열었습니다. 설치를 취소했다면 다시 진행할 수 있습니다.'});
+        }catch(error){paint({phase:error.code==='APK_MISSING'?'idle':'ready',readyHash:error.code==='APK_MISSING'?null:state.readyHash,message:error.message||'설치 화면을 열지 못했습니다.'});}
       }
     };
   }
@@ -54,8 +71,8 @@
   function paint(state){
     const busy=['checking','downloading','installing'].includes(state.phase);
     for(const container of mounts){
-      container.querySelector('[data-current]').textContent=state.current?`${state.current.versionName} (${state.current.versionCode})`:'확인 중';
-      container.querySelector('[data-latest]').textContent=state.update?`${state.update.versionName} · ${size(state.update.fileSize)}`:'—';
+      const current=container.querySelector('[data-current]');if(current)current.textContent=state.current?state.current.versionName:'확인 중';
+      container.querySelector('[data-latest]').textContent=state.update?state.update.versionName:'—';
       container.querySelector('[data-notes]').textContent=state.update?.releaseNotes||'';
       container.querySelector('[data-message]').textContent=state.message;
       const check=container.querySelector('[data-check]');if(check)check.disabled=busy;
@@ -68,8 +85,8 @@
     }
   }
   function content(withCheck){return `<div class="app-settings-body app-update-body">
-    <dl class="app-update-versions"><div><dt>현재 버전</dt><dd data-current>확인 중</dd></div><div><dt>배포 버전</dt><dd data-latest>—</dd></div></dl>
-    <p class="app-update-notes" data-notes></p><p class="app-update-message" data-message role="status" aria-live="polite"></p>
+    <dl class="app-update-versions">${withCheck?'<div><dt>현재 버전</dt><dd data-current>확인 중</dd></div>':''}<div><dt>배포 버전</dt><dd data-latest>—</dd></div></dl>
+    <p class="app-update-notes" data-notes tabindex="0" role="region" aria-label="업데이트 변경 내용"></p><p class="app-update-message" data-message role="status" aria-live="polite"></p>
     <progress aria-label="APK 다운로드 진행률" hidden></progress><p class="app-settings-help" data-progress></p>
     <div class="app-settings-actions">${withCheck?'<button type="button" data-check>업데이트 확인</button>':''}<button type="button" class="app-settings-save" data-update hidden>APK 다운로드</button></div>
     ${withCheck?'':'<button type="button" class="app-update-dismiss" data-dismiss>닫기</button>'}</div>`;}
@@ -78,7 +95,7 @@
     if(!dialog){
       dialog=document.createElement('dialog');dialog.className='app-settings-dialog app-update-dialog';
       dialog.setAttribute('aria-labelledby','app-update-title');
-      dialog.innerHTML='<div class="app-settings-head"><h2 id="app-update-title">앱 업데이트</h2><button type="button" class="app-settings-close" data-close aria-label="업데이트 닫기">×</button></div><div class="app-settings-scroll">'+content(false)+'</div>';
+      dialog.innerHTML='<div class="app-settings-head"><h2 id="app-update-title">앱 업데이트</h2><button type="button" class="app-settings-close" data-close aria-label="업데이트 닫기">×</button></div>'+content(false);
       document.body.append(dialog);bind(dialog);mounts.push(dialog);
       dialog.addEventListener('cancel',event=>{if(['downloading','installing'].includes(controller.snapshot().phase))event.preventDefault();});
       dialog.querySelector('[data-close]').addEventListener('click',()=>dialog.close());
@@ -116,5 +133,11 @@
       clearInterval(timer);showOffer();
     },1000);
   }
+  async function restoreOnResume(){
+    if(document.hidden)return;
+    try{if(await controller.recover())showOffer();}catch(_){}
+  }
+  document.addEventListener('visibilitychange',()=>void restoreOnResume());
+  root.addEventListener('focus',()=>void restoreOnResume());
   if(document.readyState==='complete')void autoCheck();else root.addEventListener('load',()=>void autoCheck(),{once:true});
 })(typeof window==='object'?window:globalThis);

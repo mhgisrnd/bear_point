@@ -1,6 +1,7 @@
 package com.bearpoint.app;
 
 import android.content.Intent;
+import android.app.Activity;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.content.pm.Signature;
@@ -8,11 +9,13 @@ import android.net.Uri;
 import android.os.Build;
 import android.provider.Settings;
 import androidx.core.content.FileProvider;
+import androidx.activity.result.ActivityResult;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
+import com.getcapacitor.annotation.ActivityCallback;
 import java.io.*;
 import java.net.*;
 import java.security.MessageDigest;
@@ -27,7 +30,8 @@ public final class AppUpdatePlugin extends Plugin {
     private final AtomicBoolean busy = new AtomicBoolean();
     private volatile boolean cancelled;
     private volatile HttpURLConnection connection;
-    private JSONObject downloaded;
+    private volatile JSONObject downloaded;
+    private volatile boolean installerOpen;
 
     private PackageInfo installed() throws Exception {
         return getContext().getPackageManager().getPackageInfo(getContext().getPackageName(), signatureFlags());
@@ -47,8 +51,28 @@ public final class AppUpdatePlugin extends Plugin {
     }
     private JSObject info() throws Exception {
         PackageInfo current = installed();
+        JSONObject pending = pending();
         return new JSObject().put("packageName", current.packageName).put("versionName", current.versionName)
-            .put("versionCode", code(current));
+            .put("versionCode", code(current)).put("update", pending == null ? JSONObject.NULL : pending)
+            .put("downloadReady", pending != null);
+    }
+    private JSONObject pending() throws Exception {
+        if (downloaded == null) {
+            String value = new AppUpdateCache(folder()).read();
+            if (value != null) {
+                try { downloaded = new JSONObject(value); }
+                catch (org.json.JSONException invalid) { new AppUpdateCache(folder()).clear(); }
+            }
+        }
+        if (downloaded == null) return null;
+        File file = new File(folder(), "BearMap.apk");
+        try {
+            validate(downloaded);
+            if (!file.isFile() || file.length() != downloaded.getLong("fileSize")) throw new IOException("APK 파일이 없습니다.");
+            return downloaded;
+        } catch (Exception stale) {
+            downloaded = null; new AppUpdateCache(folder()).clear(); return null;
+        }
     }
     private interface Work { void run() throws Exception; }
     private void run(PluginCall call, Work operation) {
@@ -56,7 +80,7 @@ public final class AppUpdatePlugin extends Plugin {
         cancelled = false;
         worker.execute(() -> {
             try { operation.run(); }
-            catch (Exception e) { call.reject(cancelled ? "다운로드를 취소했습니다." : message(e)); }
+            catch (Exception e) { android.util.Log.w("BearAppUpdate", "Update operation failed", e); call.reject(cancelled ? "다운로드를 취소했습니다." : message(e)); }
             finally { busy.set(false); }
         });
     }
@@ -114,13 +138,16 @@ public final class AppUpdatePlugin extends Plugin {
             if (release.optBoolean("available") && release.optLong("versionCode") > installedCode()) {
                 validate(release); AppUpdatePolicy.download(endpoint, release.getString("downloadUrl"));
                 result.put("update", release);
+                JSONObject cached = pending();
+                result.put("downloadReady", cached != null && release.getString("fileSha256").equals(cached.optString("fileSha256")));
             } else result.put("update", JSONObject.NULL);
             call.resolve(result);
         });
     }
     private long installedCode() throws Exception { return code(installed()); }
     private File folder() throws IOException {
-        File directory = new File(getContext().getCacheDir(), "app-updates");
+        // Keep a verified APK across permission settings, Activity recreation and cache eviction.
+        File directory = new File(getContext().getFilesDir(), "app-updates");
         if (!directory.isDirectory() && !directory.mkdirs()) throw new IOException("APK 저장 공간을 준비하지 못했습니다.");
         return directory;
     }
@@ -135,8 +162,11 @@ public final class AppUpdatePlugin extends Plugin {
             long size = release.getLong("fileSize"); File directory = folder();
             File partial = new File(directory, "BearMap.partial.apk"), target = new File(directory, "BearMap.apk");
             downloaded = null;
+            new AppUpdateCache(directory).clear();
             if (target.exists() && !target.delete()) throw new IOException("이전 APK 파일을 정리하지 못했습니다.");
             if (partial.exists() && !partial.delete()) throw new IOException("미완성 APK 파일을 정리하지 못했습니다.");
+            File legacy = new File(new File(getContext().getCacheDir(), "app-updates"), "BearMap.apk");
+            if (legacy.exists() && !legacy.delete()) throw new IOException("이전 APK 파일을 정리하지 못했습니다.");
             if (directory.getUsableSpace() < size + 64L * 1024 * 1024) throw new IOException("APK 다운로드에 필요한 저장 공간이 부족합니다.");
             HttpURLConnection conn = null;
             try {
@@ -161,6 +191,7 @@ public final class AppUpdatePlugin extends Plugin {
                 verifyArchive(partial, release);
                 if (cancelled) throw new IOException("다운로드를 취소했습니다.");
                 if (!partial.renameTo(target)) throw new IOException("APK 파일을 저장하지 못했습니다.");
+                new AppUpdateCache(directory).save(release.toString());
                 downloaded = release; progress(size, size); call.resolve(new JSObject().put("ready", true));
             } finally {
                 if (conn != null) conn.disconnect(); connection = null;
@@ -184,10 +215,16 @@ public final class AppUpdatePlugin extends Plugin {
         call.resolve();
     }
     @PluginMethod public void install(PluginCall call) {
+        if (installerOpen) { call.reject("설치 화면이 이미 열려 있습니다. 설치를 완료하거나 취소한 뒤 다시 시도해주세요."); return; }
         run(call, () -> {
-            if (downloaded == null) throw new IOException("APK를 먼저 다운로드해주세요.");
+            if (pending() == null) { call.reject("APK 파일이 없습니다. 다시 다운로드해주세요.", "APK_MISSING"); return; }
             File file = new File(folder(), "BearMap.apk"); validate(downloaded);
             if (!file.isFile() || file.length() != downloaded.getLong("fileSize")) throw new IOException("APK 파일이 없습니다. 다시 다운로드해주세요.");
+            if (Build.VERSION.SDK_INT >= 26 && !getContext().getPackageManager().canRequestPackageInstalls()) {
+                // Download already verified the file. Ask permission before another expensive full-file check.
+                getActivity().runOnUiThread(() -> requestInstallPermission(call));
+                return;
+            }
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
             try (InputStream input = new FileInputStream(file)) {
                 byte[] block = new byte[65536]; int count;
@@ -201,19 +238,49 @@ public final class AppUpdatePlugin extends Plugin {
                         call.reject("수신 또는 이동기록을 종료한 뒤 업데이트를 설치해주세요."); return;
                     }
                     if (Build.VERSION.SDK_INT >= 26 && !getContext().getPackageManager().canRequestPackageInstalls()) {
-                        getActivity().startActivity(new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
-                            Uri.parse("package:" + getContext().getPackageName())));
-                        call.resolve(new JSObject().put("permissionRequired", true)); return;
+                        requestInstallPermission(call);
+                        return;
                     }
                     Uri uri = FileProvider.getUriForFile(getContext(), getContext().getPackageName() + ".fileprovider", file);
-                    Intent intent = new Intent(Intent.ACTION_VIEW).setDataAndType(uri, "application/vnd.android.package-archive")
-                        .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                    Intent intent = new Intent(Intent.ACTION_INSTALL_PACKAGE).setDataAndType(uri, "application/vnd.android.package-archive")
+                        .putExtra(Intent.EXTRA_RETURN_RESULT, true).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
                     intent.setClipData(android.content.ClipData.newRawUri("BearMap APK", uri));
-                    getActivity().startActivity(intent);
-                    call.resolve(new JSObject().put("installerOpened", true));
-                } catch (Exception e) { call.reject("설치 화면을 열지 못했습니다. 기기의 앱 설치 설정을 확인해주세요."); }
+                    installerOpen = true;
+                    startActivityForResult(call, intent, "installerResult");
+                } catch (Exception e) {
+                    installerOpen = false; android.util.Log.w("BearAppUpdate", "Installer handoff failed", e);
+                    call.reject("설치 화면을 열지 못했습니다. 기기의 앱 설치 설정을 확인해주세요. (" + e.getClass().getSimpleName() + ")");
+                }
             });
         });
+    }
+    private void requestInstallPermission(PluginCall call) {
+        try {
+            startActivityForResult(call, new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                Uri.parse("package:" + getContext().getPackageName())), "installPermissionResult");
+        } catch (Exception error) {
+            android.util.Log.w("BearAppUpdate", "Install permission settings failed", error);
+            call.reject("앱 설치 허용 설정을 열지 못했습니다. 기기 설정에서 앱 설치 허용을 확인해주세요.");
+        }
+    }
+    @ActivityCallback private void installPermissionResult(PluginCall call, ActivityResult result) {
+        if (call == null) return; // A recreated WebView restores the verified APK through getInfo/check.
+        if (Build.VERSION.SDK_INT < 26 || getContext().getPackageManager().canRequestPackageInstalls()) {
+            // The resultCode is not reliable for this settings screen; check the actual permission.
+            install(call);
+        } else call.resolve(new JSObject().put("permissionRequired", true));
+    }
+    @ActivityCallback private void installerResult(PluginCall call, ActivityResult result) {
+        installerOpen = false;
+        if (call == null) return;
+        if (result.getResultCode() == Activity.RESULT_OK) {
+            call.resolve(new JSObject().put("installed", true));
+        } else if (result.getResultCode() == Activity.RESULT_CANCELED) {
+            call.resolve(new JSObject().put("cancelled", true));
+        } else {
+            int status = result.getData() == null ? 0 : result.getData().getIntExtra("android.intent.extra.INSTALL_RESULT", 0);
+            call.reject("Android에서 APK 설치를 완료하지 못했습니다. (코드 " + status + ")");
+        }
     }
     @Override protected void handleOnDestroy() {
         cancelled = true; HttpURLConnection conn = connection; if (conn != null) conn.disconnect();
