@@ -15,7 +15,7 @@ import com.google.firebase.appcheck.playintegrity.PlayIntegrityAppCheckProviderF
 public class MainActivity extends BridgeActivity {
 	private static final String TAG = "BearPointMain";
 	private static final long LAUNCH_SPLASH_MIN_DURATION_MS = 1500L;
-	static final String WEB_ASSET_REVISION = "1.0.4-ui80";
+	static final String WEB_ASSET_REVISION = "1.0.4-ui82";
 
 	@Override
 	protected void load() {
@@ -38,6 +38,7 @@ public class MainActivity extends BridgeActivity {
 		}
 		registerPlugin(NativeTxtSharePlugin.class);
 		registerPlugin(RtlSdrPlugin.class);
+		registerPlugin(IcR30Plugin.class);
 		registerPlugin(GpsTrackingPlugin.class);
 		registerPlugin(BearPushPlugin.class);
 		registerPlugin(AppUpdatePlugin.class);

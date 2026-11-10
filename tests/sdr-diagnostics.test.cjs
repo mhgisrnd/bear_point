@@ -27,6 +27,19 @@ const animalCatalog = () => ({formatHz:hz=>String(hz/1e6),load:async()=>({notice
   {id:'2',code:'KF-112',frequencies:[]}
 ]})});
 
+test('USB reception shows the signal section once on start without scrolling on every reading',async()=>{
+  const ui=setup();ui.device.hasPermission=true;
+  await ui.trigger.click();await ui.button().click();await tick();
+  let scrolls=0;
+  ui.dialog.querySelector('[data-result]').scrollIntoView=()=>{scrolls++;};
+  ui.state.receptionState='receiving';
+  ui.state.reception={mode:'cw',frequencyHz:148241000,hasSamples:true,signalDbfs:-65,powerDbfs:-35};
+  ui.emit();
+  assert.equal(scrolls,1);
+  ui.emit();
+  assert.equal(scrolls,1);
+});
+
 test('CW detector uses directional power independently of confidence and keeps the target frequency',async()=>{
   const ui=setup();ui.device.hasPermission=true;
   await ui.trigger.click();await ui.button().click();await tick();
@@ -101,6 +114,23 @@ test('saved diagnostics remain available without a receiver and sharing uses the
   assert.equal(select.value,'sdr-diagnostic-old','status refresh must preserve the archive selection');
   await ui.dialog.querySelector('[data-diagnostic-share]').click();await tick();
   assert.equal(ui.plugin.sharedId,'sdr-diagnostic-old');
+});
+test('USB diagnostics stay visible before connection, during permission wait and after disconnect',async()=>{
+  const ui=setup();await ui.trigger.click();await tick();
+  const section=ui.dialog.querySelector('[data-diagnostic-section]');
+  assert.equal(section.hidden,false);
+  assert.equal(ui.dialog.querySelector('[data-diagnostic-start]').disabled,true);
+  assert.equal(ui.dialog.querySelector('[data-diagnostic-share]').disabled,true);
+  assert.equal(ui.dialog.querySelector('[data-usb-pairing]').hidden,false);
+  ui.state.state='permissionPending';ui.emit();
+  assert.equal(section.hidden,false);
+  ui.state.state='connected';ui.device.connected=true;ui.emit();
+  assert.equal(ui.dialog.querySelector('[data-usb-pairing]').hidden,true);
+  assert.equal(ui.dialog.querySelector('.sdr-status').hidden,true);
+  ui.state.state='idle';ui.device.connected=false;ui.emit();
+  assert.equal(section.hidden,false);
+  assert.equal(ui.dialog.querySelector('[data-usb-pairing]').hidden,false);
+  assert.equal(ui.dialog.querySelector('.sdr-status').hidden,false);
 });
 
 test('selected diagnostic deletion confirms, cancels and refreshes without requiring a USB receiver',async()=>{
@@ -237,9 +267,9 @@ test('individual animal selection searches and tunes exact registered A/B freque
   assert.equal(ui.dialog.querySelector('[data-animal-results]').hidden,false);
   await ui.dialog.querySelector('[data-freq-up="10"]').click();
   assert.equal(ui.dialog.querySelector('[data-frequency]').value,'148.24151');
-  assert.equal(ui.dialog.querySelector('[data-register-observation]').hidden,true);
-  assert.equal(ui.dialog.querySelector('[data-animal-clear]').disabled,true);
-  assert.equal(ui.dialog.querySelector('[data-animal-clear]').disabled,true);
+  assert.equal(ui.dialog.querySelector('[data-register-observation]').hidden,false);
+  assert.equal(ui.dialog.querySelector('[data-register-observation]').disabled,true);
+  assert.equal(ui.dialog.querySelector('[data-animal-clear]').disabled,false);
   await list.children[0].children[2].children[0].click();
   assert.equal(ui.dialog.querySelector('[data-frequency]').value,'148.2415');
   await ui.dialog.querySelector('[data-animal-list]').children[0].children[2].children[1].click();
@@ -252,7 +282,7 @@ test('animal registration waits for samples, stops reception and hands off the s
   const ui=setup(true,'injected',false,animalCatalog());ui.device.hasPermission=true;
   await ui.trigger.click();await ui.button().click();await tick();
   await ui.dialog.querySelector('[data-animal-list]').children[0].children[2].children[0].click();
-  const button=ui.dialog.querySelector('[data-register-observation]');assert.equal(button.hidden,true);
+  const button=ui.dialog.querySelector('[data-register-observation]');assert.equal(button.hidden,false);assert.equal(button.disabled,true);
   await ui.dialog.querySelector('[data-start]').click();
   ui.state.backgroundReceiving=true;ui.state.receptionState='receiving';
   ui.state.reception={mode:'cw',frequencyHz:148229500,listenFrequencyHz:148241500,sampleRate:1024000,
@@ -273,12 +303,56 @@ test('manual frequency changes cannot register an unrelated selected animal',asy
   await ui.dialog.querySelector('[data-animal-clear]').click();
   assert.equal(ui.dialog.querySelector('[data-frequency]').value,'148.2415');
   assert.equal(ui.dialog.querySelector('[data-frequency-field]').hidden,false);
-  assert.equal(ui.dialog.querySelector('[data-register-observation]').hidden,true);
+  assert.equal(ui.dialog.querySelector('[data-register-observation]').hidden,false);
+  assert.equal(ui.dialog.querySelector('[data-register-observation]').disabled,true);
   const search=ui.dialog.querySelector('[data-animal-search]');search.value='missing';search.events.input();
   assert.equal(ui.dialog.querySelector('[data-animal-list]').children[0].textContent,'검색 결과가 없습니다.');
 });
 
-function setup(android = true, bridgeMode = 'injected', listenerAsync = false, catalog = null, storage = null) {
+test('USB preserves explicit selection within 900 Hz including both boundaries and registers the actual sampled frequency',async()=>{
+  const catalog={formatHz:hz=>String(hz/1e6),load:async()=>({notice:'',items:[
+    {id:'1',code:'KF-110',frequencies:[{slot:'A',hz:148241000}]},
+    {id:'2',code:'KF-111',frequencies:[{slot:'A',hz:148241100}]}
+  ]})};
+  for(const offset of [-901,-900,-100,0,100,900,901]) {
+    const ui=setup(true,'injected',false,catalog);ui.device.hasPermission=true;
+    await ui.trigger.click();await ui.button().click();await tick();
+    await ui.dialog.querySelector('[data-animal-list]').children[0].children[2].children[0].click();
+    const hz=148241000+offset,frequency=ui.dialog.querySelector('[data-frequency]');
+    frequency.value=String(hz/1e6);frequency.events.input();
+    assert.equal(ui.dialog.querySelector('[data-animal-clear]').disabled,Math.abs(offset)>900,`offset ${offset}`);
+    const button=ui.dialog.querySelector('[data-register-observation]');
+    assert.equal(button.hidden,false);
+    assert.equal(button.disabled,true,'no samples yet');
+    await ui.dialog.querySelector('[data-start]').click();
+    ui.state.receptionState='receiving';
+    ui.state.reception={mode:'cw',frequencyHz:hz-12000,listenFrequencyHz:hz,hasSamples:true,powerDbfs:-56};
+    ui.emit();
+    assert.equal(button.disabled,Math.abs(offset)>900,`offset ${offset}`);
+    if(Math.abs(offset)<=900) {
+      let context;
+      ui.window.BearSdrRegistration={open:value=>{context=value;return true;}};
+      await button.click();
+      assert.equal(context.bearCode,'KF-110','overlapping ranges must not switch subjects');
+      assert.equal(context.frequencyHz,hz);
+    }
+  }
+});
+
+test('USB tolerance does not allow registration against old samples from a different tuned frequency',async()=>{
+  const ui=setup(true,'injected',false,animalCatalog());ui.device.hasPermission=true;
+  await ui.trigger.click();await ui.button().click();await tick();
+  await ui.dialog.querySelector('[data-animal-list]').children[0].children[2].children[0].click();
+  await ui.dialog.querySelector('[data-start]').click();
+  ui.state.receptionState='idle';
+  ui.state.reception={mode:'cw',listenFrequencyHz:148241500,hasSamples:true,powerDbfs:-56};ui.emit();
+  assert.equal(ui.dialog.querySelector('[data-register-observation]').disabled,false);
+  await ui.dialog.querySelector('[data-freq-up="100"]').click();
+  assert.equal(ui.dialog.querySelector('[data-animal-clear]').disabled,false);
+  assert.equal(ui.dialog.querySelector('[data-register-observation]').disabled,true);
+});
+
+function setup(android = true, bridgeMode = 'injected', listenerAsync = false, catalog = null, storage = null, receiverMount = null) {
   const trigger = new Element(), body = new Element();
   const device = { deviceId: '/usb/1', name: 'RTL2832U', vendorId: 3034, productId: 10290, candidate: true, hasPermission: false, connected: false };
   const state = { hostSupported: true, state: 'idle', devices: [device] };
@@ -335,9 +409,10 @@ function setup(android = true, bridgeMode = 'injected', listenerAsync = false, c
   if (android && bridgeMode === 'registered') capacitor.registerPlugin = () => plugin;
   if (android && bridgeMode === 'throws') capacitor.registerPlugin = () => { throw new Error('bridge init failure'); };
   const appWindow = { Capacitor: capacitor };
+  if (receiverMount) appWindow.BearIcR30 = { mount: receiverMount };
   if (storage) appWindow.localStorage = storage;
   if (catalog) appWindow.BearSdrAnimals = catalog;
-  vm.runInNewContext(spectrumSource + '\n' + source, {
+  vm.runInNewContext(fs.readFileSync('public/js/sdr/frequency-controls.js', 'utf8') + '\n' + spectrumSource + '\n' + source, {
     document: { getElementById: () => trigger, createElement: () => new Element(), body },
     window: appWindow, console
   });
@@ -354,6 +429,31 @@ function setup(android = true, bridgeMode = 'injected', listenerAsync = false, c
     deny() { state.state = 'idle'; permission.reject(new Error('권한 거부')); permission = null; callback(structuredClone(state)); },
   };
 }
+
+test('USB and Bluetooth use one favorite set and one filter state in both directions',async()=>{
+  let shared,refreshes=0;
+  const saved=new Map(),storage={getItem:key=>saved.get(key)||null,setItem:(key,value)=>saved.set(key,value)};
+  const ui=setup(true,'injected',false,animalCatalog(),storage,(_dialog,options)=>{
+    shared=options.favorites;
+    return {updateUsb(){},onOpen(){},selected:()=>false,refreshFavorites(){refreshes++;}};
+  });
+  ui.device.hasPermission=true;
+  await ui.trigger.click();await ui.button().click();await tick();
+  const filter=ui.dialog.querySelector('[data-animal-favorites-filter]');
+  assert.equal(shared.only(),false);
+  await ui.dialog.querySelector('[data-animal-list]').children[0].children[3].click();
+  assert.equal(shared.has('KF-110'),true);
+  await filter.click();
+  assert.equal(shared.only(),true);
+  assert.equal(filter.textContent,'★ 즐겨찾기');
+  const before=refreshes;
+  shared.toggleFilter();
+  assert.equal(shared.only(),false);
+  assert.equal(filter.textContent,'☆ 즐겨찾기');
+  assert.ok(refreshes>before);
+  shared.toggle('KF-110');
+  assert.equal(ui.dialog.querySelector('[data-animal-list]').children[0].children[3].textContent,'☆');
+});
 
 test('permission approval automatically opens USB once without a second click', async () => {
   const ui = setup();
@@ -1324,7 +1424,7 @@ test('five decimal digit tuning preserves 10 Hz steps through editing and CW rec
 });
 
 
-test('manual tuning clears selection and labels every exact matching catalog code without auto-selecting', async () => {
+test('nearby tuning keeps explicit selection and range badges show overlapping codes without auto-selecting',async()=>{
   const catalog={formatHz:hz=>String(hz/1e6),load:async()=>({notice:'',items:[
     {id:'1',code:'KF-110',frequencies:[{slot:'A',hz:148241230},{slot:'B',hz:149125000}]},
     {id:'2',code:'KF-111',frequencies:[{slot:'A',hz:148241240}]},
@@ -1333,21 +1433,39 @@ test('manual tuning clears selection and labels every exact matching catalog cod
   const ui=setup(true,'injected',false,catalog);ui.device.hasPermission=true;
   await ui.trigger.click();await ui.button().click();await tick();
   const list=ui.dialog.querySelector('[data-animal-list]'),label=ui.dialog.querySelector('[data-frequency-animal]');
-  await list.children[0].children[2].children[0].click();assert.equal(label.textContent,'KF-110');assert.equal(label.hidden,false);
+  await list.children[0].children[2].children[0].click();assert.equal(label.textContent,'KF-110, KF-111, KF-112');assert.equal(label.hidden,false);
   await ui.dialog.querySelector('[data-animal-list]').children[0].children[2].children[1].click();
   assert.equal(ui.dialog.querySelector('[data-animal-clear]').disabled,false,'registered A/B changes keep explicit selection');
   await list.children[0].children[2].children[0].click();
   await ui.dialog.querySelector('[data-freq-up="10"]').click();
-  assert.equal(label.textContent,'KF-111, KF-112');assert.equal(label.hidden,false);
-  assert.equal(ui.dialog.querySelector('[data-animal-clear]').disabled,true);
-  assert.equal(ui.dialog.querySelector('[data-animal-clear]').disabled,true);
-  assert.equal(ui.dialog.querySelector('[data-register-observation]').hidden,true);
+  assert.equal(label.textContent,'KF-110, KF-111, KF-112');assert.equal(label.hidden,false);
+  assert.equal(ui.dialog.querySelector('[data-animal-clear]').disabled,false);
+  assert.equal(ui.dialog.querySelector('[data-register-observation]').disabled,true);
   await ui.dialog.querySelector('[data-freq-up="10"]').click();
-  assert.equal(label.hidden,true,'nearby frequencies must not match');
-  const frequency=ui.dialog.querySelector('[data-frequency]');frequency.value='148.24123';frequency.events.input();
-  assert.equal(label.textContent,'KF-110');assert.equal(label.hidden,false);
+  assert.equal(label.hidden,false,'nearby frequencies must retain range badges');
+  const frequency=ui.dialog.querySelector('[data-frequency]');
+  frequency.value='149';frequency.events.input();
+  assert.equal(ui.dialog.querySelector('[data-animal-clear]').disabled,true);
+  frequency.value='148.24123';frequency.events.input();
+  assert.equal(label.textContent,'KF-110, KF-111, KF-112');assert.equal(label.hidden,false);
   assert.equal(ui.dialog.querySelector('[data-animal-clear]').disabled,true,'matching labels must not silently select a subject');
   frequency.value='';frequency.events.input();assert.equal(label.hidden,true);
+});
+
+test('USB frequency badge includes both 900 Hz boundaries without requiring an explicit selection',async()=>{
+  const catalog={formatHz:hz=>String(hz/1e6),load:async()=>({notice:'',items:[
+    {code:'KF-110',frequencies:[{slot:'A',hz:148241000}]}
+  ]})};
+  const ui=setup(true,'injected',false,catalog);ui.device.hasPermission=true;
+  await ui.trigger.click();await ui.button().click();await tick();
+  for(const offset of [-901,-900,0,900,901]) {
+    const frequency=ui.dialog.querySelector('[data-frequency]');
+    frequency.value=String((148241000+offset)/1e6);frequency.events.input();
+    const badge=ui.dialog.querySelector('[data-frequency-animal]');
+    assert.equal(badge.hidden,Math.abs(offset)>900,`offset ${offset}`);
+    assert.equal(badge.textContent,Math.abs(offset)<=900?'KF-110':'');
+    assert.equal(ui.dialog.querySelector('[data-animal-clear]').disabled,true);
+  }
 });
 
 
@@ -1384,10 +1502,10 @@ test('card A/B/C stays available during reception and switches only after stoppi
   ui.plugin.startReception=async o=>{order.push('start');await originalStart(o);};
   let release;ui.plugin.stopReception=()=>new Promise(resolve=>{order.push('stop');release=()=>{ui.state.receptionState='idle';ui.emit();resolve();};});
   const switching=slot(1).click();await tick();
-  assert.equal(ui.plugin.starts.length,1);assert.equal(ui.dialog.querySelector('[data-register-observation]').hidden,true);
+  assert.equal(ui.plugin.starts.length,1);assert.equal(ui.dialog.querySelector('[data-register-observation]').disabled,true);
   release();await switching;
   assert.deepEqual(order,['stop','start']);assert.equal(ui.plugin.starts[1].frequencyHz,149125000);
-  assert.equal(ui.plugin.starts[1].mode,'cw');assert.equal(ui.dialog.querySelector('[data-register-observation]').hidden,true);
+  assert.equal(ui.plugin.starts[1].mode,'cw');assert.equal(ui.dialog.querySelector('[data-register-observation]').disabled,true);
   ui.state.receptionState='receiving';ui.state.reception={mode:'cw',frequencyHz:149113000,listenFrequencyHz:149125000,hasSamples:true,powerDbfs:-56};ui.emit();
   assert.equal(ui.dialog.querySelector('[data-register-observation]').hidden,false);
   await slot(1).click();assert.equal(ui.plugin.starts.length,2,'same-frequency selection must not restart audio');
