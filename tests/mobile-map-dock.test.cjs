@@ -130,11 +130,15 @@ test('cancelling registration from another menu restores that menu and hides obs
   registration.classList.add('hidden');env.trigger(registration);
   assert.equal(env.api.getActive(),'tracking');assert.equal(env.calls.mapVisible,false);
 });
-test('temporary status remains visible in other menus and default text adds no extra row',()=>{
+test('status uses an overlay toast across menus without adding rows or replaying on menu changes',()=>{
   const env=environment(),doc=env.document;env.api.select('observations');
-  const status=doc.getElementById('status'),notice=doc.getElementById('mobile-map-dock').querySelector('.mobile-dock-notice');
-  status.textContent='삭제 취소됨';env.trigger(status);assert.equal(notice.hidden,false);assert.equal(notice.textContent,'삭제 취소됨');
-  status.textContent='반달가슴곰 위치추적분석';env.trigger(status);assert.equal(notice.hidden,true);
+  const messages=[];env.root.__bpShowToast=text=>messages.push(text);
+  const status=doc.getElementById('status');
+  status.textContent='삭제 취소됨';env.trigger(status);assert.deepEqual(messages,['삭제 취소됨']);
+  env.api.select('bears');assert.equal(messages.length,1);
+  status.textContent='저장 완료';env.trigger(status);assert.equal(messages.at(-1),'저장 완료');
+  status.textContent='반달가슴곰 위치추적분석';env.trigger(status);assert.equal(messages.length,2);
+  assert.equal(doc.querySelector('.mobile-dock-notice'),null);
 });
 test('tracking filters can reserve more list space without affecting other menus',()=>{
   const env=environment(),dock=env.document.getElementById('mobile-map-dock');

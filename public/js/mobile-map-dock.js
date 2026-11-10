@@ -8,7 +8,6 @@
     const dock = document.createElement('section'); dock.setAttribute('id','mobile-map-dock'); dock.hidden=true; dock.setAttribute('aria-label','지도 메뉴');
     const icon = paths => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths}</svg>`;
     dock.innerHTML=`<div class="mobile-dock-head"><button type="button" class="mobile-dock-fold" aria-controls="mobile-dock-content" aria-expanded="false"><span class="mobile-dock-grip" aria-hidden="true"></span><strong></strong><span class="mobile-dock-chevron" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7 14 5-5 5 5"/></svg></span></button><div class="mobile-dock-actions"></div></div>
-      <p class="mobile-dock-notice" role="status" aria-live="polite" hidden></p>
       <div class="mobile-dock-content" id="mobile-dock-content" hidden></div>
       <nav class="mobile-dock-nav" aria-label="지도 기능">
         <button type="button" data-menu="observations">${icon('<path d="m7 21 5-17 5 17M9 14h6M8 18h8M5 5a10 10 0 0 0 0 8m14-8a10 10 0 0 1 0 8M8 7a6 6 0 0 0 0 4m8-4a6 6 0 0 1 0 4"/>')}<span>관측점</span></button>
@@ -18,7 +17,8 @@
     document.body.append(dock);
     const content=dock.querySelector('.mobile-dock-content'),fold=dock.querySelector('.mobile-dock-fold');
     const actions=dock.querySelector('.mobile-dock-actions'),title=fold.querySelector('strong');
-    const notice=dock.querySelector('.mobile-dock-notice'),status=document.getElementById('status');
+    const status=document.getElementById('status');
+    let lastStatusText='';
     const nav=[...dock.querySelectorAll('[data-menu]')];
     const panels={observations:obs,bears,tracking:track};
     const names={observations:'관측점',bears:'개체 추적',tracking:'이동 기록'};
@@ -66,11 +66,11 @@
       paintStatus();
       root.requestAnimationFrame(measure);
     }
-    function paintStatus(){
+    function paintStatus(force=false){
       const text=String(status?.textContent||'').trim();
-      bears.classList.toggle('has-transient-status',!!text&&text!=='반달가슴곰 위치추적분석');
-      notice.hidden=active==='bears'||!text||text==='반달가슴곰 위치추적분석';
-      notice.textContent=notice.hidden?'':text;
+      if(!force&&text===lastStatusText)return;
+      lastStatusText=text;
+      if(text&&text!=='반달가슴곰 위치추적분석')root.__bpShowToast?.(text);
     }
     function select(name,{activate=true,open=true}={}){
       if(mobile===null||!panels[name])return;
@@ -162,7 +162,7 @@
     recordObserver.observe(oldGps,{attributes:true,attributeFilter:['class'],childList:true,subtree:true});
     const countObserver=new MutationObserver(()=>{if(mobile&&active==='observations'&&!expanded)paint();});
     countObserver.observe(document.getElementById('obs-list-count'),{childList:true,subtree:true,characterData:true});
-    const statusObserver=new MutationObserver(()=>{if(mobile!==null)paintStatus();});
+    const statusObserver=new MutationObserver(()=>{if(mobile!==null)paintStatus(true);});
     if(status)statusObserver.observe(status,{childList:true,subtree:true,characterData:true});
     const registrationObserver=new MutationObserver(()=>{
       const open=!registration.classList.contains('hidden');

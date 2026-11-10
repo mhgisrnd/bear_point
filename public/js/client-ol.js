@@ -232,12 +232,14 @@
   }
 
   // 안드로이드 뒤로가기 종료 안내를 하단 토스트로 표시한다.
-  function showBackExitToast(message) {
+  function showBackExitToast(message, durationMs = BACK_EXIT_DOUBLE_PRESS_MS) {
     const text = String(message || "한번 더 뒤로가면 앱이 꺼져요.").trim();
     if (!text) return;
 
     if (!backExitToastEl) {
       const toast = document.createElement("div");
+      toast.setAttribute("role", "status");
+      toast.setAttribute("aria-live", "polite");
       toast.style.position = "fixed";
       toast.style.left = "50%";
       toast.style.bottom = "calc(var(--safe-bottom, 0px) + 72px)";
@@ -254,7 +256,8 @@
       toast.style.alignItems = "center";
       toast.style.gap = "8px";
       toast.style.textAlign = "center";
-      toast.style.whiteSpace = "nowrap";
+      toast.style.whiteSpace = "normal";
+      toast.style.boxSizing = "border-box";
       toast.style.overflow = "hidden";
       toast.style.textOverflow = "ellipsis";
       toast.style.boxShadow = "0 12px 28px rgba(2,6,23,0.36)";
@@ -274,7 +277,8 @@
       const textEl = document.createElement("span");
       textEl.style.display = "block";
       textEl.style.minWidth = "0";
-      textEl.style.whiteSpace = "nowrap";
+      textEl.style.whiteSpace = "normal";
+      textEl.style.overflowWrap = "anywhere";
       textEl.style.overflow = "hidden";
       textEl.style.textOverflow = "ellipsis";
 
@@ -302,8 +306,10 @@
       backExitToastHideTimer = null;
     }
 
-    backExitToastHideTimer = window.setTimeout(resetBackExitState, BACK_EXIT_DOUBLE_PRESS_MS);
+    backExitToastHideTimer = window.setTimeout(resetBackExitState, durationMs);
   }
+
+  window.__bpShowToast = message => showBackExitToast(message, 3000);
 
   function resetBackExitState() {
     lastBackPressAt = 0;

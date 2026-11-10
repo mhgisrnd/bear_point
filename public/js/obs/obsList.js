@@ -1077,18 +1077,19 @@ window.createObsListModule = function createObsListModule({
           margin: 0;
         }
 
-        @media (max-width: 640px) {
-          #analysis-dialog-overlay {
-            width: calc(100vw - 16px) !important;
-            left: 8px !important;
-            transform: none !important;
-          }
+        #analysis-dialog-panel {
+          box-sizing: border-box;
+          min-width: 0;
+        }
+        #analysis-dialog-desc,
+        #analysis-dialog-error {
+          white-space: pre-line;
+          overflow-wrap: anywhere;
+        }
+        #analysis-dialog-body > * {
+          min-width: 0;
         }
         @media (max-width: 480px) {
-          #analysis-dialog-overlay {
-            width: calc(100vw - 12px) !important;
-            left: 6px !important;
-          }
           #analysis-dialog-panel {
             padding: 8px !important;
           }
@@ -1141,7 +1142,7 @@ window.createObsListModule = function createObsListModule({
     overlay.style.top = "calc(8px + var(--safe-top))";
     overlay.style.left = "50%";
     overlay.style.transform = "translateX(-50%)";
-    overlay.style.width = "min(640px, calc(100vw - 20px))";
+    overlay.style.width = "min(360px, calc(100vw - 48px))";
     overlay.style.zIndex = "22000";
     overlay.style.display = "none";
     overlay.style.pointerEvents = "none";
