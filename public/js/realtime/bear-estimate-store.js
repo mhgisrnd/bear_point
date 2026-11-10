@@ -35,6 +35,7 @@
         analysis_options: decode(row.analysis_options) || previous?.analysis_options || payload.analysis_options || {},
         analysis_rays: decode(row.analysis_rays) || previous?.analysis_rays || payload.analysis_rays || [],
         analysis_intersections: decode(row.analysis_intersections) || previous?.analysis_intersections || payload.analysis_intersections || [],
+        estimation_method: row.estimation_method ?? payload.estimation_method ?? previous?.estimation_method ?? null,
         intersections_count: row.intersections_count ?? previous?.intersections_count ?? null
       });
     }
@@ -85,12 +86,23 @@
     const native = () => !!window.Capacitor?.isNativePlatform();
     const database = () => window.BearSQLiteConfig?.dbName || "BearPointData";
     const sqlite = () => window.Capacitor.Plugins.CapacitorSQLite;
-    const columns = ["id","bear_code","owner","team_id","team_name","team_color","place","admin_region","lat","lng","lat_dms","lng_dms","intersections_count","source_observation_ids","source_observations_json","analysis_rays_json","intersections_json","analysis_options_json","analysis_diagnostics_json","created_at","shared_at","share_pending"];
+    const columns = ["id","bear_code","owner","team_id","team_name","team_color","place","admin_region","lat","lng","lat_dms","lng_dms","intersections_count","estimation_method","source_observation_ids","source_observations_json","analysis_rays_json","intersections_json","analysis_options_json","analysis_diagnostics_json","created_at","shared_at","share_pending"];
     let queue = Promise.resolve();
     function serialize(action) { const result = queue.then(action); queue = result.catch(() => {}); return result; }
     function readWeb() {
       const rows = JSON.parse(window.localStorage.getItem(key) || "[]");
       if (!Array.isArray(rows)) throw new Error("저장된 개체 위치 자료 형식이 올바르지 않습니다.");
+      let changed = false;
+      for (const row of rows) {
+        if (row.estimation_method != null) continue;
+        const method = decode(row.analysis_options_json)?.estimationMethod;
+        const sources = decode(row.source_observations_json);
+        row.estimation_method = ["single", "intersection"].includes(method) ? method
+          : Array.isArray(sources) && sources.length === 1 ? "single"
+          : Number(row.intersections_count) > 0 || Array.isArray(sources) && sources.length > 1 ? "intersection" : null;
+        if (row.estimation_method) changed = true;
+      }
+      if (changed) window.localStorage.setItem(key, JSON.stringify(rows));
       return rows;
     }
     async function ready() { if (native() && !(await window.BearSQLite.initialize()).ready) throw new Error("SQLite 연결이 준비되지 않았습니다."); }
@@ -100,6 +112,8 @@
     }
     function insert(input) {
       const row = Object.fromEntries(columns.map(column => [column, input[column] ?? null]));
+      row.estimation_method = input.estimation_method || decode(input.analysis_options_json)?.estimationMethod || null;
+      if (row.estimation_method !== null && !["single", "intersection"].includes(row.estimation_method)) throw new Error("Invalid estimation_method");
       row.share_pending = input.share_pending ? 1 : 0;
       return serialize(async () => {
         await ready();

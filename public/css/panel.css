@@ -3188,6 +3188,33 @@
 .bears-item__detail-table td { color: #243c56; background: #fff; }
 .bears-item__detail-table tr:last-child th, .bears-item__detail-table tr:last-child td { border-bottom: 0; }
 .bears-item__detail-value { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.estimate-method {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 7px;
+  border: 1px solid;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 14px;
+  white-space: nowrap;
+}
+.estimate-method--intersection {
+  color: #1d4ed8;
+  background: #eff6ff;
+  border-color: #bfdbfe;
+}
+.estimate-method--single {
+  color: #c2410c;
+  background: #fff7ed;
+  border-color: #fed7aa;
+}
+.estimate-method--unknown {
+  color: #64748b;
+  background: #f8fafc;
+  border-color: #e2e8f0;
+}
 .bears-item__registrar { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .bears-item__registrar > .bears-item__detail-value { flex: 0 1 auto; }
 .bears-item__registrar > .bears-item__team { flex: 0 1 auto; padding-left: 8px; border-left: 1px solid #dfe7f0; }

@@ -2966,6 +2966,7 @@
         <div class="obs-detail-frame">
           <table class="obs-detail-table" aria-label="개체 추적위치 상세 정보"><tbody>
             ${row("지명", placeName)}
+            <tr><th scope="row">추정 방식</th><td>${buildEstimationMethodHtml(item)}</td></tr>
             <tr><th scope="row">등록자</th><td><div class="obs-detail-registrar"><span class="obs-detail-registrar-name">${escapeHtml(ownerName)}</span><span class="obs-detail-team-badge" title="${escapeHtml(teamName)}" aria-label="소속 팀 ${escapeHtml(teamName)}" style="--team-color:${teamColor};--team-background:${teamColor}18;--team-border:${teamColor}55"><i aria-hidden="true"></i><span>${escapeHtml(teamName)}</span></span></div></td></tr>
             ${row("위치", item && (item.admin_region || item.adminRegion) || "미지정")}
           </tbody></table>
@@ -5042,6 +5043,25 @@
     }
   }
 
+  // 기존 자료는 원본 관측 개수로 판별한다.
+  function getEstimationMethodLabel(item) {
+    if (item?.estimation_method === "single") return "\uB2E8\uC77C \uAD00\uCE21";
+    if (item?.estimation_method === "intersection") return "\uAD50\uCC28 \uBD84\uC11D";
+    const options = normalizeAnalysisOptions(item && (item.analysis_options || item.analysis_options_json || item.analysisOptions || item.options));
+    if (options?.estimationMethod === "single") return "단일 관측";
+    if (options?.estimationMethod === "intersection") return "교차 분석";
+    const sources = parseBearEstimateJson(item && (item.source_observations || item.source_observations_json || item.sourceObservations), "array");
+    if (sources?.length === 1) return "단일 관측";
+    if (sources?.length > 1 || Number(item?.intersections_count) > 0) return "교차 분석";
+    return "미기록";
+  }
+
+  function buildEstimationMethodHtml(item) {
+    const label = getEstimationMethodLabel(item);
+    const method = label === "단일 관측" ? "single" : label === "교차 분석" ? "intersection" : "unknown";
+    return '<span class="estimate-method estimate-method--' + method + '">' + label + '</span>';
+  }
+
   function normalizeAnalysisOptions(value) {
     const options = parseBearEstimateJson(value, "object");
     if (!options) return null;
@@ -6077,6 +6097,7 @@
         if (currentAnalysisPoint !== point) return;
         await localEstimateStore.insert({ id, bear_code: bearCode, ...identity, place: placeName || null,
           admin_region: adminRegion, lat: point.lat, lng: point.lng, lat_dms: latDms, lng_dms: lngDms,
+          estimation_method: point.analysisOptions?.estimationMethod || point.options?.estimationMethod || null,
           intersections_count: intersectionsCount, source_observation_ids: sourceIds, source_observations_json: sourceObservationsJson,
           analysis_rays_json: analysisRaysJson, intersections_json: intersectionsJson, analysis_options_json: analysisOptionsJson,
           analysis_diagnostics_json: analysisDiagnosticsJson, created_at: createdAtKst, share_pending: shareRealtime });
@@ -6105,6 +6126,7 @@
               lng: point.lng,
               lat_dms: latDms,
               lng_dms: lngDms,
+              estimation_method: point.analysisOptions?.estimationMethod || point.options?.estimationMethod || null,
               intersections_count: intersectionsCount,
               source_observations: JSON.parse(sourceObservationsJson),
               analysis_options: JSON.parse(analysisOptionsJson),
@@ -6398,6 +6420,7 @@
     lines.push("  곰 추적위치 결과");
     lines.push("========================================");
     lines.push("코드     : " + bearCode);
+    lines.push("추정 방식 : " + getEstimationMethodLabel(it));
     lines.push("등록자   : " + ownerName);
     lines.push("지명     : " + placeName);
     lines.push("위치     : " + (it.admin_region || it.adminRegion || "미지정"));
@@ -6890,7 +6913,7 @@
         '  <div class="bears-empty__icon" aria-hidden="true">🐻</div>',
         '  <div class="bears-empty__title">곰 추적위치 목록이 비어 있습니다</div>',
         '  <div class="bears-empty__desc">관측점 위치분석 결과를 저장하면 목록이 표시됩니다.</div>',
-        '  <div class="bears-empty__hint">관측점 목록에서 2개 이상 선택 후 위치분석을 실행해보세요.</div>',
+        '  <div class="bears-empty__hint">관측점 목록에서 1개 이상 선택 후 위치분석을 실행해보세요.</div>',
         '  <button class="bears-empty__action" type="button">관측점 목록 열기</button>',
         '</div>'
       ].join('');
@@ -6936,6 +6959,7 @@
         '</div>' +
         '<div class="bears-item__detail-frame"><table class="bears-item__detail-table" aria-label="개체 추적위치 정보"><tbody>' +
           '<tr><th scope="row">등록자</th><td><div class="bears-item__registrar"><span class="bears-item__detail-value" title="' + escapeHtml(ownerName) + '">' + escapeHtml(ownerName) + '</span><span class="bears-item__team" style="--team-color:' + teamColor + '" title="' + escapeHtml(teamName) + '" aria-label="소속 팀 ' + escapeHtml(teamName) + '"><i aria-hidden="true"></i><span>' + escapeHtml(teamName) + '</span></span></div></td></tr>' +
+          '<tr><th scope="row">추정 방식</th><td>' + buildEstimationMethodHtml(it) + '</td></tr>' +
           '<tr><th scope="row">위치</th><td><span class="bears-item__detail-value" title="' + escapeHtml(regionName) + '">' + escapeHtml(regionName) + '</span></td></tr>' +
         '</tbody></table></div>';
 
@@ -7069,6 +7093,7 @@
               lng: Number(row.lng),
               lat_dms: row.lat_dms || null,
               lng_dms: row.lng_dms || null,
+              estimation_method: row.estimation_method || null,
               intersections_count: row.intersections_count,
               source_observations: parseBearEstimateJson(row.source_observations_json, "array"),
               analysis_options: normalizeAnalysisOptions(row.analysis_options_json),

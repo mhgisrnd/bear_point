@@ -7,7 +7,7 @@
 //         options: distanceLimitM, declinationDeg
 //
 //   ① 유효성 검사 (validateObservations)
-//      - 관측점 2개 미만 → 실패 (NEED_MIN_TWO)
+//      - 관측점 없음 → 실패 (NEED_OBSERVATION); 1개는 지정 거리로 추정
 //      - bearCode 없음   → 실패 (BEAR_CODE_REQUIRED)
 //      - bearCode 불일치 → 실패 (MISMATCH_BEAR_CODE)
 //      - 좌표/방위각 오류 → 실패 (INVALID_COORDINATE / INVALID_HEADING)
@@ -170,11 +170,11 @@
   }
 
   // 관측 데이터 배열의 유효성을 검사한다.
-  // 검사 항목: 2개 이상 여부, 곰 코드 일치, 위경도/방위각 값 존재 여부.
+  // 검사 항목: 1개 이상 여부, 곰 코드 일치, 위경도/방위각 값 존재 여부.
   // 반환: { ok: true, bearCode } 또는 { ok: false, code, message }
   function validateObservations(observations) {
-    if (!Array.isArray(observations) || observations.length < 2) {
-      return { ok: false, code: "NEED_MIN_TWO", message: "관측점은 2개 이상 필요합니다." };
+    if (!Array.isArray(observations) || observations.length < 1) {
+      return { ok: false, code: "NEED_OBSERVATION", message: "관측점은 1개 이상 필요합니다." };
     }
 
     const bearCode = String(observations[0].bearCode || "").trim();
@@ -234,6 +234,32 @@
         adjustedBearing
       };
     });
+
+    // 단일 관측은 지정 거리로 추정하며 교차점으로 취급하지 않는다.
+    if (observations.length === 1) {
+      if (!Number.isFinite(maxDistanceM)) {
+        return { ok: false, code: "DISTANCE_REQUIRED", message: "단일 관측은 0보다 큰 유한한 거리가 필요합니다.", diagnostics: null };
+      }
+      const obs = observations[0];
+      const angularDistance = maxDistanceM / EARTH_RADIUS_M;
+      const bearing = toRadians(rays[0].adjustedBearing);
+      const latitude = toRadians(Number(obs.lat));
+      const longitude = toRadians(Number(obs.lng));
+      const targetLat = Math.asin(Math.max(-1, Math.min(1,
+        Math.sin(latitude) * Math.cos(angularDistance) + Math.cos(latitude) * Math.sin(angularDistance) * Math.cos(bearing))));
+      const targetLng = longitude + Math.atan2(Math.sin(bearing) * Math.sin(angularDistance) * Math.cos(latitude),
+        Math.cos(angularDistance) - Math.sin(latitude) * Math.sin(targetLat));
+      return {
+        ok: true, code: "OK", message: "단일 관측 위치 추정 완료",
+        result: {
+          bearCode: validation.bearCode, lat: toDegrees(targetLat), lng: ((toDegrees(targetLng) + 540) % 360) - 180,
+          intersectionsCount: 0, totalPairCount: 0, spreadM: null,
+          options: { distanceLimitM: maxDistanceM, declinationDeg, estimationMethod: "single" },
+          analysisDetails: { originLat, rays, intersections: [] }
+        },
+        diagnostics: { parallelCount: 0, backwardCount: 0, outOfRangeCount: 0 }
+      };
+    }
 
     const intersections = [];
     let parallelCount = 0;   // 두 방위선이 평행하여 교차점을 구할 수 없는 쌍의 수
@@ -323,7 +349,8 @@
         spreadM: Number.isFinite(spreadM) ? spreadM : 0,
         options: {
           distanceLimitM: Number.isFinite(maxDistanceM) ? maxDistanceM : null,
-          declinationDeg
+          declinationDeg,
+          estimationMethod: "intersection"
         },
         analysisDetails: {
           originLat,

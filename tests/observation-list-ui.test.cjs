@@ -54,6 +54,7 @@ test("animal detail uses compact full-width rows and retains export/delete permi
     legacyTmCoordFromWgs84: () => [260052.486, 193077.416], formatPopupCoordinate: value => String(value),
     formatKstDateTimeLabel: value => String(value) });
   const start = clientSource.indexOf("  function buildBearEstimatePopupHtml(item) {");
+  vm.runInContext(clientSource.slice(clientSource.indexOf("  function parseBearEstimateJson("), clientSource.indexOf("  // 웹 환경에서 bears.json")), context);
   const end = clientSource.indexOf("  const analysisGuideLayer", start);
   vm.runInContext(clientSource.slice(start, end), context);
   const item = { bear_code: "005", owner: '긴 등록자 <script>', place: "긴 지명", admin_region: "전라남도 구례군 토지면",

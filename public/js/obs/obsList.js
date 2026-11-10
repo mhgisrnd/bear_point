@@ -835,7 +835,7 @@ window.createObsListModule = function createObsListModule({
     }
 
     if (btnAnalysis) {
-      const canAnalyze = count >= 2;
+      const canAnalyze = count >= 1;
       btnAnalysis.hidden = !canAnalyze;
       btnAnalysis.disabled = !canAnalyze;
       btnAnalysis.style.opacity = canAnalyze ? "1" : "0.45";
@@ -1186,7 +1186,7 @@ window.createObsListModule = function createObsListModule({
 
     const desc = document.createElement("div");
     desc.id = "analysis-dialog-desc";
-    desc.textContent = "입력값 변경 시 지도 프리뷰가 즉시 반영됩니다.\n\n３점이상 교차점이면 산술평균 중심점을 사용하며, \n한 쌍이라도 불일치 징후가 있으면 실패 처리됩니다.";
+    desc.textContent = "입력값 변경 시 지도 프리뷰가 즉시 반영됩니다.\n관측점 1개는 방향각에 편각을 더한 방향으로 지정 거리만큼 이동한 위치를 추정합니다.\n\n３점이상 교차점이면 산술평균 중심점을 사용하며, \n한 쌍이라도 불일치 징후가 있으면 실패 처리됩니다.";
     desc.style.fontSize = "12px";
     desc.style.color = "rgba(255,255,255,0.85)";
     desc.style.whiteSpace = "pre-line";
@@ -1655,8 +1655,8 @@ window.createObsListModule = function createObsListModule({
     }
 
     const selectedItems = getSelectedObservations();
-    if (selectedItems.length < 2) {
-      statusEl.textContent = "⚠️ 위치분석은 관측점 2개 이상을 선택해야 합니다.";
+    if (selectedItems.length < 1) {
+      statusEl.textContent = "⚠️ 위치분석은 관측점 1개 이상을 선택해야 합니다.";
       highlightStatusOnce();
       return;
     }
@@ -1688,7 +1688,7 @@ window.createObsListModule = function createObsListModule({
     const analysisResult = optionInput.analysisResult;
 
     const point = analysisResult.result;
-    statusEl.textContent = `📍 추정 위치 계산 완료 (${point.bearCode}) 교차 ${point.intersectionsCount}건`;
+    statusEl.textContent = `📍 추정 위치 계산 완료 (${point.bearCode}) ${point.options.estimationMethod === "single" ? "단일 관측 · " + point.options.distanceLimitM + "m" : "교차 " + point.intersectionsCount + "건"}`;
     flyToLatLng([point.lat, point.lng], 16);
 
     if (typeof onAnalysisResult === "function") {

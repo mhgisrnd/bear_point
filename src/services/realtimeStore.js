@@ -16,6 +16,7 @@ const BEAR_ESTIMATE_SELECT_SQL = `
     lng,
     lat_dms,
     lng_dms,
+    estimation_method,
     intersections_count,
     source_observations,
     analysis_options,
@@ -62,13 +63,19 @@ function normalizeInsertPayload(body) {
     }
   }
 
-  const storedData = { ...data };
+  const estimationMethod = data.estimation_method ?? data.analysis_options?.estimationMethod ??
+    (data.source_observations?.length === 1 ? "single" : data.source_observations?.length > 1 || Number(data.intersections_count) > 0 ? "intersection" : null);
+  if (estimationMethod !== null && !["single", "intersection"].includes(estimationMethod)) {
+    throw Object.assign(new Error("Invalid estimation_method"), { statusCode: 400 });
+  }
+  const storedData = { ...data, estimation_method: estimationMethod };
   if (data.analysis_options != null) {
     const { spreadToleranceM, ...activeOptions } = data.analysis_options;
     storedData.analysis_options = activeOptions;
   }
 
   return {
+    estimationMethod,
     bearEstimateId:
       data.bear_estimate_id != null
         ? String(data.bear_estimate_id)
@@ -285,14 +292,15 @@ async function insertEstimateRow(query, payload) {
         analysis_intersections,
         source_created_at,
         use_yn,
-        payload
+        payload,
+        estimation_method
       )
       VALUES (
         $1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb,
         $11::jsonb, $12::jsonb, $13::jsonb,
         CASE WHEN $14::text = '' THEN NULL ELSE ($14::timestamptz AT TIME ZONE 'Asia/Seoul') END,
         TRUE,
-        $15::jsonb
+        $15::jsonb, $16
       )
       RETURNING
         id,
@@ -304,6 +312,7 @@ async function insertEstimateRow(query, payload) {
         lng,
         lat_dms,
         lng_dms,
+        estimation_method,
         intersections_count,
         source_observations,
         analysis_options,
@@ -331,6 +340,7 @@ async function insertEstimateRow(query, payload) {
       payload.analysisIntersections,
       payload.sourceCreatedAt,
       payload.payload,
+      payload.estimationMethod,
     ]
   );
 
@@ -370,6 +380,7 @@ async function updateRealtimeBearEstimateById(id, body, options = {}) {
         lng,
         lat_dms,
         lng_dms,
+        estimation_method,
         intersections_count,
         source_observations,
         analysis_options,
