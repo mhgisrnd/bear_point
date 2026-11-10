@@ -23,11 +23,54 @@ test('recording records stay local and native uses the explicit movement endpoin
  const f=fixture();f.tracks[0].status='recording';assert.equal((await f.sync.sync()).uploaded,0);assert.equal(f.calls.length,0);
  assert.equal(endpoint({Capacitor:{isNativePlatform:()=>true},BEAR_RUNTIME_CONFIG:{movementApiUrl:'https://admin.test/api/realtime/movement-tracks'}}),'https://admin.test/api/realtime/movement-tracks');
 });
+test('a rejected legacy record stays local and does not block later uploads',async()=>{
+ const f=fixture({count:2}), attempts=[];
+ const plugin={status:async()=>({}),list:async()=>({items:f.tracks}),detail:async({id})=>f.tracks.find(track=>track.id===id)};
+ const sync=create({win:f.win,plugin,fetchImpl:async(_url,options)=>{
+  const {id}=JSON.parse(options.body);attempts.push(id);
+  return id==='id-0'?{status:400,ok:false,json:async()=>({message:'기록 간격을 확인해 주세요.'})}
+   :{ok:true,json:async()=>({ok:true,id})};
+ }});
+ await assert.rejects(sync.sync(),/1건 전송 완료 · 1건 전송 실패/);
+ assert.equal(sync.acknowledged('id-0'),false);
+ assert.equal(sync.acknowledged('id-1'),true);
+ assert.equal(f.tracks.length,2);
+ await assert.rejects(sync.sync(),/기록 간격/);
+ assert.deepEqual(attempts,['id-0','id-1','id-0']);
+});
+test('an unexposed server route reports the deployment failure',async()=>{
+ const f=fixture();
+ const sync=create({win:f.win,plugin:{},fetchImpl:async()=>({
+  ok:false,status:403,json:async()=>({message:'허용되지 않은 모바일 API 요청입니다.'})
+ })});
+ await assert.rejects(sync.refreshShared(),/서버 배포 상태/);
+});
 test('empty GPS sessions are skipped even if a legacy store lists them as saved',async()=>{
  const f=fixture();f.tracks[0].point_count=0;f.tracks[0].points=[];
  const result=await f.sync.sync();assert.equal(result.uploaded,0);assert.equal(result.eligible,0);assert.equal(result.skipped,1);assert.equal(f.calls.length,0);
  assert.equal(notice(result),'');assert.equal(notice(result,true),'전송할 이동 기록이 없습니다.');
- const g=fixture();g.tracks[0].points=[];assert.equal((await g.sync.sync()).eligible,0);assert.equal(g.calls.length,0);
+ const g=fixture();g.tracks[0].points=[];await assert.rejects(g.sync.sync(),/GPS 좌표/);assert.equal(g.calls.length,0);
+});
+test('old receipts are rechecked against the server and deleted records stay hidden without removing local data',async()=>{
+ const f=fixture({count:3}), sent=[];
+ const [shared,missing,deleted]=f.tracks;
+ for(const row of f.tracks)f.win.localStorage.setItem('bearpoint.gps-uploaded.'+row.id,'1');
+ missing.point_count=3;
+ const plugin={status:async()=>({}),list:async()=>({items:f.tracks}),detail:async({id})=>f.tracks.find(row=>row.id===id)};
+ const fetchImpl=async(_url,options)=>{
+  if(options.method==='POST'){
+   const {id,point_count}=JSON.parse(options.body);sent.push(id);assert.equal(point_count,1);
+   return {ok:true,json:async()=>({ok:true,id,deleted:id===deleted.id})};
+  }
+  return {ok:true,json:async()=>({ok:true,total:1,pageSize:100,items:[shared]})};
+ };
+ const sync=create({win:f.win,plugin,fetchImpl});
+ await sync.refreshShared();
+ assert.equal((await sync.sync()).uploaded,1);
+ assert.deepEqual(sent,[missing.id,deleted.id]);
+ assert.deepEqual((await sync.list({})).items.map(row=>row.id).sort(),[missing.id,shared.id].sort());
+ assert.equal(f.tracks.length,3);
+ assert.equal((await create({win:f.win,plugin,fetchImpl}).list({})).total,2);
 });
 test('upload acknowledgements never remove local history, including after reinitializing the sync client',async()=>{
  const f=fixture(),before=JSON.stringify(f.tracks);await f.sync.sync();assert.equal(JSON.stringify(f.tracks),before);

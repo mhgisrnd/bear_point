@@ -5363,16 +5363,18 @@
   });
 
   const btnBearsRefresh = document.getElementById("btn-bears-refresh");
-  let bearRefreshInProgress = false;
+  let bearRefreshInProgress = false, lastBearRetry = 0;
   async function refreshUnifiedBearList(options) {
     if (bearRefreshInProgress) return;
+    const retry = options?.retry !== false;
+    if (retry) lastBearRetry = Date.now();
     bearRefreshInProgress = true;
     if (btnBearsRefresh) btnBearsRefresh.disabled = true;
     try {
       await refreshBearEstimatePanel();
       if (realtimeListModule && navigator.onLine !== false) {
         const result = await realtimeListModule.refresh({ silent: !!options?.silent });
-        if (result.ok) {
+        if (result.ok && retry) {
           await uploadUnsharedBearEstimates(currentBearEstimateItems, { automatic: true });
         }
       }
@@ -5383,14 +5385,19 @@
       if (btnBearsRefresh) btnBearsRefresh.disabled = false;
     }
   }
-  if (btnBearsRefresh) btnBearsRefresh.addEventListener("click", refreshUnifiedBearList);
-  window.addEventListener("online", refreshUnifiedBearList);
-  document.addEventListener("visibilitychange", function () {
-    if (!document.hidden && navigator.onLine !== false) void refreshUnifiedBearList({ silent: true });
-  });
-  window.setInterval(function () {
-    if (!document.hidden && navigator.onLine !== false) void refreshUnifiedBearList({ silent: true });
-  }, 30000);
+  if (btnBearsRefresh) btnBearsRefresh.addEventListener("click", () => refreshUnifiedBearList({ retry: false }));
+  function refreshVisibleBearList(forceRetry = false) {
+    if (document.hidden || navigator.onLine === false) return;
+    const retry = forceRetry || Date.now() - lastBearRetry >= 30000;
+    const dock = window.BearMobileDock;
+    const listVisible = panelEl?.getClientRects().length && !panelEl.classList.contains("collapsed") &&
+      (!dock?.isDocked() || dock.getActive() === "bears");
+    const hasPending = currentBearEstimateItems.some(item => Number(item.share_pending) === 1);
+    if (listVisible || (retry && (forceRetry || hasPending))) void refreshUnifiedBearList({ silent: true, retry });
+  }
+  window.addEventListener("online", () => refreshVisibleBearList(true));
+  document.addEventListener("visibilitychange", () => refreshVisibleBearList(true));
+  window.setInterval(refreshVisibleBearList, 15000);
 
   if (btnBearsDownloadAllXlsEl) {
     btnBearsDownloadAllXlsEl.addEventListener("click", function (event) {

@@ -116,13 +116,15 @@ test('reconnect refreshes the list before sending only explicitly queued estimat
     }
   });
   const start = source.indexOf('  function canModifyUnsharedBearEstimate(');
-  const refresh = source.indexOf('  let bearRefreshInProgress = false;');
+  const refresh = source.indexOf('  let bearRefreshInProgress = false,');
   vm.runInContext(source.slice(start, source.indexOf('  async function downloadAllBearEstimatesXls(', start))
     + source.slice(refresh, source.indexOf('  if (btnBearsRefresh) btnBearsRefresh.addEventListener', refresh)), context);
   await context.refreshUnifiedBearList({silent:true});
   assert.deepEqual(calls, []);
   context.navigator.onLine = true;
+  await context.refreshUnifiedBearList({silent:true,retry:false});
+  assert.deepEqual(calls, ['refresh']);
   await context.refreshUnifiedBearList({silent:true});
-  assert.deepEqual(calls, ['refresh', 'queued']);
+  assert.deepEqual(calls, ['refresh', 'refresh', 'queued']);
   assert.equal(context.pendingBearUploads.size, 0);
 });

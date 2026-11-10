@@ -533,8 +533,8 @@ window.createObsListModule = function createObsListModule({
     }
   }
 
-  let observationListSync;
-  function syncObservationList() {
+  let observationListSync, lastObservationRetry = 0;
+  function syncObservationList({ retry = false } = {}) {
     if (navigator.onLine === false) {
       remoteError = "인터넷에 연결되어 있지 않습니다.";
       updateObservationSummary();
@@ -542,9 +542,10 @@ window.createObsListModule = function createObsListModule({
     }
     if (!observationListSync) observationListSync = (async () => {
       remoteError = "";
+      if (retry) lastObservationRetry = Date.now();
       try {
         await window.BearObservationSync.pull();
-        await window.BearObservationSync.retryPending();
+        if (retry) await window.BearObservationSync.retryPending();
       } catch (error) { remoteError = error.message; }
       await refreshObservationData({ localOnly: true, background: true });
     })().finally(() => { observationListSync = null; });
@@ -1877,13 +1878,17 @@ window.createObsListModule = function createObsListModule({
       void sendItems(observationSamples.filter(item => selectedObsIds.has(item._obsKey)));
     });
     window.addEventListener("observations-changed", () => { void refreshObservationData({ localOnly: true, background: true }); });
-    const refreshWhenVisible = () => {
-      if (!document.hidden && navigator.onLine !== false) void syncObservationList();
+    const refreshWhenVisible = (forceRetry = false) => {
+      if (document.hidden || navigator.onLine === false) return;
+      const retry = forceRetry || Date.now() - lastObservationRetry >= 30000;
+      const hasPending = observationSamples.some(item => ["local", "failed"].includes(item.shareState));
+      const listVisible = obsSheetEl?.getClientRects().length && !obsSheetEl.classList.contains("obs-sheet--peek");
+      if (listVisible || (retry && (forceRetry || hasPending))) void syncObservationList({ retry });
     };
-    window.addEventListener("online", refreshWhenVisible);
-    document.addEventListener("visibilitychange", refreshWhenVisible);
-    window.setInterval(refreshWhenVisible, 30000);
-    refreshWhenVisible();
+    window.addEventListener("online", () => refreshWhenVisible(true));
+    document.addEventListener("visibilitychange", () => refreshWhenVisible(true));
+    window.setInterval(refreshWhenVisible, 15000);
+    refreshWhenVisible(true);
     map.on("zoomend", () => {
       if (currentTab === "list") {
         updateObservationMarkerScale();

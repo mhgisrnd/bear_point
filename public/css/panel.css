@@ -2145,7 +2145,7 @@
   }
 
   :root {
-    --obs-table-wrap-padding: 4px 4px 8px;
+    --obs-table-wrap-padding: 0 4px 8px;
   }
 
   .obs-table {
@@ -2227,7 +2227,7 @@
   }
 
   :root {
-    --obs-table-wrap-padding: 6px 6px 10px;
+    --obs-table-wrap-padding: 0 6px 10px;
   }
 
   .obs-table tbody {

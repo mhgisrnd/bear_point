@@ -7,9 +7,12 @@
   }
   function create({plugin,win=root,fetchImpl=win.fetch.bind(win)}) {
     let pending;
-    let sharedRows = new Map(), refreshing;
+    let sharedRows = new Map(), refreshing, hasSharedSnapshot = false;
+    const deletedTracks = new Set(), checkedLegacyReceipts = new Set();
     const key=id=>'bearpoint.gps-uploaded.'+id;
-    const acknowledged=id=>{try{return win.localStorage.getItem(key(id))==='1';}catch(_){return false;}};
+    const receipt=id=>{try{return win.localStorage.getItem(key(id));}catch(_){return null;}};
+    const acknowledged=id=>receipt(id)==='1';
+    const isDeleted=id=>!sharedRows.has(id)&&(deletedTracks.has(id)||receipt(id)==='deleted');
     async function readShared(path = "", page) {
       const native = !!win.Capacitor?.isNativePlatform?.();
       const headers = {Accept:"application/json"};
@@ -22,9 +25,13 @@
       });
       if (response.status === 403) {
         sharedRows = new Map();
+        const body = await response.json().catch(() => null);
+        if (body?.message === "허용되지 않은 모바일 API 요청입니다.") {
+          throw new Error("서버에서 이동 기록 조회가 차단되었습니다. 서버 배포 상태를 확인해주세요.");
+        }
         throw new Error(native ? "앱 인증으로 공유 이동 기록을 확인할 수 없습니다." : "공유 이동 기록에 접근할 수 없습니다.");
       }
-      if (!response.ok) throw new Error("공유 이동 기록을 불러오지 못했습니다.");
+      if (!response.ok) throw new Error("공유 이동 기록 조회에 실패했습니다. (HTTP " + response.status + ")");
       return response.json();
     }
     function refreshShared() {
@@ -37,10 +44,14 @@
             throw new Error("공유 이동 기록 응답이 올바르지 않습니다.");
           }
           for (const row of result.items) next.set(String(row.id), row);
-          if (page * result.pageSize >= result.total || !result.items.length) break;
+          if (page * result.pageSize >= result.total || !result.items.length) {
+            hasSharedSnapshot = next.size === result.total;
+            break;
+          }
         }
         sharedRows = next;
-      })().finally(() => { refreshing = null; });
+        for (const id of next.keys()) checkedLegacyReceipts.delete(id);
+      })().catch(error => { hasSharedSnapshot = false; throw error; }).finally(() => { refreshing = null; });
       return refreshing;
     }
     async function list(query, limit = 30) {
@@ -48,7 +59,7 @@
       const rows = new Map([...sharedRows].map(([id, row]) => [id, {...row, sharedOnly:true}]));
       for (let offset = 0; ; ) {
         const {items = []} = await plugin.list({offset});
-        for (const row of items) rows.set(String(row.id), row);
+        for (const row of items) if (!isDeleted(String(row.id))) rows.set(String(row.id), row);
         if (items.length < 30) break;
         offset += items.length;
       }
@@ -59,6 +70,11 @@
     }
     async function run() {
       let offset=0,uploaded=0,eligible=0,remaining=0,skipped=0;
+      let rejected=0, firstRejection="";
+      function rejectTrack(message) {
+        rejected++;
+        if (!firstRejection) firstRejection=message;
+      }
       // status() also recovers interrupted native/web records before listing.
       await plugin.status();
       for(;;) {
@@ -66,23 +82,47 @@
         for(const track of items) {
           if(!['saved','interrupted'].includes(track.status))continue;
           if(!(Number(track.point_count)>0)){skipped++;continue;}
+          const id=String(track.id);
+          if(isDeleted(id))continue;
           eligible++;
-          if(acknowledged(track.id))continue;
-          const detail=await plugin.detail({id:track.id});
-          if(!detail || !['saved','interrupted'].includes(detail.status))continue;
-          if(!Array.isArray(detail.points)||!detail.points.length||Number(detail.point_count)!==detail.points.length){eligible--;skipped++;continue;}
+          if(sharedRows.has(id)||checkedLegacyReceipts.has(id)||(!hasSharedSnapshot&&acknowledged(id)))continue;
+          const detail=await plugin.detail({id});
+          if(!detail || !['saved','interrupted'].includes(detail.status)) {
+            rejectTrack('기기에 저장된 기록 상세를 읽을 수 없습니다.');
+            continue;
+          }
+          if(!Array.isArray(detail.points)||!detail.points.length) {
+            rejectTrack('기기에 저장된 GPS 좌표를 찾을 수 없습니다.');
+            continue;
+          }
           const payload={};
           for(const field of ['id','owner','team_id','team_name','team_color','color','interval_seconds','started_at','ended_at','status','distance','point_count','error']) payload[field]=detail[field] ?? null;
           payload.points=(detail.points || []).map(p=>({lat:p.lat,lng:p.lng,accuracy:p.accuracy,recorded_at:p.recorded_at}));
+          payload.point_count=payload.points.length;
           const body=JSON.stringify(payload);
-          if(new TextEncoder().encode(body).length>16*1024*1024) throw new Error('기록이 전송 한도(16MiB)를 초과했습니다. 기기 기록은 보존됩니다.');
+          if(new TextEncoder().encode(body).length>16*1024*1024) {
+            rejectTrack('기록이 전송 한도(16MiB)를 초과했습니다.');
+            continue;
+          }
           const controller=new AbortController(),timer=win.setTimeout(()=>controller.abort(),30000);
           try {
             const response=await fetchImpl(endpoint(win),{method:'POST',headers:{'Content-Type':'application/json',Accept:'application/json'},credentials:'omit',redirect:'error',signal:controller.signal,body});
             const result=await response.json().catch(()=>null);
+            if([400,409,413,422].includes(response.status)) {
+              rejectTrack(result?.message || '서버에서 기록을 거절했습니다.');
+              continue;
+            }
             if(!response.ok || result?.ok!==true || String(result.id).toLowerCase()!==String(track.id).toLowerCase()) throw new Error(result?.message || '서버 전송을 완료하지 못했습니다.');
-            try{win.localStorage.setItem(key(track.id),'1');}catch(_){/* A retry remains safe through the server UUID constraint. */}
-            if(!acknowledged(track.id))remaining++;
+            if(result.deleted===true) {
+              sharedRows.delete(id);
+              deletedTracks.add(id);
+              try{win.localStorage.setItem(key(id),'deleted');}catch(_){/* Keep the receipt in memory for this session. */}
+              continue;
+            }
+            if(result.deleted===false) sharedRows.set(id,track);
+            else if(hasSharedSnapshot) checkedLegacyReceipts.add(id);
+            try{win.localStorage.setItem(key(id),'1');}catch(_){/* A retry remains safe through the server UUID constraint. */}
+            if(!acknowledged(id))remaining++;
             uploaded++;
           } catch(error) {
             throw new Error((error.name==='AbortError' ? '서버 응답 시간이 초과되었습니다.' : error.message)+' 기기 기록을 보존했습니다. 다시 전송해주세요.');
@@ -91,6 +131,7 @@
         if(items.length<30)break;
         offset+=items.length;
       }
+      if(rejected) throw new Error((uploaded ? uploaded+'건 전송 완료 · ' : '')+rejected+'건 전송 실패: '+firstRejection+' 기기 기록은 보존했습니다.');
       return {uploaded,eligible,remaining,skipped};
     }
     return {sync(){if(!pending)pending=run().finally(()=>{pending=null;});return pending;},acknowledged,

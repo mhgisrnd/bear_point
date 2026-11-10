@@ -87,7 +87,6 @@ body.bp-tablet-dock #mobile-map-dock .mobile-dock-chevron { display: none; }
 body.bp-tablet-dock #mobile-map-dock .mobile-dock-fold { cursor: default; color: #243c56; opacity: 1; }
 body.bp-tablet-dock #mobile-map-dock .mobile-dock-content { flex: 1 1 auto; max-height: none; }
 body.bp-tablet-dock #mobile-map-dock .obs-sheet { pointer-events: auto; }
-body.bp-tablet-dock #mobile-map-dock .obs-table-wrap { padding-top: 5px; }
 body.bp-tablet-dock.bp-sidebar-collapsed #mobile-map-dock { opacity: 0; transform: translateX(-28px); pointer-events: none; }
 body.bp-tablet-dock #btn-sidebar-toggle { height: 44px; border: 1px solid #d7e2ef; border-radius: 10px; background: #f5f9ff; color: #45678c; box-shadow: 0 2px 6px #142a4018; font-size: 0; }
 body.bp-tablet-dock #btn-sidebar-toggle svg { width: 18px; height: 18px; transition: transform .18s ease; }

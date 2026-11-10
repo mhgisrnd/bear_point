@@ -18,13 +18,12 @@
     panel.className='gps-track-panel'; panel.hidden=true; panel.setAttribute('aria-label','이동 기록');
     panel.innerHTML=`<header><strong>이동 기록</strong><div class="gps-track-header-actions"><button type="button" data-start>기록 시작</button><button type="button" data-stop hidden>종료·저장</button><button type="button" class="list-refresh-button" data-refresh aria-label="기록 이력 새로고침" title="기록 이력 새로고침">↻</button></div><button type="button" data-close aria-label="이동 기록 닫기">×</button></header>
       <div class="gps-track-content"><p class="gps-track-summary">기록을 시작하면 이동 경로가 지도에 표시됩니다.</p>
-      <div class="gps-track-actions"><button type="button" data-hide hidden>경로 숨기기</button></div>
-      <p class="gps-track-message" role="status" aria-live="polite"></p><div class="gps-track-actions"><button type="button" data-sync hidden>미전송 기록 전송</button></div><p class="gps-track-sync-message" role="status" aria-live="polite" hidden></p>
+      <p class="gps-track-message" role="status" aria-live="polite"></p><p class="gps-track-sync-message" role="status" aria-live="polite" hidden></p>
       <form class="gps-history-search" role="search" aria-label="이동 기록 검색"><div class="gps-history-search-row"><input type="search" name="owner" placeholder="담당자 검색" aria-label="담당자 검색" autocomplete="off"><button type="submit">조회</button><button class="list-filter-button" type="button" data-filter aria-expanded="false" aria-controls="gps-history-filters">필터</button><button type="button" data-reset>초기화</button></div>
       <div class="gps-history-filters" id="gps-history-filters" hidden><div class="gps-history-filter-row"><span class="gps-history-filter-label" id="gps-period-label">기간</span><div class="gps-history-chips" role="group" aria-labelledby="gps-period-label"><button type="button" data-period="all" aria-pressed="true">전체</button><button type="button" data-period="today" aria-pressed="false">오늘</button><button type="button" data-period="day" aria-pressed="false">일별</button><button type="button" data-period="month" aria-pressed="false">월별</button><button type="button" data-period="year" aria-pressed="false">년별</button></div></div><div class="gps-history-date-row" hidden><input type="date" name="day" aria-label="조회 날짜" hidden><input type="month" name="month" aria-label="조회 월" hidden><input type="number" name="year" min="1900" max="9999" step="1" inputmode="numeric" placeholder="연도" aria-label="조회 연도" hidden></div><div class="gps-history-filter-row"><span class="gps-history-filter-label" id="gps-team-label">팀</span><div class="gps-history-chips gps-history-team-chips" role="group" aria-labelledby="gps-team-label"><button type="button" data-team="" aria-pressed="true">전체</button></div></div></div></form>
       <section class="gps-track-history" aria-label="기록 이력"><div class="gps-history-overview"><strong>기록 이력</strong><span data-history-count>0건</span></div><div class="gps-track-history-frame"><table class="gps-track-history-table" aria-label="이동 기록 이력"><colgroup><col style="width:25%"><col style="width:18%"><col style="width:22%"><col style="width:15%"><col style="width:20%"></colgroup><thead><tr><th scope="col">기록일시</th><th scope="col">담당자</th><th scope="col">팀명</th><th scope="col">시간</th><th scope="col">거리<span class="gps-history-unit">(km)</span></th></tr></thead><tbody class="gps-track-history-items"></tbody></table></div><button type="button" data-more hidden>더 보기</button></section></div>`;
     document.body.append(panel);
-    const start=panel.querySelector('[data-start]'),stop=panel.querySelector('[data-stop]'),hide=panel.querySelector('[data-hide]');
+    const start=panel.querySelector('[data-start]'),stop=panel.querySelector('[data-stop]');
     const message=panel.querySelector('.gps-track-message'),summary=panel.querySelector('.gps-track-summary');
     const history=panel.querySelector('.gps-track-history-items'),more=panel.querySelector('[data-more]');
     const search=panel.querySelector('.gps-history-search'),filterButton=panel.querySelector('[data-filter]'),filterPanel=panel.querySelector('.gps-history-filters');
@@ -60,22 +59,23 @@
         teamChips.append(option);
       }
     }
-    const syncButton=panel.querySelector('[data-sync]'),syncMessage=panel.querySelector('.gps-track-sync-message');
+    const syncMessage=panel.querySelector('.gps-track-sync-message');
     const syncClient=root.BearGpsTrackSync.create({plugin});
     let syncing=false,lastSync=0;
-    async function syncRecords(manual=false,force=manual) {
-      if(syncing || (!force && Date.now()-lastSync<60000))return;
-      syncing=true;lastSync=Date.now();syncButton.disabled=true;
-      if(manual){syncMessage.hidden=false;syncMessage.textContent='저장된 기록을 서버에 전송하는 중입니다.';}
+    async function syncRecords(force=false) {
+      if(document.hidden || root.navigator.onLine===false || syncing || (!force && Date.now()-lastSync<30000))return;
+      syncing=true;lastSync=Date.now();
       try {
         const result=await syncClient.sync();
-        syncMessage.textContent=root.BearGpsTrackSync.notice(result,manual);
-        syncMessage.hidden=!syncMessage.textContent;syncButton.hidden=result.remaining===0;
-      } catch(error) {syncMessage.hidden=false;syncMessage.textContent=error.message;syncButton.hidden=false;}
-      finally {syncing=false;syncButton.disabled=false;place();}
+        syncMessage.textContent=root.BearGpsTrackSync.notice(result);
+        syncMessage.hidden=!syncMessage.textContent;
+      } catch(error) {syncMessage.hidden=false;syncMessage.textContent=error.message;}
+      finally {syncing=false;place();}
     }
-    syncButton.addEventListener('click',()=>void syncRecords(true));
-    root.addEventListener('online',()=>void syncRecords(false,true));
+    root.addEventListener('online',()=>{
+      void syncRecords(true);
+      void refreshSharedHistory(true);
+    });
     let active=null,displayed=null,busy=false,polling=false,historyOffset=0,historyVersion=0,viewVersion=0,initial=true;
     const source=new ol.source.Vector();
     const layer=new ol.layer.Vector({source});
@@ -96,7 +96,7 @@
       button.textContent=active?'● 기록 중 · '+elapsed(active):'이동 기록';
       button.setAttribute('aria-expanded',String(!panel.hidden));
       start.hidden=!!active;stop.hidden=!active;
-      start.disabled=busy;stop.disabled=busy;hide.hidden=!displayed || !!active;
+      start.disabled=busy;stop.disabled=busy;
       refreshButton.disabled=busy;summary.hidden=!active&&!displayed;
       filterPanel.querySelectorAll('[data-period],[data-team]').forEach(button=>{button.disabled=busy;});
       for(const name of ['day','month','year'])search.elements[name].disabled=busy||search.elements[name].hidden;
@@ -174,17 +174,20 @@
     }
     let refreshingShared=false,lastSharedRefresh=0;
     async function refreshSharedHistory(force=false) {
-      if(panel.hidden||document.hidden||refreshingShared||(!force&&Date.now()-lastSharedRefresh<15000))return;
+      if(panel.hidden||!panel.getClientRects().length||document.hidden||root.navigator.onLine===false||refreshingShared||(!force&&Date.now()-lastSharedRefresh<15000))return;
       refreshingShared=true;lastSharedRefresh=Date.now();
       try {
         await syncClient.refreshShared();
         count.removeAttribute('title');
         if(!panel.hidden&&!busy)await loadHistory(true,Math.max(30,historyOffset));
-      } catch (_) {
+        return true;
+      } catch (error) {
         if(!panel.hidden&&!busy) {
           await loadHistory(true,Math.max(30,historyOffset)).catch(()=>{});
           const empty=history.querySelector('.gps-history-empty');
-          if(empty)empty.textContent='기록을 불러오지 못했습니다.';
+          const reason=error?.message || '공유 이동 기록을 불러오지 못했습니다.';
+          if(empty)empty.textContent=reason;
+          count.title=reason;
         }
       } finally {refreshingShared=false;}
     }
@@ -207,7 +210,7 @@
           ++viewVersion;source.clear();displayed=null;
           const finished=await plugin.detail({id:previous.id});
           message.textContent=finished?.error || '이동 기록을 저장했습니다.';
-          void syncRecords(false,true);
+          void syncRecords(true);
           if(historyLoaded)await loadHistory();
         }
       initial=false;paint();void syncRecords();void refreshSharedHistory();
@@ -229,15 +232,20 @@
       if(!result.id&&activeId)result=await plugin.detail({id:activeId});
       if(result.status==='recording')throw new Error('기록 종료를 완료하지 못했습니다. 다시 시도해주세요.');
       active=null;displayed=null;++viewVersion;source.clear();message.textContent=result.status==='discarded'?(result.error||'GPS 위치가 수신되지 않아 기록을 저장하지 않았습니다.'):'이동 기록을 저장했습니다.';
-      void syncRecords(false,true);
+      void syncRecords(true);
       await loadHistory();
     }));
-    hide.addEventListener('click',()=>{++viewVersion;source.clear();displayed=null;message.textContent='';paint();});
     function close(){layer.setVisible(false);setFilterPanelOpen(false);panel.hidden=true;button.setAttribute('aria-expanded','false');if(root.BearMobileDock?.isMobile()&&root.BearMobileDock.getActive()==='tracking')root.BearMobileDock.collapse();}
-    function open(){panel.hidden=false;layer.setVisible(true);displayed=null;++viewVersion;source.clear();root.BearMobileDock?.select('tracking',{activate:false});setFilterPanelOpen(false);paint();void action(()=>loadHistory()).then(()=>refreshSharedHistory(true)).then(()=>poll());}
+    function open(){panel.hidden=false;layer.setVisible(true);displayed=null;++viewVersion;source.clear();root.BearMobileDock?.select('tracking',{activate:false});setFilterPanelOpen(false);paint();void refreshAndSync().then(()=>poll());}
     button.addEventListener('click',()=>{if(panel.hidden){open();(active?stop:start).focus();}else close();});
     panel.querySelector('[data-close]').addEventListener('click',close);
-    refreshButton.addEventListener('click',()=>void action(()=>loadHistory()).then(()=>refreshSharedHistory(true)));
+    async function refreshAndSync() {
+      await action(()=>loadHistory());
+      const refreshed=await refreshSharedHistory(true);
+      await syncRecords();
+      if(refreshed&&!panel.hidden)await action(()=>loadHistory());
+    }
+    refreshButton.addEventListener('click',()=>void refreshAndSync());
     filterButton.addEventListener('click',()=>setFilterPanelOpen(filterPanel.hidden));
     async function applyFilters(close=false){
       const next=filters.buildQuery({owner:search.elements.owner.value,team_id:teamId,period,day:search.elements.day.value,month:search.elements.month.value,year:search.elements.year.value});
