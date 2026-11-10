@@ -97,11 +97,11 @@ test("movement gateway sends GPS records only to its configured administrator en
  try {
   const response=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json',Cookie:'local-only'},body:JSON.stringify({id:'track',points:[]})});
   assert.equal(response.status,200);assert.equal(calls[0].url,'https://admin.test/base/api/realtime/movement-tracks');assert.equal(calls[0].options.headers.Cookie,undefined);
-  assert.equal((await fetch(url)).status,401);
+  assert.equal((await fetch(url)).status,200);
  }finally{await new Promise(resolve=>server.close(resolve));}
 });
 
-test("movement gateway forwards shared reads only for signed-in web users", async () => {
+test("movement gateway forwards anonymous shared reads without credentials", async () => {
   const calls = [], app = express();
   app.use((req, res, next) => { if (req.headers.cookie === "local-admin") req.adminSession = {}; next(); });
   app.use(createAppRealtimeRouter({
@@ -115,8 +115,6 @@ test("movement gateway forwards shared reads only for signed-in web users", asyn
   await new Promise(resolve => server.once("listening", resolve));
   try {
     const base = `http://127.0.0.1:${server.address().port}/movement-tracks`;
-    assert.equal((await fetch(base)).status, 401);
-    assert.equal(calls.length, 0);
     const headers = {Cookie: "local-admin"};
     assert.equal((await fetch(base + "?page=2", {headers})).status, 200);
     const id = "127ef8a9-9b43-4c4a-8e36-f8dc244a39df";
@@ -125,32 +123,28 @@ test("movement gateway forwards shared reads only for signed-in web users", asyn
       "https://admin.test/api/realtime/movement-tracks?page=2",
       "https://admin.test/api/realtime/movement-tracks/" + id
     ]);
-    assert.ok(calls.every(call => call.options.headers.Authorization === "Bearer server-only-key" && !call.options.headers.Cookie));
+    assert.ok(calls.every(call => !call.options.headers.Authorization && !call.options.headers.Cookie));
   } finally { await new Promise(resolve => server.close(resolve)); }
 });
 
-test("signed-in web users can read shared movement records from the map database without an upstream key", async () => {
+test("anonymous web reads use the upstream API without a key", async () => {
   const app=express(), id="127ef8a9-9b43-4c4a-8e36-f8dc244a39df";
   const track={id,started_at:100,points:[{lat:35,lng:127}]};
   let reads=0;
   app.use((req,_res,next)=>{if(req.headers.cookie==='admin')req.adminSession={};next();});
   app.use('/bear/api/app-realtime',createAppRealtimeRouter({
     apiBase:'https://admin.test/api/realtime',
-    movementStore:{
-      async list(page){reads++;return {ok:true,items:[track],total:1,page,pageSize:100};},
-      async detail(value){reads++;return value===id?track:null;}
-    },
-    fetchImpl(){assert.fail('Local database reads should not use the upstream API');}
+    fetchImpl:async(url)=>{
+      reads++;
+      if(url.endsWith('/00000000-0000-0000-0000-000000000000'))return {status:404,json:async()=>({ok:false})};
+      return {status:200,json:async()=>url.endsWith('/'+id)?track:{ok:true,items:[track],total:1,page:1,pageSize:100}};
+    }
   }));
   const server=app.listen(0,'127.0.0.1');
   await new Promise(resolve=>server.once('listening',resolve));
   try{
     const base=`http://127.0.0.1:${server.address().port}/bear/api/app-realtime/movement-tracks`;
-    const rejected=await fetch(base);
-    assert.equal(rejected.status,401);
-    assert.equal((await rejected.json()).loginUrl,'/bear/admin/login');
-    assert.equal(reads,0);
-    const headers={Cookie:'admin'};
+    const headers={};
     const page=await fetch(base,{headers});
     assert.equal(page.headers.get('Cache-Control'),'no-store');
     assert.equal((await page.json()).items[0].id,id);

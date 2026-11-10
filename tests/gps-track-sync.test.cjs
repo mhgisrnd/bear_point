@@ -90,7 +90,7 @@ test('shared history merges server pages with local tracks, stays available offl
  const remote={id:'other-device',owner:'서버 담당자',team_id:'gurye',started_at:20,point_count:1,status:'saved'};
  let offline=false;
  const requests=[];
- f.win.Capacitor={isNativePlatform:()=>true,Plugins:{BearPush:{getAppCheckToken:async()=>({token:'app-proof'})}}};
+ f.win.Capacitor={isNativePlatform:()=>true,Plugins:{}};
  const client=create({win:f.win,plugin:{list:async()=>({items:f.tracks})},fetchImpl:async(url,options)=>{
   requests.push({url,options});
   if(offline)throw new Error('offline');
@@ -104,7 +104,7 @@ test('shared history merges server pages with local tracks, stays available offl
  assert.equal((await client.list({team_id:'gurye'})).total,1);
  assert.equal((await client.list({owner:'Kim'})).total,1);
  assert.deepEqual((await client.sharedDetail(remote.id)).points,local.points);
- assert.ok(requests.every(({options})=>options.headers['X-Firebase-AppCheck']==='app-proof'&&options.credentials==='omit'));
+ assert.ok(requests.every(({options})=>options.headers['X-Firebase-AppCheck']===undefined&&options.credentials==='omit'));
  offline=true;
  await assert.rejects(client.refreshShared(),/offline/);
  assert.equal((await client.list({})).total,2);

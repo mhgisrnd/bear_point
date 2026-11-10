@@ -1,9 +1,8 @@
 const express = require("express");
-const { createMovementTrackStore } = require("../services/movementTrackStore");
 
 // The browser uses its own host. Catalogs use the configured upstream API;
-// authenticated movement reads use the map database unless an upstream read key is configured.
-function createAppRealtimeRouter({ apiBase, teamsApiUrl, movementApiUrl, movementReadKey, movementStore = createMovementTrackStore(), fetchImpl = fetch }) {
+// Movement reads use the same public upstream API as mobile clients.
+function createAppRealtimeRouter({ apiBase, teamsApiUrl, movementApiUrl, fetchImpl = fetch }) {
   const router = express.Router();
   const base = new URL(apiBase);
   if (!["http:", "https:"].includes(base.protocol)) throw new Error("Invalid realtime API protocol");
@@ -43,31 +42,16 @@ function createAppRealtimeRouter({ apiBase, teamsApiUrl, movementApiUrl, movemen
   });
   router.get(["/movement-tracks", "/movement-tracks/:id"], async (req, res) => {
     res.set("Cache-Control", "no-store");
-    if (!req.adminSession) {
-      return res.status(401).json({
-        ok:false, message:"공유 이동 기록을 보려면 관리자 로그인 후 이 화면으로 돌아와주세요.",
-        loginUrl:req.baseUrl.replace(/\/api\/app-realtime$/, "") + "/admin/login"
-      });
-    }
     const id = req.params.id;
     if (id && !/^[\da-f]{8}(-[\da-f]{4}){3}-[\da-f]{12}$/i.test(id)) return res.status(400).json({ok:false});
     try {
-      if (!movementReadKey) {
-        if (!id) {
-          const page = Math.max(1, Math.floor(Number(req.query.page) || 1));
-          if (!Number.isSafeInteger(page) || page > 1000000) return res.status(400).json({ok:false});
-          return res.json(await movementStore.list(page));
-        }
-        const item = await movementStore.detail(id);
-        return item ? res.json(item) : res.status(404).json({ok:false, message:"이동 기록을 찾을 수 없습니다."});
-      }
       const target = new URL(movementApiUrl || targetBase + "/movement-tracks");
       if (!["http:", "https:"].includes(target.protocol)) throw new Error("Invalid movement API protocol");
       if (id) target.pathname = target.pathname.replace(/\/$/, "") + "/" + id;
       else target.searchParams.set("page", String(Math.max(1, Math.floor(Number(req.query.page) || 1))));
       const response = await fetchImpl(target.href, {
         method:"GET", redirect:"error", signal:AbortSignal.timeout(10000),
-        headers:{Accept:"application/json", Authorization:"Bearer " + movementReadKey}
+        headers:{Accept:"application/json"}
       });
       const result = await response.json().catch(() => ({ok:false}));
       res.status(response.status).json(result);

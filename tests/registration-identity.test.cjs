@@ -11,7 +11,7 @@ function setup(native) {
   vm.runInNewContext(fs.readFileSync('public/js/db/sqlite-migrations.js','utf8'),config);
   db.exec('CREATE TABLE observations (id TEXT PRIMARY KEY,bear_code TEXT,owner TEXT,place TEXT,admin_region TEXT,lat REAL,lng REAL,heading REAL,detectors_json TEXT,created_at TEXT,updated_at TEXT)');
   const migrations=config.window.BearSQLiteConfig.migrations;
-  for(const version of [7,8,11,13,14,16,17,18,19]) for(const sql of migrations[version])db.exec(sql);
+  for(const version of [7,8,11,13,14,16,17,18,19,20]) for(const sql of migrations[version])db.exec(sql);
   let transport=async()=>{throw new Error('offline');};
   const win={Capacitor:{isNativePlatform:()=>native,Plugins:{CapacitorSQLite:{
     run:async({statement,values})=>({changes:{changes:db.prepare(statement).run(...values).changes}}),

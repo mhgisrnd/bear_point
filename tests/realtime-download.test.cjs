@@ -213,6 +213,11 @@ test('web local and realtime TXT open a preview before downloading', async () =>
     isNativeCapacitorPlatform: () => false,
     showSavedTxtPreviewPopup: async value => { preview = value; },
   });
+  if (start === client.indexOf('  async function downloadBearEstimateTxt(')) {
+    const helperStart = client.indexOf('  function parseBearEstimateJson(');
+    const helperEnd = client.indexOf('  function getWebFallbackBearEstimates(', helperStart);
+    vm.runInContext(client.slice(helperStart, helperEnd), context);
+  }
   vm.runInContext(client.slice(start, end), context);
   for (const isRealtime of [false, true]) {
     await context.downloadBearEstimateTxt({
@@ -284,6 +289,11 @@ test('realtime TXT does not look up unrelated local observations with the same I
     showSavedTxtPreviewPopup: async value => { preview = value; },
   };
   vm.createContext(context);
+  if (start === client.indexOf('  async function downloadBearEstimateTxt(')) {
+    const helperStart = client.indexOf('  function parseBearEstimateJson(');
+    const helperEnd = client.indexOf('  function getWebFallbackBearEstimates(', helperStart);
+    vm.runInContext(client.slice(helperStart, helperEnd), context);
+  }
   vm.runInContext(client.slice(start, end), context);
   await context.downloadBearEstimateTxt({ id: '1', isRealtime: true, lat: 35.3, lng: 127.7, bear_code: '002', created_at: 1781658443000 }, false);
   assert.equal(queries, 0);

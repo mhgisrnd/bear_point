@@ -16,10 +16,6 @@
     async function readShared(path = "", page) {
       const native = !!win.Capacitor?.isNativePlatform?.();
       const headers = {Accept:"application/json"};
-      if (native) {
-        const proof = await win.Capacitor.Plugins.BearPush.getAppCheckToken();
-        headers["X-Firebase-AppCheck"] = proof.token;
-      }
       const response = await fetchImpl(endpoint(win) + path + (page ? "?page=" + page : ""), {
         credentials: native ? "omit" : "same-origin", redirect:"error", headers, signal:AbortSignal.timeout(12000)
       });

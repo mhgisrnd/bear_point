@@ -45,7 +45,7 @@
     const native = () => !!window.Capacitor?.isNativePlatform();
     const dbName = () => window.BearSQLiteConfig?.dbName || "BearPointData";
     const plugin = () => window.Capacitor.Plugins.CapacitorSQLite;
-    let rows = [], loaded, queue = Promise.resolve();
+    let rows = [], loaded, queue = Promise.resolve(), completeSnapshot = false;
     const storageKey = "bearpoint.remote-estimates.v1";
     async function load() {
       if (!loaded) loaded = (async () => {
@@ -75,11 +75,19 @@
           await plugin().executeSet({ database: dbName(), readonly: false, transaction: true,
             set: values.map(row => ({ statement: "INSERT OR REPLACE INTO bear_estimate_remote_cache (server_id,payload_json) VALUES (?,?)", values: [String(row.id), JSON.stringify(row)] })) });
         } else if (!native()) window.localStorage.setItem(storageKey, JSON.stringify(values));
-        rows = values; return rows;
+        rows = values;
+        if (options.complete) completeSnapshot = true;
+        return rows;
       });
       queue = task.catch(() => {}); return task;
     }
-    return { load, accept, merge: local => merge(local, rows), raw: () => rows.slice() };
+    return { load, accept, merge: local => {
+      // A complete server snapshot governs shared records, including old local
+      // receipts which predate the remote cache. Keep original local data intact.
+      const active = new Set(rows.filter(row => !row.deleted && !row._cacheDeleted).map(originId).filter(Boolean));
+      const visible = completeSnapshot ? (local || []).filter(row => !row.shared_at || active.has(String(row.id))) : local;
+      return merge(visible, rows);
+    }, raw: () => rows.slice() };
   }
   function createLocalStore(window) {
     const key = "bearpoint.local-estimates.v1";

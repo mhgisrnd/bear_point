@@ -6,6 +6,24 @@ const { merge, createStore, originId } = require('../public/js/realtime/bear-est
 const receipt = (id, origin, extra = {}) => ({ id, bear_estimate_id: origin, bear_code: 'KF-58', lat: 35.3, lng: 127.7, uploaded_at: '2026-10-29 10:00:00', ...extra });
 const draft = id => ({ id, bear_code: 'KF-58', lat: 35, lng: 127, created_at: '2026-10-28', source_observations: [{ id: 'observation-a' }] });
 
+test('complete snapshot hides legacy shared local records absent from server without deleting originals', async () => {
+  const data = new Map();
+  const window = { localStorage: { getItem: key => data.get(key) || null, setItem: (key, value) => data.set(key, value) } };
+  const store = createStore(window);
+  const local = [{ ...draft('old'), shared_at: '2026-10-29' }, draft('unshared')];
+  await store.load();
+  assert.equal(store.merge(local).length, 2, 'offline startup retains local history');
+  await store.accept([receipt(55, 'current', { payload: { team_name: 'Regional' } })], { complete: false });
+  assert.equal(store.merge(local).length, 3, 'partial responses do not hide history');
+  await store.accept([receipt(55, 'current', { payload: { team_name: 'Regional' } })], { complete: true });
+  const visible = store.merge(local);
+  assert.deepEqual(visible.map(row => row.id).sort(), ['current', 'unshared']);
+  assert.equal(visible.find(row => row.id === 'current').team_name, 'Regional');
+  assert.equal(local.length, 2, 'original local records are preserved');
+  await store.accept([], { complete: true });
+  assert.deepEqual(store.merge(local).map(row => row.id), ['unshared']);
+});
+
 test('merge uses source IDs, preserves separate results for the same animal and collapses repeated receipts', () => {
   const rows = merge([draft('a'), draft('b')], [receipt(1, 'a'), receipt(2, 'a', { owner: 'updated' }), receipt(3, 'c')]);
   assert.equal(rows.length, 3);

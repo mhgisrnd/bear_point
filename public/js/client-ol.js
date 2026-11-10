@@ -5527,7 +5527,7 @@
 
     let hasAnimatedMarker = false;
 
-    items.forEach(function (it) {
+    items.slice().reverse().forEach(function (it) {
       const isRealtimeMarker = !!(it && it.isRealtime);
       const shouldAnimate = isRealtimeMarker || !!(it && it.shared_at);
       if (shouldAnimate) hasAnimatedMarker = true;
