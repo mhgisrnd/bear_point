@@ -10,9 +10,9 @@
   <link rel="stylesheet" href="vendor/ol/ol.css" />
   <link rel="stylesheet" href="css/styles.css" />
   <link rel="stylesheet" href="css/panel.css?v=20261109-observation-header" />
-  <link rel="stylesheet" href="css/observation-sharing.css?v=20261109-list-filter" />
+  <link rel="stylesheet" href="css/observation-sharing.css?v=20261110-filter-controls" />
   <link rel="stylesheet" href="css/sdr-diagnostics.css" />
-  <link rel="stylesheet" href="css/app-settings.css?v=20261109-update-scroll-1" />
+  <link rel="stylesheet" href="css/app-settings.css?v=20261110-fixed-settings" />
   <link rel="stylesheet" href="css/gps-tracking.css?v=20261110-sync-intervals" />
   <link rel="stylesheet" href="css/mobile-map-dock.css?v=20261109-observation-header" />
 </head>
@@ -63,7 +63,6 @@
           <p class="obs-filter-error" id="obs-filter-error" role="status" hidden></p>
         </div>
       </div>
-      <div class="obs-filter-footer"><button id="btn-obs-filter-done" type="button">결과 보기</button></div>
     </section>
 
     <div class="obs-list-status" id="obs-list-status" aria-live="polite" hidden>
@@ -377,7 +376,7 @@
   <script src="js/realtime/realtimeList.js?v=20261109-retry-sharing"></script>
   <script src="js/realtime/bear-estimate-store.js?v=20261109-retry-sharing"></script>
   <script src="js/progressive-list.js"></script>
-  <script src="js/obs/obsList.js?v=20261110-sync-intervals"></script>
+  <script src="js/obs/obsList.js?v=20261110-filter-controls"></script>
   <script src="js/obs/observation-filters.js"></script>
   <script src="js/obs/observation-sync.js?v=20261109-retry-sharing"></script>
   <script src="js/obs/obsRegister.js"></script>
@@ -386,13 +385,13 @@
   <script src="js/tracking/gps-track-store.js?v=20261109-history-order"></script>
   <script src="js/tracking/gps-track-sync.js?v=20261110-movement-reconcile"></script>
   <script src="js/tracking/gps-track-ui.js?v=20261110-sync-intervals"></script>
-  <script src="js/mobile-map-dock.js?v=20261103-tablet-1"></script>
-  <script src="js/settings/app-updates.js?v=20261110-startup-update"></script>
+  <script src="js/mobile-map-dock.js?v=20261110-fold-actions"></script>
+  <script src="js/settings/app-updates.js?v=20261110-fixed-settings"></script>
   <script src="js/client-ol.js?v=20261110-startup-update"></script>
   <script src="js/sdr/spectrum.js"></script>
   <script src="js/sdr/animal-catalog.js"></script>
   <script src="js/sdr/diagnostics.js"></script>
   <script src="js/settings/app-settings-store.js"></script>
-  <script src="js/settings/app-settings-ui.js?v=20261109-version-display-1"></script>
+  <script src="js/settings/app-settings-ui.js?v=20261110-fixed-settings"></script>
 </body>
 </html>

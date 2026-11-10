@@ -43,7 +43,7 @@
       dock.dataset.menu=active;dock.classList.toggle('is-expanded',expanded);content.hidden=!expanded;
       dock.classList.toggle('is-full',expanded&&full);
       dock.classList.toggle('is-filtering',expanded&&active==='tracking'&&filtering);
-      observations.setMapVisible(registrationWasOpen||(active==='observations'&&expanded&&(!tablet.matches||!document.body.classList.contains('bp-sidebar-collapsed'))));
+      observations.setMapVisible(registrationWasOpen||(active==='observations'&&(!tablet.matches||!document.body.classList.contains('bp-sidebar-collapsed'))));
       gps.setMapVisible?.(active==='tracking'&&!registrationWasOpen);
       fold.disabled=!mobile;
       fold.setAttribute('aria-expanded',String(expanded));fold.setAttribute('aria-label',names[active]+(expanded?' 접기':' 펼치기'));

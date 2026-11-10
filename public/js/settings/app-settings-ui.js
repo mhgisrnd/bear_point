@@ -3,7 +3,7 @@
   const store = window.BearAppSettingsStore.createStore(window);
   const trigger = document.getElementById("btn-app-settings");
   const dialog = document.createElement("dialog");
-  dialog.className = "app-settings-dialog";
+  dialog.className = "app-settings-dialog app-settings-dialog--tabs";
   dialog.setAttribute("aria-labelledby", "app-settings-title");
   dialog.innerHTML = `<div class="app-settings-head"><h2 id="app-settings-title">설정</h2><button type="button" class="app-settings-close" aria-label="설정 닫기">×</button></div>
     <div class="app-settings-tabs" role="tablist" aria-label="설정 메뉴">
@@ -12,28 +12,28 @@
       <button type="button" class="app-settings-tab" id="app-settings-version-tab" role="tab" aria-selected="false" aria-controls="app-settings-version-panel" tabindex="-1">앱 버전</button>
     </div>
     <div class="app-settings-scroll"><section id="app-settings-profile-panel" role="tabpanel" aria-labelledby="app-settings-profile-tab">
-    <form class="app-settings-body"><p class="app-settings-intro">담당자 이름과 소속 팀을 설정해주세요.</p>
+    <form class="app-settings-form"><div class="app-settings-body app-settings-fields"><p class="app-settings-intro">담당자 이름과 소속 팀을 설정해주세요.</p>
       <label class="app-settings-field">담당자<input name="owner" required maxlength="100" autocomplete="name" placeholder="이름을 입력해주세요" /></label>
       <fieldset class="app-settings-teams"><legend>소속 팀</legend><div class="app-settings-team-grid"></div></fieldset>
       <div class="app-settings-catalog-row"><p class="app-settings-catalog-note"></p><button type="button" class="app-settings-refresh">새로고침</button></div>
       <p class="app-settings-status" role="status" aria-live="polite"></p>
-      <div class="app-settings-actions"><button type="submit" class="app-settings-save">저장하고 시작</button><button type="button" class="app-settings-cancel">취소</button></div>
-    </form>
-    <section class="app-settings-body app-settings-push" aria-label="개체 추적 공유 알림" hidden>
+    <section class="app-settings-push" aria-label="개체 추적 공유 알림" hidden>
       <strong>개체 추적 공유 알림</strong>
       <div class="app-settings-catalog-row">
         <p class="app-settings-help app-settings-push-status" role="status" aria-live="polite"></p>
         <button type="button" class="app-settings-refresh app-settings-push-retry">다시 확인</button>
       </div>
-    </section></section>
+    </section></div>
+      <div class="app-settings-actions app-settings-footer"><button type="submit" class="app-settings-save">저장하고 시작</button><button type="button" class="app-settings-cancel">취소</button></div>
+    </form></section>
     <section id="app-settings-tracking-panel" role="tabpanel" aria-labelledby="app-settings-tracking-tab" hidden>
-      <form class="app-settings-body app-settings-tracking-form">
+      <form class="app-settings-form app-settings-tracking-form"><div class="app-settings-body app-settings-fields">
         <p class="app-settings-intro">기록 간격은 저장하면 진행 중인 기록에도 적용됩니다. 경로는 팀 색상으로 표시됩니다.</p>
         <label class="app-settings-field">기록 간격<select name="interval"><option value="5">5초</option><option value="10">10초</option><option value="30">30초</option><option value="60">1분</option></select></label>
         <p class="app-settings-help">GPS 수신 상태에 따라 실제 기록 간격은 길어질 수 있습니다.</p>
         <p class="app-settings-help">앱은 화면이 꺼져도 기록하며, 알림에서 종료·저장할 수 있습니다. 웹에서는 페이지가 열려 있을 때 기록합니다.</p>
         <p class="app-settings-tracking-status" role="status" aria-live="polite"></p>
-        <div class="app-settings-actions"><button type="submit" class="app-settings-save">저장</button><button type="button" class="app-settings-cancel">취소</button></div>
+        </div><div class="app-settings-actions app-settings-footer"><button type="submit" class="app-settings-save">저장</button><button type="button" class="app-settings-cancel">취소</button></div>
       </form>
     </section><section id="app-settings-version-panel" role="tabpanel" aria-labelledby="app-settings-version-tab" hidden></section></div>`;
   document.body.append(dialog);
@@ -62,6 +62,8 @@
       item.tabIndex = active ? 0 : -1;
       dialog.querySelector("#" + item.getAttribute("aria-controls")).hidden = !active;
     });
+    const fields = dialog.querySelector("#" + tab.getAttribute("aria-controls") + " .app-settings-fields");
+    if (fields) fields.scrollTop = 0;
     if (focus) tab.focus();
   }
   tabs.forEach((tab, index) => {

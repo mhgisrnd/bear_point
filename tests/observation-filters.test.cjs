@@ -44,7 +44,7 @@ test('changing filters drops hidden selections before bulk actions and applies t
   const visible = [{ id: 'one', _obsKey: 'visible' }];
   let mapped, selectionUpdated = false;
   const context = vm.createContext({
-    selectedObsIds: selected, currentTab: 'list', btnFilterDoneEl: {},
+    selectedObsIds: selected, currentTab: 'list',
     syncFilterControls() {}, getFilteredItems: () => visible,
     renderObservationList() {}, updateObservationSummary() {},
     renderObservationMarkers: items => { mapped = items; },
@@ -56,5 +56,4 @@ test('changing filters drops hidden selections before bulk actions and applies t
   context.applySearch();
   assert.equal(selectionUpdated, true);
   assert.equal(mapped, visible);
-  assert.equal(context.btnFilterDoneEl.textContent, '1건 보기');
 });

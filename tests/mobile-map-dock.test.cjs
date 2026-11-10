@@ -66,10 +66,10 @@ test('recording indicator persists across menu changes; folding the dock does no
   assert.ok(env.track.querySelector('header .gps-track-header-actions'));
   assert.equal(dock.querySelector('.mobile-recording-dot').hidden,false);
 });
-test('observation markers are visible only while their mobile menu is open, without resetting list state',()=>{
+test('folding the observation menu preserves markers and switching menus hides them',()=>{
   const env=environment();assert.equal(env.calls.mapVisible,false);
   env.api.select('observations');assert.equal(env.calls.mapVisible,true);
-  env.api.collapse();assert.equal(env.calls.mapVisible,false);
+  env.api.collapse();assert.equal(env.calls.mapVisible,true);
   env.api.select('observations');assert.equal(env.calls.mapVisible,true);assert.equal(env.calls.open,1);
   env.api.select('bears');assert.equal(env.calls.mapVisible,false);
   env.api.select('tracking');assert.equal(env.calls.mapVisible,false);
@@ -155,6 +155,21 @@ test('mouse/touch header drag follows motion and snaps open or closed without a 
   env.dispatch(fold,'pointerdown',{clientY:420});env.dispatch(fold,'pointermove',{clientY:500});env.dispatch(fold,'pointerup',{clientY:500});
   assert.equal(dock.classList.contains('is-expanded'),false);
   env.dispatch(fold,'click',{detail:0});assert.equal(dock.classList.contains('is-expanded'),true);
+});
+test('header taps fold each menu while retaining its selection and map display',()=>{
+  for(const name of ['observations','bears','tracking']){
+    const env=environment(),dock=env.document.getElementById('mobile-map-dock'),fold=dock.querySelector('.mobile-dock-fold');
+    env.api.select(name);
+    env.dispatch(fold,'pointerdown',{clientY:500});
+    env.dispatch(fold,'pointerup',{clientY:500});
+    env.dispatch(fold,'click',{detail:1});
+    assert.equal(dock.classList.contains('is-expanded'),false);
+    assert.equal(env.api.getActive(),name);
+    if(name==='observations')assert.equal(env.calls.mapVisible,true);
+    if(name==='tracking')assert.equal(env.track.hidden,false);
+    dock.querySelector('[data-menu="'+name+'"]').click();
+    assert.equal(dock.classList.contains('is-expanded'),true);
+  }
 });
 test('pointer cancellation restores the prior state; unrelated pointers and right clicks cannot drag',()=>{
   const env=environment(),dock=env.document.getElementById('mobile-map-dock'),fold=dock.querySelector('.mobile-dock-fold');

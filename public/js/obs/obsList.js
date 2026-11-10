@@ -130,7 +130,6 @@ window.createObsListModule = function createObsListModule({
   const monthFilterEl = document.getElementById("obs-filter-month");
   const yearFilterEl = document.getElementById("obs-filter-year");
   const btnMineFilterEl = document.getElementById("btn-obs-filter-mine");
-  const btnFilterDoneEl = document.getElementById("btn-obs-filter-done");
   const filterSummaryEl = document.getElementById("obs-filter-summary");
   const filterErrorEl = document.getElementById("obs-filter-error");
   let ownerOptionsSignature = "";
@@ -984,7 +983,6 @@ window.createObsListModule = function createObsListModule({
     updateObservationSummary();
     if (currentTab === "list") renderObservationMarkers(filtered);
     updateSelectionUI();
-    if (btnFilterDoneEl) btnFilterDoneEl.textContent = `${filtered.length}건 보기`;
   }
 
   function readObservationFilters() {
@@ -1040,7 +1038,6 @@ window.createObsListModule = function createObsListModule({
       filterErrorEl.hidden = !invalid;
       filterErrorEl.textContent = invalid ? "조회할 날짜를 선택하거나 올바른 연도를 입력해주세요." : "";
     }
-    if (btnFilterDoneEl) btnFilterDoneEl.disabled = invalid;
     const description = window.BearObservationFilters.summary(current);
     if (filterSummaryEl) { filterSummaryEl.hidden = !description; filterSummaryEl.textContent = description + " ▾"; filterSummaryEl.title = description; }
     const count = (current.owner ? 1 : 0) + (current.period !== "all" ? 1 : 0);
@@ -2003,7 +2000,6 @@ window.createObsListModule = function createObsListModule({
       if (owner && ownerFilterEl) ownerFilterEl.value = owner;
       applySearch();
     });
-    if (btnFilterDoneEl) btnFilterDoneEl.addEventListener("click", () => { setFiltersOpen(false); btnFilterEl?.focus(); });
     if (btnSearchClearEl) btnSearchClearEl.addEventListener("click", () => {
       if (searchQueryEl) searchQueryEl.value = "";
       setSearchField("obs");

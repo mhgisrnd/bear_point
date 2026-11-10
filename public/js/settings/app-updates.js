@@ -85,10 +85,12 @@
     }
   }
   function content(withCheck){return `<div class="app-settings-body app-update-body">
+    ${withCheck?'<div class="app-settings-body app-settings-fields">':''}
     <dl class="app-update-versions">${withCheck?'<div><dt>현재 버전</dt><dd data-current>확인 중</dd></div>':''}<div><dt>배포 버전</dt><dd data-latest>—</dd></div></dl>
     <p class="app-update-notes" data-notes tabindex="0" role="region" aria-label="업데이트 변경 내용"></p><p class="app-update-message" data-message role="status" aria-live="polite"></p>
     <progress aria-label="APK 다운로드 진행률" hidden></progress><p class="app-settings-help" data-progress></p>
-    <div class="app-settings-actions">${withCheck?'<button type="button" data-check>업데이트 확인</button>':''}<button type="button" class="app-settings-save" data-update hidden>APK 다운로드</button></div>
+    ${withCheck?'</div>':''}
+    <div class="app-settings-actions${withCheck?' app-settings-footer':''}">${withCheck?'<button type="button" data-check>업데이트 확인</button>':''}<button type="button" class="app-settings-save" data-update hidden>APK 다운로드</button></div>
     ${withCheck?'':'<button type="button" class="app-update-dismiss" data-dismiss>닫기</button>'}</div>`;}
   function showOffer(){
     if(!controller?.snapshot().update)return;

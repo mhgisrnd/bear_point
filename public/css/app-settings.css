@@ -7,6 +7,15 @@
 .app-settings-dialog[open] { display: flex; flex-direction: column; }
 .app-settings-head, .app-settings-tabs { flex-shrink: 0; }
 .app-settings-scroll { min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.app-settings-dialog--tabs { height: min(680px, calc(100dvh - 32px - var(--safe-top, 0px) - var(--safe-bottom, 0px))); }
+.app-settings-dialog--tabs .app-settings-scroll { display: flex; flex: 1; overflow: hidden; }
+.app-settings-dialog--tabs [role=tabpanel],
+.app-settings-form,
+.app-settings-dialog--tabs .app-update-body { display: flex; flex-direction: column; flex: 1; min-height: 0; min-width: 0; overflow: hidden; }
+.app-settings-dialog--tabs .app-update-body { padding: 0; }
+.app-settings-dialog--tabs .app-settings-fields { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
+.app-settings-dialog--tabs .app-settings-footer { flex: 0 0 auto; margin: 0; padding: 14px 22px; border-top: 1px solid #e2e9f1; background: #fff; }
+.app-settings-dialog--tabs .app-update-notes { max-height: none; overflow: visible; }
 body:has(.app-settings-dialog[open]) #btn-app-settings,
 body:has(.sdr-dialog[open]) #btn-sdr-diagnostics,
 #btn-map-layers[aria-expanded="true"] {
