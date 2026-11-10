@@ -3139,6 +3139,8 @@
 .bear-code-search button { flex: 0 0 auto; height: 32px; padding: 0 9px; border: 1px solid #d4dfec; border-radius: 7px; background: #fff; color: #526881; font-size: 11px; font-weight: 700; cursor: pointer; }
 .bear-code-search .bear-code-search__submit { color: #2858b4; background: #eef4ff; border-color: #c5d5f1; }
 .bear-code-search button:disabled { opacity: .45; cursor: default; }
+.bear-estimate-filters { flex: 0 0 auto; margin: 0 0 6px; }
+.bear-estimate-filters[hidden] { display: none; }
 .bears-search-empty { padding: 15px 6px; color: #526881; text-align: center; font-size: 12px; }
 .bears-search-empty small { display: block; margin-top: 5px; color: #7a8899; font-size: 11px; }
 #bears-box { margin-top: 4px; padding: 6px; border-radius: 8px; }

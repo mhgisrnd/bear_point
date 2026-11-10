@@ -19,6 +19,7 @@
     panel.innerHTML=`<header><strong>이동 기록</strong><div class="gps-track-header-actions"><button type="button" data-start>기록 시작</button><button type="button" data-stop hidden>종료·저장</button><button type="button" class="list-refresh-button" data-refresh aria-label="기록 이력 새로고침" title="기록 이력 새로고침">↻</button></div><button type="button" data-close aria-label="이동 기록 닫기">×</button></header>
       <div class="gps-track-content"><p class="gps-track-summary">기록을 시작하면 이동 경로가 지도에 표시됩니다.</p>
       <p class="gps-track-message" role="status" aria-live="polite"></p><p class="gps-track-sync-message" role="status" aria-live="polite" hidden></p>
+      <p class="gps-track-access" hidden><a target="_blank" rel="noopener">관리자 로그인</a></p>
       <form class="gps-history-search" role="search" aria-label="이동 기록 검색"><div class="gps-history-search-row"><input type="search" name="owner" placeholder="담당자 검색" aria-label="담당자 검색" autocomplete="off"><button type="submit">조회</button><button class="list-filter-button" type="button" data-filter aria-expanded="false" aria-controls="gps-history-filters">필터</button><button type="button" data-reset>초기화</button></div>
       <div class="gps-history-filters" id="gps-history-filters" hidden><div class="gps-history-filter-row"><span class="gps-history-filter-label" id="gps-period-label">기간</span><div class="gps-history-chips" role="group" aria-labelledby="gps-period-label"><button type="button" data-period="all" aria-pressed="true">전체</button><button type="button" data-period="today" aria-pressed="false">오늘</button><button type="button" data-period="day" aria-pressed="false">일별</button><button type="button" data-period="month" aria-pressed="false">월별</button><button type="button" data-period="year" aria-pressed="false">년별</button></div></div><div class="gps-history-date-row" hidden><input type="date" name="day" aria-label="조회 날짜" hidden><input type="month" name="month" aria-label="조회 월" hidden><input type="number" name="year" min="1900" max="9999" step="1" inputmode="numeric" placeholder="연도" aria-label="조회 연도" hidden></div><div class="gps-history-filter-row"><span class="gps-history-filter-label" id="gps-team-label">팀</span><div class="gps-history-chips gps-history-team-chips" role="group" aria-labelledby="gps-team-label"><button type="button" data-team="" aria-pressed="true">전체</button></div></div></div></form>
       <section class="gps-track-history" aria-label="기록 이력"><div class="gps-history-overview"><strong>기록 이력</strong><span data-history-count>0건</span></div><div class="gps-track-history-frame"><table class="gps-track-history-table" aria-label="이동 기록 이력"><colgroup><col style="width:25%"><col style="width:18%"><col style="width:22%"><col style="width:15%"><col style="width:20%"></colgroup><thead><tr><th scope="col">기록일시</th><th scope="col">담당자</th><th scope="col">팀명</th><th scope="col">시간</th><th scope="col">거리<span class="gps-history-unit">(km)</span></th></tr></thead><tbody class="gps-track-history-items"></tbody></table></div><button type="button" data-more hidden>더 보기</button></section></div>`;
@@ -29,6 +30,7 @@
     const search=panel.querySelector('.gps-history-search'),filterButton=panel.querySelector('[data-filter]'),filterPanel=panel.querySelector('.gps-history-filters');
     const filterBadge=document.createElement('span');filterBadge.className='list-filter-count';filterBadge.hidden=true;filterButton.append(filterBadge);
     const refreshButton=panel.querySelector('[data-refresh]'),count=panel.querySelector('[data-history-count]');
+    const access=panel.querySelector('.gps-track-access'),login=access.querySelector('a');
     const filters=root.BearGpsTrackFilters;
     let appliedQuery=filters.buildQuery(),historyLoaded=false,period='all',teamId='';
     function paintFilterState(){
@@ -97,6 +99,10 @@
       button.setAttribute('aria-expanded',String(!panel.hidden));
       start.hidden=!!active;stop.hidden=!active;
       start.disabled=busy;stop.disabled=busy;
+      if(!native&&!root.navigator.locks) {
+        start.disabled=true;
+        start.title='이 브라우저에서는 기록 조회를 사용할 수 있습니다. 새 기록은 앱 또는 HTTPS에서 시작해주세요.';
+      }
       refreshButton.disabled=busy;summary.hidden=!active&&!displayed;
       filterPanel.querySelectorAll('[data-period],[data-team]').forEach(button=>{button.disabled=busy;});
       for(const name of ['day','month','year'])search.elements[name].disabled=busy||search.elements[name].hidden;
@@ -178,10 +184,16 @@
       refreshingShared=true;lastSharedRefresh=Date.now();
       try {
         await syncClient.refreshShared();
+        access.hidden=true;
         count.removeAttribute('title');
         if(!panel.hidden&&!busy)await loadHistory(true,Math.max(30,historyOffset));
         return true;
       } catch (error) {
+        access.hidden=true;
+        if(!native&&error.loginUrl){
+          const target=new URL(error.loginUrl,root.location.href);
+          if(target.origin===root.location.origin){login.href=target.href;access.hidden=false;}
+        }
         if(!panel.hidden&&!busy) {
           await loadHistory(true,Math.max(30,historyOffset)).catch(()=>{});
           const empty=history.querySelector('.gps-history-empty');

@@ -24,6 +24,17 @@ const options={owner:'Kim',team_id:'gurye',team_name:'구례팀',team_color:'#16
 const pos=(time,lat=35,lng=127,accuracy=5)=>({timestamp:time,coords:{latitude:lat,longitude:lng,accuracy}});
 const settle=()=>new Promise(resolve=>setImmediate(resolve));
 
+test('web history remains readable when recording locks are unavailable',async()=>{
+  const row={id:'saved',status:'saved',point_count:1,started_at:100,points:[{lat:35,lng:127}]};
+  const recorder=createWebRecorder({navigator:{},addEventListener(){}},{
+    list:async()=>[row],detail:async()=>row
+  });
+  assert.equal((await recorder.list()).total,1);
+  assert.equal((await recorder.detail({id:'saved'})).points.length,1);
+  assert.equal((await recorder.status()).other_tab,false);
+  await assert.rejects(recorder.start(options),/이 브라우저에서는 이동 기록을 지원하지 않습니다/);
+});
+
 test('10m distance threshold stays fixed even when either GPS fix has a larger accuracy radius',()=>{
   const now=Date.now();
   for(const accuracy of [5,30,80,100]){

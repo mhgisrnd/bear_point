@@ -23,6 +23,11 @@
       const response = await fetchImpl(endpoint(win) + path + (page ? "?page=" + page : ""), {
         credentials: native ? "omit" : "same-origin", redirect:"error", headers, signal:AbortSignal.timeout(12000)
       });
+      if (!native && response.status === 401) {
+        sharedRows = new Map();
+        const result = await response.json().catch(() => ({}));
+        throw Object.assign(new Error(result.message || "공유 이동 기록을 보려면 관리자 로그인이 필요합니다."), {loginUrl:result.loginUrl});
+      }
       if (response.status === 403) {
         sharedRows = new Map();
         const body = await response.json().catch(() => null);

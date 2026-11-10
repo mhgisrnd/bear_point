@@ -20,7 +20,7 @@
 .obs-filter-field small { display: block; color: #7b8999; font-size: 10px; font-weight: 400; }
 .obs-filter-control-row { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .obs-filter-control-row select, .obs-filter-control-row input { box-sizing: border-box; min-width: 0; width: 100%; flex: 1 1 0; height: 32px; padding: 3px 6px; border: 1px solid #d7e1ed; border-radius: 7px; background: #fff; color: #243c56; font-family: inherit; font-size: 12px; }
-.obs-filter-control-row #obs-filter-period { flex: 0 0 92px; }
+.obs-filter-control-row #obs-filter-period, .obs-filter-control-row #bear-filter-period { flex: 0 0 92px; }
 .obs-filter-control-row button { flex-shrink: 0; min-height: 30px; border: 1px solid #d7e1ed; border-radius: 7px; padding: 4px 8px; color: #456181; background: #fff; font-size: 11px; cursor: pointer; }
 .obs-filter-control-row button[aria-pressed="true"] { color: #2257c5; border-color: #aec5ec; background: #edf3ff; }
 .obs-filter-panel button:disabled { opacity: .45; cursor: default; }

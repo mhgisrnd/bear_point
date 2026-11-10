@@ -9,12 +9,12 @@
 
   <link rel="stylesheet" href="vendor/ol/ol.css" />
   <link rel="stylesheet" href="css/styles.css" />
-  <link rel="stylesheet" href="css/panel.css?v=20261109-observation-header" />
-  <link rel="stylesheet" href="css/observation-sharing.css?v=20261110-filter-controls" />
+  <link rel="stylesheet" href="css/panel.css?v=20261110-bear-filters" />
+  <link rel="stylesheet" href="css/observation-sharing.css?v=20261110-bear-period" />
   <link rel="stylesheet" href="css/sdr-diagnostics.css" />
   <link rel="stylesheet" href="css/app-settings.css?v=20261110-fixed-settings" />
-  <link rel="stylesheet" href="css/gps-tracking.css?v=20261110-sync-intervals" />
-  <link rel="stylesheet" href="css/mobile-map-dock.css?v=20261109-observation-header" />
+  <link rel="stylesheet" href="css/gps-tracking.css?v=20261110-web-history" />
+  <link rel="stylesheet" href="css/mobile-map-dock.css?v=20261110-bear-filters" />
 </head>
 <body>
 
@@ -268,11 +268,26 @@
 
       <div class="panel-body" id="panel-body">
         <div class="tracking-source-heading"><span>개체 추적</span><button class="tracking-refresh list-refresh-button" id="btn-bears-refresh" type="button" title="공유 자료 새로고침" aria-label="개체 추적위치 새로고침">↻</button></div>
-        <form class="bear-code-search" id="bear-code-search-form" role="search" aria-label="개체 코드 검색">
+        <form class="bear-code-search gps-history-search-row" id="bear-code-search-form" role="search" aria-label="개체 추적 검색">
           <input id="bear-code-query" type="search" placeholder="개체 코드 검색" aria-label="검색할 개체 코드" autocomplete="off" spellcheck="false" enterkeyhint="search" />
           <button type="submit" class="bear-code-search__submit">조회</button>
+          <button type="button" class="list-filter-button" id="btn-bear-filter" aria-expanded="false" aria-controls="bear-filter-panel">필터<span class="list-filter-count" id="bear-filter-count" hidden></span></button>
           <button type="button" id="btn-bear-code-clear" disabled>초기화</button>
         </form>
+        <section class="gps-history-filters bear-estimate-filters" id="bear-filter-panel" aria-label="개체 추적 상세 필터" hidden>
+          <div class="obs-filter-field"><label for="bear-filter-owner">담당자</label><div class="obs-filter-control-row"><select id="bear-filter-owner"><option value="">전체 담당자</option></select></div></div>
+          <div class="obs-filter-field"><label for="bear-filter-team">팀</label><div class="obs-filter-control-row"><select id="bear-filter-team"><option value="">전체 팀</option></select></div></div>
+          <div class="obs-filter-field">
+            <label for="bear-filter-period">등록 기간</label>
+            <div class="obs-filter-control-row">
+              <select id="bear-filter-period"><option value="all">전체 기간</option><option value="today">오늘</option><option value="day">일별</option><option value="month">월별</option><option value="year">년별</option></select>
+              <input id="bear-filter-day" type="date" aria-label="등록일 선택" hidden />
+              <input id="bear-filter-month" type="month" aria-label="등록월 선택" hidden />
+              <input id="bear-filter-year" type="number" inputmode="numeric" min="1900" max="9999" step="1" aria-label="등록년도 입력" placeholder="예: 2026" hidden />
+            </div>
+            <p class="obs-filter-error" id="bear-filter-error" role="status" hidden></p>
+          </div>
+        </section>
         <div class="bears-box" id="bears-box">
           <div class="bears-title">
             <div class="bears-toolbar" id="bears-toolbar">
@@ -382,12 +397,12 @@
   <script src="js/obs/obsRegister.js"></script>
   <script src="js/map/ol-map-controls.js?v=20261103-offline-switcher-1"></script>
   <script src="js/tracking/gps-track-filters.js?v=20261109-history-order"></script>
-  <script src="js/tracking/gps-track-store.js?v=20261109-history-order"></script>
-  <script src="js/tracking/gps-track-sync.js?v=20261110-movement-reconcile"></script>
-  <script src="js/tracking/gps-track-ui.js?v=20261110-sync-intervals"></script>
+  <script src="js/tracking/gps-track-store.js?v=20261110-web-history"></script>
+  <script src="js/tracking/gps-track-sync.js?v=20261110-web-history"></script>
+  <script src="js/tracking/gps-track-ui.js?v=20261110-web-history"></script>
   <script src="js/mobile-map-dock.js?v=20261110-fold-actions"></script>
   <script src="js/settings/app-updates.js?v=20261110-fixed-settings"></script>
-  <script src="js/client-ol.js?v=20261110-startup-update"></script>
+  <script src="js/client-ol.js?v=20261110-bear-period"></script>
   <script src="js/sdr/spectrum.js"></script>
   <script src="js/sdr/animal-catalog.js"></script>
   <script src="js/sdr/diagnostics.js"></script>

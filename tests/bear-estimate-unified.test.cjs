@@ -4,11 +4,15 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 const source = fs.readFileSync('public/js/client-ol.js', 'utf8');
 const transport = fs.readFileSync('public/js/realtime/realtimeList.js', 'utf8');
+function filterContext(values) {
+  return vm.createContext({ window: { BearObservationFilters: require('../public/js/obs/observation-filters.js') },
+    bearPeriodFilterEl: { value: 'all' }, bearDayFilterEl: { value: '' }, bearMonthFilterEl: { value: '' }, bearYearFilterEl: { value: '' }, ...values });
+}
 
 test('code search matches fragments without case sensitivity and clears without changing source records', () => {
   const rows = [{ id: 'one', bear_code: 'KF-58', owner: 'KF-99' }, { id: 'two', bearCode: 'KM-120' }, { id: 'three', bear_code: 'KF-58' }];
-  const context = vm.createContext({ currentBearEstimateItems: rows, bearCodeSearchEl: { value: '  kf-5  ' } });
-  const start = source.indexOf('  function getFilteredBearEstimates(');
+  const context = filterContext({ currentBearEstimateItems: rows, bearCodeSearchEl: { value: '  kf-5  ' }, bearOwnerFilterEl: { value: '' }, bearTeamFilterEl: { value: '' } });
+  const start = source.indexOf('  function readBearPeriodFilter(');
   vm.runInContext(source.slice(start, source.indexOf('  function syncBearMarkersForActiveTab(', start)), context);
   assert.deepEqual([...context.getFilteredBearEstimates()].map(row => row.id), ['one', 'three']);
   context.bearCodeSearchEl.value = '120';
@@ -18,6 +22,64 @@ test('code search matches fragments without case sensitivity and clears without 
   context.bearCodeSearchEl.value = '';
   assert.equal(context.getFilteredBearEstimates(), rows);
   assert.equal(rows.length, 3);
+});
+
+test('owner and team filters combine with code and support legacy records', () => {
+  const rows = [
+    { id: 'a', bear_code: 'MH-001', owner: 'Kim', team_id: 'wide', team_name: 'Wide' },
+    { id: 'b', bear_code: 'MH-002', owner: 'Kim', team_id: 'south' },
+    { id: 'c', bear_code: 'MH-003', owner: 'Lee', team_id: 'wide' },
+    { id: 'legacy', owner: 'Kim', team_name: 'Legacy' },
+    { id: 'missing' }
+  ];
+  const context = filterContext({ currentBearEstimateItems: rows, bearCodeSearchEl: { value: '' }, bearOwnerFilterEl: { value: 'Kim' }, bearTeamFilterEl: { value: 'wide' } });
+  const start = source.indexOf('  function readBearPeriodFilter(');
+  vm.runInContext(source.slice(start, source.indexOf('  function syncBearMarkersForActiveTab(', start)), context);
+  assert.deepEqual([...context.getFilteredBearEstimates()].map(row => row.id), ['a']);
+  context.bearCodeSearchEl.value = '002';
+  assert.equal(context.getFilteredBearEstimates().length, 0);
+  context.bearCodeSearchEl.value = '';
+  context.bearTeamFilterEl.value = 'Legacy';
+  assert.equal(context.getFilteredBearEstimates()[0].id, 'legacy');
+  context.bearOwnerFilterEl.value = '미지정';
+  context.bearTeamFilterEl.value = '미지정';
+  assert.equal(context.getFilteredBearEstimates()[0].id, 'missing');
+  context.bearOwnerFilterEl.value = '';
+  context.bearTeamFilterEl.value = '';
+  assert.equal(context.getFilteredBearEstimates(), rows);
+});
+
+test('registration periods use Korean date boundaries for local and shared records', () => {
+  const rows = [
+    { id: 'before', created_at: '2026-11-09T14:59:59Z', owner: 'Kim' },
+    { id: 'local', created_at: '2026-11-10T00:00:00+09:00', owner: 'Kim' },
+    { id: 'shared', source_created_at: '2026-11-09 15:00:00', owner: 'Kim' },
+    { id: 'numeric', timestamp: Date.parse('2026-11-10T01:00:00+09:00'), owner: 'Lee' },
+    { id: 'next', created_at: '2026-11-10T15:00:00Z' },
+    { id: 'missing' }
+  ];
+  const context = filterContext({ currentBearEstimateItems: rows, bearCodeSearchEl: { value: '' }, bearOwnerFilterEl: { value: '' }, bearTeamFilterEl: { value: '' } });
+  const start = source.indexOf('  function readBearPeriodFilter(');
+  vm.runInContext(source.slice(start, source.indexOf('  function syncBearMarkersForActiveTab(', start)), context);
+  const ids = () => [...context.getFilteredBearEstimates()].map(row => row.id);
+  context.bearPeriodFilterEl.value = 'day';
+  context.bearDayFilterEl.value = '2026-11-10';
+  assert.deepEqual(ids(), ['local', 'shared', 'numeric']);
+  context.bearOwnerFilterEl.value = 'Kim';
+  assert.deepEqual(ids(), ['local', 'shared']);
+  context.bearDayFilterEl.value = '2026-02-30';
+  assert.deepEqual(ids(), []);
+  context.bearOwnerFilterEl.value = '';
+  context.bearPeriodFilterEl.value = 'month';
+  context.bearMonthFilterEl.value = '2026-11';
+  assert.equal(ids().length, 5);
+  context.bearPeriodFilterEl.value = 'year';
+  context.bearYearFilterEl.value = '2025';
+  assert.deepEqual(ids(), []);
+  context.bearYearFilterEl.value = '20';
+  assert.deepEqual(ids(), []);
+  context.bearPeriodFilterEl.value = 'all';
+  assert.equal(context.getFilteredBearEstimates(), rows);
 });
 
 test('filtered rendering removes hidden selections before bulk operations', () => {

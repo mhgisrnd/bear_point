@@ -62,7 +62,7 @@ form.addEventListener("submit", async (event) => {
   submitButton.textContent = "로그인 중...";
 
   try {
-    const response = await fetch("/api/admin/auth/login", {
+    const response = await fetch(new URL("../api/admin/auth/login", window.location.href), {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -82,7 +82,7 @@ form.addEventListener("submit", async (event) => {
       return;
     }
 
-    window.location.href = "/admin/dashboard";
+    window.location.href = new URL("dashboard", window.location.href).href;
   } catch (error) {
     console.error("[admin-login] login request failed", error);
     notice.textContent = "로그인 중 오류가 발생했습니다.";

@@ -64,7 +64,7 @@
     let release;
     const released=new Promise(done=>{release=done;});
     const ready = new Promise((resolve,reject)=>{
-      if (!win.navigator.locks) { reject(new Error('이 브라우저에서는 이동 기록을 지원하지 않습니다. 앱 또는 최신 브라우저를 사용해주세요.')); return; }
+      if (!win.navigator.locks) { resolve(); return; }
       win.navigator.locks.request('bearpoint.gps-recorder',{ifAvailable:true},async lock=>{
         if (!lock) {resolve();return;}
         owns=true;
@@ -90,6 +90,7 @@
     return {
       async start(options) {
         await ready;
+        if(!win.navigator.locks)throw new Error('이 브라우저에서는 이동 기록을 지원하지 않습니다. 앱 또는 최신 브라우저를 사용해주세요.');
         if(!owns)throw new Error('다른 창에서 이동 기록을 사용 중입니다. 해당 창에서 조작해주세요.');
         if(!win.navigator.geolocation)throw new Error('GPS 위치 기능을 사용할 수 없습니다.');
         return enqueue(async()=>{
@@ -125,7 +126,7 @@
           return {active:copy(active)};
         });
       },
-      async status(){await ready;await queue;return {active:active?copy(active):null,error:failure,other_tab:!owns};},
+      async status(){await ready;await queue;return {active:active?copy(active):null,error:failure,other_tab:!!win.navigator.locks&&!owns};},
       async list(query={}){
         await ready;const rows=(await repo.list()).filter(track=>Number(track.point_count)>0&&track.status!=='discarded');
         const filters=win.BearGpsTrackFilters || (typeof require==='function'?require('./gps-track-filters.js'):null);
