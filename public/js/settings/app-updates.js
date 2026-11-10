@@ -56,7 +56,7 @@
         paint({phase:'installing',message:'설치 파일을 확인하고 있습니다.'});
         try{
           const result=await plugin.install();
-          paint({phase:result.installed?'idle':'ready',message:result.installed?'설치가 완료되었습니다.':result.permissionRequired?'이 출처의 앱 설치가 허용되지 않았습니다. 설치 계속을 눌러 권한을 허용해주세요.':result.cancelled?'설치를 취소했습니다. 다시 설치할 수 있습니다.':'설치 화면을 열었습니다. 설치를 취소했다면 다시 진행할 수 있습니다.'});
+          paint({phase:'ready',message:result.permissionRequired?'이 출처의 앱 설치가 허용되지 않았습니다. 설치 계속을 눌러 권한을 허용해주세요.':'설치 화면이 닫혔습니다. 설치를 계속하려면 다시 시도해주세요.'});
         }catch(error){paint({phase:error.code==='APK_MISSING'?'idle':'ready',readyHash:error.code==='APK_MISSING'?null:state.readyHash,message:error.message||'설치 화면을 열지 못했습니다.'});}
       }
     };
@@ -66,7 +66,7 @@
   let plugin;
   if(native){try{plugin=root.Capacitor.registerPlugin('AppUpdate');}catch(_){}}
   const mounts=[];
-  let controller,dialog,manualUsed=false;
+  let controller,dialog;
   const size=value=>(Number(value||0)/1024/1024).toFixed(1)+' MB';
   function paint(state){
     const busy=['checking','downloading','installing'].includes(state.phase);
@@ -107,9 +107,9 @@
     paint(controller.snapshot());if(!dialog.open)dialog.showModal();
   }
   function bind(container){
-    container.querySelector('[data-check]')?.addEventListener('click',async()=>{manualUsed=true;if(await controller.check())showOffer();});
+    container.querySelector('[data-check]')?.addEventListener('click',async()=>{if(await controller.check())showOffer();});
     container.querySelector('[data-update]').addEventListener('click',async()=>{
-      if(container!==dialog){manualUsed=true;showOffer();return;}
+      if(container!==dialog){showOffer();return;}
       if(controller.snapshot().phase==='ready'){await controller.install();return;}
       if(await controller.download())await controller.install();
     });
@@ -122,22 +122,21 @@
   try{controller=createController(plugin,endpoint(root.BEAR_RUNTIME_CONFIG||{}),paint);}catch(_){return;}
   const initialized=controller.initialize().catch(()=>{});
   Promise.resolve(plugin.addListener('progress',value=>controller.progress(value))).catch(()=>{});
-  async function autoCheck(){
-    await initialized;await root.BearStartupReady;
-    if(manualUsed)return;
-    if(!await controller.check())return;
-    // Do not cover startup registration or another open modal. No download occurs here.
-    const timer=setInterval(()=>{
-      if(manualUsed){clearInterval(timer);return;}
-      if(document.hidden||document.querySelector('dialog[open]'))return;
-      clearInterval(timer);showOffer();
-    },1000);
-  }
+  let startupCheck, startupOfferClosed=Promise.resolve();
+  root.BearAppUpdates.prepareStartup=function(){
+    if(!startupCheck)startupCheck=(async()=>{
+      await initialized;
+      if(!await controller.check())return;
+      showOffer();
+      startupOfferClosed=new Promise(resolve=>dialog.addEventListener('close',resolve,{once:true}));
+    })();
+    return startupCheck;
+  };
+  root.BearAppUpdates.waitForStartupOffer=()=>startupOfferClosed;
   async function restoreOnResume(){
-    if(document.hidden)return;
+    if(document.hidden||root.BearStartupLoading)return;
     try{if(await controller.recover())showOffer();}catch(_){}
   }
   document.addEventListener('visibilitychange',()=>void restoreOnResume());
   root.addEventListener('focus',()=>void restoreOnResume());
-  if(document.readyState==='complete')void autoCheck();else root.addEventListener('load',()=>void autoCheck(),{once:true});
 })(typeof window==='object'?window:globalThis);

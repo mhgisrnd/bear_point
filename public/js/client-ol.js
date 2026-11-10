@@ -468,8 +468,9 @@
     }, STARTUP_OVERLAY_DELAY_MS);
   }
 
-  function hideStartupOverlay() {
-    return new Promise(function (resolve) {
+  async function hideStartupOverlay() {
+    await window.BearAppUpdates?.prepareStartup?.();
+    await new Promise(function (resolve) {
       if (startupOverlayShowTimer) {
         window.clearTimeout(startupOverlayShowTimer);
         startupOverlayShowTimer = null;
@@ -477,8 +478,6 @@
 
       if (!startupOverlayEl || startupOverlayEl.style.display === "none") {
         startupOverlayVisibleAt = 0;
-        window.BearStartupLoading = false;
-        resolveStartupReady();
         resolve();
         return;
       }
@@ -492,15 +491,16 @@
           startupOverlayEl.style.display = "none";
         }
         startupOverlayVisibleAt = 0;
-        window.BearStartupLoading = false;
-        resolveStartupReady();
         resolve();
       }, waitMs);
     });
+    await window.BearAppUpdates?.waitForStartupOffer?.();
+    window.BearStartupLoading = false;
+    resolveStartupReady();
   }
 
   async function bootWithSQLiteGate() {
-    showStartupOverlay("데이터를 불러오는 중입니다...", false);
+    showStartupOverlay("데이터를 불러오는 중입니다...", false, true);
     let bootPhase = "sqlite-init";
 
     try {

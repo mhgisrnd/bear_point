@@ -1,7 +1,6 @@
 package com.bearpoint.app;
 
 import android.content.Intent;
-import android.app.Activity;
 import android.content.pm.PackageInfo;
 import android.content.pm.PackageManager;
 import android.content.pm.Signature;
@@ -242,8 +241,10 @@ public final class AppUpdatePlugin extends Plugin {
                         return;
                     }
                     Uri uri = FileProvider.getUriForFile(getContext(), getContext().getPackageName() + ".fileprovider", file);
+                    // Let the installer show its completion screen and Open button. The old
+                    // app process may be killed during replacement before it receives a result.
                     Intent intent = new Intent(Intent.ACTION_INSTALL_PACKAGE).setDataAndType(uri, "application/vnd.android.package-archive")
-                        .putExtra(Intent.EXTRA_RETURN_RESULT, true).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                        .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
                     intent.setClipData(android.content.ClipData.newRawUri("BearMap APK", uri));
                     installerOpen = true;
                     startActivityForResult(call, intent, "installerResult");
@@ -272,15 +273,8 @@ public final class AppUpdatePlugin extends Plugin {
     }
     @ActivityCallback private void installerResult(PluginCall call, ActivityResult result) {
         installerOpen = false;
-        if (call == null) return;
-        if (result.getResultCode() == Activity.RESULT_OK) {
-            call.resolve(new JSObject().put("installed", true));
-        } else if (result.getResultCode() == Activity.RESULT_CANCELED) {
-            call.resolve(new JSObject().put("cancelled", true));
-        } else {
-            int status = result.getData() == null ? 0 : result.getData().getIntExtra("android.intent.extra.INSTALL_RESULT", 0);
-            call.reject("Android에서 APK 설치를 완료하지 못했습니다. (코드 " + status + ")");
-        }
+        // Android displays the install outcome. A return to this WebView just allows retry.
+        if (call != null) call.resolve(new JSObject().put("installerClosed", true));
     }
     @Override protected void handleOnDestroy() {
         cancelled = true; HttpURLConnection conn = connection; if (conn != null) conn.disconnect();

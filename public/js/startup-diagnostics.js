@@ -1,6 +1,6 @@
 (function (root) {
   "use strict";
-  const build = "26.0.0.1";
+  const build = "26.0.0.6";
   root.BEAR_BUILD_VERSION = build;
   const errors = [];
   function render() {
