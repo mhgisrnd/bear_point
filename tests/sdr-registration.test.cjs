@@ -54,6 +54,20 @@ test('saved/hidden forms do not return to SDR and edits, submissions and invalid
   assert.equal(c.openFromSdr({bearCode:'',frequencyHz:148241500},f.cancel),false);
   assert.equal(c.openFromSdr({bearCode:'KF-110',frequencyHz:NaN},f.cancel),false);
 });
+test('IC-R30 registration shows the actual receiver and receive mode without relabeling it as SDR CW',()=>{
+  const f=fixture(),c=f.c;
+  assert.equal(c.openFromSdr({bearCode:'KF-110',frequencyHz:148241500,receiver:'IC-R30',mode:'FM-N'},f.cancel),true);
+  assert.match(c.sdrSourceEl.textContent,/IC-R30 Bluetooth.*148.2415 MHz.*FM-N/);
+  assert.doesNotMatch(c.sdrSourceEl.textContent,/SDR|CW/);
+});
+test('registration accepts actual tuned frequencies above the catalog ceiling but respects receiver limits',()=>{
+  const c=fixture().c;
+  assert.equal(c.openFromSdr({bearCode:'KF-110',frequencyHz:999999900}),true);
+  assert.match(c.sdrSourceEl.textContent,/999.9999 MHz/);
+  assert.equal(c.openFromSdr({bearCode:'KF-110',frequencyHz:999999991}),false);
+  assert.equal(c.openFromSdr({bearCode:'KF-110',frequencyHz:3304999000,receiver:'IC-R30',mode:'CW'}),true);
+  assert.equal(c.openFromSdr({bearCode:'KF-110',frequencyHz:3304999001,receiver:'IC-R30'}),false);
+});
 
 test('map SDR handoff reuses an open form without clearing map editing state or reopening it',()=>{
   const mapSource=fs.readFileSync('public/js/client-ol.js','utf8');

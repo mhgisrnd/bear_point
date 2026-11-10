@@ -6,12 +6,20 @@
   dialog.className = "sdr-dialog";
   dialog.setAttribute("aria-labelledby", "sdr-title");
   dialog.innerHTML = `
-    <div class="sdr-header"><h2 id="sdr-title">수신기 <span class="sdr-cw-label">CW</span></h2><button type="button" data-back hidden aria-label="탐색 재개">‹ 탐색</button><button type="button" data-close aria-label="탐색 닫기">×</button></div>
+    <div class="sdr-header"><div class="sdr-title-group"><h2 id="sdr-title">수신기</h2><span class="sdr-header-caption">연결부터 관측점 등록까지</span></div><button type="button" data-back hidden aria-label="탐색 재개">‹ 탐색</button><button type="button" data-close aria-label="수신기 닫기">×</button></div>
     <div class="sdr-body">
-    <p class="sdr-status" role="status">연결 상태 확인 전</p>
+    <div data-receiver-selector class="sdr-operation" role="group" aria-label="수신기 연결 방식"></div>
+    <section data-bluetooth hidden aria-label="Bluetooth IC-R30 수신기"></section>
+    <div data-usb-content>
     <p class="sdr-message" role="alert"></p>
-    <section data-usb-section class="sdr-usb-section" data-connected="false" aria-label="USB 수신기"><h3 data-usb-heading>USB 수신기</h3><div data-devices></div><div class="sdr-usb-tools"><button type="button" data-refresh>새로고침</button><button type="button" data-disconnect hidden>연결 해제</button></div></section>
+    <section data-usb-section class="sdr-usb-section sdr-connection" data-connected="false" aria-label="USB 수신기">
+      <div class="sdr-connection-heading"><h3 data-usb-heading class="sdr-stage-heading"><span class="sdr-step" aria-hidden="true">1</span> 수신기 연결</h3><div class="sdr-usb-tools sdr-connection-tools"><button type="button" data-refresh>기기 새로고침</button><button type="button" data-disconnect class="sdr-quiet" hidden>연결 해제</button></div></div>
+      <p class="sdr-status sdr-connection-status" role="status">USB 연결 대기</p>
+      <div data-devices class="sdr-device-list"></div>
+      <details data-usb-pairing class="sdr-help"><summary>처음 연결하는 경우</summary><p>USB OTG 어댑터로 RTL-SDR을 연결한 뒤 기기 목록에서 연결을 누르고 USB 접근 권한을 허용하세요.</p></details>
+    </section>
     <section data-settings-section class="sdr-section" hidden>
+        <h3 class="sdr-stage-heading"><span class="sdr-step" aria-hidden="true">2</span> 개체 · 주파수 설정</h3>
         <div class="sdr-operation" role="group" aria-label="수신 방식"><button type="button" data-task-scan aria-pressed="false">대역 탐색</button><button type="button" data-task-fixed aria-pressed="true">개별 탐색</button></div>
         <div data-animal-picker class="sdr-animal-picker">
           <div class="sdr-animal-heading"><strong>찾을 개체</strong><button type="button" data-animal-clear disabled>선택 해제</button><button type="button" data-animal-refresh>목록 새로고침</button></div>
@@ -24,7 +32,7 @@
         <div class="sdr-wide sdr-scan-fields" data-scan-fields hidden><label>시작 주파수 <span>MHz</span><input data-scan-start type="number" min="0.1" max="999.999" step="0.001" value="148.000" inputmode="decimal"></label><label>끝 주파수 <span>MHz</span><input data-scan-end type="number" min="0.1" max="999.999" step="0.001" value="174.000" inputmode="decimal"></label></div>
         <div class="sdr-wide sdr-frequency-field" data-frequency-field>
           <div class="sdr-frequency-heading"><div><strong>수신 주파수</strong><span data-frequency-range>MHz</span><span data-frequency-animal class="sdr-frequency-animal" aria-live="polite" hidden></span></div><button type="button" data-frequency-edit aria-expanded="false">직접 입력</button></div>
-          <div data-frequency-digits class="sdr-frequency-digits" role="group" aria-label="주파수 자릿수 조정">${[100000000, 10000000, 1000000, 100000, 10000, 1000, 100, 10].map((step, index) => `${index === 3 ? '<span class="sdr-frequency-dot" aria-hidden="true">.</span>' : ''}<div class="sdr-digit"><button type="button" data-freq-up="${step}" aria-label="${step / 1e6} MHz 올리기">▲</button><strong data-freq-digit="${index}" aria-hidden="true">—</strong><button type="button" data-freq-down="${step}" aria-label="${step / 1e6} MHz 내리기">▼</button></div>`).join('')}</div>
+          <div data-frequency-digits class="sdr-frequency-digits" role="group" aria-label="주파수 자릿수 조정">${window.BearSdrFrequency.markup()}</div>
           <label data-frequency-entry hidden>직접 입력<input data-frequency type="number" min="0.1" max="999.99999" step="0.00001" value="150.000" inputmode="decimal" aria-label="수신 주파수 MHz"></label>
         </div>
         </div>
@@ -38,6 +46,7 @@
       </fieldset>
     </section>
     <section data-result class="sdr-section" hidden>
+      <h3 class="sdr-stage-heading"><span class="sdr-step" aria-hidden="true">3</span> 신호 확인</h3>
       <p data-animal-target class="sdr-animal-target" hidden></p>
       <div data-scan-results hidden><p data-scan-progress class="sdr-scan-progress">탐색 대기</p><div class="sdr-candidate-heading"><strong data-candidate-heading>신호 후보</strong><span data-candidate-count>0개</span></div><div data-candidates></div></div>
       <div data-fixed-results>
@@ -54,15 +63,17 @@
       <p data-spectrum-info class="sdr-note" hidden></p>
       </div>
     </section>
-    <section data-diagnostic-section class="sdr-section" hidden>
-      <details class="sdr-reception-diagnostic"><summary>수신 진단</summary><div><button type="button" data-diagnostic-start>10초 기록</button><button type="button" data-diagnostic-share disabled>파일 공유</button><button type="button" data-diagnostic-delete disabled>선택 삭제</button></div><select data-diagnostic-record aria-label="저장된 수신 진단 기록" hidden></select><p data-diagnostic-status class="sdr-note">원본 I/Q와 청취 소리를 기기에만 기록합니다.</p></details>
+    <section data-diagnostic-section class="sdr-section">
+      <details class="sdr-reception-diagnostic" aria-label="USB 수신 진단 로그"><summary>수신 진단 · 저장된 로그</summary><div class="sdr-log-actions"><button type="button" data-diagnostic-start class="sdr-primary" disabled>10초 기록</button><button type="button" data-diagnostic-share disabled>파일 공유</button><button type="button" data-diagnostic-delete class="sdr-danger" disabled>선택 삭제</button></div><p class="sdr-note">CW 수신 중 원본 I/Q와 청취 소리를 10초간 기기에 기록합니다. 저장된 로그는 연결 없이 공유·삭제할 수 있습니다.</p><select data-diagnostic-record aria-label="저장된 수신 진단 기록" hidden></select><p data-diagnostic-status class="sdr-note" role="status">저장된 기록 없음 · CW 수신을 시작한 뒤 기록하세요.</p></details>
     </section>
 
-    </div>
+    </div></div>
     <div class="sdr-footer" hidden>
-      <button type="button" class="sdr-primary sdr-register-observation" data-register-observation hidden>비프 확인 · 관측점 등록</button>
+      <p data-receiver-context class="sdr-footer-context"></p>
+      <button type="button" class="sdr-primary sdr-register-observation" data-register-observation hidden>수신 확인 · 관측점 등록</button>
       <div class="sdr-actions sdr-run"><button type="button" class="sdr-primary" data-start disabled>수신 시작</button><button type="button" data-stop disabled>정지</button></div>
-    </div>`;
+    </div>
+    <div data-bt-footer class="sdr-receiver-footer" hidden></div>`;
   document.body.appendChild(dialog);
   const status = dialog.querySelector(".sdr-status");
   const message = dialog.querySelector(".sdr-message");
@@ -90,6 +101,7 @@
   let plugin = null;
   let busy = false;
   let current = null;
+  let bluetooth = null;
   let listener = null;
   let listenerPromise = null;
   let sequence = 0;
@@ -112,8 +124,14 @@
   } catch (_) { /* A damaged or unavailable store must not prevent reception. */ }
   const favoritesFilter = dialog.querySelector("[data-animal-favorites-filter]");
   favoritesFilter.addEventListener("click", () => {
-    favoritesOnly = !favoritesOnly; animalList.scrollLeft = 0; renderAnimalPicker();
+    toggleFavoritesFilter();
   });
+  function toggleFavoritesFilter() {
+    favoritesOnly = !favoritesOnly;
+    animalList.scrollLeft = 0;
+    renderAnimalPicker();
+    bluetooth?.refreshFavorites();
+  }
   function toggleFavorite(code) {
     const next = new Set(favoriteCodes), key = favoriteCode(code);
     if (next.has(key)) next.delete(key); else next.add(key);
@@ -122,12 +140,14 @@
       window.localStorage.setItem(favoriteStorageKey, JSON.stringify([...next].sort()));
       favoriteCodes = next; favoritesRevision++;
       finishAnimalSearch(); renderAnimalPicker();
-    } catch (_) { message.textContent = "기기에 즐겨찾기를 저장하지 못했습니다."; }
+      bluetooth?.refreshFavorites();
+      return true;
+    } catch (_) { message.textContent = "기기에 즐겨찾기를 저장하지 못했습니다."; return false; }
   }
   const registerObservationButton = dialog.querySelector("[data-register-observation]");
   function animalFormat(hz) { return window.BearSdrAnimals?.formatHz(hz) || (hz / 1e6).toFixed(6).replace(/0+$/, "").replace(/\.(\d{0,2})$/, (_, digits) => "." + digits.padEnd(3, "0")); }
   function animalMatchesFrequency() {
-    return !!(selectedAnimal && selectedAnimalHz === Math.round(Number(frequency.value) * 1e6));
+    return !!(selectedAnimal && window.BearSdrFrequency.matchesAnimalFrequency(selectedAnimalHz, Math.round(Number(frequency.value) * 1e6)));
   }
   function animalPickerLocked() {
     return busy || current?.state !== "connected" || task !== "fixed" ||
@@ -158,12 +178,11 @@
       selectedAnimal = null; selectedAnimalHz = null;
     }
     const tunedHz = frequency.value.trim() ? Math.round(Number(frequency.value) * 1e6) : NaN;
-    const matchingCodes = [...new Set(animalItems.filter(item =>
-      item.frequencies.some(f => f.hz === tunedHz)).map(item => item.code))];
+    const matchingCodes = window.BearSdrFrequency.matchingAnimalCodes(animalItems, tunedHz);
     const frequencyAnimal = dialog.querySelector("[data-frequency-animal]");
     frequencyAnimal.textContent = matchingCodes.join(", ");
     frequencyAnimal.hidden = task !== "fixed" || !matchingCodes.length;
-    frequencyAnimal.setAttribute("aria-label", matchingCodes.length ? `등록 주파수 일치 개체 ${matchingCodes.join(", ")}` : "");
+    frequencyAnimal.setAttribute("aria-label", matchingCodes.length ? `등록 주파수 ±900 Hz 범위 개체 ${matchingCodes.join(", ")}` : "");
     const locked = animalPickerLocked();
     animalSearch.disabled = locked;
     dialog.querySelector("[data-animal-refresh]").disabled = locked || catalogLoading;
@@ -232,13 +251,16 @@
     dialog.querySelector("[data-animal-picker]").hidden = task !== "fixed";
     const rf = current?.reception || {};
     const receivedHz = rf.listenFrequencyHz || rf.frequencyHz;
-    const canRegister = task === "fixed" && selected && current?.state === "connected" && current?.fixedResultAvailable &&
-      rf.hasSamples && receivedHz === selectedAnimalHz && ["receiving", "idle"].includes(current?.receptionState);
-    registerObservationButton.hidden = !canRegister;
+    const canRegister = task === "fixed" && selected && !frequencyControls.editing() && current?.state === "connected" && current?.fixedResultAvailable &&
+      rf.hasSamples && receivedHz === tunedHz && ["receiving", "idle"].includes(current?.receptionState);
+    registerObservationButton.hidden = task !== "fixed";
     registerObservationButton.disabled = busy || !canRegister;
     const target = dialog.querySelector("[data-animal-target]");
-    target.hidden = task !== "fixed" || !selected || receivedHz !== selectedAnimalHz;
-    target.textContent = selected ? `찾는 개체 ${selectedAnimal.code} · ${animalFormat(selectedAnimalHz)} MHz` : "";
+    target.hidden = task !== "fixed" || !selected || receivedHz !== tunedHz;
+    target.textContent = selected ? `찾는 개체 ${selectedAnimal.code} · ${animalFormat(tunedHz)} MHz` : "";
+    dialog.querySelector("[data-receiver-context]").textContent = task === "scan" ? "대역 탐색 · 신호 후보를 선택해 확인하세요."
+      : selected ? `${selectedAnimal.code} · ${animalFormat(tunedHz)} MHz · CW${canRegister ? " · 관측점 등록 가능" : " · 수신 시작 후 측정값을 확인하세요."}`
+      : "개체를 선택하거나 주파수를 직접 설정하세요.";
   }
   async function loadAnimals() {
     if (catalogLoading || !window.BearSdrAnimals) return;
@@ -291,6 +313,11 @@
   const scanButton = dialog.querySelector("[data-task-scan]");
   const fixedButton = dialog.querySelector("[data-task-fixed]");
   function renderMapStatus(snapshot) {
+    bluetooth?.updateUsb();
+    if (bluetooth?.selected()) {
+      const bt = bluetooth.status();
+      snapshot = { receptionState: bt.state === "connected" ? "receiving" : "idle", receptionError: bt.error };
+    }
     const reception = snapshot && snapshot.receptionState;
     const state = snapshot && snapshot.receptionError ? "error" :
       snapshot && snapshot.backgroundScanning && ["starting", "scanning"].includes(reception) ? "scanning" :
@@ -365,116 +392,21 @@
   }
   scanButton.addEventListener("click", () => { if (!settings.disabled) { candidateSelected = false; setTask("scan"); } });
   fixedButton.addEventListener("click", () => { if (!settings.disabled) { candidateSelected = false; setTask("fixed"); } });
-  const frequencyEditor = dialog.querySelector("[data-frequency-entry]");
-  const frequencyDigits = dialog.querySelector("[data-frequency-digits]");
-  const frequencyEditButton = dialog.querySelector("[data-frequency-edit]");
-  let editingFrequency = false;
-  let frequencyBeforeEditing = "";
+  const frequencyControls = window.BearSdrFrequency.mount(dialog, {
+    frequency,
+    disabled: () => settings.disabled,
+    bounds: () => frequencyBounds,
+    format: animalFormat,
+    onChange: updateWindow,
+    onCommit: () => true,
+    onError: text => { message.textContent = text; }
+  });
   function setFrequencyEditing(enabled) {
-    editingFrequency = enabled;
-    if (!enabled) {
-      digitControls.forEach(({ digit }) => digit.blur?.());
-      frequency.blur?.();
-    }
-    frequencyEditor.hidden = true;
-    frequencyDigits.hidden = false;
-    frequencyEditButton.textContent = enabled ? "완료" : "직접 입력";
-    frequencyEditButton.setAttribute("aria-expanded", String(enabled));
-    updateWindow();
+    frequencyControls.setEditing(enabled);
   }
-  function completeFrequencyEditing() {
-    if (settings.disabled) return false;
-    const bounds = frequencyBounds, value = Number(frequency.value);
-    if (!frequency.value.trim() || !Number.isFinite(value) || value < bounds.min || value > bounds.max) {
-      message.textContent = `${bounds.min}–${bounds.max} MHz 범위를 확인하세요.`;
-      digitControls[0].digit.focus?.();
-      return false;
-    }
-    frequency.value = animalFormat(Math.round(value * 1e6));
-    message.textContent = "";
-    setFrequencyEditing(false);
-    return true;
-  }
-  const digitControls = [100000000, 10000000, 1000000, 100000, 10000, 1000, 100, 10].map((step, index) => {
-    const up = dialog.querySelector(`[data-freq-up="${step}"]`);
-    const down = dialog.querySelector(`[data-freq-down="${step}"]`);
-    const digit = dialog.querySelector(`[data-freq-digit="${index}"]`);
-    const adjust = direction => {
-      if (settings.disabled) return;
-      const bounds = frequencyBounds, value = Number(frequency.value);
-      if (!frequency.value.trim() || !Number.isFinite(value) || value < bounds.min || value > bounds.max) return;
-      const hz = Math.round(value * 1e6) + direction * step;
-      if (hz < bounds.min * 1e6 || hz > bounds.max * 1e6) return;
-      frequency.value = animalFormat(hz);
-      updateWindow();
-    };
-    up.addEventListener("click", () => adjust(1));
-    down.addEventListener("click", () => adjust(-1));
-    digit.setAttribute("inputmode", "numeric");
-    digit.setAttribute("enterkeyhint", "done");
-    digit.setAttribute("role", "textbox");
-    digit.setAttribute("aria-label", `${index + 1}번째 주파수 숫자`);
-    digit.setAttribute("aria-hidden", "false");
-    digit.addEventListener("focus", () => {
-      if (!editingFrequency || settings.disabled || !window.getSelection || !document.createRange) return;
-      const range = document.createRange(); range.selectNodeContents(digit);
-      const selection = window.getSelection(); selection.removeAllRanges(); selection.addRange(range);
-    });
-    digit.addEventListener("input", (event = {}) => {
-      if (event.isComposing) return;
-      if (!editingFrequency || settings.disabled) { updateFrequencyDigits(); return; }
-      const typed = String(digit.textContent).replace(/\D/g, "").slice(-1);
-      if (!typed) { updateFrequencyDigits(); return; }
-      const digits = Number(frequency.value).toFixed(5).padStart(9, "0").replace(".", "").split("");
-      digits[index] = typed;
-      frequency.value = animalFormat(Math.round(Number(`${digits.slice(0, 3).join("")}.${digits.slice(3).join("")}`) * 1e6));
-      updateWindow();
-      if (index === digitControls.length - 1) completeFrequencyEditing();
-      else digitControls[index + 1].digit.focus?.();
-    });
-    digit.addEventListener("beforeinput", event => {
-      if (!editingFrequency || event.isComposing) return;
-      if (["insertParagraph", "insertLineBreak"].includes(event.inputType)) {
-        event.preventDefault(); completeFrequencyEditing();
-      }
-    });
-    digit.addEventListener("keydown", event => {
-      if (!editingFrequency || settings.disabled || event.isComposing) return;
-      if (event.key === "Enter" || event.keyCode === 13 || (event.key === "Tab" && !event.shiftKey && index === digitControls.length - 1)) {
-        event.preventDefault(); completeFrequencyEditing();
-      }
-      if (event.key === "Escape") { event.preventDefault(); frequency.value = frequencyBeforeEditing;  setFrequencyEditing(false); }
-    });
-    return { step, up, down, digit };
-  });
-
   function updateFrequencyDigits() {
-    const bounds = frequencyBounds, value = Number(frequency.value);
-    const valid = !!frequency.value.trim() && Number.isFinite(value) && value >= bounds.min && value <= bounds.max;
-    const hz = Math.round(value * 1e6);
-    const digits = frequency.value.trim() && Number.isFinite(value) && value >= 0 && value < 1000
-      ? value.toFixed(5).padStart(9, "0").replace(".", "") : "--------";
-    digitControls.forEach(({ step, up, down, digit }, index) => {
-      digit.textContent = digits[index];
-      digit.setAttribute("contenteditable", String(editingFrequency && !settings.disabled));
-      digit.setAttribute("tabindex", editingFrequency && !settings.disabled ? "0" : "-1");
-      up.disabled = settings.disabled || !valid || hz + step > bounds.max * 1e6;
-      down.disabled = settings.disabled || !valid || hz - step < bounds.min * 1e6;
-    });
-    frequencyDigits.setAttribute("aria-label", valid ? `수신 주파수 ${animalFormat(hz)} MHz` : "주파수 직접 입력 필요");
-    frequencyEditButton.disabled = settings.disabled;
+    frequencyControls.render();
   }
-
-  frequencyEditButton.addEventListener("click", () => {
-    if (settings.disabled) return;
-    if (editingFrequency) { completeFrequencyEditing(); return; }
-    frequencyBeforeEditing = frequency.value;
-    setFrequencyEditing(true);
-    digitControls[0].digit.focus?.();
-  });
-  frequency.addEventListener("keydown", event => {
-    if (event.key === "Enter") { event.preventDefault(); if (editingFrequency) frequencyEditButton.click(); }
-  });
 
   function renderSpectrum(snapshot) {
     const plot = window.SdrSpectrumPlot;
@@ -565,6 +497,7 @@
     const connected = snapshot.state === "connected";
     dialog.querySelector("[data-usb-section]").dataset.connected = String(connected);
     dialog.querySelector("[data-usb-heading]").hidden = connected;
+    dialog.querySelector("[data-usb-pairing]").hidden = connected;
     status.hidden = connected;
     if (!connected && current?.state === "connected") resetDisconnectedUi();
     const running = ["starting", "receiving", "scanning", "stopping"].includes(snapshot.receptionState);
@@ -734,7 +667,7 @@
       recordSelect.dataset.keys = recordKeys;
     }
     recordSelect.hidden = !records.length;recordSelect.disabled = capturing || busy;
-    dialog.querySelector("[data-diagnostic-section]").hidden = !connected && !capturing && !records.length && diagnostic.state !== "ready";
+    dialog.querySelector("[data-diagnostic-section]").hidden = false;
     const audioGain = dialog.querySelector("[data-audio-gain]");
     if (Number.isInteger(audio.gainDb)) audioGain.value = String(audio.gainDb);
     audioGain.disabled = busy || capturing || typeof plugin?.setAudio !== "function" || snapshot.receptionState === "stopping";
@@ -746,7 +679,7 @@
       : diagnostic.state === "ready" ? diagnostic.writerDroppedBlocks > 0 ? "저장 지연으로 일부만 기록됨 · 파일 공유 가능" : "기록 완료 · 파일을 공유해 수신 상태를 비교할 수 있습니다."
       : diagnostic.state === "packaging" ? "진단 파일 준비 중…"
       : capturing ? `원본 수신 기록 중 · ${(Number(diagnostic.iqBytes || 0) / 1e6).toFixed(1)} MB`
-      : records.length ? `저장된 기록 ${records.length}개 · 선택한 기록을 공유할 수 있습니다.` : "원본 I/Q와 청취 소리를 기기에만 기록합니다.";
+      : records.length ? `저장된 기록 ${records.length}개 · 선택한 기록을 공유·삭제할 수 있습니다.` : "저장된 기록 없음 · CW 수신을 시작한 뒤 기록하세요.";
     const tunerMetrics = task === "scan" && snapshot.scan?.tuner ? snapshot.scan : rf;
     dialog.querySelector("[data-gain-info]").textContent = tunerMetrics?.tuner && Number.isFinite(tunerMetrics.gainDb)
       ? `${tunerMetrics.tuner} · 적용 ${tunerMetrics.gainDb.toFixed(1)} dB` +
@@ -766,7 +699,7 @@
     renderSpectrum(snapshot);
     renderCandidates(snapshot);
     renderAnimalPicker();
-    if (snapshot.receptionState === "scanning" && previousReception !== "scanning") {
+    if (["scanning", "receiving"].includes(snapshot.receptionState) && previousReception !== snapshot.receptionState) {
       resultSection.scrollIntoView?.({ block: "start", behavior: "smooth" });
     }
   }
@@ -899,6 +832,7 @@
     dialog.querySelector("[data-advanced-settings]").open = false;
     if (typeof window.__bpResetBackExit === "function") window.__bpResetBackExit();
     dialog.showModal();
+    bluetooth?.onOpen();
     if (!catalogLoaded) void loadAnimals();
     settingsSection.hidden = resultSection.hidden = footer.hidden = true;
     renderSpectrum(current);
@@ -913,6 +847,7 @@
     dialog.querySelector("[data-usb-section]").dataset.connected = "false";
     dialog.querySelector("[data-usb-section]").hidden = false;
     dialog.querySelector("[data-usb-heading]").hidden = false;
+    dialog.querySelector("[data-usb-pairing]").hidden = false;
     status.hidden = false;
     refreshButton.hidden = false;
     disconnectButton.hidden = true;
@@ -920,7 +855,6 @@
       if (!plugin) plugin = getAndroidPlugin();
       if (!plugin) {
         status.textContent = "USB 연결 확인은 Android 앱에서 사용할 수 있습니다.";
-        dialog.querySelector("[data-usb-section]").hidden = true;
         return;
       }
       await attachListener();
@@ -988,9 +922,11 @@
     return run(() => plugin.deleteDiagnostic({ id }));
   });
   registerObservationButton.addEventListener("click", () => run(async () => {
-    if (registerObservationButton.hidden || !animalMatchesFrequency() || !current?.reception?.hasSamples) return;
+    if (registerObservationButton.hidden || frequencyControls.editing() || !animalMatchesFrequency() || !current?.fixedResultAvailable || !current?.reception?.hasSamples ||
+        (current.reception.listenFrequencyHz || current.reception.frequencyHz) !== Math.round(Number(frequency.value) * 1e6) ||
+        !["receiving", "idle"].includes(current.receptionState)) return;
     if (typeof window.BearSdrRegistration?.open !== "function") throw new Error("관측점 등록 화면을 준비하지 못했습니다. 앱을 다시 열어주세요.");
-    const context = { bearCode: selectedAnimal.code, frequencyHz: selectedAnimalHz };
+    const context = { bearCode: selectedAnimal.code, frequencyHz: current.reception.listenFrequencyHz || current.reception.frequencyHz };
     const attempt = ++connectionAttempt;
     await plugin.stopReception();
     await refresh();
@@ -1049,6 +985,7 @@
         if (typeof plugin.closeDevice === "function") await plugin.closeDevice();
         else if (active) throw new Error("수신 종료를 지원하는 최신 APK를 설치하세요.");
       }
+      await bluetooth?.exit();
       await exit();
     } catch (error) {
       const reason = `앱을 종료하지 못했습니다. ${error.message || String(error)}`;
@@ -1060,10 +997,11 @@
   function handleBackNavigation() {
     if (appExitPending) return true;
     if (!dialog.open) return false;
-    if (busy) return true;
-    if (editingFrequency) {
-      if (!settings.disabled) { frequency.value = frequencyBeforeEditing;  }
-      setFrequencyEditing(false);
+    if (busy || bluetooth?.busy()) return true;
+    if (bluetooth?.selected() && bluetooth.cancelFrequencyEditing()) {
+      return true;
+    } else if (frequencyControls.editing()) {
+      frequencyControls.cancel();
     } else if (task === "fixed" && candidateSelected && lastScan && current && current.scanResumeAvailable) {
       void run(resumeLastScan);
     } else {
@@ -1072,6 +1010,17 @@
     return true;
   }
   window.SdrDiagnostics = { handleBackNavigation, exitAppSafely };
+  bluetooth = window.BearIcR30?.mount(dialog, {
+    usbLocked: () => busy || (plugin && !current) || ["connected", "permissionPending"].includes(current?.state),
+    favorites: {
+      has: code => favoriteCodes.has(favoriteCode(code)),
+      revision: () => favoritesRevision,
+      toggle: toggleFavorite,
+      only: () => favoritesOnly,
+      toggleFilter: toggleFavoritesFilter
+    },
+    onChange: () => renderMapStatus(current)
+  }) || null;
   dialog.addEventListener("cancel", event => { event.preventDefault(); handleBackNavigation(); });
 
   function updateDialogViewport(snapshot = current) {

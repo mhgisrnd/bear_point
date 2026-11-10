@@ -1484,7 +1484,8 @@ window.createObsRegisterModule = function createObsRegisterModule({
     if (isSubmitting) return false;
     var code = String(context && context.bearCode || "").trim();
     var hz = Number(context && context.frequencyHz);
-    if (!code || !Number.isInteger(hz) || hz < 100000 || hz > 999999000) return false;
+    var maxHz = context && context.receiver === "IC-R30" ? 3304999000 : 999999990;
+    if (!code || !Number.isSafeInteger(hz) || hz < 100000 || hz > maxHz) return false;
     var reuseDraft = isRegisterPopupVisible();
     if (reuseDraft && formMode !== "create") return false;
     if (reuseDraft) {
@@ -1499,7 +1500,9 @@ window.createObsRegisterModule = function createObsRegisterModule({
     regBearEl.readOnly = true;
     if (btnBearFind) btnBearFind.disabled = true;
     if (sdrSourceEl) {
-      sdrSourceEl.textContent = "SDR · " + code + " · " + window.BearSdrAnimals.formatHz(hz) + " MHz · CW";
+      sdrSourceEl.textContent = (context.receiver === "IC-R30" ? "IC-R30 Bluetooth" : "SDR") +
+        " · " + code + " · " + window.BearSdrAnimals.formatHz(hz) + " MHz · " +
+        (context.receiver === "IC-R30" ? String(context.mode || "") : "CW");
       sdrSourceEl.hidden = false;
     }
     sdrReturn = typeof onCancel === "function" ? onCancel : null;
