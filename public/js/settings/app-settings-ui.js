@@ -32,16 +32,20 @@
       </form>
     </section><section id="app-settings-notifications-panel" role="tabpanel" aria-labelledby="app-settings-notifications-tab" hidden>
       <div class="app-settings-body app-settings-fields">
-        <p class="app-settings-intro">다른 담당자가 공유한 개체 추적 위치의 알림을 설정합니다.</p>
+        <p class="app-settings-intro">새로운 개체 추적 위치가 공유되면 알림을 받을 수 있습니다.</p>
     <section class="app-settings-push" aria-label="개체 추적 공유 알림">
-      <label class="app-settings-notification-toggle"><strong>개체 추적 공유 알림</strong><input type="checkbox" role="switch" class="app-settings-notification-enabled" disabled aria-label="개체 추적 공유 알림 수신" /><span aria-hidden="true"></span></label>
+      <div class="app-notification-card">
+      <label class="app-settings-notification-toggle"><strong>개체 추적 공유 알림</strong><span class="app-notification-control"><span class="app-notification-state" aria-hidden="true">확인 중</span><input type="checkbox" role="switch" class="app-settings-notification-enabled" disabled aria-label="개체 추적 공유 알림 수신" /><span class="app-notification-track" aria-hidden="true"></span></span></label>
       <p class="app-settings-help app-settings-notification-message" role="status" aria-live="polite"></p>
       <button type="button" class="app-settings-refresh app-settings-notification-system" hidden>휴대폰 알림 설정 열기</button>
-      <p class="app-settings-help">이 기기에 적용됩니다. 이동 기록·수신 중 표시되는 알림은 유지됩니다.</p>
-      <div class="app-settings-catalog-row">
-        <p class="app-settings-help app-settings-push-status" role="status" aria-live="polite"></p>
-        <button type="button" class="app-settings-refresh app-settings-push-retry">다시 확인</button>
       </div>
+      <p class="app-notification-footnote">이 기기에만 적용됩니다. 이동 기록·수신 중 알림은 이 설정과 별개로 유지됩니다.</p>
+      <section class="app-notification-diagnostics" aria-label="알림 연결 확인">
+        <h3>알림 연결 확인</h3>
+        <p class="app-settings-help">알림이 오지 않을 때 휴대폰 권한과 서버 연결 상태를 다시 확인하세요.</p>
+        <p class="app-settings-help app-settings-push-status" role="status" aria-live="polite"></p>
+        <button type="button" class="app-settings-refresh app-settings-push-retry">알림 상태 다시 확인</button>
+      </section>
     </section>
       </div>
     </section><section id="app-settings-version-panel" role="tabpanel" aria-labelledby="app-settings-version-tab" hidden></section></div>`;
@@ -58,12 +62,13 @@
       const status = pushRegistration.snapshot();
       pushMessage.textContent = status.message;
       pushRetry.disabled = status.busy || !pushRegistration.retry;
+      pushRetry.textContent = status.busy ? "확인 중…" : "알림 상태 다시 확인";
     }
     paintPushRegistration();
     window.addEventListener("bearpoint:push-registration-changed", paintPushRegistration);
     pushRetry.addEventListener("click", () => { void pushRegistration.retry?.(); });
   } else {
-    dialog.querySelector('.app-settings-push .app-settings-catalog-row').hidden = true;
+    dialog.querySelector('.app-notification-diagnostics').hidden = true;
   }
   const tabs = [...dialog.querySelectorAll('[role="tab"]')];
   function selectTab(tab, focus = false) {

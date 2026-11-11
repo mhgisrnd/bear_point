@@ -116,23 +116,25 @@ window.createObsListModule = function createObsListModule({
   const obsListStatusEl = document.getElementById("obs-list-status");
   const obsListCountEl = document.getElementById("obs-list-count");
   const obsSelectedCountEl = document.getElementById("obs-selected-count");
-  const searchFieldEl = document.getElementById("search-field");
-  const searchFieldButtonEl = document.getElementById("btn-obs-search-field");
-  const searchOptionsEl = document.getElementById("obs-search-options");
   const searchQueryEl = document.getElementById("search-query");
   const btnSearchClearEl = document.getElementById("btn-search-clear");
   const btnFilterEl = document.getElementById("btn-obs-filter");
   const filterCountEl = document.getElementById("obs-filter-count");
   const filterPanelEl = document.getElementById("obs-filter-panel");
-  const ownerFilterEl = document.getElementById("obs-filter-owner");
+  let mineOwnerFilter = "";
+  const teamFilterEl = document.getElementById("obs-filter-team");
+  const datesFilterEl = document.getElementById("obs-filter-dates");
   const periodFilterEl = document.getElementById("obs-filter-period");
   const dayFilterEl = document.getElementById("obs-filter-day");
   const monthFilterEl = document.getElementById("obs-filter-month");
   const yearFilterEl = document.getElementById("obs-filter-year");
+  const rangeFilterEl = document.getElementById("obs-filter-range");
+  const startFilterEl = document.getElementById("obs-filter-start");
+  const endFilterEl = document.getElementById("obs-filter-end");
   const btnMineFilterEl = document.getElementById("btn-obs-filter-mine");
   const filterSummaryEl = document.getElementById("obs-filter-summary");
   const filterErrorEl = document.getElementById("obs-filter-error");
-  let ownerOptionsSignature = "";
+  let teamOptionsSignature = "";
   const chkAllEl = document.getElementById("chk-all");
 
   const selectedObsIds = new Set();
@@ -961,14 +963,14 @@ window.createObsListModule = function createObsListModule({
     chkAllEl.indeterminate = !allChecked && someChecked;
   }
 
-  // 검색 조건(관측점/코드)에 맞는 데이터만 반환한다.
+  // 관측점명·개체 코드·담당자를 한 번에 부분 검색한다.
   function getFilteredItems() {
-    const field = searchFieldEl ? searchFieldEl.value : "obs";
     const query = (searchQueryEl ? searchQueryEl.value : "").trim().toLowerCase();
     const scoped = window.BearObservationFilters.filter(observationSamples, readObservationFilters());
     if (!query) return scoped;
     return scoped.filter((item) => {
-      if (field === "bear") return item.bearCode.toLowerCase().includes(query);
+      if (String(item.owner || "").toLowerCase().includes(query)) return true;
+      if (String(item.bearCode || "").toLowerCase().includes(query)) return true;
       return item.id.toLowerCase().includes(query) || getObservationLabel(item).toLowerCase().includes(query);
     });
   }
@@ -986,8 +988,8 @@ window.createObsListModule = function createObsListModule({
   }
 
   function readObservationFilters() {
-    return { owner: ownerFilterEl?.value || "", period: periodFilterEl?.value || "all",
-      day: dayFilterEl?.value || "", month: monthFilterEl?.value || "", year: yearFilterEl?.value || "" };
+    return { owner: mineOwnerFilter, team: teamFilterEl?.value || "", teamName: teamFilterEl?.selectedOptions?.[0]?.textContent || "", period: periodFilterEl?.value || "all",
+      start: startFilterEl?.value || "", end: endFilterEl?.value || "", day: dayFilterEl?.value || "", month: monthFilterEl?.value || "", year: yearFilterEl?.value || "" };
   }
   function lastRegisteredOwner() {
     try { return String(window.localStorage.getItem("bearpoint.lastRegisteredOwner") || "").trim(); }
@@ -1002,7 +1004,8 @@ window.createObsListModule = function createObsListModule({
     if (open) syncFilterControls();
   }
   function clearObservationFilters() {
-    if (ownerFilterEl) ownerFilterEl.value = "";
+    mineOwnerFilter = "";
+    if (teamFilterEl) teamFilterEl.value = "";
     if (periodFilterEl) periodFilterEl.value = "all";
     const today = window.BearObservationFilters.dateKey(new Date());
     if (dayFilterEl) dayFilterEl.value = today;
@@ -1010,15 +1013,20 @@ window.createObsListModule = function createObsListModule({
     if (yearFilterEl) yearFilterEl.value = today.slice(0, 4);
   }
   function syncFilterControls() {
-    if (!periodFilterEl || !ownerFilterEl) return;
+    if (!periodFilterEl) return;
     const savedOwner = lastRegisteredOwner();
-    const selected = ownerFilterEl.value;
-    const owners = [...new Set(observationSamples.map(item => String(item.owner || "").trim()).concat([savedOwner, selected]).filter(Boolean))].sort((a, b) => a.localeCompare(b, "ko"));
-    const signature = JSON.stringify(owners);
-    if (signature !== ownerOptionsSignature) {
-      ownerFilterEl.innerHTML = '<option value="">전체 담당자</option>' + owners.map(owner => `<option value="${escapeHtml(owner)}">${escapeHtml(owner)}</option>`).join("");
-      ownerFilterEl.value = selected;
-      ownerOptionsSignature = signature;
+    const selected = mineOwnerFilter;
+    if (teamFilterEl) {
+      const selectedTeam = teamFilterEl.value;
+      const teams = new Map(observationSamples.map(item => [String(item.team_id || item.team_name || "미지정"), String(item.team_name || item.team_id || "미지정")]));
+      if (selectedTeam && !teams.has(selectedTeam)) teams.set(selectedTeam, teamFilterEl.selectedOptions?.[0]?.textContent || selectedTeam);
+      const entries = [...teams].sort((a, b) => a[1].localeCompare(b[1], "ko"));
+      const teamSignature = JSON.stringify(entries);
+      if (teamSignature !== teamOptionsSignature) {
+        teamFilterEl.innerHTML = '<option value="">전체 팀</option>' + entries.map(([value, name]) => `<option value="${escapeHtml(value)}">${escapeHtml(name)}</option>`).join('');
+        teamFilterEl.value = selectedTeam;
+        teamOptionsSignature = teamSignature;
+      }
     }
     if (btnMineFilterEl) {
       btnMineFilterEl.disabled = !savedOwner;
@@ -1026,8 +1034,10 @@ window.createObsListModule = function createObsListModule({
       btnMineFilterEl.setAttribute("aria-pressed", String(!!savedOwner && selected === savedOwner));
     }
     const filters = readObservationFilters();
+    if (rangeFilterEl) rangeFilterEl.hidden = filters.period !== "range";
+    if (datesFilterEl) datesFilterEl.hidden = !["day", "month", "year", "range"].includes(filters.period);
     const today = window.BearObservationFilters.dateKey(new Date());
-    for (const [element, mode, initial] of [[dayFilterEl, "day", today], [monthFilterEl, "month", today.slice(0, 7)], [yearFilterEl, "year", today.slice(0, 4)]]) {
+    for (const [element, mode, initial] of [[dayFilterEl, "day", today], [monthFilterEl, "month", today.slice(0, 7)], [yearFilterEl, "year", today.slice(0, 4)], [startFilterEl, "range", today], [endFilterEl, "range", today]]) {
       if (!element) continue;
       element.hidden = filters.period !== mode;
       if (!element.dataset.initialized) { element.value = initial; element.dataset.initialized = "true"; }
@@ -1036,11 +1046,12 @@ window.createObsListModule = function createObsListModule({
     const invalid = window.BearObservationFilters.periodKey(current) === null;
     if (filterErrorEl) {
       filterErrorEl.hidden = !invalid;
-      filterErrorEl.textContent = invalid ? "조회할 날짜를 선택하거나 올바른 연도를 입력해주세요." : "";
+      filterErrorEl.textContent = invalid ? (current.period === "range" ? "시작일과 종료일을 올바른 순서로 선택해주세요." : "조회할 날짜를 선택하거나 올바른 연도를 입력해주세요.") : "";
     }
     const description = window.BearObservationFilters.summary(current);
     if (filterSummaryEl) { filterSummaryEl.hidden = !description; filterSummaryEl.textContent = description + " ▾"; filterSummaryEl.title = description; }
-    const count = (current.owner ? 1 : 0) + (current.period !== "all" ? 1 : 0);
+    const count = (current.owner ? 1 : 0) + (current.team ? 1 : 0) + (current.period !== "all" ? 1 : 0);
+    if (btnSearchClearEl) btnSearchClearEl.disabled = !String(searchQueryEl?.value || "").trim() && count === 0;
     btnFilterEl?.classList.toggle("has-filters", count > 0);
     if (filterCountEl) {
       filterCountEl.hidden = count === 0;
@@ -1730,10 +1741,8 @@ window.createObsListModule = function createObsListModule({
 
   // 목록의 검색/선택/렌더 상태를 초기값으로 되돌린다.
   function resetList() {
-    setSearchOptionsOpen(false);
     setFiltersOpen(false);
     if (searchQueryEl) searchQueryEl.value = "";
-    setSearchField("obs");
     selectedObsIds.clear();
     observationMarkersLayer.clearLayers();
     observationMarkers.length = 0;
@@ -1743,7 +1752,6 @@ window.createObsListModule = function createObsListModule({
 
   // 등록 팝업이 열리는 동안 목록 패널을 일시적으로 숨긴다 (currentTab 유지).
   function hidePanel() {
-    setSearchOptionsOpen(false);
     setFiltersOpen(false);
     if (obsSheetEl) obsSheetEl.classList.add("hidden");
     if (obsListPanelEl) obsListPanelEl.classList.add("hidden");
@@ -1808,55 +1816,6 @@ window.createObsListModule = function createObsListModule({
   }
 
   // UI 이벤트(탭/검색/선택/삭제/스크롤 차단)를 바인딩한다.
-  function setSearchField(value) {
-    if (!searchFieldEl || !searchFieldButtonEl || !searchOptionsEl) return;
-    searchFieldEl.value = value;
-    for (const option of searchOptionsEl.querySelectorAll("[data-search-field]")) {
-      const selected = option.dataset.searchField === value;
-      option.setAttribute("aria-pressed", String(selected));
-      if (selected) {
-        searchFieldButtonEl.textContent = option.textContent;
-        searchFieldButtonEl.setAttribute("aria-label", "검색 항목: " + option.textContent);
-      }
-    }
-  }
-
-  function setSearchOptionsOpen(open) {
-    if (!searchFieldButtonEl || !searchOptionsEl) return;
-    searchOptionsEl.hidden = !open;
-    searchFieldButtonEl.setAttribute("aria-expanded", String(open));
-  }
-
-  function bindSearchOptions() {
-    if (!searchFieldButtonEl || !searchOptionsEl) return;
-    const picker = searchFieldButtonEl.parentElement;
-    searchFieldButtonEl.addEventListener("click", () => {
-      setSearchOptionsOpen(searchOptionsEl.hidden);
-      if (!searchOptionsEl.hidden) searchOptionsEl.querySelector('[aria-pressed="true"]')?.focus();
-    });
-    searchOptionsEl.addEventListener("click", (event) => {
-      const option = event.target.closest("[data-search-field]");
-      if (!option) return;
-      setSearchField(option.dataset.searchField);
-      searchFieldButtonEl.focus();
-      setSearchOptionsOpen(false);
-      applySearch();
-    });
-    picker.addEventListener("keydown", (event) => {
-      if (event.key !== "Escape" || searchOptionsEl.hidden) return;
-      event.preventDefault();
-      event.stopPropagation();
-      searchFieldButtonEl.focus();
-      setSearchOptionsOpen(false);
-    });
-    picker.addEventListener("focusout", (event) => {
-      if (!picker.contains(event.relatedTarget)) setSearchOptionsOpen(false);
-    });
-    document.addEventListener("pointerdown", (event) => {
-      if (!searchOptionsEl.hidden && !picker.contains(event.target)) setSearchOptionsOpen(false);
-    });
-  }
-
   function bindEvents() {
     const onLayoutChange = () => {
       // A phone drag position must not override the tablet popup's CSS anchor.
@@ -1989,21 +1948,19 @@ window.createObsListModule = function createObsListModule({
     }
 
     if (searchQueryEl) searchQueryEl.addEventListener("input", applySearch);
-    bindSearchOptions();
     if (btnFilterEl) btnFilterEl.addEventListener("click", () => setFiltersOpen(filterPanelEl.hidden));
     if (filterSummaryEl) filterSummaryEl.addEventListener("click", () => setFiltersOpen(filterPanelEl.hidden));
-    if (ownerFilterEl) ownerFilterEl.addEventListener("change", applySearch);
+    if (teamFilterEl) teamFilterEl.addEventListener("change", applySearch);
     if (periodFilterEl) periodFilterEl.addEventListener("change", applySearch);
-    for (const element of [dayFilterEl, monthFilterEl, yearFilterEl]) if (element) element.addEventListener("input", applySearch);
+    for (const element of [dayFilterEl, monthFilterEl, yearFilterEl, startFilterEl, endFilterEl]) if (element) element.addEventListener("input", applySearch);
     if (btnMineFilterEl) btnMineFilterEl.addEventListener("click", () => {
       syncFilterControls();
       const owner = lastRegisteredOwner();
-      if (owner && ownerFilterEl) ownerFilterEl.value = owner;
+      if (owner) mineOwnerFilter = mineOwnerFilter === owner ? "" : owner;
       applySearch();
     });
     if (btnSearchClearEl) btnSearchClearEl.addEventListener("click", () => {
       if (searchQueryEl) searchQueryEl.value = "";
-      setSearchField("obs");
       clearObservationFilters();
       setFiltersOpen(false);
       applySearch();

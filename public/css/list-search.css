@@ -1,0 +1,52 @@
+/* The observation, bear and movement lists share the same search controls. */
+.list-search-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 4px;
+  min-width: 0;
+  background: #fff;
+}
+.list-search-row input.list-search-input {
+  box-sizing: border-box;
+  flex: 1 1 0;
+  width: 0;
+  min-width: 0;
+  height: 33px;
+  min-height: 33px;
+  padding: 0 8px;
+  border: 1px solid #d7e1ed;
+  border-radius: 8px;
+  background: #fff;
+  color: #243c56;
+  font: 12px system-ui, sans-serif;
+  outline: none;
+}
+.list-search-row input.list-search-input:focus {
+  border-color: #8eade8;
+  box-shadow: 0 0 0 2px #dce8ff;
+}
+.list-search-row > button.list-search-reset,
+.list-search-row > button {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  flex: 0 0 auto;
+  height: 33px;
+  min-height: 33px;
+  padding: 0 7px;
+  border: 1px solid #d7e1ed;
+  border-radius: 8px;
+  background: #fff;
+  color: #486384;
+  font: 700 11px system-ui, sans-serif;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.list-search-row > button:not(:disabled):hover { background: #f8fafc; }
+.list-search-row > button:disabled,
+.list-search-row > button:disabled:hover { opacity: .45; cursor: default; background: #fff; color: #486384; border-color: #d7e1ed; }
+.list-search-row .list-owner-shortcut[aria-pressed="true"],
+.list-search-row .list-filter-button.has-filters { color: #2257c5; border-color: #aec5ec; background: #edf3ff; }

@@ -8,7 +8,14 @@
     if(owner.length>100|| (team_id&&!/^[a-zA-Z0-9_-]{1,100}$/.test(team_id)))throw new Error('검색 조건을 확인해주세요.');
     let from=null,to=null;
     const period=value.period||'all';
-    if(period==='today'||period==='day'){
+    if(period==='range'){
+      const start=String(value.start||''),end=String(value.end||'');
+      if(!/^\d{4}-\d{2}-\d{2}$/.test(start)||!/^\d{4}-\d{2}-\d{2}$/.test(end)||start>end)throw new Error('시작일과 종료일을 올바르게 선택해주세요.');
+      const a=start.split('-').map(Number),b=end.split('-').map(Number);
+      from=boundary(...a);const last=boundary(...b);
+      if(a[0]<1900||b[0]<1900||today(from)!==start||today(last)!==end)throw new Error('올바른 날짜를 선택해주세요.');
+      to=last+86400000;
+    }else if(period==='today'||period==='day'){
       const date=period==='today'?today(now):String(value.day||'');
       if(!/^\d{4}-\d{2}-\d{2}$/.test(date))throw new Error('조회할 날짜를 선택해주세요.');
       const [y,m,d]=date.split('-').map(Number);from=boundary(y,m,d);

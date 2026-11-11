@@ -20,27 +20,38 @@
     return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value;
   }
   function periodKey(filters, now = new Date()) {
+    if (filters.period === "range") return validDay(filters.start || "") && validDay(filters.end || "") && filters.start <= filters.end ? `${filters.start} ~ ${filters.end}` : null;
     if (filters.period === "today") return dateKey(now);
     if (filters.period === "day") return validDay(filters.day || "") ? filters.day : null;
     if (filters.period === "month") return /^\d{4}-(0[1-9]|1[0-2])$/.test(filters.month || "") ? filters.month : null;
     if (filters.period === "year") return /^(19\d{2}|[2-9]\d{3})$/.test(filters.year || "") ? filters.year : null;
     return "";
   }
+  function matchesPeriod(value, filters, now) {
+    const period = periodKey(filters, now);
+    if (period === null) return false;
+    if (!period) return true;
+    const date = dateKey(value);
+    return filters.period === "range" ? !!date && date >= filters.start && date <= filters.end : date.startsWith(period);
+  }
   function filter(items, filters, now) {
     const period = periodKey(filters, now);
     const owner = String(filters.owner || "").trim();
+    const team = String(filters.team || "");
     if (period === null) return [];
     return items.filter(item => (!owner || String(item.owner || "").trim() === owner) &&
-      (!period || dateKey(item.createdAt ?? item.created_at).startsWith(period)));
+      (!team || String(item.team_id || item.team_name || "미지정") === team) &&
+      matchesPeriod(item.createdAt ?? item.created_at, filters, now));
   }
   function summary(filters, now) {
     const parts = [];
     if (filters.owner) parts.push("담당자: " + filters.owner);
+    if (filters.team) parts.push("팀: " + (filters.teamName || filters.team));
     const period = periodKey(filters, now);
     if (filters.period !== "all") parts.push(period === null ? "기간 선택 필요" : filters.period === "today" ? "오늘" : period);
     return parts.join(" · ");
   }
-  const api = { dateKey, periodKey, filter, summary };
+  const api = { dateKey, periodKey, matchesPeriod, filter, summary };
   if (typeof module === "object" && module.exports) module.exports = api;
   else root.BearObservationFilters = api;
 })(typeof window !== "undefined" ? window : globalThis);

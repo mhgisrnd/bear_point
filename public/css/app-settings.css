@@ -31,15 +31,28 @@ body:has(.sdr-dialog[open]) #btn-sdr-diagnostics,
 .app-settings-tabs { display: flex; gap: 6px; margin: 14px 22px 0; padding: 0 0 1px; border-bottom: 1px solid #e2e9f1; overflow-x: auto; }
 .app-settings-tab { flex: 0 0 auto; min-height: 40px; padding: 8px 14px; border: 0; border-bottom: 3px solid transparent; background: transparent; color: #78899a; font: 700 13px/1.4 system-ui,sans-serif; white-space: nowrap; cursor: pointer; }
 .app-settings-tab[aria-selected=true] { border-bottom-color: #2365c8; background: #f0f5fd; border-radius: 8px 8px 0 0; color: #2365c8; }
-.app-settings-notification-toggle { display: flex; align-items: center; gap: 12px; position: relative; min-height: 48px; cursor: pointer; }
-.app-settings-notification-toggle strong { flex: 1; font-size: 14px; }
-.app-settings-notification-toggle input { position: absolute; right: 0; width: 44px; height: 28px; opacity: 0; margin: 0; cursor: pointer; }
-.app-settings-notification-toggle > span { width: 44px; height: 26px; flex: 0 0 44px; border-radius: 20px; padding: 3px; background: #cbd5e1; pointer-events: none; transition: background .15s; }
-.app-settings-notification-toggle > span::after { content: ''; display: block; width: 20px; height: 20px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px #0002; transition: transform .15s; }
+.app-notification-card { margin-top: 12px; padding: 14px; border: 1px solid #cfddf1; border-radius: 14px; background: #f6f9ff; }
+.app-settings-notification-toggle { display: flex; align-items: center; gap: 12px; min-height: 40px; cursor: pointer; }
+.app-settings-notification-toggle strong { flex: 1; min-width: 0; font-size: 14px; line-height: 1.4; }
+.app-notification-control { display: inline-flex; align-items: center; gap: 8px; position: relative; flex-shrink: 0; }
+.app-notification-state { min-width: 28px; text-align: right; font-size: 12px; font-weight: 800; white-space: nowrap; color: #64748b; }
+.app-notification-state[data-state="on"] { color: #1d4ed8; }
+.app-notification-state[data-state="off"] { color: #475569; }
+.app-settings-notification-toggle input { position: absolute; right: 0; z-index: 1; width: 44px; height: 40px; opacity: 0; margin: 0; cursor: pointer; }
+.app-notification-track { display: block; width: 44px; height: 26px; flex: 0 0 44px; border-radius: 20px; padding: 3px; background: #94a3b8; pointer-events: none; transition: background .15s; }
+.app-notification-track::after { content: ''; display: block; width: 20px; height: 20px; border-radius: 50%; background: #fff; box-shadow: 0 1px 3px #0002; transition: transform .15s; }
 .app-settings-notification-toggle input:checked + span { background: #2563eb; }
 .app-settings-notification-toggle input:checked + span::after { transform: translateX(18px); }
 .app-settings-notification-toggle input:disabled + span { opacity: .5; }
 .app-settings-notification-toggle input:focus-visible + span { outline: 3px solid #86b6fb; outline-offset: 3px; }
+.app-notification-card .app-settings-notification-message { margin: 10px 0 0; color: #405a78; line-height: 1.6; }
+.app-notification-footnote { margin: 10px 2px 18px; color: #718096; font-size: 11px; line-height: 1.6; }
+.app-notification-diagnostics { padding: 14px; border: 1px solid #e0e7ef; border-radius: 14px; background: #fafbfc; }
+.app-notification-diagnostics h3 { margin: 0; color: #334155; font-size: 13px; }
+.app-notification-diagnostics .app-settings-help { margin: 7px 0; line-height: 1.6; }
+.app-notification-diagnostics .app-settings-push-status { padding: 10px; border-radius: 8px; background: #edf2f7; color: #40556b; overflow-wrap: anywhere; }
+.app-notification-diagnostics .app-settings-refresh, .app-notification-card .app-settings-notification-system { display: block; width: 100%; min-height: 40px; margin-top: 12px; padding: 8px 12px; border: 1px solid #c9d8eb; border-radius: 9px; background: #fff; color: #2459a6; font: 700 12px/1.4 system-ui,sans-serif; white-space: normal; }
+@media (prefers-reduced-motion: reduce) { .app-notification-track, .app-notification-track::after { transition: none; } }
 .app-settings-body { padding: 0 22px 20px; }
 .app-settings-intro { margin: 14px 0 18px; color: #78899a; font-size: 13px; }
 .app-settings-field { display: grid; gap: 7px; font-weight: 700; }

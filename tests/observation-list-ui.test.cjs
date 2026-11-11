@@ -10,43 +10,14 @@ const rows = [
   { id: "two", _obsKey: "two", place: "failed", shareState: "failed", bearCode: "A" },
   { id: "three", _obsKey: "three", place: "shared", shareState: "shared", bearCode: "A" }
 ];
-test("search dropdown updates the search field, exposes the selection, and closes", () => {
-  const control = (properties = {}) => ({
-    ...properties,
-    handlers: {},
-    attributes: {},
-    addEventListener(type, handler) { this.handlers[type] = handler; },
-    setAttribute(name, value) { this.attributes[name] = value; },
-    focus() { this.focused = true; }
-  });
-  const picker = control();
-  const button = control({ parentElement: picker });
-  const obs = control({ dataset: { searchField: "obs" }, textContent: "관측점" });
-  const bear = control({ dataset: { searchField: "bear" }, textContent: "코드" });
-  const options = control({ hidden: true, querySelector: () => obs, querySelectorAll: () => [obs, bear] });
-  const field = { value: "obs" };
-  const applied = [];
-  const context = vm.createContext({
-    searchFieldEl: field, searchFieldButtonEl: button, searchOptionsEl: options,
-    document: control(), applySearch: () => applied.push(field.value)
-  });
-  vm.runInContext(source.slice(source.indexOf("  function setSearchField("), source.indexOf("  function bindEvents(")), context);
-  context.bindSearchOptions();
-  button.handlers.click();
-  assert.equal(options.hidden, false);
-  assert.equal(obs.focused, true);
-  options.handlers.click({ target: { closest: () => bear } });
-  assert.deepEqual(applied, ["bear"]);
-  assert.equal(button.textContent, "코드");
-  assert.equal(bear.attributes["aria-pressed"], "true");
-  assert.equal(options.hidden, true);
-  assert.equal(button.attributes["aria-expanded"], "false");
-  assert.equal(button.focused, true);
-  context.setSearchField("obs");
-  assert.equal(field.value, "obs");
-  assert.equal(button.textContent, "관측점");
-  assert.equal(bear.attributes["aria-pressed"], "false");
+test("observation search has one input without a field selector", () => {
+  const {parse}=require('node-html-parser');
+  const page=parse(fs.readFileSync('public/index.html','utf8'));
+  assert.ok(page.querySelector('#search-query'));
+  assert.equal(page.querySelector('#btn-obs-search-field'),null);
+  assert.equal(page.querySelector('#obs-search-options'),null);
 });
+
 test("animal detail uses compact full-width rows and retains export/delete permissions", () => {
   const escapeHtml = value => String(value == null ? "" : value).replace(/[&<>"']/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]);
   const context = vm.createContext({ escapeHtml, normalizePlaceName: value => String(value || "").trim(),

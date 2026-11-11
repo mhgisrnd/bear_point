@@ -4,7 +4,7 @@ const vm=require('node:vm');
 const fs=require('node:fs');
 function fixture({native=true,granted=true,enabled=true,accept=true,initialize, startupReady}={}) {
   const nodes=new Map();
-  function node(selector){if(!nodes.has(selector))nodes.set(selector,{events:{},addEventListener(name,fn){this.events[name]=fn;}});return nodes.get(selector);}
+  function node(selector){if(!nodes.has(selector))nodes.set(selector,{events:{},dataset:{},addEventListener(name,fn){this.events[name]=fn;}});return nodes.get(selector);}
   const calls=[],state={enabled,permissionGranted:granted};
   const plugin={
     async getNotificationSettings(){return {...state};},
@@ -18,7 +18,7 @@ function fixture({native=true,granted=true,enabled=true,accept=true,initialize, 
     __bpShowConfirmDialog:async()=>accept,BearPushRegistrationStatus:{async retry(){calls.push(['register']);return {message:'Synced'};}}};
   vm.runInNewContext(fs.readFileSync('public/js/settings/notification-settings.js','utf8'),{window:root});
   const api=root.BearNotificationSettings.mount({querySelector:node},{});
-  return {api,state,calls,plugin,toggle:node('.app-settings-notification-enabled'),message:node('.app-settings-notification-message')};
+  return {api,state,calls,plugin,toggle:node('.app-settings-notification-enabled'),label:node('.app-notification-state'),message:node('.app-settings-notification-message')};
 }
 test('first-launch permission result automatically sets the displayed switch and registers the device',async()=>{
   for (const granted of [true,false]) {
@@ -42,12 +42,20 @@ test('startup waits for app readiness and preserves an existing OFF choice even 
 });
 test('OFF persists without revoking system permission and synchronizes registration; ON needs no new permission',async()=>{
   const f=fixture();await f.api.refresh();
+  assert.equal(f.label.textContent,'ON');
   f.toggle.checked=false;await f.toggle.events.change();
   assert.equal(f.state.enabled,false);assert.equal(f.state.permissionGranted,true);
+  assert.equal(f.label.textContent,'OFF');
   assert.deepEqual(f.calls,[['set',false],['register']]);
   f.toggle.checked=true;await f.toggle.events.change();
   assert.deepEqual(f.calls.slice(2),[['set',true],['register']]);
   assert.equal(f.toggle.checked,true);
+});
+test('canceling the OFF confirmation retains ON without changing the device or server registration',async()=>{
+  const f=fixture({accept:false});await f.api.refresh();
+  f.toggle.checked=false;await f.toggle.events.change();
+  assert.equal(f.state.enabled,true);assert.equal(f.toggle.checked,true);assert.equal(f.label.textContent,'ON');
+  assert.deepEqual(f.calls,[]);
 });
 test('blocked ON guides to app settings and activates after returning with permission',async()=>{
   const f=fixture({granted:false,enabled:false});await f.api.refresh();

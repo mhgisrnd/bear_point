@@ -57,17 +57,20 @@
   const btnBearsUploadSelectedEl = document.getElementById("btn-bears-upload-selected");
   const btnBearsDeleteUnsharedEl = document.getElementById("btn-bears-delete-unshared");
   const bearCodeSearchFormEl = document.getElementById("bear-code-search-form");
+  const btnBearMineEl = document.getElementById("btn-bear-filter-mine");
   const bearCodeSearchEl = document.getElementById("bear-code-query");
   const btnBearCodeClearEl = document.getElementById("btn-bear-code-clear");
   const btnBearFilterEl = document.getElementById("btn-bear-filter");
   const bearFilterPanelEl = document.getElementById("bear-filter-panel");
   const bearFilterCountEl = document.getElementById("bear-filter-count");
-  const bearOwnerFilterEl = document.getElementById("bear-filter-owner");
   const bearTeamFilterEl = document.getElementById("bear-filter-team");
   const bearPeriodFilterEl = document.getElementById("bear-filter-period");
   const bearDayFilterEl = document.getElementById("bear-filter-day");
   const bearMonthFilterEl = document.getElementById("bear-filter-month");
   const bearYearFilterEl = document.getElementById("bear-filter-year");
+  const bearRangeFilterEl = document.getElementById("bear-filter-range");
+  const bearStartFilterEl = document.getElementById("bear-filter-start");
+  const bearEndFilterEl = document.getElementById("bear-filter-end");
   const bearFilterErrorEl = document.getElementById("bear-filter-error");
   const currentCoordEl = document.getElementById("obs-current-coord");
   const currentHeadingEl = document.getElementById("obs-current-heading");
@@ -133,19 +136,17 @@
   }
 
   function readBearPeriodFilter() {
-    return { period: bearPeriodFilterEl?.value || "all", day: bearDayFilterEl?.value || "", month: bearMonthFilterEl?.value || "", year: bearYearFilterEl?.value || "" };
+    return { period: bearPeriodFilterEl?.value || "all", start: bearStartFilterEl?.value || "", end: bearEndFilterEl?.value || "", day: bearDayFilterEl?.value || "", month: bearMonthFilterEl?.value || "", year: bearYearFilterEl?.value || "" };
   }
   function getFilteredBearEstimates(items = currentBearEstimateItems) {
     const query = String(bearCodeSearchEl?.value || "").trim().toLowerCase();
-    const owner = bearOwnerFilterEl?.value || "";
     const team = bearTeamFilterEl?.value || "";
     const period = window.BearObservationFilters.periodKey(readBearPeriodFilter());
     if (period === null) return [];
-    if (!query && !owner && !team && !period) return items;
-    return items.filter(item => (!query || String(item.bear_code || item.bearCode || "").toLowerCase().includes(query))
-      && (!owner || String(item.owner || "미지정") === owner)
+    if (!query && !team && !period) return items;
+    return items.filter(item => (!query || (String(item.bear_code || item.bearCode || "").toLowerCase().includes(query) || String(item.owner || "미지정").toLowerCase().includes(query)))
       && (!team || String(item.team_id || item.team_name || "미지정") === team)
-      && (!period || window.BearObservationFilters.dateKey(item.created_at || item.source_created_at || item.timestamp || item.ts).startsWith(period)));
+      && (!period || window.BearObservationFilters.matchesPeriod(item.created_at || item.source_created_at || item.timestamp || item.ts, readBearPeriodFilter())));
   }
 
   function syncBearMarkersForActiveTab(realtimeItemsOverride) {
@@ -4391,6 +4392,14 @@
     observationPopupEl._bearEstimateData = null;
   }
 
+  // Let the whole date field open the native calendar when supported.
+  document.addEventListener("click", function openListDatePicker(event) {
+    const input = event.target;
+    if (!input?.matches?.('.list-filter-dates input[type="date"], .list-filter-dates input[type="month"]') || input.disabled || input.readOnly) return;
+    // Keep the platform picker; unsupported WebViews retain their default input behavior.
+    try { input.showPicker?.(); } catch (_) { /* Native input behavior remains available. */ }
+  });
+
   // Close details before external map tools act, including keyboard clicks.
   document.addEventListener("click", function dismissDetailForMapTool(event) {
     const target = event.target;
@@ -5576,17 +5585,37 @@
     });
   }
 
+  function bearMyOwner() {
+    const owner = window.BearAppSettings?.getProfile?.()?.owner;
+    if (owner) return String(owner).trim();
+    try { return String(window.localStorage.getItem('bearpoint.lastRegisteredOwner') || '').trim(); }
+    catch (_) { return ''; }
+  }
+  function syncBearMineShortcut() {
+    if (!btnBearMineEl) return;
+    const owner = bearMyOwner();
+    btnBearMineEl.disabled = !owner;
+    btnBearMineEl.setAttribute('aria-pressed', String(!!owner && String(bearCodeSearchEl?.value || '').trim() === owner));
+    btnBearMineEl.title = owner ? '내 담당자: ' + owner : '담당자를 설정하거나 관측점을 등록해주세요.';
+  }
+  btnBearMineEl?.addEventListener('click', function () {
+    const owner = bearMyOwner();
+    if (!owner || !bearCodeSearchEl) return;
+    bearCodeSearchEl.value = bearCodeSearchEl.value.trim() === owner ? '' : owner;
+    applyBearCodeSearch();
+  });
+  window.addEventListener('bearpoint:profile-changed', syncBearMineShortcut);
+
   function applyBearCodeSearch() {
     repaintUnifiedBearList();
   }
   function syncBearFilterControls() {
-    const owners = new Map(), teams = new Map();
+    syncBearMineShortcut();
+    const teams = new Map();
     for (const item of currentBearEstimateItems) {
-      const owner = String(item.owner || "미지정");
-      owners.set(owner, owner);
       teams.set(String(item.team_id || item.team_name || "미지정"), String(item.team_name || item.team_id || "미지정"));
     }
-    for (const [select, options, label] of [[bearOwnerFilterEl, owners, "전체 담당자"], [bearTeamFilterEl, teams, "전체 팀"]]) {
+    for (const [select, options, label] of [[bearTeamFilterEl, teams, "전체 팀"]]) {
       if (!select) continue;
       const selected = select.value;
       if (selected && !options.has(selected)) options.set(selected, select.selectedOptions[0]?.textContent || selected);
@@ -5601,7 +5630,10 @@
     }
     const today = window.BearObservationFilters.dateKey(new Date());
     const period = bearPeriodFilterEl?.value || "all";
-    for (const [element, mode, initial] of [[bearDayFilterEl, "day", today], [bearMonthFilterEl, "month", today.slice(0, 7)], [bearYearFilterEl, "year", today.slice(0, 4)]]) {
+    const datesRow = document.getElementById("bear-filter-dates");
+    if (bearRangeFilterEl) bearRangeFilterEl.hidden = period !== "range";
+    if (datesRow) datesRow.hidden = !["day", "month", "year", "range"].includes(period);
+    for (const [element, mode, initial] of [[bearDayFilterEl, "day", today], [bearMonthFilterEl, "month", today.slice(0, 7)], [bearYearFilterEl, "year", today.slice(0, 4)], [bearStartFilterEl, "range", today], [bearEndFilterEl, "range", today]]) {
       if (!element) continue;
       element.hidden = period !== mode;
       if (!element.dataset.initialized) { element.value = initial; element.dataset.initialized = "true"; }
@@ -5609,19 +5641,19 @@
     const invalid = window.BearObservationFilters.periodKey(readBearPeriodFilter()) === null;
     if (bearFilterErrorEl) {
       bearFilterErrorEl.hidden = !invalid;
-      bearFilterErrorEl.textContent = invalid ? "조회할 날짜를 선택하거나 올바른 연도를 입력해주세요." : "";
+      bearFilterErrorEl.textContent = invalid ? (period === "range" ? "시작일과 종료일을 올바른 순서로 선택해주세요." : "조회할 날짜를 선택하거나 올바른 연도를 입력해주세요.") : "";
     }
-    const count = Number(!!bearOwnerFilterEl?.value) + Number(!!bearTeamFilterEl?.value) + Number(period !== "all");
+    const count = Number(!!bearTeamFilterEl?.value) + Number(period !== "all");
     btnBearFilterEl?.classList.toggle("has-filters", count > 0);
     if (bearFilterCountEl) { bearFilterCountEl.hidden = count === 0; bearFilterCountEl.textContent = String(count); }
-    if (btnBearCodeClearEl) btnBearCodeClearEl.disabled = !bearCodeSearchEl?.value && count === 0;
+    if (btnBearCodeClearEl) btnBearCodeClearEl.disabled = !String(bearCodeSearchEl?.value || "").trim() && count === 0;
   }
   if (btnBearFilterEl) btnBearFilterEl.addEventListener("click", () => {
     bearFilterPanelEl.hidden = !bearFilterPanelEl.hidden;
     btnBearFilterEl.setAttribute("aria-expanded", String(!bearFilterPanelEl.hidden));
   });
-  for (const select of [bearOwnerFilterEl, bearTeamFilterEl, bearPeriodFilterEl]) select?.addEventListener("change", applyBearCodeSearch);
-  for (const input of [bearDayFilterEl, bearMonthFilterEl, bearYearFilterEl]) input?.addEventListener("input", applyBearCodeSearch);
+  for (const select of [bearTeamFilterEl, bearPeriodFilterEl]) select?.addEventListener("change", applyBearCodeSearch);
+  for (const input of [bearDayFilterEl, bearMonthFilterEl, bearYearFilterEl, bearStartFilterEl, bearEndFilterEl]) input?.addEventListener("input", applyBearCodeSearch);
   if (bearCodeSearchEl) bearCodeSearchEl.addEventListener("input", applyBearCodeSearch);
   if (bearCodeSearchFormEl) bearCodeSearchFormEl.addEventListener("submit", function (event) {
     event.preventDefault();
@@ -5630,7 +5662,6 @@
   });
   if (btnBearCodeClearEl) btnBearCodeClearEl.addEventListener("click", function () {
     bearCodeSearchEl.value = "";
-    if (bearOwnerFilterEl) bearOwnerFilterEl.value = "";
     if (bearTeamFilterEl) bearTeamFilterEl.value = "";
     if (bearPeriodFilterEl) bearPeriodFilterEl.value = "all";
     const today = window.BearObservationFilters.dateKey(new Date());
@@ -7087,7 +7118,7 @@
   function renderBears(items, isFallback) {
     if (!bearsListEl) return;
     items = getFilteredBearEstimates(Array.isArray(items) ? items : []);
-    const searching = !!String(bearCodeSearchEl?.value || "").trim() || !!bearOwnerFilterEl?.value || !!bearTeamFilterEl?.value || readBearPeriodFilter().period !== "all";
+    const searching = !!String(bearCodeSearchEl?.value || "").trim() || !!bearTeamFilterEl?.value || readBearPeriodFilter().period !== "all";
     syncSelectedBearEstimateIds(items);
     if (realtimeListModule && typeof realtimeListModule.bindEstimateItems === "function") {
       realtimeListModule.bindEstimateItems(items);
@@ -7497,7 +7528,6 @@
         if (!isCurrent()) return;
         const item = currentBearEstimateItems.find(row => String(row.server_id) === serverId);
         if (bearCodeSearchEl) bearCodeSearchEl.value = '';
-        if (bearOwnerFilterEl) bearOwnerFilterEl.value = '';
         if (bearTeamFilterEl) bearTeamFilterEl.value = '';
         if (bearPeriodFilterEl) bearPeriodFilterEl.value = 'all';
         if (bearFilterPanelEl) bearFilterPanelEl.hidden = true;

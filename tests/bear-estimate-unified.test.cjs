@@ -6,7 +6,7 @@ const source = fs.readFileSync('public/js/client-ol.js', 'utf8');
 const transport = fs.readFileSync('public/js/realtime/realtimeList.js', 'utf8');
 function filterContext(values) {
   return vm.createContext({ window: { BearObservationFilters: require('../public/js/obs/observation-filters.js') },
-    bearPeriodFilterEl: { value: 'all' }, bearDayFilterEl: { value: '' }, bearMonthFilterEl: { value: '' }, bearYearFilterEl: { value: '' }, ...values });
+    bearStartFilterEl:{value:''},bearEndFilterEl:{value:''},bearPeriodFilterEl: { value: 'all' }, bearDayFilterEl: { value: '' }, bearMonthFilterEl: { value: '' }, bearYearFilterEl: { value: '' }, ...values });
 }
 
 test('code search matches fragments without case sensitivity and clears without changing source records', () => {
@@ -18,7 +18,7 @@ test('code search matches fragments without case sensitivity and clears without 
   context.bearCodeSearchEl.value = '120';
   assert.equal(context.getFilteredBearEstimates()[0].id, 'two');
   context.bearCodeSearchEl.value = 'kf-99';
-  assert.equal(context.getFilteredBearEstimates().length, 0, 'only the code field is searched');
+  assert.equal(context.getFilteredBearEstimates()[0].id, 'one', 'the same input also searches owner names');
   context.bearCodeSearchEl.value = '';
   assert.equal(context.getFilteredBearEstimates(), rows);
   assert.equal(rows.length, 3);
@@ -32,7 +32,7 @@ test('owner and team filters combine with code and support legacy records', () =
     { id: 'legacy', owner: 'Kim', team_name: 'Legacy' },
     { id: 'missing' }
   ];
-  const context = filterContext({ currentBearEstimateItems: rows, bearCodeSearchEl: { value: '' }, bearOwnerFilterEl: { value: 'Kim' }, bearTeamFilterEl: { value: 'wide' } });
+  const context = filterContext({ currentBearEstimateItems: rows, bearCodeSearchEl: { value: 'Kim' }, bearTeamFilterEl: { value: 'wide' } });
   const start = source.indexOf('  function readBearPeriodFilter(');
   vm.runInContext(source.slice(start, source.indexOf('  function syncBearMarkersForActiveTab(', start)), context);
   assert.deepEqual([...context.getFilteredBearEstimates()].map(row => row.id), ['a']);
@@ -41,10 +41,10 @@ test('owner and team filters combine with code and support legacy records', () =
   context.bearCodeSearchEl.value = '';
   context.bearTeamFilterEl.value = 'Legacy';
   assert.equal(context.getFilteredBearEstimates()[0].id, 'legacy');
-  context.bearOwnerFilterEl.value = '미지정';
+  context.bearCodeSearchEl.value = '미지정';
   context.bearTeamFilterEl.value = '미지정';
   assert.equal(context.getFilteredBearEstimates()[0].id, 'missing');
-  context.bearOwnerFilterEl.value = '';
+  context.bearCodeSearchEl.value = '';
   context.bearTeamFilterEl.value = '';
   assert.equal(context.getFilteredBearEstimates(), rows);
 });
@@ -65,11 +65,11 @@ test('registration periods use Korean date boundaries for local and shared recor
   context.bearPeriodFilterEl.value = 'day';
   context.bearDayFilterEl.value = '2026-11-10';
   assert.deepEqual(ids(), ['local', 'shared', 'numeric']);
-  context.bearOwnerFilterEl.value = 'Kim';
+  context.bearCodeSearchEl.value = 'Kim';
   assert.deepEqual(ids(), ['local', 'shared']);
   context.bearDayFilterEl.value = '2026-02-30';
   assert.deepEqual(ids(), []);
-  context.bearOwnerFilterEl.value = '';
+  context.bearCodeSearchEl.value = '';
   context.bearPeriodFilterEl.value = 'month';
   context.bearMonthFilterEl.value = '2026-11';
   assert.equal(ids().length, 5);

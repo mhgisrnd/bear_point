@@ -4,6 +4,7 @@
     const toggle = panel.querySelector('.app-settings-notification-enabled');
     const message = panel.querySelector('.app-settings-notification-message');
     const system = panel.querySelector('.app-settings-notification-system');
+    const stateLabel = panel.querySelector('.app-notification-state');
     const native = !!root.Capacitor?.isNativePlatform?.();
     const plugin = native ? root.Capacitor.Plugins?.BearPush : null;
     let busy = false, state;
@@ -11,6 +12,10 @@
     function paint() {
       toggle.disabled = busy || !supported;
       toggle.checked = !!(state?.enabled && state?.permissionGranted);
+      if (stateLabel) {
+        stateLabel.textContent = !supported ? '사용 불가' : !state ? '확인 중' : toggle.checked ? 'ON' : 'OFF';
+        stateLabel.dataset.state = !supported || !state ? 'pending' : toggle.checked ? 'on' : 'off';
+      }
       system.hidden = !supported || state?.permissionGranted !== false;
       system.disabled = busy;
     }
@@ -52,6 +57,14 @@
       try {
         if (enabled) await enableWithPermission();
         else {
+          const options = {
+            title: '공유 알림을 끌까요?',
+            message: '알림을 끄면 다른 담당자가 개체 추적 위치를 등록·공유해도 알림을 받을 수 없습니다.',
+            detail: '설정에서 언제든 다시 켤 수 있습니다.',
+            confirmText: '알림 끄기', cancelText: '계속 받기'
+          };
+          const accepted = root.__bpShowConfirmDialog ? await root.__bpShowConfirmDialog(options) : root.confirm(options.message);
+          if (!accepted) return;
           try { await plugin.setNotificationsEnabled({enabled: false}); }
           finally { await register(); }
         }
