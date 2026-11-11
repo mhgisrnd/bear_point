@@ -28,6 +28,7 @@ public class BearMessagingService extends FirebaseMessagingService {
 
     @Override
     public void onMessageReceived(RemoteMessage message) {
+        if (!getSharedPreferences("bearpoint_push", Context.MODE_PRIVATE).getBoolean("notifications_enabled", true)) return;
         RemoteMessage.Notification notification = message.getNotification();
         if (notification == null) return;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
@@ -39,7 +40,14 @@ public class BearMessagingService extends FirebaseMessagingService {
         // Firebase displays notification payloads itself while the app is in the background.
         createChannel(this);
         Intent intent = new Intent(this, MainActivity.class);
-        PendingIntent openApp = PendingIntent.getActivity(this, 0, intent, PendingIntent.FLAG_IMMUTABLE);
+        String estimateId = message.getData().get("bear_estimate_server_id");
+        if (estimateId != null && estimateId.matches("[1-9][0-9]{0,18}")) {
+            intent.putExtra("bear_estimate_server_id", estimateId);
+            intent.setData(android.net.Uri.parse("bearpoint://estimate/" + estimateId));
+        }
+        intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        PendingIntent openApp = PendingIntent.getActivity(this, 0, intent,
+            PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
         NotificationCompat.Builder builder = new NotificationCompat.Builder(
             this, getString(R.string.bear_tracking_notification_channel_id)
         )

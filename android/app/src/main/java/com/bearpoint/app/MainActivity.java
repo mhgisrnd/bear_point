@@ -1,9 +1,5 @@
 package com.bearpoint.app;
 
-import android.Manifest;
-import android.content.SharedPreferences;
-import android.content.pm.PackageManager;
-import android.os.Build;
 import android.os.Bundle;
 import android.util.Log;
 import androidx.core.splashscreen.SplashScreen;
@@ -15,7 +11,7 @@ import com.google.firebase.appcheck.playintegrity.PlayIntegrityAppCheckProviderF
 public class MainActivity extends BridgeActivity {
 	private static final String TAG = "BearPointMain";
 	private static final long LAUNCH_SPLASH_MIN_DURATION_MS = 1500L;
-	static final String WEB_ASSET_REVISION = "1.0.4-ui82";
+	static final String WEB_ASSET_REVISION = "1.0.4-ui85";
 
 	@Override
 	protected void load() {
@@ -55,19 +51,8 @@ public class MainActivity extends BridgeActivity {
 		super.onCreate(savedInstanceState);
 		if (!FirebaseApp.getApps(this).isEmpty()) {
 			BearMessagingService.createChannel(this);
-			requestPushPermissionOnce();
 		}
 		Log.d(TAG, "onCreate end");
 	}
 
-	private void requestPushPermissionOnce() {
-		if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU
-				|| checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED) {
-			return;
-		}
-		SharedPreferences settings = getSharedPreferences("bearpoint_push", MODE_PRIVATE);
-		if (settings.getBoolean("permission_requested", false)) return;
-		settings.edit().putBoolean("permission_requested", true).apply();
-		requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, 408);
-	}
 }

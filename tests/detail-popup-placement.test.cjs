@@ -6,6 +6,34 @@ const code=fs.readFileSync('public/js/client-ol.js','utf8');
 const start=code.indexOf('  function syncObservationPopupPlacement(');
 const fn=code.slice(start,code.indexOf('\n  observationPopupContentEl.addEventListener',start));
 
+test('detail bounds reserve visible top and right tools',()=>{
+  const style={};let offset;
+  const controls=[
+    {left:240,top:12,bottom:64,width:52,height:52,rightTool:false},
+    {left:320,top:180,bottom:500,width:58,height:320,rightTool:true}
+  ].map(bounds=>({getClientRects:()=>[1],getBoundingClientRect:()=>bounds,matches:()=>bounds.rightTool}));
+  const context={parseCssPx:parseFloat,
+    document:{documentElement:{},querySelectorAll:()=>controls,getElementById:()=>null},
+    window:{innerWidth:390,innerHeight:844,BearMobileDock:{isDocked:()=>true},getComputedStyle:()=>({getPropertyValue:()=> '0'})},
+    map:{getViewport:()=>({getBoundingClientRect:()=>({left:0,top:0,width:390,height:844})}),getPixelFromCoordinate:p=>p},
+    observationPopupContentEl:{querySelector:()=>({})},
+    observationPopupEl:{style,getBoundingClientRect:()=>({width:parseFloat(style.width),height:Math.min(300,parseFloat(style.maxHeight))})},
+    observationPopupOverlay:{getPosition:()=>[380,20],setPositioning(){},setOffset:value=>offset=value}};
+  vm.createContext(context);vm.runInContext(fn,context);context.syncObservationPopupPlacement();
+  assert.ok(380+offset[0]+parseFloat(style.width)<=308);
+  assert.ok(20+offset[1]>=76);
+});
+
+test('external tools close details without intercepting their click or popup actions',()=>{
+  let handler,closed=0;
+  const context={document:{addEventListener(type,fn,capture){assert.equal(type,'click');assert.equal(capture,true);handler=fn;}},closeObservationPopup(){closed++;}};
+  const begin=code.indexOf('  document.addEventListener("click", function dismissDetailForMapTool');
+  vm.runInNewContext(code.slice(begin,code.indexOf('\n  function focusBearListItem',begin)),context);
+  handler({target:{closest:selector=>selector==='.map-detail-popup'?null:{}}});assert.equal(closed,1);
+  handler({target:{closest:()=>({})}});assert.equal(closed,1);
+  handler({target:{closest:()=>null}});assert.equal(closed,1);
+});
+
 test('long detail cards stay inside the usable map area even when their marker is dragged offscreen',()=>{
   for(const [width,height,side]of [[320,740,false],[844,390,false],[1180,820,true]]){
     const bounds=side?{right:360,top:12,width:360,height:height-24}:{right:width,top:height-190,width,height:190};

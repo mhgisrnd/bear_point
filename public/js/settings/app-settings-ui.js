@@ -9,6 +9,7 @@
     <div class="app-settings-tabs" role="tablist" aria-label="설정 메뉴">
       <button type="button" class="app-settings-tab" id="app-settings-profile-tab" role="tab" aria-selected="true" aria-controls="app-settings-profile-panel" tabindex="0">담당자·팀</button>
       <button type="button" class="app-settings-tab" id="app-settings-tracking-tab" role="tab" aria-selected="false" aria-controls="app-settings-tracking-panel" tabindex="-1">이동 기록</button>
+      <button type="button" class="app-settings-tab" id="app-settings-notifications-tab" role="tab" aria-selected="false" aria-controls="app-settings-notifications-panel" tabindex="-1">알림</button>
       <button type="button" class="app-settings-tab" id="app-settings-version-tab" role="tab" aria-selected="false" aria-controls="app-settings-version-panel" tabindex="-1">앱 버전</button>
     </div>
     <div class="app-settings-scroll"><section id="app-settings-profile-panel" role="tabpanel" aria-labelledby="app-settings-profile-tab">
@@ -17,13 +18,7 @@
       <fieldset class="app-settings-teams"><legend>소속 팀</legend><div class="app-settings-team-grid"></div></fieldset>
       <div class="app-settings-catalog-row"><p class="app-settings-catalog-note"></p><button type="button" class="app-settings-refresh">새로고침</button></div>
       <p class="app-settings-status" role="status" aria-live="polite"></p>
-    <section class="app-settings-push" aria-label="개체 추적 공유 알림" hidden>
-      <strong>개체 추적 공유 알림</strong>
-      <div class="app-settings-catalog-row">
-        <p class="app-settings-help app-settings-push-status" role="status" aria-live="polite"></p>
-        <button type="button" class="app-settings-refresh app-settings-push-retry">다시 확인</button>
-      </div>
-    </section></div>
+    </div>
       <div class="app-settings-actions app-settings-footer"><button type="submit" class="app-settings-save">저장하고 시작</button><button type="button" class="app-settings-cancel">취소</button></div>
     </form></section>
     <section id="app-settings-tracking-panel" role="tabpanel" aria-labelledby="app-settings-tracking-tab" hidden>
@@ -35,9 +30,24 @@
         <p class="app-settings-tracking-status" role="status" aria-live="polite"></p>
         </div><div class="app-settings-actions app-settings-footer"><button type="submit" class="app-settings-save">저장</button><button type="button" class="app-settings-cancel">취소</button></div>
       </form>
+    </section><section id="app-settings-notifications-panel" role="tabpanel" aria-labelledby="app-settings-notifications-tab" hidden>
+      <div class="app-settings-body app-settings-fields">
+        <p class="app-settings-intro">다른 담당자가 공유한 개체 추적 위치의 알림을 설정합니다.</p>
+    <section class="app-settings-push" aria-label="개체 추적 공유 알림">
+      <label class="app-settings-notification-toggle"><strong>개체 추적 공유 알림</strong><input type="checkbox" role="switch" class="app-settings-notification-enabled" disabled aria-label="개체 추적 공유 알림 수신" /><span aria-hidden="true"></span></label>
+      <p class="app-settings-help app-settings-notification-message" role="status" aria-live="polite"></p>
+      <button type="button" class="app-settings-refresh app-settings-notification-system" hidden>휴대폰 알림 설정 열기</button>
+      <p class="app-settings-help">이 기기에 적용됩니다. 이동 기록·수신 중 표시되는 알림은 유지됩니다.</p>
+      <div class="app-settings-catalog-row">
+        <p class="app-settings-help app-settings-push-status" role="status" aria-live="polite"></p>
+        <button type="button" class="app-settings-refresh app-settings-push-retry">다시 확인</button>
+      </div>
+    </section>
+      </div>
     </section><section id="app-settings-version-panel" role="tabpanel" aria-labelledby="app-settings-version-tab" hidden></section></div>`;
   document.body.append(dialog);
   window.BearAppUpdates?.mount(dialog.querySelector('#app-settings-version-panel'));
+  window.BearNotificationSettings.mount(dialog.querySelector("#app-settings-notifications-panel"), dialog);
   const pushRegistration = window.BearPushRegistrationStatus;
   if (pushRegistration) {
     const pushSection = dialog.querySelector(".app-settings-push");
@@ -52,6 +62,8 @@
     paintPushRegistration();
     window.addEventListener("bearpoint:push-registration-changed", paintPushRegistration);
     pushRetry.addEventListener("click", () => { void pushRegistration.retry?.(); });
+  } else {
+    dialog.querySelector('.app-settings-push .app-settings-catalog-row').hidden = true;
   }
   const tabs = [...dialog.querySelectorAll('[role="tab"]')];
   function selectTab(tab, focus = false) {

@@ -4255,7 +4255,17 @@
     let right = screenRight - 74;
     let top = Math.max(0, parseCssPx(safe.getPropertyValue("--safe-top")), (visual ? visual.offsetTop : 0) - rect.top) + 18;
     let bottom = Math.min(rect.height - parseCssPx(safe.getPropertyValue("--safe-bottom")), (visual ? visual.offsetTop + visual.height : window.innerHeight) - rect.top) - 18;
-    if (right - left < 180) right = screenRight - 18;
+    // Reserve the actual control bounds rather than guessing their width.
+    for (const control of document.querySelectorAll?.('#btn-sdr-diagnostics, #btn-app-settings, #btn-map-layers, .map-right-controls, #compass') || []) {
+      if (!control.getClientRects().length) continue;
+      const bounds = control.getBoundingClientRect();
+      if (!bounds.width || !bounds.height) continue;
+      if (control.matches('.map-right-controls, #compass')) {
+        right = Math.min(right, bounds.left - rect.left - 12);
+      } else {
+        top = Math.max(top, bounds.bottom - rect.top + 12);
+      }
+    }
     if (right <= left || bottom <= top) return;
     const visible = { left, right, top, bottom };
     const isCompactDetail = !!observationPopupContentEl.querySelector(".obs-popup-card--observation, .obs-popup-card--estimate");
@@ -4343,6 +4353,15 @@
     observationPopupEl._observationData = null;
     observationPopupEl._bearEstimateData = null;
   }
+
+  // Close details before external map tools act, including keyboard clicks.
+  document.addEventListener("click", function dismissDetailForMapTool(event) {
+    const target = event.target;
+    if (!target?.closest || target.closest('.map-detail-popup')) return;
+    if (target.closest('#btn-sdr-diagnostics, #btn-app-settings, #btn-map-layers, #map-layer-options, .map-right-controls, #compass, #btn-sidebar-toggle')) {
+      closeObservationPopup();
+    }
+  }, true);
 
   function focusBearListItem(id, isRealtime, latlng) {
     closeObservationPopup();
@@ -7427,6 +7446,36 @@
   }
   bootWithSQLiteGate();
   void window.BearStartupReady.then(() => refreshUnifiedBearList({ silent: true }));
+  if (isNativeCapacitorPlatform()) {
+    void window.BearPushNavigation?.start({
+      plugin: window.Capacitor?.Plugins?.BearPush,
+      ready: window.BearStartupReady,
+      open: async function (serverId, isCurrent) {
+        // Notification links identify a specific shared record, never just an animal code.
+        await refreshBearEstimatePanel();
+        const response = await realtimeListModule?.refresh({silent: true});
+        if (!isCurrent()) return;
+        const item = currentBearEstimateItems.find(row => String(row.server_id) === serverId);
+        if (bearCodeSearchEl) bearCodeSearchEl.value = '';
+        if (bearOwnerFilterEl) bearOwnerFilterEl.value = '';
+        if (bearTeamFilterEl) bearTeamFilterEl.value = '';
+        if (bearPeriodFilterEl) bearPeriodFilterEl.value = 'all';
+        if (bearFilterPanelEl) bearFilterPanelEl.hidden = true;
+        btnBearFilterEl?.setAttribute('aria-expanded', 'false');
+        if (window.BearMobileDock?.isDocked()) window.BearMobileDock.select('bears');
+        else ensureBearEstimatePanelVisible();
+        repaintUnifiedBearList();
+        if (!item) {
+          window.__bpShowToast(response?.ok === false
+            ? '알림의 위치를 불러오지 못했습니다. 인터넷 연결을 확인하고 목록을 새로고침해주세요.'
+            : '해당 추적 위치가 삭제되었거나 더 이상 조회되지 않습니다.');
+          return;
+        }
+        focusBearListItem(item.id, !!item.remoteOnly, [Number(item.lat), Number(item.lng)]);
+      },
+      onError: function () { window.__bpShowToast('알림의 추적 위치를 열지 못했습니다. 개체 추적 목록에서 다시 확인해주세요.'); }
+    });
+  }
   setupAndroidBackButtonExit().catch(function (error) {
     console.error("안드로이드 뒤로가기 초기화 오류:", error);
   });

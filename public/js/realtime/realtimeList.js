@@ -136,7 +136,9 @@
             signal: window.AbortSignal?.timeout?.(10000),
           });
           pushRegistered = true;
-          reportPushStatus(registration.token ? "기기 등록 완료 · 알림 수신 허용"
+          const settings = await pushPlugin.getNotificationSettings?.();
+          reportPushStatus(settings?.enabled === false ? "개체 추적 공유 알림이 꺼져 있습니다."
+            : registration.token ? "기기 등록 완료 · 알림 수신 허용"
             : "기기 등록 완료 · Android 설정에서 개체 추적 공유 알림을 허용해 주세요.");
         } catch (error) {
           if (error?.code === "APP_CHECK") {
@@ -933,7 +935,11 @@
     if (nativePushRuntime) {
       window.BearPushRegistrationStatus = {
         snapshot: () => pushStatus,
-        retry: pushPlugin ? syncPushDevice : null,
+        retry: pushPlugin ? async () => {
+          if (pushRegistrationPending) await pushRegistrationPending;
+          await syncPushDevice();
+          return pushStatus;
+        } : null,
       };
     }
     if (pushPlugin) {

@@ -156,6 +156,7 @@ function startPushWorker() {
           data: { message: {
             token: row.token,
             notification: { title: row.title, body: row.body },
+            data: { bear_estimate_server_id: String(row.estimate_id) },
             android: { ttl: "3600s", notification: { channel_id: channelId, tag: `bear-estimate-${row.estimate_id}`, visibility: "PRIVATE" } },
           } },
         });
