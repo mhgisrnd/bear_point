@@ -8,6 +8,19 @@ function createAppRealtimeRouter({ apiBase, teamsApiUrl, movementApiUrl, fetchIm
   if (!["http:", "https:"].includes(base.protocol)) throw new Error("Invalid realtime API protocol");
   const targetBase = base.href.replace(/\/$/, "");
   const teamTarget = new URL(teamsApiUrl || new URL("../teams", targetBase + "/").href);
+  router.get('/bear-estimates/history', async (req,res) => {
+    res.set('Cache-Control','no-store');
+    const code=String(req.query.bearCode || '').trim();
+    if(!code || code.length>100)return res.status(400).json({ok:false,message:'개체 코드를 확인해주세요.'});
+    try {
+      const target=new URL(targetBase+'/bear-estimates/history');
+      target.searchParams.set('bearCode',code);
+      target.searchParams.set('page',String(Math.max(1,Math.floor(Number(req.query.page)||1))));
+      target.searchParams.set('pageSize',String(Math.min(100,Math.max(1,Math.floor(Number(req.query.pageSize)||100)))));
+      const response=await fetchImpl(target.href,{redirect:'error',signal:AbortSignal.timeout(12000),headers:{Accept:'application/json'}});
+      res.status(response.status).json(await response.json());
+    } catch(_) {res.status(502).json({ok:false,message:'이력 서버에 연결하지 못했습니다.'});}
+  });
   if (!["http:", "https:"].includes(teamTarget.protocol)) throw new Error("Invalid team API protocol");
   async function forward(req, res) {
     try {

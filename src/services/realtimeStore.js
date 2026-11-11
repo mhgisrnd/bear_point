@@ -184,6 +184,17 @@ function buildRealtimeSearchWhereClause(keyword, bindParams) {
 // options 사용 방식:
 // - 대시보드 요약 조회: { limit }
 // - 관리자 추적조회(검색/페이지): { page, pageSize, q }
+async function listBearEstimateHistory({ bearCode, page = 1, pageSize = 100 }) {
+  const code = String(bearCode || '').trim();
+  if (!code || code.length > 100) throw Object.assign(new Error('개체 코드를 확인해주세요.'), {statusCode:400});
+  const current = Math.max(1, Math.floor(Number(page) || 1));
+  const size = Math.min(100, Math.max(1, Math.floor(Number(pageSize) || 100)));
+  const where = 'WHERE COALESCE(use_yn, TRUE) = TRUE AND public.bear_entity_key(bear_code) = public.bear_entity_key($1)';
+  const count = await pgQuery(`SELECT COUNT(*)::int AS total FROM bear_estimates_realtime ${where}`, [code]);
+  const result = await pgQuery(`${BEAR_ESTIMATE_SELECT_SQL} ${where} ORDER BY COALESCE(source_created_at, uploaded_at) DESC, id DESC LIMIT $2 OFFSET $3`, [code, size, (current - 1) * size]);
+  return {items:result.rows,total:Number(count.rows[0]?.total || 0),page:current,pageSize:size};
+}
+
 async function listRealtimeBearEstimates(options) {
   const queryOptions = typeof options === "object" && options !== null ? options : { limit: options };
   const hasPaging = queryOptions.page != null || queryOptions.pageSize != null;
@@ -427,6 +438,7 @@ async function deleteRealtimeBearEstimatesByIds(ids, options = {}) {
 }
 
 module.exports = {
+  listBearEstimateHistory,
   listRealtimeBearEstimates,
   insertRealtimeBearEstimate,
   updateRealtimeBearEstimateById,

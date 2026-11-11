@@ -12,7 +12,8 @@ test('map marker details do not reopen or change the previously viewed list',()=
       getGeometry:()=>({getCoordinates:()=>coordinate})};
     const context=vm.createContext({
       window:{BearMobileDock:{prepareDetail(){listChanges++;},select(){listChanges++;}}},
-      observationPopupEl:{style:{}},observationPopupContentEl:{innerHTML:''},
+      observationPopupEl:{style:{}},observationPopupContentEl:{innerHTML:'',querySelector:()=>null},observationPopupTitleEl:{},
+      observationPopupHistoryEl:{hidden:true},
       focusedObservationId:null,observationMarkerSource:{changed(){}},
       observationPopupOverlay:{setPosition:value=>placed=value},syncObservationPopupPlacement(){}
     });

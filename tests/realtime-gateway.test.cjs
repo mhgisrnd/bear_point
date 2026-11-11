@@ -6,6 +6,21 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { createAppRealtimeRouter } = require("../src/routes/appRealtimeRoutes");
 
+test('history forwards only a validated entity code and pagination to the history endpoint',async()=>{
+  const requests=[];const app=express();
+  app.use('/api/app-realtime',createAppRealtimeRouter({apiBase:'https://admin.test/api/realtime',fetchImpl:async(url,options)=>{
+    requests.push({url,options});return {status:200,json:async()=>({ok:true,items:[{id:'old',active:false}],total:1})};
+  }}));
+  const server=app.listen(0,'127.0.0.1');await new Promise(resolve=>server.once('listening',resolve));
+  const base=`http://127.0.0.1:${server.address().port}/api/app-realtime/bear-estimates/history`;
+  try{
+    assert.equal((await fetch(base)).status,400);assert.equal(requests.length,0);
+    const response=await fetch(base+'?bearCode=MH-001&page=2&pageSize=100');
+    assert.equal((await response.json()).items[0].active,false);
+    assert.equal(requests[0].url,'https://admin.test/api/realtime/bear-estimates/history?bearCode=MH-001&page=2&pageSize=100');
+  }finally{await new Promise(resolve=>server.close(resolve));}
+});
+
 test("web uses the same-origin gateway and native retains the configured remote API", () => {
   const source = fs.readFileSync(path.join(__dirname, "../public/js/realtime/realtimeList.js"), "utf8");
   const start = source.indexOf("    function resolveApiBase() {");

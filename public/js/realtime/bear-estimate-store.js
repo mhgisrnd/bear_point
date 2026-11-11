@@ -21,6 +21,7 @@
         ...payload, ...previous,
         id: origin || "remote:" + row.id, local_id: previous?.local_id || null,
         server_id: String(row.id), bear_estimate_id: origin || null,
+        active: row.active ?? previous?.active ?? null,
         bear_code: row.bear_code || payload.bear_code || "-",
         place: row.place || "미지정", owner: row.owner || "미지정",
         admin_region: row.admin_region ?? payload.admin_region ?? previous?.admin_region ?? null,

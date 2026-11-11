@@ -3,6 +3,7 @@ const { pgQuery } = require("../db/postgres");
 const { pushEnabled, registerPushDevice, authenticatedPushSender, enqueueEstimatePush } = require("../services/bearEstimatePush");
 const {
   listRealtimeBearEstimates,
+  listBearEstimateHistory,
   insertRealtimeBearEstimate,
   updateRealtimeBearEstimateById,
   deleteRealtimeBearEstimatesByIds,
@@ -44,6 +45,11 @@ function createRealtimeRouter() {
     } catch (error) {
       res.status(500).json({ ok: false, message: "실시간 목록 조회 실패", detail: error.message });
     }
+  });
+  router.get('/bear-estimates/history', async (req,res) => {
+    res.set('Cache-Control','no-store');
+    try { res.json({ok:true,...await listBearEstimateHistory(req.query)}); }
+    catch(error) { res.status(error.statusCode || 500).json({ok:false,message:error.statusCode===400?error.message:'추정 위치 이력을 조회하지 못했습니다.'}); }
   });
 
   router.post("/push-devices", async (req, res) => {

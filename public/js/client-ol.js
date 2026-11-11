@@ -117,6 +117,7 @@
         id: it && it.id,
         isRealtime: !!isRealtime || !!(it && it.remoteOnly),
         shared_at: it && it.shared_at,
+        estimation_method: it && it.estimation_method,
         source_observations: it && it.source_observations,
         bear_code: isRealtime ? (it && (it.bearCode || it.bear_code)) : (it && (it.bear_code || it.bearCode)),
         owner: it && it.owner,
@@ -4233,24 +4234,35 @@
 
   const observationPopupCloseEl = document.createElement("button");
   observationPopupCloseEl.type = "button";
-  observationPopupCloseEl.textContent = "X";
-  observationPopupCloseEl.setAttribute("aria-label", "관측점 정보 닫기");
-  observationPopupCloseEl.style.position = "absolute";
-  observationPopupCloseEl.style.top = "6px";
-  observationPopupCloseEl.style.right = "8px";
-  observationPopupCloseEl.style.border = "0";
-  observationPopupCloseEl.style.background = "transparent";
-  observationPopupCloseEl.style.color = "#64748b";
-  observationPopupCloseEl.style.fontSize = "18px";
-  observationPopupCloseEl.style.lineHeight = "1";
-  observationPopupCloseEl.style.cursor = "pointer";
-  observationPopupCloseEl.style.zIndex = "3";
+  observationPopupCloseEl.className = 'map-detail-close-button';
+  observationPopupCloseEl.innerHTML = '<svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="m5 5 10 10M15 5 5 15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>';
+  observationPopupCloseEl.setAttribute("aria-label", "상세정보 닫기");
 
   const observationPopupContentEl = document.createElement("div");
   observationPopupContentEl.className = "map-detail-popup-content";
+  const observationPopupHistoryEl = document.createElement('button');
+  observationPopupHistoryEl.type = 'button';
+  observationPopupHistoryEl.className = 'map-detail-history-button';
+  observationPopupHistoryEl.innerHTML = '<svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="M3 9a7 7 0 1 1 1 5M3 4v5h5m2-3v4l3 2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg><span>이력</span>';
+  observationPopupHistoryEl.setAttribute('aria-label','추정 위치 이력 열기');
+  observationPopupHistoryEl.hidden = true;
+  observationPopupHistoryEl.addEventListener('click', function () {
+    const selected = observationPopupEl._bearEstimateData;
+    if (!selected || selected._unsaved) return;
+    const item = currentBearEstimateItems.find(row => String(row.id) === String(selected.id)) || selected;
+    void estimateHistoryUi.open(item);
+  });
   //observationPopupContentEl.style.paddingRight = "16px";
 
-  observationPopupEl.appendChild(observationPopupCloseEl);
+  const observationPopupHeaderEl = document.createElement('header');
+  observationPopupHeaderEl.className = 'map-detail-head';
+  const observationPopupTitleEl = document.createElement('strong');
+  observationPopupTitleEl.className = 'map-detail-title';
+  const observationPopupHeaderActionsEl = document.createElement('div');
+  observationPopupHeaderActionsEl.className = 'map-detail-head-actions';
+  observationPopupHeaderActionsEl.append(observationPopupHistoryEl, observationPopupCloseEl);
+  observationPopupHeaderEl.append(observationPopupTitleEl, observationPopupHeaderActionsEl);
+  observationPopupEl.appendChild(observationPopupHeaderEl);
   observationPopupEl.appendChild(observationPopupContentEl);
 
   // 상세 팝업의 관측점 수정 및 개체 추적 파일 버튼을 처리한다.
@@ -4399,7 +4411,11 @@
     focusedObservationId = observationPopupEl._observationData?.id != null ? String(observationPopupEl._observationData.id) : null;
     observationMarkerSource.changed();
     observationPopupEl._bearEstimateData = feature ? (feature.get("bearEstimateData") || null) : null;
+    observationPopupHistoryEl.hidden = !observationPopupEl._bearEstimateData || !!observationPopupEl._bearEstimateData._unsaved;
     observationPopupContentEl.innerHTML = popupHtml;
+    const detailTitle = observationPopupContentEl.querySelector('.obs-popup-card__eyebrow')?.textContent || '상세정보';
+    observationPopupTitleEl.textContent = detailTitle;
+    observationPopupTitleEl.title = detailTitle;
     observationPopupEl.style.visibility = "hidden";
     observationPopupEl.style.display = "flex";
     // Make the overlay parent visible before measuring its contents.
@@ -7587,6 +7603,24 @@
   if (obsListModule) obsListModule.initialize();
   window.createMobileMapDock({ observations: obsListModule, gps: gpsTrackUi, expandBears: expandBearEstimatePanel, setSidebarCollapsed: setTabletSidebarCollapsed,
     onBeforeOpen: function () { view.cancelAnimations(); closeObservationPopup(); controlsManager?.deactivateMeasure?.('menu'); } });
+  const estimateHistoryUi = window.createEstimateHistoryUi({
+    ol, projection: view.getProjection(), resolutions: view.getResolutions(),
+    getBaseLayers: () => [osmBase, englishBase, largeBase, satelliteBase, mbtilesLayer, hillshadeOverlay].filter(layer => layer.getVisible()),
+    registerBack: registerBackClosableOverlay,
+    async loadItems(item, signal) {
+      const code = String(item.bear_code || item.bearCode || '').trim();
+      const sameCode = row => String(row.bear_code || row.bearCode || '').trim().toUpperCase() === code.toUpperCase();
+      const local = (await localEstimateStore.list()).filter(sameCode);
+      try {
+        if (!realtimeListModule) throw new Error('이력 서버 연결이 준비되지 않았습니다.');
+        const remote = await realtimeListModule.fetchHistory(code, signal);
+        return { items: window.BearEstimateStore.merge(local.filter(row => !row.shared_at), remote) };
+      } catch (error) {
+        if (signal.aborted) throw error;
+        return { items: unifiedBearStore.merge(local).filter(sameCode), notice: '서버 이력을 조회하지 못해 이 기기에 보관된 자료만 표시합니다. '+error.message };
+      }
+    }
+  });
   ensureStartupOverlay();
   if (startupOverlayRetryBtn && startupOverlayRetryBtn.dataset.bound !== "1") {
     startupOverlayRetryBtn.dataset.bound = "1";

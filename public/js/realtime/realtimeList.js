@@ -952,6 +952,18 @@
 
     return {
       sendEstimate,
+      async fetchHistory(bearCode, signal) {
+        const rows=new Map();
+        for(let page=1;page<=1000;page++) {
+          if(signal?.aborted)throw new Error('조회가 취소되었습니다.');
+          const data=await requestJson('/bear-estimates/history?'+new URLSearchParams({bearCode,page:String(page),pageSize:'100'}), {signal,headers:{Accept:'application/json'}});
+          const additions=(data.items||[]).filter(row=>!rows.has(String(row.id)));
+          additions.forEach(row=>rows.set(String(row.id),row));
+          if(rows.size>=Number(data.total || 0))return [...rows.values()];
+          if(!additions.length)throw new Error('이력 조회가 완료되지 않았습니다. 다시 시도해주세요.');
+        }
+        throw new Error('이력 건수가 너무 많아 전체 조회를 완료하지 못했습니다.');
+      },
       sendEstimates,
       openRealtimeTab: activateRealtime,
       openEstimateTab: activateEstimate,
