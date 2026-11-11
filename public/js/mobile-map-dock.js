@@ -41,7 +41,7 @@
       if(mobile===null)return;
       if(!mobile)expanded=true;
       const sidebarHidden=!mobile&&document.body.classList.contains('bp-sidebar-collapsed');
-      if(sidebarHidden)dock.setAttribute('inert','');else dock.removeAttribute('inert');
+      if(sidebarHidden||document.body.classList.contains('analysis-mobile-active'))dock.setAttribute('inert','');else dock.removeAttribute('inert');
       dock.dataset.menu=active;dock.classList.toggle('is-expanded',expanded);content.hidden=!expanded;
       dock.classList.toggle('is-full',expanded&&full);
       dock.classList.toggle('is-filtering',expanded&&active==='tracking'&&filtering);
@@ -148,7 +148,12 @@
       if(mobile===null)return;event.preventDefault();event.stopImmediatePropagation();
       if(active===name&&expanded)collapse();else select(name);
     },true);
-    dock.addEventListener('keydown',event=>{if(event.key==='Escape'&&collapse()){event.preventDefault();event.stopPropagation();fold.focus();}});
+    dock.addEventListener('keydown',event=>{
+      if(event.key==='Enter'&&!event.isComposing&&event.keyCode!==229&&event.target?.matches?.('input.list-search-input')){
+        event.target.blur?.();
+      }
+      if(event.key==='Escape'&&collapse()){event.preventDefault();event.stopPropagation();fold.focus();}
+    });
     function layout(){
       const next=!tablet.matches;if(next===mobile)return;
       finishDrag(null,true);
@@ -182,6 +187,8 @@
     tablet.addEventListener('change',layout);root.addEventListener('resize',()=>{finishDrag(null,true);measure();});
     root.BearMobileDock={select,collapse,isMobile:()=>!!mobile,isDocked:()=>true,getActive:()=>active,handleBack:collapse,
       prepareDetail(){
+        const focused=document.activeElement;
+        if(focused?.matches?.('input.list-search-input'))focused.blur?.();
         full=false;filtering=false;
         if(mobile)expanded=true;
         dock.classList.add('is-detail');paint();measure();

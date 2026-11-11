@@ -1243,7 +1243,7 @@ test('Android shared back handler resumes from listening without closing SDR or 
 
 function attachExitFlow(ui) {
   const mapSource=fs.readFileSync(require('node:path').join(__dirname,'../public/js/client-ol.js'),'utf8');
-  const toastStart=mapSource.indexOf('  function showBackExitToast(message) {');
+  const toastStart=mapSource.indexOf('  function showBackExitToast(');
   const toastEnd=mapSource.indexOf('  // 상태 강조',toastStart);
   const listenerStart=mapSource.indexOf('const listener = await appPlugin.addListener("backButton", function () {');
   const bodyStart=mapSource.indexOf('{',listenerStart)+1, bodyEnd=mapSource.indexOf('\n    });',bodyStart);
@@ -1262,6 +1262,18 @@ function attachExitFlow(ui) {
     back(){vm.runInContext('(function(){'+mapSource.slice(bodyStart,bodyEnd)+'})()',context);},
     advance(ms){now+=ms;}};
 }
+
+test('Android back cancels analysis before arming app exit', async () => {
+  const ui=setup();
+  const flow=attachExitFlow(ui);
+  let cancelled=0;
+  ui.window.BearAnalysisSheet={handleBack(){cancelled++;return true;}};
+  flow.back();flow.back();
+  assert.equal(cancelled,2);
+  assert.equal(flow.exits(),0);
+  assert.equal(flow.context.lastBackPressAt,0);
+  assert.equal(flow.toasts.length,0);
+});
 
 test('opening SDR cancels the map exit prompt; closing it requires two fresh map back presses', async () => {
   const ui=setup(), flow=attachExitFlow(ui);

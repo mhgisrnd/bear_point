@@ -1,0 +1,68 @@
+#analysis-dialog-desc { word-break: keep-all; overflow-wrap: break-word; }
+#analysis-dialog-desc .analysis-preview-hint { margin: 0 0 5px; }
+#analysis-dialog-desc .analysis-help { display: grid; gap: 8px; margin: 6px 0 0; padding: 0 0 0 16px; white-space: normal; line-height: 1.6; }
+#analysis-dialog-desc .analysis-help li { display: grid; gap: 2px; }
+@media (max-width: 899px), (orientation: portrait) {
+  body.analysis-mobile-active #mobile-map-dock {
+    visibility: hidden;
+    pointer-events: none;
+  }
+  body.analysis-mobile-active #mobile-map-dock * { pointer-events: none !important; }
+  body.analysis-mobile-active :is(#analysis-dialog-overlay, #analysis-save-sheet) {
+    position: fixed !important;
+    inset: auto 8px calc(var(--analysis-keyboard-bottom, 0px) + var(--safe-bottom, 0px) + 8px) !important;
+    transform: none !important;
+    width: auto !important;
+    max-height: max(120px, calc(var(--analysis-visible-height, 100dvh) - 140px));
+    z-index: 22000 !important;
+    box-sizing: border-box;
+  }
+  #analysis-dialog-panel, #analysis-save-sheet > .analysis-save-card {
+    background: #fff !important;
+    color: #243c56;
+    border: 1px solid #dce4ed !important;
+    border-radius: 16px !important;
+    box-shadow: 0 -4px 22px #142a4020 !important;
+    box-sizing: border-box;
+    max-height: inherit;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    backdrop-filter: none !important;
+  }
+  #analysis-dialog-panel { padding: 10px 12px !important; gap: 6px !important; }
+  #analysis-dialog-title { color: #243c56 !important; font-size: 14px !important; }
+  #analysis-dialog-desc { color: #63768a !important; font-size: 11px !important; white-space: normal !important; }
+  #analysis-dialog-desc { word-break: keep-all; overflow-wrap: break-word; }
+  #analysis-dialog-desc .analysis-preview-hint { margin: 0 0 5px; line-height: 1.5; }
+  #analysis-dialog-desc details { border: 1px solid #e1e8f0; border-radius: 9px; background: #f7f9fc; }
+  #analysis-dialog-desc summary { display: flex; align-items: center; justify-content: space-between; cursor: pointer; padding: 7px 10px; color: #486384; font-weight: 700; list-style: none; }
+  #analysis-dialog-desc summary::-webkit-details-marker { display: none; }
+  #analysis-dialog-desc summary::after { content: '+'; font-size: 15px; line-height: 1; }
+  #analysis-dialog-desc details[open] summary::after { content: '−'; }
+  #analysis-dialog-desc .analysis-help { display: grid; gap: 8px; margin: 0; padding: 0 10px 10px; list-style: none; line-height: 1.6; white-space: normal; }
+  #analysis-dialog-desc .analysis-help li { display: grid; gap: 2px; }
+  #analysis-dialog-desc .analysis-help strong { color: #334d67; }
+  #analysis-dialog-panel .analysis-input-label { color: #425970 !important; font-size: 12px !important; gap: 4px !important; }
+  #analysis-dialog-panel .analysis-input { height: 40px !important; border-color: #cbd7e4 !important; font-size: 16px !important; background: #f8fafc !important; }
+  #analysis-dialog-body { align-items: start !important; }
+  #analysis-dialog-panel .analysis-declination-control { flex-direction: column; align-items: stretch !important; gap: 8px !important; }
+  #analysis-dialog-panel .analysis-declination-control > div:first-child { flex: 0 0 auto !important; }
+  #analysis-dialog-panel .analysis-declination-steps { flex-direction: row !important; flex: 0 0 44px !important; gap: 8px !important; }
+  #analysis-dialog-panel .analysis-declination-step { flex: 1 1 0; width: auto !important; min-width: 44px; color: #425970 !important; border-color: #cbd7e4 !important; background: #f1f5f9 !important; height: 44px !important; min-height: 44px !important; padding: 0 !important; touch-action: manipulation; }
+  #analysis-dialog-panel .analysis-declination-step:active { background: #dce8fa !important; border-color: #92b3e5 !important; }
+  #analysis-dialog-panel .analysis-declination-step svg { display: block; flex: 0 0 12px; width: 12px; height: 12px; pointer-events: none; }
+  body.analysis-mobile-active #analysis-dialog-actions { margin-top: 4px !important; }
+  #analysis-dialog-actions button { height: 36px !important; }
+  #analysis-dialog-actions button:last-child { color: #425970 !important; border: 1px solid #cbd7e4 !important; background: #f1f5f9 !important; }
+  #analysis-dialog-error { color: #b42318 !important; min-height: 0 !important; }
+  #analysis-dialog-error:empty { display: none; }
+  #analysis-save-sheet .analysis-save-title { color: #243c56 !important; border-color: #e2e8f0 !important; padding: 10px 12px !important; text-align: left !important; }
+  #analysis-save-sheet .analysis-save-fields { padding: 8px 12px !important; gap: 6px !important; overflow-y: auto; min-height: 0; }
+  #analysis-save-sheet .analysis-save-fields label { color: #425970 !important; }
+  #analysis-save-sheet .analysis-save-fields input[type=text] { height: 36px !important; font-size: 16px !important; box-sizing: border-box; min-width: 0; }
+  #analysis-save-sheet .analysis-save-actions { border-color: #e2e8f0 !important; background: #fff !important; flex-shrink: 0; }
+  #analysis-save-sheet .analysis-save-actions button { height: 38px !important; font-size: 14px !important; }
+  #analysis-save-sheet .analysis-save-actions button:last-child { color: #425970 !important; background: #f1f5f9 !important; border-color: #cbd7e4 !important; }
+  #analysis-save-sheet .analysis-save-card { display: flex; flex-direction: column; overflow: hidden; }
+  body.analysis-mobile-keyboard #analysis-dialog-desc { display: none; }
+}

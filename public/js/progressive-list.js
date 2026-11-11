@@ -1,8 +1,9 @@
 (function (root) {
   "use strict";
   // Only list rows are batched; filtering, markers and bulk actions retain all items.
-  function create({ scroller, key, batchSize = 30 }) {
+  function create({ scroller, key, scope, batchSize = 30 }) {
     let items = [], append, signature = "", count = 0, savedScroll = 0;
+    let scopeSignature;
     function add(end) {
       const start = count;
       count = Math.min(end, items.length);
@@ -19,9 +20,13 @@
       // position on selection/refresh; a changed result set starts at the top.
       render(next, renderItem) {
         const nextSignature = JSON.stringify(next.map(key));
+        const nextScope = scope?.();
+        const oldKeys = new Set(items.map(key));
         const same = nextSignature === signature;
-        const target = same ? Math.max(batchSize, count) : batchSize;
-        const scrollTop = same ? savedScroll : 0;
+        const preserve = scope ? nextScope === scopeSignature && (same || next.some(item => oldKeys.has(key(item)))) : same;
+        const target = preserve ? Math.max(batchSize, count + Math.max(0, next.length - items.length)) : batchSize;
+        const scrollTop = preserve ? savedScroll : 0;
+        scopeSignature = nextScope;
         items = next; append = renderItem; signature = nextSignature; count = 0;
         add(target);
         if (scroller) scroller.scrollTop = scrollTop;

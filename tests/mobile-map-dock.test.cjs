@@ -72,6 +72,20 @@ test('detail selection reduces the list and upward dragging restores it without 
   assert.equal(dock.classList.contains('is-full'),true);
 });
 
+test('search completion releases focus except during IME composition; details also release search focus',()=>{
+  const env=environment(),dock=env.document.getElementById('mobile-map-dock');
+  let blurred=0;
+  const input={matches:selector=>selector==='input.list-search-input',blur(){blurred++;}};
+  env.dispatch(dock,'keydown',{key:'Enter',isComposing:true,target:input});
+  env.dispatch(dock,'keydown',{key:'Enter',keyCode:229,target:input});
+  assert.equal(blurred,0);
+  env.dispatch(dock,'keydown',{key:'Enter',target:input});
+  assert.equal(blurred,1);
+  env.document.activeElement=input;
+  env.api.prepareDetail();
+  assert.equal(blurred,2);
+});
+
 test('recording indicator persists across menu changes; folding the dock does not stop GPS',()=>{
   const env=environment(),dock=env.document.getElementById('mobile-map-dock');
   env.api.select('tracking');assert.equal(env.calls.gpsOpen,1);assert.equal(env.track.hidden,false);

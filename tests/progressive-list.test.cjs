@@ -2,11 +2,11 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { create } = require('../public/js/progressive-list.js');
 
-function fixture() {
+function fixture(scope) {
   let scroll;
   const scroller = { scrollTop: 0, clientHeight: 200, scrollHeight: 1500,
     addEventListener(type, callback) { assert.equal(type, 'scroll'); scroll = callback; } };
-  const pager = create({ scroller, key: item => item.id });
+  const pager = create({ scroller, key: item => item.id, scope });
   let rows = [];
   function render(items) {
     pager.beforeClear(); rows = []; scroller.scrollTop = 0;
@@ -42,4 +42,17 @@ test('hidden containers do not load rows on scroll', () => {
   const view = fixture(); view.render(items);
   view.scroller.clientHeight = 0; view.scroller.scrollTop = 1500;
   view.scroll(); assert.equal(view.rows().length, 30);
+});
+
+test('refresh with additions preserves scrolling and loaded rows, while a changed filter resets them',()=>{
+  let query='team-a';
+  const view=fixture(()=>query);view.render(items);
+  view.scroller.scrollTop=1250;view.scroll();
+  view.render([{id:'new'},...items]);
+  assert.equal(view.scroller.scrollTop,1250);
+  assert.equal(view.rows().length,61);
+  view.render(items.slice(1));
+  assert.equal(view.scroller.scrollTop,1250);
+  query='team-b';view.render(items.slice(1));
+  assert.equal(view.scroller.scrollTop,0);assert.equal(view.rows().length,30);
 });

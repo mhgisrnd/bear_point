@@ -29,7 +29,8 @@
   const btnObsList = document.getElementById("btn-obs-list");
   const btnSidebarToggle = document.getElementById("btn-sidebar-toggle");
   const bearsListEl = document.getElementById("bears-list");
-  const bearListPages = window.BearProgressiveList.create({ scroller: bearsListEl, key: item => String(item.id) });
+  const bearListPages = window.BearProgressiveList.create({ scroller: bearsListEl, key: item => String(item.id),
+    scope: () => JSON.stringify([bearCodeSearchEl?.value || '', bearTeamFilterEl?.value || '', readBearPeriodFilter()]) });
     if (bearsListEl) {
       // 빈 상태 카드의 버튼을 눌렀을 때 기존 관측점 버튼 동작을 그대로 재사용한다.
       bearsListEl.addEventListener("click", function (event) {
@@ -3333,6 +3334,14 @@
     stopFollowing();
     const target = mapCoordFromWgs84(latlng[0], latlng[1]);
     const dock = window.BearMobileDock;
+    const analysisPadding = window.BearAnalysisSheet?.getMapPadding();
+    if (analysisPadding) {
+      view.fit([target[0], target[1], target[0], target[1]], {
+        padding: analysisPadding, maxZoom: typeof zoom === 'number' ? zoom : (view.getZoom() || 11),
+        duration: 700, callback: onComplete
+      });
+      return;
+    }
     if (dock?.isDocked()) {
       dock.prepareDetail();
       view.fit([target[0], target[1], target[0], target[1]], {
@@ -3373,7 +3382,7 @@
     stopFollowing();
 
     view.fit(extent, {
-      padding: [padding, padding, padding, padding],
+      padding: window.BearAnalysisSheet?.getMapPadding() || [padding, padding, padding, padding],
       maxZoom: maxZoom,
       duration: 700
     });
@@ -3598,6 +3607,7 @@
         resetBackExitState();
         return;
       }
+      if (window.BearAnalysisSheet?.handleBack()) { resetBackExitState(); return; }
       if (window.BearAppSettings?.isOpen()) {
         window.BearAppSettings.close();
         resetBackExitState();
@@ -5846,7 +5856,19 @@
   function clearAnalysisInputPreview() {
     analysisPreviewSource.clear();
     previewRayAnimationActive = false;
+    analysisViewportExtent = null;
   }
+
+  let analysisViewportExtent = null;
+  function fitAnalysisViewport({ duration = 250 } = {}) {
+    if (!analysisViewportExtent) return;
+    view.cancelAnimations();
+    view.fit(analysisViewportExtent, {
+      padding: window.BearAnalysisSheet?.getMapPadding() || [80, 80, 80, 80],
+      maxZoom: 17, duration
+    });
+  }
+  window.addEventListener('bearpoint:analysis-sheet-layout', fitAnalysisViewport);
 
   // 위치분석 입력값 변화에 따라 반경과 방향 화살표 프리뷰를 갱신한다.
   function renderAnalysisInputPreview(previewPayload) {
@@ -5861,11 +5883,13 @@
     let hasRayFeature = false;
 
     const rayEndPoints = []; // 교차점 계산용 광선 끝점
+    const origins = [], intersections = [];
 
     previewPayload.sourceObservations.forEach(function (obs) {
       if (!obs || !Number.isFinite(obs.lat) || !Number.isFinite(obs.lng)) return;
 
       const origin = mapCoordFromWgs84(obs.lat, obs.lng);
+      origins.push(origin);
 
       const radiusFeature = new ol.Feature({
         geometry: new ol.geom.Circle(origin, distanceLimitM)
@@ -5915,6 +5939,7 @@
           );
 
           if (intersection) {
+            intersections.push(intersection);
             const intersectFeature = new ol.Feature({
               geometry: new ol.geom.Point(intersection)
             });
@@ -5925,6 +5950,8 @@
       }
     }
 
+    analysisViewportExtent = window.BearAnalysisViewport?.extent(origins, rayEndPoints.map(ray => ray.end), intersections, distanceLimitM) || null;
+    fitAnalysisViewport({ duration: 0 });
     previewRayAnimationActive = hasRayFeature;
     if (previewRayAnimationActive) {
       startAnalysisVisualAnimation();
@@ -5959,6 +5986,8 @@
     analysisActionOverlay.setPosition(undefined);
     analysisActionAnchorCoord = null;
     document.body.classList.remove("analysis-action-active");
+    window.BearAnalysisSheet?.closeStage('save');
+    if (analysisActionBarEl.contains(document.activeElement)) document.activeElement?.blur?.();
   }
 
   // 추정 좌표에 맞춰 액션바 오버레이를 표시한다.
@@ -5966,6 +5995,7 @@
     if (!analysisActionBarEl || !analysisActionOverlay || !Array.isArray(anchorCoord)) return;
     analysisActionBarEl.style.display = "flex";
     document.body.classList.add("analysis-action-active");
+    window.BearAnalysisSheet?.setStage('save', function () { clearAnalysisEstimateVisuals(); setDefaultStatusWithIcon(); });
     analysisActionAnchorCoord = [anchorCoord[0], anchorCoord[1]];
     analysisActionOverlay.setPosition(analysisActionAnchorCoord);
     window.requestAnimationFrame(function () { resizeAnalysisOwner(); scheduleAnalysisActionBarLayoutUpdate(); });
@@ -5981,6 +6011,7 @@
   function updateAnalysisActionBarLayout() {
     if (!analysisActionBarEl || !analysisActionOverlay || analysisActionBarEl.style.display === "none") return;
     if (!map || !Array.isArray(analysisActionAnchorCoord)) return;
+    if (window.BearAnalysisSheet?.isPhone()) return;
 
     const anchorPixel = map.getPixelFromCoordinate(analysisActionAnchorCoord);
     if (!Array.isArray(anchorPixel) || anchorPixel.length < 2) return;
@@ -6082,6 +6113,7 @@
     if (analysisActionBarEl) return;
 
     const root = document.createElement("div");
+    root.id = "analysis-save-sheet";
     root.style.display = "none";
     root.style.flexDirection = "column";
     root.style.alignItems = "center";
@@ -6092,6 +6124,7 @@
     root.style.pointerEvents = "auto";
 
     const inputCard = document.createElement("div");
+    inputCard.className = "analysis-save-card";
     inputCard.style.display = "flex";
     inputCard.style.flexDirection = "column";
     inputCard.style.gap = "0";
@@ -6124,6 +6157,7 @@
     ownerInput.className = "obs-reg-identity-owner";
     ownerInput.rows = 1;
     ownerInput.readOnly = true;
+    ownerInput.tabIndex = -1;
     ownerInput.placeholder = "설정에서 담당자를 지정해주세요";
     ownerInput.autocomplete = "off";
 
@@ -6140,6 +6174,7 @@
 
     const placeInput = document.createElement("input");
     placeInput.type = "text";
+    placeInput.enterKeyHint = "next";
     placeInput.placeholder = "입력 또는 미지정";
     placeInput.autocomplete = "off";
     placeInput.style.height = "32px";
@@ -6160,6 +6195,7 @@
     const regionInput = document.createElement("input");
     regionInput.id = "analysis-admin-region";
     regionInput.type = "text";
+    regionInput.enterKeyHint = "done";
     regionInput.autocomplete = "off";
     regionInput.placeholder = "자동 조회 · 직접 수정 가능";
     regionInput.style.cssText = placeInput.style.cssText;
@@ -6171,6 +6207,15 @@
     teamLabel.textContent = "팀"; teamLabel.htmlFor = "analysis-team"; teamLabel.className = "obs-reg-identity-label";
     const teamInput = document.createElement("input");
     teamInput.id = "analysis-team"; teamInput.className = "obs-reg-identity-team-input"; teamInput.readOnly = true; teamInput.placeholder = "팀 선택";
+    teamInput.tabIndex = -1;
+    placeInput.addEventListener('keydown', function (event) {
+      if (event.key !== 'Enter' || event.isComposing || event.keyCode === 229) return;
+      event.preventDefault(); regionInput.focus();
+    });
+    regionInput.addEventListener('keydown', function (event) {
+      if (event.key !== 'Enter' || event.isComposing || event.keyCode === 229) return;
+      event.preventDefault(); regionInput.blur();
+    });
     const teamBadge = document.createElement("div"); teamBadge.className = "obs-reg-team-badge";
     const teamDot = document.createElement("span"); teamDot.className = "obs-reg-team-dot"; teamDot.setAttribute("aria-hidden", "true");
     teamBadge.append(teamDot, teamInput);
@@ -6196,6 +6241,7 @@
     realtimeShareLabel.appendChild(document.createTextNode("실시간 공유"));
 
     const buttonRow = document.createElement("div");
+    buttonRow.className = "analysis-save-actions";
     buttonRow.style.display = "flex";
     buttonRow.style.alignItems = "center";
     buttonRow.style.justifyContent = "center";
@@ -6407,7 +6453,8 @@
     fieldGrid.appendChild(regionField);
 
     const headerText = document.createElement("div");
-    headerText.textContent = "추가정보 입력";
+    headerText.textContent = "추적 위치 저장";
+    headerText.className = "analysis-save-title";
     headerText.style.color = "#ffffff";
     headerText.style.fontSize = "13px";
     headerText.style.fontWeight = "700";
@@ -6417,6 +6464,7 @@
     headerText.style.letterSpacing = "0.03em";
 
     const fieldWrap = document.createElement("div");
+    fieldWrap.className = "analysis-save-fields";
     fieldWrap.style.padding = "10px";
     fieldWrap.style.display = "flex";
     fieldWrap.style.flexDirection = "column";
@@ -6461,6 +6509,7 @@
     bindAnalysisActionBarLayoutListeners();
 
     analysisActionBarEl = root;
+    window.BearAnalysisSheet?.registerSave(root);
     analysisOwnerInputEl = ownerInput;
     analysisTeamInputEl = teamInput;
     analysisPlaceInputEl = placeInput;
@@ -6538,6 +6587,12 @@
     syncAnalysisPlaceInput(point);
     if (analysisRegionField) analysisRegionField.update(point.lat, point.lng);
     showAnalysisActionBar(estimateCoord);
+    const origins = (point.sourceObservations || []).filter(obs => Number.isFinite(obs.lat) && Number.isFinite(obs.lng))
+      .map(obs => mapCoordFromWgs84(obs.lat, obs.lng));
+    analysisViewportExtent = window.BearAnalysisViewport?.extent(
+      origins.length ? origins : [estimateCoord], [estimateCoord], [estimateCoord], Number(point.options?.distanceLimitM) || 100
+    ) || null;
+    fitAnalysisViewport();
     startAnalysisVisualAnimation();
   }
 

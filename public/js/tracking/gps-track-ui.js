@@ -158,7 +158,7 @@
       if(track.error)message.textContent=track.error;
       else if(!track.point_count)message.textContent=active?.id===track.id?'GPS 수신 대기 중입니다. 정확한 위치를 받으면 자동으로 기록합니다.':'저장된 GPS 지점이 없습니다.';
     }
-    let historyRows=[];
+    let historyRows=[],historyScope='';
     async function loadHistory(reset=true, limit=30) {
       const version=++historyVersion;
       more.disabled=true;
@@ -169,6 +169,9 @@
         const byId=new Map(historyRows.map(track=>[String(track.id),track]));
         rows.forEach(track=>byId.set(String(track.id),track));
         historyRows=filters.sortHistory([...byId.values()]);
+        const frame=panel.querySelector('.gps-track-history-frame');
+        const nextScope=JSON.stringify(appliedQuery);
+        const scrollTop=nextScope===historyScope?(frame?.scrollTop||0):0;
         history.replaceChildren();
         historyLoaded=true;count.textContent=Number(result.total||0)+'건';if(reset)paintTeams(result.teams);
         if(reset&&!rows.length){const empty=document.createElement('tr'),cell=document.createElement('td');cell.colSpan=5;cell.className='gps-history-empty';cell.textContent=appliedQuery.owner||appliedQuery.team_id||appliedQuery.from!=null?'검색 결과가 없습니다.':'저장된 기록이 없습니다.';empty.append(cell);history.append(empty);}
@@ -194,6 +197,8 @@
           row.addEventListener('click',()=>void action(async()=>{message.textContent='';await show(track.id,true,track.sharedOnly);}));history.append(row);
         });
         historyOffset+=rows.length;more.hidden=historyOffset>=Number(result.total||0);
+        if(frame)frame.scrollTop=scrollTop;
+        historyScope=nextScope;
       } finally {if(version===historyVersion){more.disabled=false;place();}}
     }
     let refreshingShared=false,lastSharedRefresh=0;
@@ -291,7 +296,7 @@
     search.elements.period.addEventListener('change',()=>{period=search.elements.period.value;periodFields();filterInput();});
     search.elements.owner.addEventListener('input',filterInput);
     for(const name of ['day','month','year','rangeStart','rangeEnd'])search.elements[name].addEventListener('input',filterInput);
-    search.addEventListener('submit',event=>{event.preventDefault();filterInput();});
+    search.addEventListener('submit',event=>{event.preventDefault();filterInput();search.elements.owner.blur?.();});
     mineButton.addEventListener('click',()=>{
       const owner=myOwner();if(!owner)return;
       search.elements.owner.value=search.elements.owner.value.trim()===owner?'':owner;filterInput();

@@ -5,14 +5,14 @@ const vm=require('node:vm');
 
 test('history renders newest first across loaded pages and refresh resets previous rows',async()=>{
   function element(){return {dataset:{},children:[],classList:{toggle(){}},style:{},append(...children){this.children.push(...children);},replaceChildren(){this.children=[];},prepend(){},setAttribute(){},addEventListener(){}};}
-  const history=element(),requests=[];
+  const history=element(),requests=[],frame={scrollTop:0};
   let response={items:[{id:'old',started_at:100},{id:'new',started_at:300}],total:4};
-  const context={history,historyVersion:0,historyOffset:0,historyLoaded:false,more:{},count:{},appliedQuery:{},displayed:null,
+  const context={history,panel:{querySelector:()=>frame},historyVersion:0,historyOffset:0,historyLoaded:false,more:{},count:{},appliedQuery:{},displayed:null,
     filters:require('../public/js/tracking/gps-track-filters'),document:{createElement:element},date:String,elapsed:()=>'',paintTeams(){},place(){},
     syncClient:{list:async query=>{requests.push(query.offset);return response;}}};
   vm.createContext(context);
   const code=fs.readFileSync('public/js/tracking/gps-track-ui.js','utf8');
-  vm.runInContext(code.slice(code.indexOf('    let historyRows=[];'),code.indexOf('    async function action(')),context);
+  vm.runInContext(code.slice(code.indexOf('    let historyRows='),code.indexOf('    async function action(')),context);
   await context.loadHistory();
   assert.deepEqual(history.children.map(row=>row.dataset.trackId),['new','old']);
   response={items:[{id:'middle',started_at:200},{id:'old',started_at:100}],total:4};
@@ -20,9 +20,14 @@ test('history renders newest first across loaded pages and refresh resets previo
   assert.deepEqual(history.children.map(row=>row.dataset.trackId),['new','middle','old']);
   assert.deepEqual(requests,[0,2]);
   response={items:[{id:'latest',started_at:400}],total:1};
+  frame.scrollTop=150;
   await context.loadHistory();
+  assert.equal(frame.scrollTop,150);
   assert.deepEqual(history.children.map(row=>row.dataset.trackId),['latest']);
   assert.equal(context.more.hidden,true);
+  context.appliedQuery={owner:'changed'};
+  await context.loadHistory();
+  assert.equal(frame.scrollTop,0);
 });
 test('stationary records show one location marker; actual movement shows line and two endpoints',async()=>{
   const [Feature,Point,LineString,Vector,Style,Text,Fill,Stroke,Circle]=await Promise.all([

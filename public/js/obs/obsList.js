@@ -111,7 +111,8 @@ window.createObsListModule = function createObsListModule({
   const obsListPanelEl = document.getElementById("obs-list-panel");
   const obsListBodyEl = document.getElementById("obs-list-body");
   const obsTableWrapEl = document.querySelector(".obs-table-wrap");
-  const observationListPages = window.BearProgressiveList.create({ scroller: obsTableWrapEl, key: item => item._obsKey });
+  const observationListPages = window.BearProgressiveList.create({ scroller: obsTableWrapEl, key: item => item._obsKey,
+    scope: () => JSON.stringify([searchQueryEl?.value || '', readObservationFilters()]) });
   const obsTableBodyScrollableEl = document.querySelector(".obs-table tbody");
   const obsListStatusEl = document.getElementById("obs-list-status");
   const obsListCountEl = document.getElementById("obs-list-count");
@@ -145,7 +146,6 @@ window.createObsListModule = function createObsListModule({
   const observationFlashPresetById = new Map();
   let currentTab = "none";
   let isPeekMode = false;
-  let observationKeySeed = 0;
   const OBS_SAVE_FLASH_DURATION_MS = 4600;
   let analysisOptionsDialogState = null;
   let analysisCloseSilently = false;
@@ -472,7 +472,7 @@ window.createObsListModule = function createObsListModule({
       detectors,
       _saveFlashUntil: hasActiveFlash ? cachedFlashUntil : 0,
       _saveFlashPreset: hasActiveFlash ? (cachedFlashPreset || "default") : "default",
-      _obsKey: `${id}::${observationKeySeed++}`
+      _obsKey: id
     };
   }
 
@@ -530,11 +530,8 @@ window.createObsListModule = function createObsListModule({
 
   async function performObservationRefresh(options = {}) {
     await loadObservationSamples();
-    if (!options.background) selectedObsIds.clear();
-    else {
-      const visibleIds = new Set(observationSamples.map(item => item._obsKey));
-      for (const id of selectedObsIds) if (!visibleIds.has(id)) selectedObsIds.delete(id);
-    }
+    const visibleIds = new Set(observationSamples.map(item => item._obsKey));
+    for (const id of selectedObsIds) if (!visibleIds.has(id)) selectedObsIds.delete(id);
     applySearch();
     renderObservationMarkers(getFilteredItems());
     updateSelectionUI();
@@ -1193,7 +1190,7 @@ window.createObsListModule = function createObsListModule({
 
     const title = document.createElement("div");
     title.id = "analysis-dialog-title";
-    title.textContent = "위치분석 탭";
+    title.textContent = "위치 분석";
     title.style.fontSize = "14px";
     title.style.fontWeight = "800";
     title.style.color = "#ffffff";
@@ -1214,6 +1211,28 @@ window.createObsListModule = function createObsListModule({
     desc.style.fontSize = "12px";
     desc.style.color = "rgba(255,255,255,0.85)";
     desc.style.whiteSpace = "pre-line";
+    desc.textContent = "";
+    const previewHint = document.createElement('p');
+    previewHint.className = 'analysis-preview-hint';
+    previewHint.textContent = '입력값은 지도에 바로 반영됩니다.';
+    const help = document.createElement("details");
+    const helpSummary = document.createElement("summary");
+    helpSummary.textContent = "분석 도움말";
+    const helpBody = document.createElement("ul");
+    helpBody.className = "analysis-help";
+    for (const [label, text] of [
+      ['단일 관측', '방향각에 편각을 더한 방향으로, 지정한 거리만큼 이동한 위치를 추정합니다.'],
+      ['교차 분석', '관측점들의 방향이 만나는 위치를 추정합니다. 교차점이 여러 개면 평균 위치를 사용합니다.'],
+      ['분석 조건', '평행한 방향, 뒤쪽 교차, 거리 제한 초과 등으로 관측 결과가 일치하지 않으면 분석할 수 없습니다.']
+    ]) {
+      const item = document.createElement('li');
+      const heading = document.createElement('strong'); heading.textContent = label;
+      const explanation = document.createElement('span'); explanation.textContent = text;
+      item.append(heading, explanation); helpBody.appendChild(item);
+    }
+    help.append(helpSummary, helpBody);
+    desc.appendChild(previewHint);
+    desc.appendChild(help);
 
     const distanceWrap = document.createElement("label");
     distanceWrap.className = "analysis-input-label";
@@ -1231,6 +1250,7 @@ window.createObsListModule = function createObsListModule({
     distanceInput.step = "1";
     distanceInput.min = "1";
     distanceInput.inputMode = "decimal";
+    distanceInput.enterKeyHint = "next";
     distanceInput.style.height = "56px";
     distanceInput.style.border = "1px solid rgba(255,255,255,0.3)";
     distanceInput.style.borderRadius = "8px";
@@ -1261,6 +1281,7 @@ window.createObsListModule = function createObsListModule({
     declinationInput.type = "number";
     declinationInput.step = "any";
     declinationInput.inputMode = "decimal";
+    declinationInput.enterKeyHint = "done";
     declinationInput.setAttribute("autocapitalize", "off");
     declinationInput.setAttribute("autocomplete", "off");
     declinationInput.setAttribute("autocorrect", "off");
@@ -1309,6 +1330,7 @@ window.createObsListModule = function createObsListModule({
     declinationInputBox.appendChild(declinationSignBtn);
 
     const declinationSteps = document.createElement("div");
+    declinationSteps.className = "analysis-declination-steps";
     declinationSteps.style.display = "flex";
     declinationSteps.style.flexDirection = "column";
     declinationSteps.style.gap = "2px";
@@ -1317,7 +1339,16 @@ window.createObsListModule = function createObsListModule({
     function createDeclinationStepButton(label, ariaLabel) {
       const button = document.createElement("button");
       button.type = "button";
-      button.textContent = label;
+      button.className = "analysis-declination-step";
+      button.innerHTML = `<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true" focusable="false"><path d="${label === '▲' ? 'M2 8 6 4 10 8' : 'M2 4 6 8 10 4'}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+      button.style.display = "flex";
+      button.style.alignItems = "center";
+      button.style.justifyContent = "center";
+      button.style.boxSizing = "border-box";
+      button.style.minHeight = "0";
+      button.style.lineHeight = "1";
+      button.style.overflow = "hidden";
+      button.addEventListener('pointerdown', event => { if (event.isPrimary !== false && event.button === 0) event.preventDefault(); });
       button.setAttribute("aria-label", ariaLabel);
       button.style.width = "34px";
       button.style.height = "27px";
@@ -1447,6 +1478,8 @@ window.createObsListModule = function createObsListModule({
     const resolver = dialog.resolve;
     dialog.resolve = null;
     dialog.overlay.style.display = "none";
+    window.BearAnalysisSheet?.closeStage('analysis');
+    if (dialog.panel.contains(document.activeElement)) document.activeElement?.blur?.();
     setObservationListDisabled(false);
     setPeekMode(false);
     emitAnalysisPreview(null);
@@ -1469,7 +1502,10 @@ window.createObsListModule = function createObsListModule({
   async function confirmAndEscapeAnalysis(message) {
     if (!isAnalysisDialogOpen()) return true;
     const msg = message || "위치분석이 진행 중입니다. 종료하시겠습니까?";
-    const ok = window.confirm(msg);
+    const ok = await confirmWithStyledDialog({
+      title: "위치 분석 종료", message: msg,
+      confirmText: "분석 종료", cancelText: "계속 분석"
+    });
     if (ok) escapeAnalysisOptionsDialog();
     return ok;
   }
@@ -1554,11 +1590,14 @@ window.createObsListModule = function createObsListModule({
     dialog.errorEl.textContent = "";
     dialog.body.style.setProperty("grid-template-columns", "repeat(2, minmax(0, 1fr))", "important");
     dialog.overlay.style.display = "flex";
+    const help = dialog.desc.querySelector('details');
+    if (help) help.open = false;
+    window.BearAnalysisSheet?.setStage('analysis', () => dialog.cancelBtn.click());
     setObservationListDisabled(true);
     setPeekMode(true);
 
     // 탭 열릴 때 선택된 점들로 지도 포커싱
-    if (typeof fitToPoints === "function" && previewItems.length > 0) {
+    if (!window.BearAnalysisViewport && typeof fitToPoints === "function" && previewItems.length > 0) {
       fitToPoints(previewItems.map(function (it) { return { lat: it.lat, lng: it.lng }; }), { padding: 80, maxZoom: 17 });
     }
 
@@ -1585,7 +1624,6 @@ window.createObsListModule = function createObsListModule({
         const current = parseDeclinationValue(dialog.declinationInput.value);
         const value = current.ok ? current.value : 0;
         dialog.declinationInput.value = String(Number((value + step).toFixed(6)));
-        dialog.declinationInput.blur();
         dialog.declinationInput.dispatchEvent(new Event("input", { bubbles: true }));
       }
 
@@ -1594,7 +1632,6 @@ window.createObsListModule = function createObsListModule({
       dialog.declinationSignBtn.onclick = function () {
         const current = parseDeclinationValue(dialog.declinationInput.value);
         dialog.declinationInput.value = String(current.ok ? -current.value : 0);
-        dialog.declinationInput.blur();
         dialog.declinationInput.dispatchEvent(new Event("input", { bubbles: true }));
       };
 
@@ -1641,6 +1678,7 @@ window.createObsListModule = function createObsListModule({
       };
 
       dialog.panel.onkeydown = function (event) {
+        if (event.isComposing || event.keyCode === 229) return;
         if (event.key === "Escape") {
           event.preventDefault();
           closeWith(null);
@@ -1654,11 +1692,15 @@ window.createObsListModule = function createObsListModule({
             dialog.declinationInput.select();
             return;
           }
-          dialog.applyBtn.click();
+          if (event.target === dialog.declinationInput) {
+            dialog.declinationInput.blur();
+            return;
+          }
         }
       };
 
       window.requestAnimationFrame(() => {
+        if (window.BearAnalysisSheet?.isPhone()) return;
         dialog.distanceInput.focus();
         dialog.distanceInput.select();
       });
@@ -1713,7 +1755,7 @@ window.createObsListModule = function createObsListModule({
 
     const point = analysisResult.result;
     statusEl.textContent = `📍 추정 위치 계산 완료 (${point.bearCode}) ${point.options.estimationMethod === "single" ? "단일 관측 · " + point.options.distanceLimitM + "m" : "교차 " + point.intersectionsCount + "건"}`;
-    flyToLatLng([point.lat, point.lng], 16);
+    if (!window.BearAnalysisViewport) flyToLatLng([point.lat, point.lng], 16);
 
     if (typeof onAnalysisResult === "function") {
       onAnalysisResult({
