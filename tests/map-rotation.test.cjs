@@ -44,6 +44,19 @@ test('my-location button cycles follow → heading-up → off and the compass ta
   assert.equal(context.trackMode,'follow');assert.match(context.statusEl.textContent,/방향 센서/);
 });
 
+test('heading mode eases toward the target and turns the short way across north',()=>{
+  const context={Math,Array};vm.createContext(context);
+  for(const name of ['norm360','angleDelta','nextHeadingView'])vm.runInContext(extract(name),context);
+  const across=context.nextHeadingView(350,10,null,null,0.5);
+  assert.equal(across.rotationDeg,360);// 350→10은 +20° 쪽으로 반 이동, -340°로 돌지 않는다
+  const back=context.nextHeadingView(10,350,null,null,0.5);
+  assert.equal(back.rotationDeg,0);
+  const done=context.nextHeadingView(90,90.05,[0,0],[0.1,0],0.5);
+  assert.equal(done.rotationDeg,null);assert.equal(done.center,null);// 다 왔으면 멈춘다
+  const move=context.nextHeadingView(0,0,[0,0],[10,20],0.25);
+  assert.equal(move.center[0],2.5);assert.equal(move.center[1],5);
+});
+
 test('two-finger and Alt+Shift rotation do not start or continue manual coordinate dragging',()=>{
   for(const type of ['pointerdown','pointerdrag']){
     let callback,stops=0,hits=0;

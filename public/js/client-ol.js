@@ -3138,12 +3138,16 @@
     minZoom: MBTILES_MIN_ZOOM,
     maxZoom: ONLINE_MAX_ZOOM,
     resolutions: viewResolutions,
+    // 기본 정북 붙임(±5°)은 방향 모드에서도 걸려 북쪽 근처가 달라붙으므로 끄고, 아래 moveend에서 방향 모드가 아닐 때만 직접 붙인다.
+    constrainRotation: false,
     //extent: LOCK_EMPTY_AREA_PAN ? PAN_LIMIT_EXTENT : undefined // 이 한 줄을 주석 처리하면 빈공간 이동 제한 해제
   });
 
   //맵 기능
   const map = new ol.Map({
     target: "map",
+    // 지도 타일은 256px 이미지라 배율 3으로 그려도 더 선명해지지 않는다. 2로 제한해 회전·이동 때 그리는 양을 줄인다.
+    pixelRatio: Math.min(window.devicePixelRatio || 1, 2),
     layers: [osmBase, englishBase, largeBase, satelliteBase, mbtilesLayer, hillshadeOverlay, bearMarkerLayer, analysisPreviewLayer, analysisGuideLayer, analysisEstimateLayer, measureLayer, myLocationLayer],
     view: view,
     // 두 손가락 회전은 확실히 30° 이상 비틀었을 때만 시작한다(winter_crop_app의 20°보다 둔하게). 확대·축소 중 손가락이 조금 돌아가는 건 무시.
@@ -3259,6 +3263,17 @@
     setTrackMode("on", false);
   }
   map.on("pointerdrag", stopFollowingOnDrag);
+
+  // 손으로 돌리다 정북 ±5° 안에서 멈추면 0°로 맞춘다(OpenLayers 기본 동작과 같음). 방향 모드에서는 바라보는 방향 그대로 둔다.
+  const NORTH_SNAP_DEG = 5;
+  map.on("moveend", function () {
+    if (trackMode === "heading") return;
+    const deg = Math.abs(angleDelta(-view.getRotation() * 180 / Math.PI, 0));
+    // moveend는 그리는 도중에 오므로 애니메이션은 다음 프레임에 시작해야 실제로 진행된다.
+    if (deg > 0 && deg < NORTH_SNAP_DEG) window.requestAnimationFrame(function () {
+      if (trackMode !== "heading" && !view.getInteracting()) view.animate({ rotation: 0, duration: 150 });
+    });
+  });
 
   if (isNativeCapacitorPlatform()) {
     ensureNativeMbtilesDatabase();
@@ -3889,16 +3904,37 @@
   }
 
   // 방향 모드에서 바라보는 방향이 화면 위가 되도록 지도를 돌린다. 센서는 초당 수십 번 오므로 프레임당 한 번, 1° 미만 흔들림은 무시.
+  // 방향 모드: 매 프레임 목표(바라보는 방향·GPS 위치)로 일정 비율씩 다가가 부드럽게 따라간다.
+  // 회전과 위치 이동을 한 루프에서 처리해 GPS 이동 애니메이션이 회전을 멈추게 하지 않는다.
+  const HEADING_FOLLOW_RATIO = 0.18; // 프레임당 남은 차이의 비율. 올리면 빠르게, 내리면 더 부드럽게 따라간다.
+  let headingTargetCenter = null;
   function scheduleHeadingTurn() {
     if (trackMode !== "heading" || headingTurnFrame) return;
-    headingTurnFrame = window.requestAnimationFrame(function () {
-      headingTurnFrame = 0;
-      if (trackMode !== "heading" || !Number.isFinite(lastSensorHeadingDeg)) return;
-      if (view.getAnimating() || view.getInteracting()) return;
-      const shownDeg = -view.getRotation() * 180 / Math.PI;
-      if (Math.abs(angleDelta(lastSensorHeadingDeg, shownDeg)) < 1) return;
-      view.setRotation(-lastSensorHeadingDeg * Math.PI / 180);
-    });
+    headingTurnFrame = window.requestAnimationFrame(stepHeadingTurn);
+  }
+  function stepHeadingTurn() {
+    headingTurnFrame = 0;
+    if (trackMode !== "heading" || !Number.isFinite(lastSensorHeadingDeg) || view.getInteracting()) return;
+    if (view.getAnimating()) { // 방향 모드에 들어갈 때의 짧은 애니메이션이 끝나면 이어서 따라간다.
+      headingTurnFrame = window.requestAnimationFrame(stepHeadingTurn);
+      return;
+    }
+    const next = nextHeadingView(-view.getRotation() * 180 / Math.PI, lastSensorHeadingDeg, view.getCenter(), headingTargetCenter, HEADING_FOLLOW_RATIO);
+    if (next.rotationDeg !== null) view.setRotation(-next.rotationDeg * Math.PI / 180);
+    if (next.center) view.setCenter(next.center);
+    else headingTargetCenter = null;
+    if (next.rotationDeg !== null || next.center) headingTurnFrame = window.requestAnimationFrame(stepHeadingTurn);
+  }
+  // 한 프레임 이동량 계산. 회전은 359°→1°처럼 0°를 지날 때도 짧은 쪽으로 돈다. 다 왔으면 null.
+  function nextHeadingView(shownDeg, targetDeg, center, targetCenter, ratio) {
+    const diff = angleDelta(targetDeg, shownDeg);
+    const rotationDeg = Math.abs(diff) > 0.1 ? shownDeg + diff * ratio : null;
+    let nextCenter = null;
+    if (Array.isArray(center) && Array.isArray(targetCenter)) {
+      const dx = targetCenter[0] - center[0], dy = targetCenter[1] - center[1];
+      if (Math.hypot(dx, dy) > 0.2) nextCenter = [center[0] + dx * ratio, center[1] + dy * ratio];
+    }
+    return { rotationDeg: rotationDeg, center: nextCenter };
   }
 
   const TRACK_MODE_TITLES = {
@@ -3916,6 +3952,7 @@
     }
     const was = trackMode;
     trackMode = mode;
+    headingTargetCenter = null;
     if (locateBtnEl) {
       locateBtnEl.dataset.mode = mode;
       locateBtnEl.title = TRACK_MODE_TITLES[mode];
@@ -5050,7 +5087,10 @@
     if (!didMoveToMe) {
       didMoveToMe = true;
       view.animate({ center: coord, zoom: Math.max(16, view.getZoom() || 11), duration: 650 });
-    } else if ((trackMode === "follow" || trackMode === "heading") && !view.getAnimating() && !view.getInteracting()) {
+    } else if (trackMode === "heading") {
+      headingTargetCenter = coord; // 회전 루프가 위치도 함께 부드럽게 옮긴다.
+      scheduleHeadingTurn();
+    } else if (trackMode === "follow" && !view.getAnimating() && !view.getInteracting()) {
       view.animate({ center: coord, duration: 300 });
     }
   }
