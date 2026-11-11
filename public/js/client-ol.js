@@ -4394,7 +4394,6 @@
     const popupHtml = feature && feature.get("popupHtml");
     const coordinate = feature && feature.getGeometry() ? feature.getGeometry().getCoordinates() : null;
     if (!popupHtml || !coordinate) return;
-    window.BearMobileDock?.prepareDetail();
 
     observationPopupEl._observationData = feature ? (feature.get("observationData") || feature.get("obsData") || null) : null;
     focusedObservationId = observationPopupEl._observationData?.id != null ? String(observationPopupEl._observationData.id) : null;

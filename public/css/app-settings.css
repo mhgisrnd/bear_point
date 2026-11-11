@@ -8,6 +8,23 @@
 .app-settings-head, .app-settings-tabs { flex-shrink: 0; }
 .app-settings-scroll { min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
 .app-settings-dialog--tabs { height: min(680px, calc(100dvh - 32px - var(--safe-top, 0px) - var(--safe-bottom, 0px))); }
+/* Keep both map dialogs below the 44px toolbar (12px top + 12px gap). */
+:root { --map-dialog-toolbar-space: 68px; }
+.app-settings-dialog {
+  position: fixed;
+  inset: calc(var(--safe-top, 0px) + var(--map-dialog-toolbar-space)) 0 auto;
+  margin: 0 auto;
+  max-height: max(0px, calc(100dvh - var(--safe-top, 0px) - var(--safe-bottom, 0px) - var(--map-dialog-toolbar-space) - 12px));
+}
+.app-settings-dialog--tabs {
+  height: min(680px, calc(100dvh - var(--safe-top, 0px) - var(--safe-bottom, 0px) - var(--map-dialog-toolbar-space) - 12px));
+}
+.sdr-dialog, .sdr-dialog[data-search-compact="true"] {
+  --map-dialog-safe-top: max(var(--sdr-safe-top), var(--safe-top, 0px));
+  inset-block-start: calc(var(--sdr-viewport-top, 0px) + var(--map-dialog-safe-top) + var(--map-dialog-toolbar-space));
+  height: min(800px, calc(var(--sdr-viewport-height, 100dvh) - var(--map-dialog-safe-top) - var(--sdr-safe-bottom) - var(--map-dialog-toolbar-space) - 12px));
+  max-height: max(0px, calc(var(--sdr-viewport-height, 100dvh) - var(--map-dialog-safe-top) - var(--sdr-safe-bottom) - var(--map-dialog-toolbar-space) - 12px));
+}
 .app-settings-dialog--tabs .app-settings-scroll { display: flex; flex: 1; overflow: hidden; }
 .app-settings-dialog--tabs [role=tabpanel],
 .app-settings-form,
@@ -96,3 +113,48 @@ body:has(.sdr-dialog[open]) #btn-sdr-diagnostics,
 .app-update-dialog [data-progress]:empty { display: none; }
 .app-settings-dialog :focus-visible, #btn-app-settings:focus-visible { outline: 3px solid #86b6fb; outline-offset: 2px; }
 @media (max-height: 480px) { .app-settings-head { padding-top: 12px; } .app-settings-intro { margin-bottom: 10px; } .app-settings-teams { margin-top: 10px; } .app-settings-team { min-height: 42px; } }
+
+/* Shared map-dialog width and receiver-style header. */
+:is(.sdr-dialog, .app-settings-dialog) {
+  --map-dialog-safe-left: max(var(--sdr-safe-left, 0px), var(--safe-left, 0px));
+  --map-dialog-safe-right: max(var(--sdr-safe-right, 0px), var(--safe-right, 0px));
+  inset-inline: calc(var(--map-dialog-safe-left) + 16px) calc(var(--map-dialog-safe-right) + 16px);
+  width: min(420px, calc(100vw - var(--map-dialog-safe-left) - var(--map-dialog-safe-right) - 32px));
+  max-width: calc(100vw - var(--map-dialog-safe-left) - var(--map-dialog-safe-right) - 32px);
+}
+:is(.sdr-dialog, .app-settings-dialog) :is(.sdr-header, .app-settings-head) {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: nowrap;
+  gap: 8px;
+  min-height: 64px;
+  padding: 12px 16px;
+  box-sizing: border-box;
+  border-bottom: 1px solid #d4dfe5;
+  background: #fff;
+}
+:is(.sdr-dialog, .app-settings-dialog) :is(.sdr-header, .app-settings-head) h2 {
+  margin: 0;
+  color: #172b3a;
+  font: 700 18px/1.3 system-ui, sans-serif;
+  letter-spacing: normal;
+}
+:is(.sdr-dialog, .app-settings-dialog) :is(.sdr-header [data-close], .app-settings-close) {
+  display: inline-flex;
+  flex: 0 0 36px;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: 36px;
+  height: 36px;
+  min-height: 36px;
+  padding: 0;
+  border: 0;
+  border-radius: 9px;
+  background: #f0f4f8;
+  color: #64768a;
+  font: 24px/1 system-ui, sans-serif;
+}
+.sdr-dialog[data-search-compact="true"] .sdr-header { min-height: 40px; }
