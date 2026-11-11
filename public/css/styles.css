@@ -4,7 +4,6 @@
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --safe-left: env(safe-area-inset-left, 0px);
 }
-.leaflet-control-locate-btn[aria-busy="true"] { box-shadow: 0 0 0 2px #93c5fd, 0 2px 8px #0003 !important; }
 
 /* 앱 UX: 터치 하이라이트·포커스링·텍스트 선택 제거 */
 * {
@@ -160,54 +159,194 @@ a.leaflet-control-locate-btn.is-active svg{
   color:#fff !important;
 } */
 
-#compass{
-  position: fixed;
-  right: calc(5px + var(--safe-right));
-  bottom: calc(275px + var(--safe-bottom));
-  width: 46px;
-  height: 46px;
-  border-radius: 999px;
-  background: rgba(255,255,255,0.92);
-  box-shadow: 0 6px 16px rgba(0,0,0,0.15);
-  z-index: 9999;
+/* ---- 지도 버튼: winter_crop_app과 같은 44px 흰 카드 ---- */
+.map-ctl {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  border: 0;
+  border-radius: 10px;
+  background: #fff;
+  color: #334155;
+  box-shadow: 0 1px 5px rgba(0, 0, 0, 0.27);
+  cursor: pointer;
+}
+.map-ctl svg { width: 24px; height: 24px; fill: currentColor; }
+.map-ctl span:not([aria-hidden]) { font: 700 10px/1 system-ui, sans-serif; letter-spacing: -0.02em; }
+
+.map-right-controls {
+  position: absolute;
+  right: calc(8px + var(--safe-right));
+  bottom: calc(20px + var(--safe-bottom));
+  z-index: 1400;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.map-ctl-group { display: flex; flex-direction: column; gap: 8px; }
+
+.map-ctl-compass svg { transition: transform 0.1s linear; }
+
+/* 내 위치: 꺼짐(회색 조준) → 켜짐(진한 조준) → 따라가기(파란 조준) → 방향 모드(파란 화살표) */
+.map-ctl-locate { color: #8a96a3; }
+.map-ctl-locate[data-mode="on"] { color: #1f2937; }
+.map-ctl-locate[data-mode="follow"], .map-ctl-locate[data-mode="heading"] { color: #2563eb; }
+.map-ctl-locate .map-ctl-locate__arrow, .map-ctl-locate[data-mode="heading"] .map-ctl-locate__target { display: none; }
+.map-ctl-locate[data-mode="heading"] .map-ctl-locate__arrow { display: block; }
+.map-ctl-locate[aria-busy="true"] { box-shadow: 0 0 0 2px #93c5fd, 0 1px 5px rgba(0, 0, 0, 0.27); animation: map-ctl-locating 1.2s ease-in-out infinite; }
+@keyframes map-ctl-locating { 50% { color: #2563eb; } }
+
+/* 측정 도구 묶음: 하나의 카드에 도구 버튼, 펼치면 거리·면적이 위로 붙는다. */
+.map-ctl-tools {
+  gap: 0;
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 1px 5px rgba(0, 0, 0, 0.27);
+  overflow: hidden;
+}
+.map-ctl-tools .map-ctl { box-shadow: none; border-radius: 0; }
+.map-ctl-tools__items { display: flex; flex-direction: column; border-bottom: 1px solid #e2e8f0; }
+.map-ctl-tools__items[hidden] { display: none; }
+.map-ctl-tools__items .map-ctl + .map-ctl { border-top: 1px solid #eef2f6; }
+.map-ctl-tools.is-open .map-ctl-tools__toggle { color: #145d75; }
+.map-ctl-tools.is-measuring .map-ctl-tools__toggle { background: #f0fdf4; color: #15803d; }
+.map-ctl-measure.is-active { background: #16a34a; color: #fff; }
+
+/* ---- 지도 유형 ---- */
+.map-layer-switcher {
+  position: absolute;
+  top: calc(12px + var(--safe-top));
+  right: calc(12px + var(--safe-right));
+  z-index: 9990;
+}
+.map-layer-panel {
+  position: absolute;
+  top: 52px;
+  right: 0;
+  width: min(300px, calc(100vw - 24px - var(--safe-left) - var(--safe-right)));
+  max-height: calc(100dvh - 90px - var(--safe-top) - var(--safe-bottom));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  box-sizing: border-box;
+  padding: 12px 14px 14px;
+  border-radius: 14px;
+  background: #fff;
+  color: #1e293b;
+  box-shadow: 0 8px 28px rgba(15, 23, 42, 0.22);
+  font: 13px/1.4 system-ui, sans-serif;
+  transform-origin: top right;
+  animation: map-layer-open 0.16s ease-out;
+}
+.map-layer-panel[hidden] { display: none; }
+@keyframes map-layer-open { from { opacity: 0; transform: translateY(-6px) scale(0.98); } }
+.map-layer-panel__head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
+.map-layer-panel__head strong { font-size: 15px; letter-spacing: -0.02em; }
+.map-layer-panel__close { width: 32px; height: 32px; border: 0; border-radius: 8px; background: #f1f5f9; color: #64748b; font-size: 20px; line-height: 1; cursor: pointer; }
+.map-layer-panel__title { margin: 12px 0 6px; font-size: 12px; font-weight: 700; color: #64748b; }
+.map-layer-panel__title small { margin-left: 6px; font-weight: 500; color: #94a3b8; }
+.map-layer-panel__note { margin: 10px 0 0; font-size: 11px; color: #b45309; }
+.map-layer-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.map-layer-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: #334155;
+  font: 600 12px/1.2 system-ui, sans-serif;
+  cursor: pointer;
+}
+.map-layer-tile__label { max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* 미리보기: 각 지도를 같은 지역(산내면 일대)에서 캡처한 이미지. public/assets/map-previews/ */
+.map-layer-thumb {
+  position: relative;
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  box-sizing: border-box;
+  border: 2px solid transparent;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #e2e8f0 center / cover no-repeat;
+  box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.1);
+}
+/* 오른쪽 아래 배지로 지도를 구분한다: 국문 "가", 영문 "A", 큰 문자 큰 "가", 오프라인은 신호 없음 아이콘. 배지 크기는 모두 같다. */
+.map-layer-thumb--osm::after,
+.map-layer-thumb--english::after,
+.map-layer-thumb--large::after,
+.map-layer-thumb--mbtiles::after {
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  width: 22px;
+  height: 22px;
   display: flex;
   align-items: center;
   justify-content: center;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.3);
+  color: #334155;
+  font: 800 11px/1 system-ui, sans-serif;
 }
+.map-layer-thumb--osm::after { content: "가"; }
+.map-layer-thumb--english::after { content: "A"; font-size: 12px; }
+.map-layer-thumb--large::after { content: "가"; font-size: 16px; }
+.map-layer-thumb--mbtiles::after { content: ""; background: rgba(255, 255, 255, 0.92) url("image/icon-no-signal.png") center / 16px no-repeat; }
+.map-layer-tile.is-on { color: #145d75; font-weight: 800; }
+.map-layer-tile.is-on .map-layer-thumb { border-color: #145d75; box-shadow: 0 0 0 2px #a8d3df; }
+.map-layer-tile:disabled { cursor: default; opacity: 0.4; }
+.map-layer-switch { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 10px; border-radius: 10px; background: #f8fafc; font-weight: 600; cursor: pointer; }
+.map-layer-switch small { display: block; font-size: 11px; font-weight: 400; color: #64748b; }
+.map-layer-switch input { appearance: none; -webkit-appearance: none; flex: none; position: relative; width: 44px; height: 26px; margin: 0; border-radius: 13px; background: #cbd5e1; transition: background 0.15s; cursor: pointer; }
+.map-layer-switch input::after { content: ""; position: absolute; left: 3px; top: 3px; width: 20px; height: 20px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.27); transition: transform 0.15s; }
+.map-layer-switch input:checked { background: #145d75; }
+.map-layer-switch input:checked::after { transform: translateX(18px); }
 
-#compass-needle{
-  position: relative;
-  width: 46px;
-  height: 46px;
-  transform-origin: 50% 50%;
+/* ---- 관측점 등록용 방향 다이얼: 갤럭시 엣지 나침반 스타일 ----
+   밝은 반투명 카드 · 카드보다 큰 눈금판이 돌아 위아래 호만 보임 · 가운데 고정된 초록 원과 지시침 */
+#heading-dial {
+  display: none;
+  position: fixed;
+  /* 등록창(왼쪽 위)과 겹치지 않게 오른쪽 아래 버튼 열 옆에 둔다. */
+  right: calc(64px + var(--safe-right));
+  bottom: calc(var(--mobile-dock-height, 0px) + 20px + var(--safe-bottom));
+  z-index: 9000;
+  width: 132px;
+  height: 200px;
+  overflow: hidden;
+  border-radius: 22px;
+  background: rgba(243, 241, 237, 0.9);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.22), inset 0 0 0 1px rgba(255, 255, 255, 0.6);
+  transform-origin: bottom right;
+  pointer-events: none;
 }
-
-/* 공통 바늘 삼각형 */
-#compass-needle .needle{
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%);
-  width: 0;
-  height: 0;
-  border-left: 7px solid transparent;
-  border-right: 7px solid transparent;
-}
-
-/* ✅ 빨강: 위쪽(북) */
-#compass-needle .needle.red{
-  border-bottom: 18px solid #e11d48;  /* 빨강 */
-  transform: translate(-50%, calc(-50% - 10px)); /* 위로 살짝 */
-}
-
-/* ✅ 파랑: 아래쪽(남) */
-#compass-needle .needle.blue{
-  border-top: 18px solid #2563eb;     /* 파랑 */
-  transform: translate(-50%, calc(-50% + 10px)); /* 아래로 살짝 */
-}
-
-
-
+#register-box:not(.hidden) ~ #heading-dial.is-live { display: block; }
+#heading-dial svg { display: block; width: 100%; height: 100%; overflow: hidden; }
+.heading-dial__ring line { stroke: #a8a8a8; stroke-width: 0.8; }
+.heading-dial__ring line.is-major { stroke: #3a3a3a; stroke-width: 1.2; }
+.heading-dial__ring line.is-cardinal { stroke: #111; stroke-width: 2.2; }
+.heading-dial__ring text { fill: #3a3a3a; font: 500 8.5px system-ui, sans-serif; text-anchor: middle; dominant-baseline: central; }
+.heading-dial__ring text.is-letter { font: 800 11px system-ui, sans-serif; fill: #555; }
+.heading-dial__ring text.is-north { fill: #c8102e; }
+.heading-dial__ring text.is-south { fill: #1f6fd1; }
+.heading-dial__circle { fill: none; stroke: #7bb73a; stroke-width: 2.6; }
+.heading-dial__index { fill: #7bb73a; stroke: #7bb73a; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+.heading-dial__readout { position: absolute; inset: 0; display: flex; align-items: baseline; justify-content: center; gap: 3px; padding-top: 89px; box-sizing: border-box; font-family: system-ui, sans-serif; font-variant-numeric: tabular-nums; line-height: 1; }
+.heading-dial__readout span { font-size: 11px; font-weight: 700; color: #4d7c0f; white-space: nowrap; }
+.heading-dial__readout strong { font-size: 25px; font-weight: 500; color: #2b2b2b; letter-spacing: -0.02em; }
+#heading-dial.is-locked .heading-dial__readout::after { content: "각 고정"; position: absolute; top: 124px; left: 0; right: 0; text-align: center; font-size: 9px; font-weight: 700; color: #4d7c0f; }
 /* 나침반을 Leaflet 컨트롤처럼 */
 /* .leaflet-control-compass{
   width: 46px;

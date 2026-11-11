@@ -12,3 +12,12 @@ node_modules/
 *.mbtiles-wal
 *.mbtiles
 public/assets/databases/korea-selection2-z7-z17-webp.db
+
+# graphify knowledge graph output
+/graphify-out/
+
+# Claude Code / graphify local setup (not shared with the team)
+/CLAUDE.md
+/.claude/
+/.graphifyignore
+/.gitattributes

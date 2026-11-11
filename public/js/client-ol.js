@@ -4,7 +4,26 @@
 (function initOpenLayersMode() {
   const statusEl = document.getElementById("status");
   const mapEl = document.getElementById("map");
-  const compassNeedleFixedEl = document.getElementById("compass-needle");
+  // 관측점 등록 중에만 보이는 기기 방향 다이얼(지도 나침반과 별개).
+  const headingDialEl = document.getElementById("heading-dial");
+  const headingDialRingEl = document.getElementById("heading-dial-ring");
+  const headingDialDegEl = document.getElementById("heading-dial-deg");
+  const headingDialDirEl = document.getElementById("heading-dial-dir");
+  // 갤럭시 엣지 나침반처럼 카드(132×200)보다 넓은 눈금판(중심 66,100 · 반지름 94)이 돌고, 좌우는 잘려 위아래 호만 보인다.
+  const DIAL_CENTER = "66 100";
+  if (headingDialRingEl) {
+    let dialMarkup = "";
+    for (let deg = 0; deg < 360; deg += 2) {
+      const cardinal = deg % 90 === 0, major = deg % 30 === 0;
+      const cls = cardinal ? "is-cardinal" : major ? "is-major" : "";
+      dialMarkup += '<line x1="66" y1="6" x2="66" y2="' + (cardinal ? 19 : major ? 15 : 11) + '" transform="rotate(' + deg + " " + DIAL_CENTER + ')"' + (cls ? ' class="' + cls + '"' : "") + "/>";
+      if (major) dialMarkup += '<text x="66" y="25" transform="rotate(' + deg + " " + DIAL_CENTER + ')">' + deg + "</text>";
+    }
+    [["N", 0, "is-north"], ["E", 90, ""], ["S", 180, "is-south"], ["W", 270, ""]].forEach(function (c) {
+      dialMarkup += '<text x="66" y="37" transform="rotate(' + c[1] + " " + DIAL_CENTER + ')" class="is-letter ' + c[2] + '">' + c[0] + "</text>";
+    });
+    headingDialRingEl.innerHTML = dialMarkup;
+  }
   const panelEl = document.getElementById("panel");
   const btnPanelToggle = document.getElementById("btn-panel-toggle");
   const btnObsList = document.getElementById("btn-obs-list");
@@ -291,7 +310,10 @@
     }
 
     if (backExitToastIconEl) {
-      backExitToastIconEl.src = "css/image/check.png";
+      // 측정 안내는 체크 대신 해당 도구 아이콘을 흰색으로 보여 준다.
+      const measureIcon = /^거리(측정| )/.test(text) ? "css/svg/control-ruler.svg" : /^면적(측정| )/.test(text) ? "css/svg/control-area.svg" : "";
+      backExitToastIconEl.src = measureIcon || "css/image/check.png";
+      backExitToastIconEl.style.filter = measureIcon ? "brightness(0) invert(1)" : "";
     }
     if (backExitToastTextEl) {
       backExitToastTextEl.textContent = text;
@@ -636,6 +658,8 @@
     android: 0,
     other: 0
   };
+  // 회전 저항: 이 각도 이상 비틀어야 지도가 돈다. 너무 예민하면 올리고, 둔하면 내린다.
+  const PINCH_ROTATE_THRESHOLD_DEG = 30;
   const COMPASS_CFG = {
     smoothAlpha: 0.25,
     useGpsHeadingWhenMoving: true,
@@ -739,6 +763,11 @@
   let lastGpsSampleTs = 0;
   let unstableHits = [];
   let lastStableDeg = null;
+  // 나침반 센서가 준 실제 바라보는 방향(각 고정과 무관). 방향 모드의 지도 회전에 쓴다.
+  let lastSensorHeadingDeg = null;
+  // 내 위치 버튼 상태: off(꺼짐) | on(켜짐, 지도 자유) | follow(따라가기) | heading(바라보는 방향이 위)
+  let trackMode = "off";
+  let headingTurnFrame = 0;
 
   const TRANSPARENT_PIXEL = "data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=";
   let mbtilesSelection = null;
@@ -3117,10 +3146,11 @@
     target: "map",
     layers: [osmBase, englishBase, largeBase, satelliteBase, mbtilesLayer, hillshadeOverlay, bearMarkerLayer, analysisPreviewLayer, analysisGuideLayer, analysisEstimateLayer, measureLayer, myLocationLayer],
     view: view,
+    // 두 손가락 회전은 확실히 30° 이상 비틀었을 때만 시작한다(winter_crop_app의 20°보다 둔하게). 확대·축소 중 손가락이 조금 돌아가는 건 무시.
     interactions: ol.interaction.defaults.defaults({
-      pinchRotate: true,
+      pinchRotate: false,
       altShiftDragRotate: true
-    }),
+    }).extend([new ol.interaction.PinchRotate({ threshold: PINCH_ROTATE_THRESHOLD_DEG * Math.PI / 180 })]),
     controls: ol.control.defaults.defaults({
       zoom: false,
       rotate: false,
@@ -3180,7 +3210,16 @@
       hillshadeOverlay: hillshadeOverlay
     },
     measureSource: measureSource,
-    onToggleMyLocation: toggleMyLocation,
+    onToggleMyLocation: cycleMyLocation,
+    onCompassClick: function () {
+      if (trackMode === "heading") {
+        setTrackMode("follow");
+        return;
+      }
+      view.cancelAnimations();
+      view.animate({ rotation: 0, duration: 300 });
+    },
+    onStopFollowing: stopFollowing,
     onMeasureActivated: function () {
       window.BearMobileDock?.collapse();
       stopManualMapGesture();
@@ -3208,6 +3247,18 @@
   if (controlsManager && typeof controlsManager.initialize === "function") {
     controlsManager.initialize();
   }
+
+  // 한 손가락으로 끌면 따라가기를 멈춘다. 두 손가락 확대는 따라가기를 유지하고, 방향 모드에서 손으로 돌리면 북쪽 고정 따라가기로 바뀐다.
+  function stopFollowingOnDrag(event) {
+    if (trackMode !== "follow" && trackMode !== "heading") return;
+    const pointers = Array.isArray(event.activePointers) ? event.activePointers.length : 1;
+    if (pointers > 1) {
+      if (trackMode === "heading") setTrackMode("follow", false);
+      return;
+    }
+    setTrackMode("on", false);
+  }
+  map.on("pointerdrag", stopFollowingOnDrag);
 
   if (isNativeCapacitorPlatform()) {
     ensureNativeMbtilesDatabase();
@@ -3259,6 +3310,7 @@
 
   function flyToLatLng(latlng, zoom, onComplete) {
     if (!Array.isArray(latlng) || latlng.length < 2) return;
+    stopFollowing();
     const target = mapCoordFromWgs84(latlng[0], latlng[1]);
     const animation = {
       center: target,
@@ -3289,6 +3341,7 @@
     const ys = coords.map(function (c) { return c[1]; });
     const extent = [Math.min.apply(null, xs), Math.min.apply(null, ys),
                     Math.max.apply(null, xs), Math.max.apply(null, ys)];
+    stopFollowing();
 
     view.fit(extent, {
       padding: [padding, padding, padding, padding],
@@ -3820,11 +3873,80 @@
       });
     }
 
-    if (compassNeedleFixedEl) {
-      compassNeedleFixedEl.style.transform = "rotate(" + (-effectiveDeg) + "deg)";
+    if (headingDialRingEl) {
+      headingDialRingEl.setAttribute("transform", "rotate(" + (-effectiveDeg).toFixed(1) + " " + DIAL_CENTER + ")");
+      headingDialDegEl.textContent = Math.round(norm360(effectiveDeg)) % 360 + "°";
+      headingDialDirEl.textContent = headingDirectionLabel(effectiveDeg);
+      headingDialEl.classList.toggle("is-locked", effectiveDeg !== deg);
+      headingDialEl.classList.add("is-live");
     }
 
     updateRegistrationPreview();
+  }
+
+  function headingDirectionLabel(deg) {
+    return ["북", "북동", "동", "남동", "남", "남서", "서", "북서"][Math.round(norm360(deg) / 45) % 8];
+  }
+
+  // 방향 모드에서 바라보는 방향이 화면 위가 되도록 지도를 돌린다. 센서는 초당 수십 번 오므로 프레임당 한 번, 1° 미만 흔들림은 무시.
+  function scheduleHeadingTurn() {
+    if (trackMode !== "heading" || headingTurnFrame) return;
+    headingTurnFrame = window.requestAnimationFrame(function () {
+      headingTurnFrame = 0;
+      if (trackMode !== "heading" || !Number.isFinite(lastSensorHeadingDeg)) return;
+      if (view.getAnimating() || view.getInteracting()) return;
+      const shownDeg = -view.getRotation() * 180 / Math.PI;
+      if (Math.abs(angleDelta(lastSensorHeadingDeg, shownDeg)) < 1) return;
+      view.setRotation(-lastSensorHeadingDeg * Math.PI / 180);
+    });
+  }
+
+  const TRACK_MODE_TITLES = {
+    off: "내 위치 켜기",
+    on: "내 위치로 이동",
+    follow: "내 위치 따라가는 중 · 누르면 바라보는 방향으로 회전",
+    heading: "바라보는 방향 모드 · 누르면 내 위치 끄기"
+  };
+
+  // 네이버 지도처럼: 따라가기 → 바라보는 방향 → 끄기. 지도를 끌면 따라가기만 멈춘다(on).
+  function setTrackMode(mode, move) {
+    if (mode === "heading" && !Number.isFinite(lastSensorHeadingDeg)) {
+      if (statusEl) statusEl.textContent = "🧭 방향 센서 값을 아직 받지 못해 지도를 돌릴 수 없습니다.";
+      mode = "follow";
+    }
+    const was = trackMode;
+    trackMode = mode;
+    if (locateBtnEl) {
+      locateBtnEl.dataset.mode = mode;
+      locateBtnEl.title = TRACK_MODE_TITLES[mode];
+      locateBtnEl.setAttribute("aria-label", TRACK_MODE_TITLES[mode]);
+    }
+    if (move === false) return;
+
+    const animation = { duration: 450 };
+    if ((mode === "follow" || mode === "heading") && lastTrackedLatLng) {
+      animation.center = mapCoordFromWgs84(lastTrackedLatLng[0], lastTrackedLatLng[1]);
+    }
+    if (mode === "heading") animation.rotation = -lastSensorHeadingDeg * Math.PI / 180;
+    else if (was === "heading") animation.rotation = 0;
+    if (!animation.center && animation.rotation === undefined) return;
+    view.cancelAnimations();
+    view.animate(animation);
+  }
+
+  // 목록 선택·지리산 이동 등 앱이 지도를 옮길 때는 따라가기를 멈춘다.
+  function stopFollowing() {
+    if (trackMode === "follow" || trackMode === "heading") setTrackMode("on", false);
+  }
+
+  async function cycleMyLocation() {
+    if (!isMyVisible) {
+      await toggleMyLocation(); // 꺼짐 → 켜기, 수신 대기 중 → 취소
+      return;
+    }
+    if (trackMode === "follow") setTrackMode("heading");
+    else if (trackMode === "heading") stopMyLocationTracking(true);
+    else setTrackMode("follow");
   }
 
   // 디바이스 방향 이벤트를 구독해 헤딩을 계산/보정/적용한다.
@@ -3861,7 +3983,9 @@
       const corrected = applyHeadingOffset(heading);
       const smoothed = filterHeading(corrected);
       const fused = fuseHeadingWithGps(smoothed);
+      lastSensorHeadingDeg = fused;
       setHeading(fused);
+      scheduleHeadingTurn();
     };
 
     const hasAbsoluteEvent = "ondeviceorientationabsolute" in window;
@@ -3887,9 +4011,14 @@
     unstableHits = [];
     lastStableDeg = null;
     lastAbsoluteSampleTs = 0;
+    lastSensorHeadingDeg = null;
 
-    if (compassNeedleFixedEl) {
-      compassNeedleFixedEl.style.transform = "rotate(0deg)";
+    if (headingDialEl) {
+      headingDialEl.classList.remove("is-live");
+      headingDialRingEl.setAttribute("transform", "rotate(0 " + DIAL_CENTER + ")");
+      headingDialEl.classList.remove("is-locked");
+      headingDialDegEl.textContent = "--°";
+      headingDialDirEl.textContent = "";
     }
   }
 
@@ -4747,16 +4876,8 @@
     if (!locateBtnEl) return;
     locateBtnEl.setAttribute("aria-busy", "false");
     locateBtnEl.setAttribute("aria-pressed", String(!!active));
-    locateBtnEl.title = active ? "내 위치 끄기" : "내 위치 켜기";
-    if (active) {
-      locateBtnEl.classList.add("is-active");
-      locateBtnEl.style.background = "#2b7cff";
-      locateBtnEl.style.color = "#fff";
-    } else {
-      locateBtnEl.classList.remove("is-active");
-      locateBtnEl.style.background = "#fff";
-      locateBtnEl.style.color = "#2f2f2f";
-    }
+    if (!active) setTrackMode("off");
+    else if (trackMode === "off") setTrackMode("follow", false);
   }
 
   // 목록과 팝업에서 공통으로 쓰는 관측점 수정 진입 경로를 묶는다.
@@ -4833,6 +4954,7 @@
       }
 
       if (payload.shouldFocus) {
+        stopFollowing();
         view.setCenter(centerCoord);
       }
     },
@@ -4909,6 +5031,8 @@
     if (!didMoveToMe) {
       didMoveToMe = true;
       view.animate({ center: coord, zoom: Math.max(16, view.getZoom() || 11), duration: 650 });
+    } else if ((trackMode === "follow" || trackMode === "heading") && !view.getAnimating() && !view.getInteracting()) {
+      view.animate({ center: coord, duration: 300 });
     }
   }
 

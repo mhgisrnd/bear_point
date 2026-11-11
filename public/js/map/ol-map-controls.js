@@ -23,6 +23,8 @@ window.createOlMapControlsManager = function createOlMapControlsManager(options)
     layers,
     measureSource,
     onToggleMyLocation,
+    onCompassClick,
+    onStopFollowing,
     onMeasureActivated,
     onLocateButtonReady
   } = options || {};
@@ -34,6 +36,7 @@ window.createOlMapControlsManager = function createOlMapControlsManager(options)
   let measureUndoBtnEl = null;
   let measureModeBadgeEl = null;
   let measureActionPanelEl = null;
+  let measureToolsEl = null;
   let measureModeActive = false;
   let measureModeType = null;
   let measureDraftPoints = [];
@@ -169,7 +172,7 @@ window.createOlMapControlsManager = function createOlMapControlsManager(options)
   }
 
   function getCurrentMeasureModeLabel() {
-    return isAreaMeasureMode() ? "면적 측정" : "거리 측정";
+    return isAreaMeasureMode() ? "면적측정" : "거리측정";
   }
 
   function toClosedRing(points) {
@@ -261,7 +264,7 @@ window.createOlMapControlsManager = function createOlMapControlsManager(options)
       }
 
       measureActionPanelEl.style.position = "absolute";
-      measureActionPanelEl.style.right = "calc(48px + var(--safe-right))";
+      measureActionPanelEl.style.right = "calc(64px + var(--safe-right))";
       measureActionPanelEl.style.bottom = mobileDock ? "calc(var(--mobile-dock-height) + 12px)" : "calc(20px + var(--safe-bottom))";
       measureActionPanelEl.style.left = "auto";
       measureActionPanelEl.style.top = "auto";
@@ -428,7 +431,7 @@ window.createOlMapControlsManager = function createOlMapControlsManager(options)
       e.stopPropagation();
       removeMeasureRecord(measureId);
       if (statusEl) {
-        statusEl.textContent = "📏 " + getCurrentMeasureModeLabel() + ": 점을 추가하고 완료를 누르세요.";
+        statusEl.textContent = getCurrentMeasureModeLabel();
       }
     });
     labelEl.appendChild(closeBtn);
@@ -495,7 +498,7 @@ window.createOlMapControlsManager = function createOlMapControlsManager(options)
     updateMeasureActionButtons();
     updateMeasureActionPanelPosition();
     if (statusEl) {
-      statusEl.textContent = "✅ " + measureText + " (X로 삭제, 새 점으로 다음 측정 시작)";
+      statusEl.textContent = measureText;
     }
   }
 
@@ -513,12 +516,12 @@ window.createOlMapControlsManager = function createOlMapControlsManager(options)
 
     if (statusEl) {
       if (measureDraftPoints.length < 2) {
-        statusEl.textContent = "📏 " + getCurrentMeasureModeLabel() + ": 중간점을 계속 추가하고 완료를 누르세요.";
+        statusEl.textContent = getCurrentMeasureModeLabel();
       } else {
         const draftText = isAreaMeasureMode()
           ? formatMeasureAreaText(getDraftAreaM2())
           : formatMeasureDistanceText(getDraftDistanceM());
-        statusEl.textContent = "📏 " + draftText + " (점 추가/되돌리기/완료 가능)";
+        statusEl.textContent = draftText;
       }
     }
     return true;
@@ -533,33 +536,23 @@ window.createOlMapControlsManager = function createOlMapControlsManager(options)
 
     if (!statusEl) return;
     if (measureDraftPoints.length === 0) {
-      statusEl.textContent = "📏 " + getCurrentMeasureModeLabel() + ": 시작점을 누르세요.";
+      statusEl.textContent = getCurrentMeasureModeLabel();
       return;
     }
     if (measureDraftPoints.length === 1) {
-      statusEl.textContent = "📏 " + getCurrentMeasureModeLabel() + ": 중간점을 계속 추가하고 완료를 누르세요.";
+      statusEl.textContent = getCurrentMeasureModeLabel();
       return;
     }
     const draftText = isAreaMeasureMode()
       ? formatMeasureAreaText(getDraftAreaM2())
       : formatMeasureDistanceText(getDraftDistanceM());
-    statusEl.textContent = "📏 " + draftText + " (점 추가/되돌리기/완료 가능)";
+    statusEl.textContent = draftText;
   }
 
   function setMeasureButtonActive(active, modeType) {
-    function applyButtonState(btn, on) {
-      if (!btn) return;
-      if (on) {
-        btn.style.background = "#16a34a";
-        btn.style.color = "#ffffff";
-      } else {
-        btn.style.background = "#ffffff";
-        btn.style.color = "#2f2f2f";
-      }
-    }
-
-    applyButtonState(measureDistanceBtnEl, !!active && modeType === "distance");
-    applyButtonState(measureAreaBtnEl, !!active && modeType === "area");
+    if (measureDistanceBtnEl) measureDistanceBtnEl.classList.toggle("is-active", !!active && modeType === "distance");
+    if (measureAreaBtnEl) measureAreaBtnEl.classList.toggle("is-active", !!active && modeType === "area");
+    if (measureToolsEl) measureToolsEl.classList.toggle("is-measuring", !!active);
   }
 
   function setMeasureMode(active, reason, modeType) {
@@ -592,56 +585,28 @@ window.createOlMapControlsManager = function createOlMapControlsManager(options)
     updateMeasureActionButtons();
     updateMeasureActionPanelPosition();
     if (statusEl) {
-      statusEl.textContent = "📏 " + getCurrentMeasureModeLabel() + ": 중간점을 여러 개 추가한 뒤 완료를 누르세요.";
+      statusEl.textContent = getCurrentMeasureModeLabel();
     }
   }
 
+  // 우하단: 지리산 · 나침반(지도 북쪽) · 내 위치, 그 아래 측정 도구 묶음. 확대/축소는 두 손가락으로 한다.
   function mountRightBottomControls() {
     const root = document.createElement("div");
     root.className = "map-right-controls";
-    root.style.position = "absolute";
-    root.style.right = "calc(8px + var(--safe-right))";
-    root.style.bottom = "calc(20px + var(--safe-bottom))";
-    root.style.zIndex = "1400";
-    root.style.display = "flex";
-    root.style.flexDirection = "column";
-    root.style.gap = "0px";
 
     const mainControlGroup = document.createElement("div");
-    mainControlGroup.style.display = "flex";
-    mainControlGroup.style.flexDirection = "column";
-    mainControlGroup.style.gap = "6px";
-
-    const measureControlGroup = document.createElement("div");
-    measureControlGroup.style.display = "flex";
-    measureControlGroup.style.flexDirection = "column";
-    measureControlGroup.style.gap = "6px";
-    measureControlGroup.style.marginTop = "25px";
+    mainControlGroup.className = "map-ctl-group";
 
     function createMaskIconMarkup(iconPath, sizePx) {
       return '<span aria-hidden="true" style="display:block;width:' + sizePx + 'px;height:' + sizePx + 'px;background-color:currentColor;-webkit-mask:url(\'' + iconPath + '\') center / contain no-repeat;mask:url(\'' + iconPath + '\') center / contain no-repeat;"></span>';
     }
 
-    function createImageIconMarkup(iconPath, widthPx, heightPx) {
-      return '<img src="' + iconPath + '" alt="" aria-hidden="true" style="display:block;width:' + widthPx + 'px;height:' + heightPx + 'px;" />';
-    }
-
     function makeBtn(className, title, innerHTML, onClick) {
-      const btn = document.createElement("a");
-      btn.href = "#";
+      const btn = document.createElement("button");
+      btn.type = "button";
       btn.title = title;
-      btn.className = className;
-      btn.style.width = "30px";
-      btn.style.height = "30px";
-      btn.style.display = "flex";
-      btn.style.alignItems = "center";
-      btn.style.justifyContent = "center";
-      btn.style.border = "1px solid #c9c9c9";
-      btn.style.borderRadius = "4px";
-      btn.style.background = "#fff";
-      btn.style.color = "#2f2f2f";
-      btn.style.textDecoration = "none";
-      btn.style.boxShadow = "0 2px 8px rgba(0,0,0,0.16)";
+      btn.setAttribute("aria-label", title);
+      btn.className = "map-ctl " + className;
       btn.innerHTML = innerHTML;
       btn.addEventListener("click", function (e) {
         e.preventDefault();
@@ -651,10 +616,11 @@ window.createOlMapControlsManager = function createOlMapControlsManager(options)
     }
 
     const btnJiri = makeBtn(
-      "leaflet-control-jiri-btn",
+      "map-ctl-jiri",
       "지리산으로 이동 · 회전 초기화",
-      createMaskIconMarkup("css/svg/control-jiri.svg", 18),
+      createMaskIconMarkup("css/image/icon-jirisan-view.png?v=2", 26),
       function () {
+        if (typeof onStopFollowing === "function") onStopFollowing();
         view.cancelAnimations();
         view.setRotation(0);
         if (!moveToOfflineInitialView({ duration: 450 })) {
@@ -665,60 +631,88 @@ window.createOlMapControlsManager = function createOlMapControlsManager(options)
       }
     );
 
+    // 바늘은 지도의 북쪽을 가리키고, 누르면 지도를 정북으로 되돌린다.
+    const compassBtn = makeBtn(
+      "map-ctl-compass",
+      "북쪽을 위로",
+      '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5 16 12H8l4-9.5Z" fill="#e53935"/><path d="M8 12h8l-4 9.5L8 12Z" fill="#9aa5b1"/></svg>',
+      function () {
+        if (typeof onCompassClick === "function") {
+          onCompassClick();
+          return;
+        }
+        view.cancelAnimations();
+        view.animate({ rotation: 0, duration: 300 });
+      }
+    );
+    const compassNeedleEl = compassBtn.querySelector("svg");
+    function syncCompassNeedle() {
+      compassNeedleEl.style.transform = "rotate(" + view.getRotation() + "rad)";
+    }
+    view.on("change:rotation", syncCompassNeedle);
+    syncCompassNeedle();
+
+    // 꺼짐(회색 조준) → 따라가기(파란 조준) → 방향 모드(파란 화살표). data-mode는 client-ol.js가 바꾼다.
     const locateBtnEl = makeBtn(
-      "leaflet-control-locate-btn",
-      "내 위치 토글",
-      createMaskIconMarkup("css/svg/control-locate.svg", 18),
+      "map-ctl-locate",
+      "내 위치 켜기",
+      '<svg class="map-ctl-locate__target" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3.5"/><circle cx="12" cy="12" r="7" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 1.5v4M12 18.5v4M1.5 12h4M18.5 12h4" stroke="currentColor" stroke-width="2"/></svg>' +
+        '<svg class="map-ctl-locate__arrow" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5 19.5 21 12 16.8 4.5 21 12 2.5Z"/></svg>',
       function () {
         if (typeof onToggleMyLocation === "function") {
           onToggleMyLocation();
         }
       }
     );
+    locateBtnEl.dataset.mode = "off";
 
     if (typeof onLocateButtonReady === "function") {
       onLocateButtonReady(locateBtnEl);
     }
 
-    const btnZoomIn = makeBtn("ol-zoom-in-btn", "확대", "+", function () {
-      const current = view.getZoom() || 0;
-      const next = Math.min(getActiveMaxZoomForBaseLayer(currentBaseLayerType), current + 1);
-      view.animate({ zoom: next, duration: 180 });
-    });
-    btnZoomIn.style.fontSize = "19px";
-    btnZoomIn.style.fontWeight = "700";
+    // 측정 도구: 도구 버튼을 누르면 거리·면적이 펼쳐지고, 접으면 진행 중인 측정도 끝낸다.
+    measureToolsEl = document.createElement("div");
+    measureToolsEl.className = "map-ctl-group map-ctl-tools";
 
-    const btnZoomOut = makeBtn("ol-zoom-out-btn", "축소", "-", function () {
-      const current = view.getZoom() || 0;
-      const next = Math.max(mbtilesMinZoom, current - 1);
-      view.animate({ zoom: next, duration: 180 });
-    });
-    btnZoomOut.style.fontSize = "20px";
-    btnZoomOut.style.fontWeight = "700";
+    const measureItemsEl = document.createElement("div");
+    measureItemsEl.className = "map-ctl-tools__items";
+    measureItemsEl.id = "map-measure-tools";
+    measureItemsEl.hidden = true;
+
+    const toolsToggleBtn = makeBtn(
+      "map-ctl-tools__toggle",
+      "측정 도구",
+      '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m3.5 16.5 13-13 4 4-13 13z"/><path d="m7.5 12.5 2 2m1-5 2 2m1-5 2 2"/></svg><span>도구</span>',
+      function () {
+        const open = measureItemsEl.hidden;
+        measureItemsEl.hidden = !open;
+        toolsToggleBtn.setAttribute("aria-expanded", String(open));
+        measureToolsEl.classList.toggle("is-open", open);
+        if (!open && measureModeActive) setMeasureMode(false, "toggle");
+      }
+    );
+    toolsToggleBtn.setAttribute("aria-expanded", "false");
+    toolsToggleBtn.setAttribute("aria-controls", measureItemsEl.id);
 
     measureDistanceBtnEl = makeBtn(
-      "ol-measure-btn",
+      "map-ctl-measure",
       "거리 측정",
-      createMaskIconMarkup("css/svg/control-ruler.svg", 16),
+      createMaskIconMarkup("css/svg/control-ruler.svg", 18) + "<span>거리</span>",
       function () {
         const nextActive = !(measureModeActive && measureModeType === "distance");
         setMeasureMode(nextActive, "toggle", "distance");
       }
     );
-    measureDistanceBtnEl.style.fontSize = "14px";
-    measureDistanceBtnEl.style.fontWeight = "700";
 
     measureAreaBtnEl = makeBtn(
-      "ol-measure-area-btn",
+      "map-ctl-measure",
       "면적 측정",
-      createMaskIconMarkup("css/svg/control-area.svg", 16),
+      createMaskIconMarkup("css/svg/control-area.svg", 18) + "<span>면적</span>",
       function () {
         const nextActive = !(measureModeActive && measureModeType === "area");
         setMeasureMode(nextActive, "toggle", "area");
       }
     );
-    measureAreaBtnEl.style.fontSize = "14px";
-    measureAreaBtnEl.style.fontWeight = "700";
 
     measureActionPanelEl = document.createElement("div");
     measureActionPanelEl.style.display = "none";
@@ -794,15 +788,16 @@ window.createOlMapControlsManager = function createOlMapControlsManager(options)
     updateMeasureActionButtons();
 
     mainControlGroup.appendChild(btnJiri);
+    mainControlGroup.appendChild(compassBtn);
     mainControlGroup.appendChild(locateBtnEl);
-    mainControlGroup.appendChild(btnZoomIn);
-    mainControlGroup.appendChild(btnZoomOut);
 
-    measureControlGroup.appendChild(measureDistanceBtnEl);
-    measureControlGroup.appendChild(measureAreaBtnEl);
+    measureItemsEl.appendChild(measureDistanceBtnEl);
+    measureItemsEl.appendChild(measureAreaBtnEl);
+    measureToolsEl.appendChild(measureItemsEl);
+    measureToolsEl.appendChild(toolsToggleBtn);
 
     root.appendChild(mainControlGroup);
-    root.appendChild(measureControlGroup);
+    root.appendChild(measureToolsEl);
 
     syncMeasureActionPanelContainer();
 
@@ -825,327 +820,103 @@ window.createOlMapControlsManager = function createOlMapControlsManager(options)
     mapEl.appendChild(root);
   }
 
+  // 지도 유형 패널: 네이버 지도처럼 미리보기 타일을 눌러 배경지도를 고르고, 겹쳐 보기는 스위치로 켠다.
   function mountLayerSwitcher() {
-    function createImageIconMarkup(iconPath, widthPx, heightPx) {
-      return '<img src="' + iconPath + '" alt="" aria-hidden="true" style="display:block;width:' + widthPx + 'px;height:' + heightPx + 'px;" />';
-    }
+    const BASES = [
+      { type: "osm", label: "국문", group: "online" },
+      { type: "english", label: "영문", group: "online", needsKey: true },
+      { type: "large", label: "큰 문자", group: "online", needsKey: true },
+      { type: "satellite", label: "위성", group: "online", needsKey: true },
+      { type: "mbtiles", label: "지리산", group: "offline" }
+    ];
 
     const root = document.createElement("div");
-    root.style.position = "absolute";
-    root.style.top = "calc(12px + var(--safe-top))";
-    root.style.right = "calc(12px + var(--safe-right))";
-    root.style.zIndex = "9990";
+    root.className = "map-layer-switcher";
 
     const toggleBtn = document.createElement("button");
     toggleBtn.type = "button";
     toggleBtn.id = "btn-map-layers";
-    toggleBtn.title = "배경지도 선택";
-    toggleBtn.setAttribute("aria-label", "배경지도 선택");
+    toggleBtn.className = "map-ctl";
+    toggleBtn.title = "지도 유형";
+    toggleBtn.setAttribute("aria-label", "지도 유형");
     toggleBtn.setAttribute("aria-controls", "map-layer-options");
     toggleBtn.setAttribute("aria-expanded", "false");
-    toggleBtn.style.width = "42px";
-    toggleBtn.style.height = "42px";
-    toggleBtn.style.border = "1px solid #c9c9c9";
-    toggleBtn.style.borderRadius = "6px";
-    toggleBtn.style.background = "#ffffff";
-    toggleBtn.style.boxShadow = "0 2px 8px rgba(0,0,0,0.16)";
-    toggleBtn.style.cursor = "pointer";
-    toggleBtn.style.display = "flex";
-    toggleBtn.style.alignItems = "center";
-    toggleBtn.style.justifyContent = "center";
-    toggleBtn.innerHTML = createImageIconMarkup("css/svg/layer-stack.svg", 22, 22);
+    toggleBtn.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 2 8.5l10 5.5 10-5.5L12 3Zm-7.6 9.3L2 13.6 12 19l10-5.4-2.4-1.3L12 16.4l-7.6-4.1Z"/></svg>';
+
+    function tileMarkup(base) {
+      const disabled = base.needsKey && !ngiiApiKey;
+      return '<button type="button" class="map-layer-tile" data-base="' + base.type + '"' +
+        (disabled ? ' disabled title="NGII API 키가 필요합니다"' : "") + ' aria-pressed="false">' +
+        '<span class="map-layer-thumb map-layer-thumb--' + base.type + '" aria-hidden="true" style="background-image:url(assets/map-previews/' + base.type + '.webp?v=3)">' +
+        "</span>" +
+        '<span class="map-layer-tile__label">' + base.label + "</span></button>";
+    }
+    function tilesOf(group) {
+      return BASES.filter(function (base) { return base.group === group; }).map(tileMarkup).join("");
+    }
 
     const panel = document.createElement("div");
     panel.id = "map-layer-options";
-    panel.style.position = "absolute";
-    panel.style.top = "46px";
-    panel.style.right = "0";
-    panel.style.background = "#f6f6f6";
-    panel.style.border = "1px solid #8e8e8e";
-    panel.style.borderRadius = "4px";
-    panel.style.padding = "6px 10px";
-    panel.style.fontSize = "13px";
-    panel.style.lineHeight = "1.5";
-    panel.style.width = "min(150px, calc(100vw - 24px - var(--safe-right)))";
-    panel.style.minWidth = "150px";
-    panel.style.maxWidth = "calc(100vw - 24px - var(--safe-right))";
-    panel.style.overflow = "hidden";
-    panel.style.opacity = "0";
-    panel.style.visibility = "hidden";
-    panel.style.pointerEvents = "none";
-    panel.style.transform = "translateY(-8px) scale(0.98)";
-    panel.style.transformOrigin = "top right";
-    panel.style.maxHeight = "0";
-    panel.style.boxShadow = "0 10px 24px rgba(15, 23, 42, 0.16)";
-    panel.style.transition = "opacity 180ms ease, transform 180ms ease, max-height 220ms ease";
-    panel.dataset.open = "false";
+    panel.className = "map-layer-panel";
+    panel.setAttribute("role", "dialog");
+    panel.setAttribute("aria-label", "지도 유형");
+    panel.hidden = true;
+    panel.innerHTML =
+      '<div class="map-layer-panel__head"><strong>지도 유형</strong>' +
+        '<button type="button" class="map-layer-panel__close" aria-label="닫기">×</button></div>' +
+      '<p class="map-layer-panel__title">온라인<small>인터넷 필요</small></p>' +
+      '<div class="map-layer-grid">' + tilesOf("online") + "</div>" +
+      '<p class="map-layer-panel__title">오프라인<small>기기에 저장된 지도</small></p>' +
+      '<div class="map-layer-grid">' + tilesOf("offline") + "</div>" +
+      '<p class="map-layer-panel__title">겹쳐 보기</p>' +
+      '<label class="map-layer-switch"><span>음영기복도<small>인터넷 필요</small></span>' +
+        '<input type="checkbox" role="switch" id="map-layer-hillshade"></label>' +
+      (ngiiApiKey ? "" : '<p class="map-layer-panel__note">NGII API 키가 없어 온라인 지도는 사용할 수 없습니다.</p>');
 
-    function tuneLayerOptionRow(rowEl, labelEl) {
-      rowEl.style.width = "100%";
-      rowEl.style.flexWrap = "nowrap";
-      rowEl.style.minWidth = "0";
-      labelEl.style.whiteSpace = "nowrap";
-      labelEl.style.display = "block";
-      labelEl.style.flex = "1 1 auto";
-      labelEl.style.minWidth = "0";
-      labelEl.style.overflow = "hidden";
-      labelEl.style.textOverflow = "ellipsis";
-    }
-
-    function createSectionTitle(text, marginTop) {
-      const title = document.createElement("div");
-      title.textContent = text;
-      title.style.fontSize = "11px";
-      title.style.fontWeight = "700";
-      title.style.letterSpacing = "0.02em";
-      title.style.color = "#666";
-      title.style.marginTop = marginTop;
-      title.style.marginBottom = "4px";
-      return title;
-    }
-
-    const onlineTitle = createSectionTitle("온라인", "0");
-    const offlineTitle = createSectionTitle("오프라인", "6px");
-    offlineTitle.style.paddingTop = "6px";
-    offlineTitle.style.borderTop = "1px solid #c8c8c8";
-
-    const row1 = document.createElement("div");
-    row1.style.display = "flex";
-    row1.style.alignItems = "center";
-    row1.style.gap = "8px";
-    row1.style.marginBottom = "2px";
-
-    const radioOsm = document.createElement("input");
-    radioOsm.type = "radio";
-    radioOsm.name = "ol-base-layer";
-    radioOsm.value = "osm";
-    radioOsm.disabled = false;
-    radioOsm.style.flex = "0 0 auto";
-
-    const labelOsm = document.createElement("label");
-    labelOsm.style.cursor = "pointer";
-    labelOsm.textContent = "국문";
-    tuneLayerOptionRow(row1, labelOsm);
-    row1.appendChild(radioOsm);
-    row1.appendChild(labelOsm);
-
-    const rowEnglish = document.createElement("div");
-    rowEnglish.style.display = "flex";
-    rowEnglish.style.alignItems = "center";
-    rowEnglish.style.gap = "8px";
-    rowEnglish.style.marginBottom = "2px";
-
-    const radioEnglish = document.createElement("input");
-    radioEnglish.type = "radio";
-    radioEnglish.name = "ol-base-layer";
-    radioEnglish.value = "english";
-    radioEnglish.disabled = !ngiiApiKey;
-    radioEnglish.checked = currentBaseLayerType === "english";
-    radioEnglish.style.flex = "0 0 auto";
-
-    const labelEnglish = document.createElement("label");
-    labelEnglish.style.cursor = ngiiApiKey ? "pointer" : "default";
-    labelEnglish.textContent = "영문";
-    tuneLayerOptionRow(rowEnglish, labelEnglish);
-    rowEnglish.appendChild(radioEnglish);
-    rowEnglish.appendChild(labelEnglish);
-
-    const rowLarge = document.createElement("div");
-    rowLarge.style.display = "flex";
-    rowLarge.style.alignItems = "center";
-    rowLarge.style.gap = "8px";
-    rowLarge.style.marginBottom = "2px";
-
-    const radioLarge = document.createElement("input");
-    radioLarge.type = "radio";
-    radioLarge.name = "ol-base-layer";
-    radioLarge.value = "large";
-    radioLarge.disabled = !ngiiApiKey;
-    radioLarge.checked = currentBaseLayerType === "large";
-    radioLarge.style.flex = "0 0 auto";
-
-    const labelLarge = document.createElement("label");
-    labelLarge.style.cursor = ngiiApiKey ? "pointer" : "default";
-    labelLarge.textContent = "큰 문자";
-    tuneLayerOptionRow(rowLarge, labelLarge);
-    rowLarge.appendChild(radioLarge);
-    rowLarge.appendChild(labelLarge);
-
-    const rowSatellite = document.createElement("div");
-    rowSatellite.style.display = "flex";
-    rowSatellite.style.alignItems = "center";
-    rowSatellite.style.gap = "8px";
-    rowSatellite.style.marginBottom = "2px";
-
-    const radioSatellite = document.createElement("input");
-    radioSatellite.type = "radio";
-    radioSatellite.name = "ol-base-layer";
-    radioSatellite.value = "satellite";
-    radioSatellite.disabled = !ngiiApiKey;
-    radioSatellite.checked = currentBaseLayerType === "satellite";
-    radioSatellite.style.flex = "0 0 auto";
-
-    const labelSatellite = document.createElement("label");
-    labelSatellite.style.cursor = ngiiApiKey ? "pointer" : "default";
-    labelSatellite.textContent = "위성";
-    tuneLayerOptionRow(rowSatellite, labelSatellite);
-    rowSatellite.appendChild(radioSatellite);
-    rowSatellite.appendChild(labelSatellite);
-
-    const rowMbtiles = document.createElement("div");
-    rowMbtiles.style.display = "flex";
-    rowMbtiles.style.alignItems = "center";
-    rowMbtiles.style.gap = "8px";
-    rowMbtiles.style.marginBottom = "2px";
-
-    const radioMbtiles = document.createElement("input");
-    radioMbtiles.type = "radio";
-    radioMbtiles.name = "ol-base-layer";
-    radioMbtiles.value = "mbtiles";
-    radioMbtiles.checked = currentBaseLayerType === "mbtiles";
-    radioMbtiles.style.flex = "0 0 auto";
-
-    const labelMbtiles = document.createElement("label");
-    labelMbtiles.style.cursor = "pointer";
-    labelMbtiles.textContent = "국문(지리산 일대)";
-    tuneLayerOptionRow(rowMbtiles, labelMbtiles);
-    rowMbtiles.appendChild(radioMbtiles);
-    rowMbtiles.appendChild(labelMbtiles);
-
-    radioOsm.checked = currentBaseLayerType === "osm";
-
-    function syncBaseByRadio() {
-      if (radioMbtiles.checked) return setBaseLayer("mbtiles");
-      if (radioSatellite.checked) return setBaseLayer("satellite");
-      if (radioEnglish.checked) return setBaseLayer("english");
-      if (radioLarge.checked) return setBaseLayer("large");
-      setBaseLayer("osm");
-    }
-
-    radioOsm.addEventListener("change", syncBaseByRadio);
-    radioEnglish.addEventListener("change", syncBaseByRadio);
-    radioLarge.addEventListener("change", syncBaseByRadio);
-    radioSatellite.addEventListener("change", syncBaseByRadio);
-    radioMbtiles.addEventListener("change", syncBaseByRadio);
-    labelOsm.addEventListener("click", function () { radioOsm.checked = true; syncBaseByRadio(); });
-    labelEnglish.addEventListener("click", function () { if (!radioEnglish.disabled) { radioEnglish.checked = true; syncBaseByRadio(); } });
-    labelLarge.addEventListener("click", function () { if (!radioLarge.disabled) { radioLarge.checked = true; syncBaseByRadio(); } });
-    labelSatellite.addEventListener("click", function () { if (!radioSatellite.disabled) { radioSatellite.checked = true; syncBaseByRadio(); } });
-    labelMbtiles.addEventListener("click", function () { radioMbtiles.checked = true; syncBaseByRadio(); });
-
-    const row2 = document.createElement("label");
-    row2.style.display = "flex";
-    row2.style.alignItems = "center";
-    row2.style.gap = "8px";
-    row2.style.marginTop = "5px";
-    row2.style.marginBottom = "2px";
-    row2.style.cursor = "pointer";
-
-    const chk = document.createElement("input");
-    chk.type = "checkbox";
-    chk.checked = !!layers.hillshadeOverlay.getVisible();
-    chk.disabled = false;
-    chk.style.flex = "0 0 auto";
-    // Keep checkbox x-offset aligned with radio controls in this panel.
-    chk.style.margin = "0 0 0 5px";
-    chk.addEventListener("change", function () {
-      layers.hillshadeOverlay.setVisible(chk.checked);
+    const hillshadeInput = panel.querySelector("#map-layer-hillshade");
+    hillshadeInput.checked = !!layers.hillshadeOverlay.getVisible();
+    hillshadeInput.addEventListener("change", function () {
+      layers.hillshadeOverlay.setVisible(hillshadeInput.checked);
       syncHillshadeByZoom();
       if (statusEl) {
-        statusEl.textContent = chk.checked ? "🗻 음영기복도 켜짐(인터넷 필요)" : "🗻 음영기복도 꺼짐";
+        statusEl.textContent = hillshadeInput.checked ? "🗻 음영기복도 켜짐(인터넷 필요)" : "🗻 음영기복도 꺼짐";
       }
     });
 
-    const row2Text = document.createElement("span");
-    row2Text.textContent = "음영기복도";
-    row2Text.style.marginLeft = "3px";
-    row2Text.style.fontSize = "12px";
-    row2Text.style.color = "#4b5563";
-    row2Text.style.whiteSpace = "nowrap";
-
-    tuneLayerOptionRow(row2, row2Text);
-
-    row2.appendChild(chk);
-    row2.appendChild(row2Text);
-
-    let hideTimer = null;
-    let isPinned = false;
-    const preferHover = !!(window.matchMedia && window.matchMedia("(hover: hover) and (pointer: fine)").matches);
-
-    function isPanelOpen() {
-      return panel.dataset.open === "true";
-    }
-
-    function openPanel() {
-      if (hideTimer) {
-        clearTimeout(hideTimer);
-        hideTimer = null;
-      }
-      panel.dataset.open = "true";
-      panel.style.visibility = "visible";
-      panel.style.pointerEvents = "auto";
-      panel.style.maxHeight = panel.scrollHeight + 20 + "px";
-      window.requestAnimationFrame(function () {
-        panel.style.opacity = "1";
-        panel.style.transform = "translateY(0) scale(1)";
+    // setBaseLayer가 키 부족 등으로 다른 지도로 바꿀 수 있으므로 실제 선택을 다시 그린다.
+    function paintSelection() {
+      panel.querySelectorAll("[data-base]").forEach(function (tile) {
+        const on = tile.dataset.base === currentBaseLayerType;
+        tile.classList.toggle("is-on", on);
+        tile.setAttribute("aria-pressed", String(on));
       });
-      toggleBtn.setAttribute("aria-expanded", "true");
     }
+    panel.addEventListener("click", function (e) {
+      const tile = e.target.closest("[data-base]");
+      if (!tile || tile.disabled) return;
+      setBaseLayer(tile.dataset.base);
+      paintSelection();
+    });
+    paintSelection();
 
-    function closePanel(delayMs, forceClose) {
-      if (!forceClose && isPinned) return;
-      if (hideTimer) clearTimeout(hideTimer);
-      hideTimer = setTimeout(function () {
-        panel.dataset.open = "false";
-        panel.style.opacity = "0";
-        panel.style.transform = "translateY(-8px) scale(0.98)";
-        panel.style.maxHeight = "0";
-        panel.style.pointerEvents = "none";
-        window.setTimeout(function () {
-          if (isPanelOpen()) return;
-          panel.style.visibility = "hidden";
-        }, 180);
-        toggleBtn.setAttribute("aria-expanded", "false");
-      }, delayMs);
+    function setOpen(open) {
+      panel.hidden = !open;
+      toggleBtn.setAttribute("aria-expanded", String(open));
     }
-
-    root.addEventListener("mouseenter", function () {
-      if (!preferHover || isPinned) return;
-      openPanel();
-    });
-    root.addEventListener("mouseleave", function () {
-      if (!preferHover || isPinned) return;
-      closePanel(140, false);
-    });
-
     toggleBtn.addEventListener("click", function (e) {
       e.preventDefault();
       e.stopPropagation();
-      if (isPanelOpen() && isPinned) {
-        isPinned = false;
-        closePanel(0, true);
-      } else {
-        isPinned = true;
-        openPanel();
-      }
+      setOpen(panel.hidden);
     });
-
+    panel.querySelector(".map-layer-panel__close").addEventListener("click", function () { setOpen(false); });
     document.addEventListener("pointerdown", function (e) {
-      if (!root.contains(e.target)) {
-        isPinned = false;
-        closePanel(0, true);
-      }
+      if (!panel.hidden && !root.contains(e.target)) setOpen(false);
+    });
+    document.addEventListener("keydown", function (e) {
+      if (e.key === "Escape" && !panel.hidden) setOpen(false);
     });
 
     root.appendChild(toggleBtn);
-    panel.appendChild(onlineTitle);
-    panel.appendChild(row1);
-    panel.appendChild(rowEnglish);
-    panel.appendChild(rowLarge);
-    panel.appendChild(rowSatellite);
-    panel.appendChild(row2);
-    panel.appendChild(offlineTitle);
-    panel.appendChild(rowMbtiles);
     root.appendChild(panel);
     mapEl.appendChild(root);
   }

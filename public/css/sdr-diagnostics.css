@@ -166,16 +166,16 @@
 #btn-sdr-diagnostics {
   position: absolute;
   top: calc(12px + var(--safe-top));
-  right: calc(114px + var(--safe-right)); /* 설정 버튼 왼쪽, 간격 10px */
+  right: calc(116px + var(--safe-right)); /* 설정 버튼 왼쪽, 간격 8px */
   z-index: 9990;
   width: 52px;
-  height: 42px;
+  height: 44px;
   padding: 0;
-  border: 1px solid #c9c9c9;
-  border-radius: 6px;
+  border: 0;
+  border-radius: 10px;
   background: #fff;
   color: #145d75;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.16);
+  box-shadow: 0 1px 5px rgba(0,0,0,0.27);
   font: 700 13px/1 system-ui, sans-serif;
   white-space: nowrap;
   cursor: pointer;

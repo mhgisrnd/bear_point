@@ -15,7 +15,7 @@ test('map focus supports analysis without a callback and list focus with a callb
   global.cancelAnimationFrame = () => {};
   const view = new View({ center: [0, 0], zoom: 10 });
   try {
-    const context = { view, mapCoordFromWgs84: (lat, lng) => [lng, lat] };
+    const context = { view, mapCoordFromWgs84: (lat, lng) => [lng, lat], stopFollowing() {} };
     vm.createContext(context);
     vm.runInContext(source.slice(start, end), context);
     assert.doesNotThrow(() => context.flyToLatLng([35, 127], 16));

@@ -23,6 +23,27 @@ test('manual heading handle hit area follows the rendered handle at every map ro
   }
 });
 
+test('my-location button cycles follow → heading-up → off and the compass target is north',async()=>{
+  const anims=[];let stopped=0;
+  const context={Number,Math,trackMode:'on',isMyVisible:true,lastSensorHeadingDeg:90,lastTrackedLatLng:[35,127],
+    TRACK_MODE_TITLES:{},statusEl:{textContent:''},locateBtnEl:{dataset:{},title:'',setAttribute(){}},
+    mapCoordFromWgs84:()=>[1,2],view:{cancelAnimations(){},animate(a){anims.push(a);}},
+    stopMyLocationTracking(){stopped++;},toggleMyLocation:async()=>{}};
+  vm.createContext(context);
+  vm.runInContext(extract('setTrackMode'),context);
+  const start=source.indexOf('  async function cycleMyLocation(');
+  vm.runInContext(source.slice(start,source.indexOf('\n  }',start)+4),context);
+  await context.cycleMyLocation();
+  assert.equal(context.locateBtnEl.dataset.mode,'follow');const follow=anims.pop();assert.equal(follow.center[0],1);assert.equal(follow.rotation,undefined);
+  await context.cycleMyLocation();
+  assert.equal(context.trackMode,'heading');assert.equal(anims.pop().rotation,-Math.PI/2);
+  await context.cycleMyLocation();
+  assert.equal(stopped,1);
+  context.trackMode='follow';context.lastSensorHeadingDeg=null;
+  await context.cycleMyLocation();
+  assert.equal(context.trackMode,'follow');assert.match(context.statusEl.textContent,/방향 센서/);
+});
+
 test('two-finger and Alt+Shift rotation do not start or continue manual coordinate dragging',()=>{
   for(const type of ['pointerdown','pointerdrag']){
     let callback,stops=0,hits=0;

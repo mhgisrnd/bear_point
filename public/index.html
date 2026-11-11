@@ -8,13 +8,13 @@
   <script src="js/native-plugin-compat.js?v=1.0.4-ui64"></script>
 
   <link rel="stylesheet" href="vendor/ol/ol.css" />
-  <link rel="stylesheet" href="css/styles.css" />
+  <link rel="stylesheet" href="css/styles.css?v=20261111-edge-dial2" />
   <link rel="stylesheet" href="css/panel.css?v=20261110-bear-filters" />
   <link rel="stylesheet" href="css/observation-sharing.css?v=20261110-bear-period" />
-  <link rel="stylesheet" href="css/sdr-diagnostics.css" />
-  <link rel="stylesheet" href="css/app-settings.css?v=20261110-fixed-settings" />
+  <link rel="stylesheet" href="css/sdr-diagnostics.css?v=20261111-map-icons" />
+  <link rel="stylesheet" href="css/app-settings.css?v=20261111-map-icons" />
   <link rel="stylesheet" href="css/gps-tracking.css?v=20261110-web-history" />
-  <link rel="stylesheet" href="css/mobile-map-dock.css?v=20261110-toast-notices" />
+  <link rel="stylesheet" href="css/mobile-map-dock.css?v=20261111-edge-dial2" />
 </head>
 <body>
 
@@ -368,13 +368,16 @@
 
   <div id="map">
     <button id="btn-sdr-diagnostics" type="button" aria-label="탐색" title="탐색">탐색</button>
-    <button id="btn-app-settings" type="button" aria-label="설정" title="설정"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 3-1 3-3 1v4l-2 1 2 1v4l3 1 1 3h6l1-3 3-1v-4l2-1-2-1V7l-3-1-1-3Z"/><circle cx="12" cy="12" r="3"/></svg></button>
+    <button id="btn-app-settings" type="button" aria-label="설정" title="설정"><span class="app-settings-icon" aria-hidden="true"></span></button>
   </div>
-  <div id="compass">
-    <div id="compass-needle">
-      <span class="needle red"></span>
-      <span class="needle blue"></span>
-    </div>
+  <!-- 관측점 등록 중 기기가 바라보는 방향 (지도 나침반과 별개, 등록창이 열리고 센서가 동작할 때만 표시) -->
+  <div id="heading-dial" role="img" aria-label="기기가 바라보는 방향">
+    <svg viewBox="0 0 132 200" aria-hidden="true">
+      <g id="heading-dial-ring" class="heading-dial__ring"></g>
+      <circle class="heading-dial__circle" cx="66" cy="100" r="52" />
+      <path class="heading-dial__index" d="M66 40v8M62 51l4-6 4 6Z" />
+    </svg>
+    <div class="heading-dial__readout"><span id="heading-dial-dir"></span><strong id="heading-dial-deg">--°</strong></div>
   </div>
 
   <script src="vendor/ol/ol.js"></script>
@@ -395,14 +398,14 @@
   <script src="js/obs/observation-filters.js"></script>
   <script src="js/obs/observation-sync.js?v=20261109-retry-sharing"></script>
   <script src="js/obs/obsRegister.js"></script>
-  <script src="js/map/ol-map-controls.js?v=20261103-offline-switcher-1"></script>
+  <script src="js/map/ol-map-controls.js?v=20261111-office-preview"></script>
   <script src="js/tracking/gps-track-filters.js?v=20261109-history-order"></script>
   <script src="js/tracking/gps-track-store.js?v=20261110-web-history"></script>
   <script src="js/tracking/gps-track-sync.js?v=20261110-web-history"></script>
   <script src="js/tracking/gps-track-ui.js?v=20261110-web-history"></script>
   <script src="js/mobile-map-dock.js?v=20261110-toast-notices"></script>
   <script src="js/settings/app-updates.js?v=20261110-fixed-settings"></script>
-  <script src="js/client-ol.js?v=20261110-toast-notices"></script>
+  <script src="js/client-ol.js?v=20261111-rotate30"></script>
   <script src="js/sdr/spectrum.js"></script>
   <script src="js/sdr/animal-catalog.js"></script>
   <script src="js/sdr/frequency-controls.js"></script>
