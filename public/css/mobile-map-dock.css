@@ -10,6 +10,10 @@ body.bp-map-dock #mobile-map-dock { position: fixed; left: var(--safe-left,0px);
 .mobile-dock-grip { position: absolute; width: 34px; height: 4px; border-radius: 4px; background: #b6c0cd; top: 4px; left: calc(50% - 17px); }
 .mobile-dock-chevron { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 32px; width: 32px; height: 30px; margin-left: auto; border: 1px solid #d7e2ef; border-radius: 10px; background: linear-gradient(150deg,#f8fbff,#eaf1fa); color: #45678c; box-shadow: 0 1px 2px #1c3b5910,inset 0 1px 0 #fff; transition: background .15s ease,box-shadow .15s ease; }
 .mobile-dock-chevron svg { width: 18px; height: 18px; transition: transform .18s ease; }
+body.bp-mobile-dock .mobile-dock-head { padding-right: 52px; }
+body.bp-mobile-dock .mobile-dock-chevron { position: absolute; right: 10px; top: 50%; margin-left: 0; transform: translateY(-50%); }
+body.bp-mobile-dock #mobile-map-dock.is-sliding .mobile-dock-content { flex: 1 1 auto; max-height: none; pointer-events: none; }
+body.bp-mobile-dock #mobile-map-dock.is-sliding .mobile-dock-content * { pointer-events: none !important; }
 .is-expanded .mobile-dock-chevron svg { transform: rotate(180deg); }
 .mobile-dock-fold:active .mobile-dock-chevron { background: #dfeaf8; box-shadow: inset 0 1px 3px #1c3b5920; }
 .mobile-dock-fold:focus-visible .mobile-dock-chevron { border-color: #739de5; }
@@ -55,6 +59,7 @@ body.bp-map-dock #mobile-map-dock #btn-panel-toggle { display: none; }
 body.bp-map-dock #mobile-map-dock #panel .panel-body, body.bp-map-dock #mobile-map-dock #panel.collapsed .panel-body { display: flex !important; flex-direction: column; min-height: 0; max-height: none !important; flex: 1 1 auto; overflow: hidden; margin: 0; padding: 4px 10px 6px; opacity: 1; pointer-events: auto; }
 body.bp-map-dock #mobile-map-dock #bears-box { display: flex; flex-direction: column; min-height: 0; flex: 1 1 auto; overflow: hidden; margin: 0; padding: 0; border: 0; border-radius: 0; box-shadow: none; background: #fff; }
 body.bp-map-dock #mobile-map-dock #bears-list { flex: 1 1 auto; min-height: 0; max-height: none; overflow-y: auto; padding: 0; }
+body.bp-map-dock #mobile-map-dock #bears-box .bears-toolbar__row--bottom { padding: 3px 0; }
 body.bp-map-dock #mobile-map-dock .bears-item.bears-item--unified { margin: 0; padding: 6px 0; border: 0; border-bottom: 1px solid #dfe7f0; border-radius: 0; box-shadow: none; }
 body.bp-map-dock #mobile-map-dock .bears-item__detail-frame { border: 0; border-radius: 0; }
 body.bp-map-dock #mobile-map-dock .bear-code-search { flex: 0 0 auto; margin: 0 0 4px; }

@@ -21,7 +21,7 @@ test('observation reset follows actual search and filters, ignoring preset hidde
   const fn=obs.slice(start,obs.indexOf('  function ensureAnalysisOptionsDialog()',start));
   const filters={owner:'',team:'',period:'all'};
   const c={window:{BearObservationFilters:require('../public/js/obs/observation-filters')},readObservationFilters:()=>filters,
-    lastRegisteredOwner:()=>'',mineOwnerFilter:'',searchQueryEl:{value:''},btnSearchClearEl:{disabled:false},periodFilterEl:{value:'all'}};
+    lastRegisteredOwner:()=>'',mineOwnerFilter:'',selectedObsIds:new Set(),searchQueryEl:{value:''},btnSearchClearEl:{disabled:false},periodFilterEl:{value:'all'}};
   for(const name of new Set(fn.match(/\b\w+El\b/g)))if(!(name in c))c[name]=null;
   vm.createContext(c);vm.runInContext(fn,c);
   c.syncFilterControls();assert.equal(c.btnSearchClearEl.disabled,true);
@@ -29,6 +29,8 @@ test('observation reset follows actual search and filters, ignoring preset hidde
   c.searchQueryEl.value='';filters.team='team';c.syncFilterControls();assert.equal(c.btnSearchClearEl.disabled,false);
   filters.team='';filters.period='day';c.syncFilterControls();assert.equal(c.btnSearchClearEl.disabled,false);
   filters.period='all';c.syncFilterControls();assert.equal(c.btnSearchClearEl.disabled,true);
+  c.selectedObsIds.add('checked');c.syncFilterControls();assert.equal(c.btnSearchClearEl.disabled,false);
+  c.selectedObsIds.clear();c.syncFilterControls();assert.equal(c.btnSearchClearEl.disabled,true);
 });
 test('movement reset follows draft input, filters and busy state',()=>{
   const reset={},c={busy:false,teamId:'',period:'all',search:{elements:{owner:{value:''}}},panel:{querySelector:()=>reset},

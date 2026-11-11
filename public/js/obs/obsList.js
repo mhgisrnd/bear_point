@@ -835,6 +835,7 @@ window.createObsListModule = function createObsListModule({
 
   // 선택 개수/버튼 활성화/전체선택 상태를 한 번에 갱신한다.
   function updateSelectionUI() {
+    syncFilterControls();
     const count = selectedObsIds.size;
     const editable = observationSamples.filter(item => selectedObsIds.has(item._obsKey) && !["sending", "conflict"].includes(item.shareState));
     const sendable = observationSamples.filter(item => selectedObsIds.has(item._obsKey) && !["shared", "sending", "conflict"].includes(item.shareState));
@@ -1060,7 +1061,7 @@ window.createObsListModule = function createObsListModule({
     const description = window.BearObservationFilters.summary(current);
     if (filterSummaryEl) { filterSummaryEl.hidden = !description; filterSummaryEl.textContent = description + " ▾"; filterSummaryEl.title = description; }
     const count = (current.owner ? 1 : 0) + (current.team ? 1 : 0) + (current.period !== "all" ? 1 : 0);
-    if (btnSearchClearEl) btnSearchClearEl.disabled = !String(searchQueryEl?.value || "").trim() && count === 0;
+    if (btnSearchClearEl) btnSearchClearEl.disabled = !String(searchQueryEl?.value || "").trim() && count === 0 && selectedObsIds.size === 0;
     btnFilterEl?.classList.toggle("has-filters", count > 0);
     if (filterCountEl) {
       filterCountEl.hidden = count === 0;
@@ -2020,6 +2021,7 @@ window.createObsListModule = function createObsListModule({
       applySearch();
     });
     if (btnSearchClearEl) btnSearchClearEl.addEventListener("click", () => {
+      selectedObsIds.clear();
       if (searchQueryEl) searchQueryEl.value = "";
       clearObservationFilters();
       setFiltersOpen(false);

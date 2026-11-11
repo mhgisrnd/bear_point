@@ -86,6 +86,30 @@ test('search completion releases focus except during IME composition; details al
   assert.equal(blurred,2);
 });
 
+test('tap folding animates sheet height and keeps closing content inert until completion',async()=>{
+  const env=environment(),dock=env.document.getElementById('mobile-map-dock');
+  const content=dock.querySelector('.mobile-dock-content'),animations=[];
+  env.root.matchMedia=()=>({matches:false});
+  dock.getBoundingClientRect=()=>({height:dock.classList.contains('is-expanded')?300:100});
+  dock.animate=(frames,options)=>{
+    let finish,reject;
+    const animation={frames,options,finished:new Promise((resolve,fail)=>{finish=resolve;reject=fail;}),cancel(){reject();},finish(){finish();}};
+    animations.push(animation);return animation;
+  };
+  env.api.select('bears');
+  assert.equal(animations.length,1);
+  assert.equal(animations[0].frames[0].height,'100px');
+  assert.equal(animations[0].frames[1].height,'300px');
+  animations[0].finish();await Promise.resolve();
+  env.api.collapse();
+  assert.equal(content.hidden,false);assert.equal(content.hasAttribute('inert'),true);
+  assert.equal(animations[1].frames[1].height,'100px');
+  animations[1].finish();await Promise.resolve();
+  assert.equal(content.hidden,true);assert.equal(dock.classList.contains('is-sliding'),false);
+  env.root.matchMedia=()=>({matches:true});
+  env.api.select('bears');assert.equal(animations.length,2);
+});
+
 test('recording indicator persists across menu changes; folding the dock does not stop GPS',()=>{
   const env=environment(),dock=env.document.getElementById('mobile-map-dock');
   env.api.select('tracking');assert.equal(env.calls.gpsOpen,1);assert.equal(env.track.hidden,false);

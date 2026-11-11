@@ -1327,7 +1327,11 @@
 .bears-select-all {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 5px;
+  min-height: 30px;
+  margin: 0;
+  line-height: 1.25;
+  cursor: pointer;
   font-size: 11px;
   font-weight: 700;
   color: #334155;
@@ -1335,9 +1339,13 @@
 }
 
 .bears-select-all input {
-  width: 14px;
-  height: 14px;
+  box-sizing: border-box;
+  flex: 0 0 16px;
+  width: 16px;
+  height: 16px;
+  margin: 0;
   accent-color: #2563eb;
+  cursor: pointer;
 }
 
 .bears-selection-count {
@@ -3147,6 +3155,15 @@
 #bears-box .bears-toolbar { gap: 3px; }
 #bears-box .bears-toolbar__row--top { padding-bottom: 2px; }
 #bears-box .bears-toolbar__row--bottom { padding-top: 0; }
+#bears-box .bears-toolbar__row--top { border-bottom: 0; }
+#bears-box .bears-toolbar__row--bottom {
+  box-sizing: border-box;
+  min-height: 36px;
+  padding: 3px 6px;
+  border-top: 1px solid #e2e8f0;
+  border-bottom: 1px solid #dfe7f0;
+  background: #f4f7fb;
+}
 #bears-box .bears-list { padding-bottom: 2px; }
 .bears-item.bears-item--unified {
   display: grid;

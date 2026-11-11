@@ -29,6 +29,33 @@
       const marker=document.createComment('mobile dock home');element.before(marker);homes.set(element,marker);
     }
     let active='bears',expanded=false,full=false,filtering=false,mobile=null,restoring=false,registrationWasOpen=false,restoreExpanded=false,restoreFull=false;
+    let slideAnimation=null;
+    function stopSlide(){
+      const animation=slideAnimation;slideAnimation=null;
+      animation?.cancel();
+      dock.classList.remove('is-sliding');content.removeAttribute('inert');content.hidden=!expanded;
+    }
+    function captureHeight(){
+      const height=dock.getBoundingClientRect().height;
+      stopSlide();return height;
+    }
+    function slideFrom(height){
+      if(!mobile||typeof dock.animate!=='function'||dock.classList.contains('is-dragging')||root.matchMedia('(prefers-reduced-motion: reduce)').matches)return;
+      const target=dock.getBoundingClientRect().height;
+      if(Math.abs(target-height)<1)return;
+      content.hidden=false;dock.classList.add('is-sliding');
+      if(!expanded)content.setAttribute('inert','');
+      const animation=dock.animate([
+        {height:height+'px',maxHeight:height+'px'},
+        {height:target+'px',maxHeight:target+'px'}
+      ],{duration:260,easing:'cubic-bezier(.22,.8,.25,1)'});
+      slideAnimation=animation;
+      const finish=()=>{
+        if(slideAnimation!==animation)return;
+        slideAnimation=null;dock.classList.remove('is-sliding');content.removeAttribute('inert');content.hidden=!expanded;measure();
+      };
+      animation.finished.then(finish,finish);
+    }
     function restore(element){const marker=homes.get(element);marker.parentNode.insertBefore(element,marker.nextSibling);}
     function measure(){
       if(!mobile)return;
@@ -42,7 +69,7 @@
       if(!mobile)expanded=true;
       const sidebarHidden=!mobile&&document.body.classList.contains('bp-sidebar-collapsed');
       if(sidebarHidden||document.body.classList.contains('analysis-mobile-active'))dock.setAttribute('inert','');else dock.removeAttribute('inert');
-      dock.dataset.menu=active;dock.classList.toggle('is-expanded',expanded);content.hidden=!expanded;
+      dock.dataset.menu=active;dock.classList.toggle('is-expanded',expanded);content.hidden=!expanded&&!slideAnimation;
       dock.classList.toggle('is-full',expanded&&full);
       dock.classList.toggle('is-filtering',expanded&&active==='tracking'&&filtering);
       observations.setMapVisible(registrationWasOpen||(active==='observations'&&(!tablet.matches||!document.body.classList.contains('bp-sidebar-collapsed'))));
@@ -77,6 +104,7 @@
     function select(name,{activate=true,open=true}={}){
       if(mobile===null||!panels[name])return;
       if(registration&&!registration.classList.contains('hidden'))return;
+      const previousHeight=captureHeight();
       if(active!==name||!expanded)full=false;
       if(active!==name)filtering=false;
       active=name;expanded=open;
@@ -91,11 +119,13 @@
         else expandBears();
       }
       paint();
+      slideFrom(previousHeight);
     }
     function collapse(){
       if(mobile===null||!expanded)return false;
       if(!mobile){if(document.body.classList.contains('bp-sidebar-collapsed'))return false;setSidebarCollapsed?.(true);return true;}
-      expanded=false;paint();return true;
+      const previousHeight=captureHeight();
+      expanded=false;paint();slideFrom(previousHeight);return true;
     }
     nav.forEach(button=>button.addEventListener('click',()=>{
       if(mobile&&active===button.dataset.menu&&expanded){collapse();return;}
@@ -108,6 +138,7 @@
     });
     fold.addEventListener('pointerdown',event=>{
       if(!mobile||registrationWasOpen||event.isPrimary===false||(event.button!=null&&event.button!==0))return;
+      stopSlide();
       drag={id:event.pointerId,y:event.clientY,initial:expanded,full:expanded&&full,height:expanded?content.getBoundingClientRect().height:0,moved:false,delta:0};
       fold.setPointerCapture?.(event.pointerId);
     });
@@ -128,6 +159,7 @@
     function finishDrag(event,cancel=false){
       if(!drag||(event&&event.pointerId!==drag.id))return;
       const previous=drag;drag=null;
+      const previousHeight=dock.getBoundingClientRect().height;
       dock.classList.remove('is-dragging');dock.style.removeProperty('--dock-drag-content-height');
       if(previous.moved){
         const half=Math.max(60,Math.min(root.innerHeight*.36,340)-48);
@@ -136,7 +168,7 @@
         else if(previous.delta< -24){
           expanded=previous.full&&previous.height+previous.delta>half*.5;full=false;
         }else{expanded=previous.initial;full=previous.full;}
-        suppressClickUntil=Date.now()+400;paint();
+        suppressClickUntil=Date.now()+400;paint();slideFrom(previousHeight);
       }
       if(fold.hasPointerCapture?.(previous.id))fold.releasePointerCapture(previous.id);
     }
@@ -157,6 +189,7 @@
     function layout(){
       const next=!tablet.matches;if(next===mobile)return;
       finishDrag(null,true);
+      stopSlide();
       restoring=true;mobile=next;
       document.body.classList.add('bp-map-dock');document.body.classList.toggle('bp-mobile-dock',mobile);document.body.classList.toggle('bp-tablet-dock',!mobile);dock.hidden=false;
       content.append(obs,bears,track);obs.classList.remove('obs-sheet--peek');
@@ -184,9 +217,10 @@
     const size=new ResizeObserver(measure);size.observe(dock);
     const controls=document.querySelector('.map-right-controls');if(controls)size.observe(controls);
     const sidebarObserver=new MutationObserver(()=>{if(!mobile&&!restoring)paint();});sidebarObserver.observe(document.body,{attributes:true,attributeFilter:['class']});
-    tablet.addEventListener('change',layout);root.addEventListener('resize',()=>{finishDrag(null,true);measure();});
+    tablet.addEventListener('change',layout);root.addEventListener('resize',()=>{finishDrag(null,true);stopSlide();measure();});
     root.BearMobileDock={select,collapse,isMobile:()=>!!mobile,isDocked:()=>true,getActive:()=>active,handleBack:collapse,
       prepareDetail(){
+        stopSlide();
         const focused=document.activeElement;
         if(focused?.matches?.('input.list-search-input'))focused.blur?.();
         full=false;filtering=false;

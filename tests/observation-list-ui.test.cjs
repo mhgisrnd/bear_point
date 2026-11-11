@@ -109,7 +109,7 @@ test("bulk actions appear only for the selected eligible observations", () => {
   const context = vm.createContext({ observationSamples: rows, selectedObsIds: new Set(), selectionActionsEl: field(),
     obsSelectedCountEl: field(), btnAnalysis: field(), btnDeleteSelected: field(), btnSendSelected: field(),
     isShared: item => ["shared", "sending"].includes(item.shareState), getFilteredItems: () => rows,
-    syncChkAll() {}, syncObservationMarkerSelection() {} });
+    syncFilterControls() {}, syncChkAll() {}, syncObservationMarkerSelection() {} });
   const start = source.indexOf("  function updateSelectionUI() {");
   const end = source.indexOf("  //", start);
   vm.runInContext(source.slice(start, end), context);

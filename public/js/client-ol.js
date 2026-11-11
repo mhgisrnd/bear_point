@@ -5334,6 +5334,7 @@
 
   // 곰 추적위치 목록 개수와 선택 개수에 맞춰 상단 툴바 상태를 갱신한다.
   function updateBearEstimateToolbar(items) {
+    syncBearFilterControls();
     const list = Array.isArray(items) ? items : [];
     const totalCount = list.length;
     const selectedCount = list.reduce(function (count, it) {
@@ -5675,7 +5676,7 @@
     const count = Number(!!bearTeamFilterEl?.value) + Number(period !== "all");
     btnBearFilterEl?.classList.toggle("has-filters", count > 0);
     if (bearFilterCountEl) { bearFilterCountEl.hidden = count === 0; bearFilterCountEl.textContent = String(count); }
-    if (btnBearCodeClearEl) btnBearCodeClearEl.disabled = !String(bearCodeSearchEl?.value || "").trim() && count === 0;
+    if (btnBearCodeClearEl) btnBearCodeClearEl.disabled = !String(bearCodeSearchEl?.value || "").trim() && count === 0 && selectedBearEstimateIds.size === 0;
   }
   if (btnBearFilterEl) btnBearFilterEl.addEventListener("click", () => {
     bearFilterPanelEl.hidden = !bearFilterPanelEl.hidden;
@@ -5690,6 +5691,7 @@
     bearCodeSearchEl?.blur();
   });
   if (btnBearCodeClearEl) btnBearCodeClearEl.addEventListener("click", function () {
+    selectedBearEstimateIds.clear();
     bearCodeSearchEl.value = "";
     if (bearTeamFilterEl) bearTeamFilterEl.value = "";
     if (bearPeriodFilterEl) bearPeriodFilterEl.value = "all";
