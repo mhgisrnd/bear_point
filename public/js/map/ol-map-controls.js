@@ -618,7 +618,7 @@ window.createOlMapControlsManager = function createOlMapControlsManager(options)
     const btnJiri = makeBtn(
       "map-ctl-jiri",
       "지리산으로 이동 · 회전 초기화",
-      createMaskIconMarkup("css/image/icon-jirisan-view.png?v=2", 26),
+      createMaskIconMarkup("css/image/icon-jirisan-view.png", 26),
       function () {
         if (typeof onStopFollowing === "function") onStopFollowing();
         view.cancelAnimations();
@@ -847,7 +847,7 @@ window.createOlMapControlsManager = function createOlMapControlsManager(options)
       const disabled = base.needsKey && !ngiiApiKey;
       return '<button type="button" class="map-layer-tile" data-base="' + base.type + '"' +
         (disabled ? ' disabled title="NGII API 키가 필요합니다"' : "") + ' aria-pressed="false">' +
-        '<span class="map-layer-thumb map-layer-thumb--' + base.type + '" aria-hidden="true" style="background-image:url(assets/map-previews/' + base.type + '.webp?v=3)">' +
+        '<span class="map-layer-thumb map-layer-thumb--' + base.type + '" aria-hidden="true" style="background-image:url(assets/map-previews/' + base.type + '.webp)">' +
         "</span>" +
         '<span class="map-layer-tile__label">' + base.label + "</span></button>";
     }
