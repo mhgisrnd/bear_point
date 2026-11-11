@@ -12,7 +12,7 @@
   }
   root.createGpsTrackUi = function ({ ol, map, project, insertBefore }) {
     const native = !!root.Capacitor?.isNativePlatform?.();
-    const plugin = native ? getNativeGpsPlugin() : root.BearGpsTracks.createWebRecorder(root);
+    const plugin = native ? getNativeGpsPlugin() : root.BearGpsTracks.createWebRecorder(root, undefined, {readOnly:true});
     const button = document.getElementById('btn-gps-tracking');
     const panel = document.createElement('section');
     panel.className='gps-track-panel'; panel.hidden=true; panel.setAttribute('aria-label','이동 기록');
@@ -20,9 +20,15 @@
       <div class="gps-track-content"><p class="gps-track-summary">기록을 시작하면 이동 경로가 지도에 표시됩니다.</p>
       <p class="gps-track-message" role="status" aria-live="polite"></p><p class="gps-track-sync-message" role="status" aria-live="polite" hidden></p>
       <p class="gps-track-access" hidden><a target="_blank" rel="noopener">관리자 로그인</a></p>
-      <form class="gps-history-search" role="search" aria-label="이동 기록 검색"><div class="gps-history-search-row"><input type="search" name="owner" placeholder="담당자 검색" aria-label="담당자 검색" autocomplete="off"><button type="submit">조회</button><button class="list-filter-button" type="button" data-filter aria-expanded="false" aria-controls="gps-history-filters">필터</button><button type="button" data-reset>초기화</button></div>
-      <div class="gps-history-filters" id="gps-history-filters" hidden><div class="gps-history-filter-row"><span class="gps-history-filter-label" id="gps-period-label">기간</span><div class="gps-history-chips" role="group" aria-labelledby="gps-period-label"><button type="button" data-period="all" aria-pressed="true">전체</button><button type="button" data-period="today" aria-pressed="false">오늘</button><button type="button" data-period="day" aria-pressed="false">일별</button><button type="button" data-period="month" aria-pressed="false">월별</button><button type="button" data-period="year" aria-pressed="false">년별</button></div></div><div class="gps-history-date-row" hidden><input type="date" name="day" aria-label="조회 날짜" hidden><input type="month" name="month" aria-label="조회 월" hidden><input type="number" name="year" min="1900" max="9999" step="1" inputmode="numeric" placeholder="연도" aria-label="조회 연도" hidden></div><div class="gps-history-filter-row"><span class="gps-history-filter-label" id="gps-team-label">팀</span><div class="gps-history-chips gps-history-team-chips" role="group" aria-labelledby="gps-team-label"><button type="button" data-team="" aria-pressed="true">전체</button></div></div></div></form>
-      <section class="gps-track-history" aria-label="기록 이력"><div class="gps-history-overview"><strong>기록 이력</strong><span data-history-count>0건</span></div><div class="gps-track-history-frame"><table class="gps-track-history-table" aria-label="이동 기록 이력"><colgroup><col style="width:25%"><col style="width:18%"><col style="width:22%"><col style="width:15%"><col style="width:20%"></colgroup><thead><tr><th scope="col">기록일시</th><th scope="col">담당자</th><th scope="col">팀명</th><th scope="col">시간</th><th scope="col">거리<span class="gps-history-unit">(km)</span></th></tr></thead><tbody class="gps-track-history-items"></tbody></table></div><button type="button" data-more hidden>더 보기</button></section></div>`;
+      <form class="gps-history-search" role="search" aria-label="이동 기록 검색"><div class="gps-history-search-row list-search-row"><input type="search" class="list-search-input" name="owner" placeholder="담당자 검색" aria-label="담당자 검색" autocomplete="off"><button type="button" class="list-owner-shortcut" data-mine aria-pressed="false" aria-label="내 담당자명으로 검색">MY</button><button class="list-filter-button" type="button" data-filter aria-expanded="false" aria-controls="gps-history-filters">필터</button><button type="button" class="list-search-reset" data-reset disabled>초기화</button></div>
+      <div class="gps-history-filters" id="gps-history-filters" hidden>
+        <div class="list-filter-selects">
+          <div class="obs-filter-field list-filter-team"><label for="gps-filter-team">팀</label><div class="obs-filter-control-row"><select id="gps-filter-team" name="team"><option value="">전체 팀</option></select></div></div>
+          <div class="obs-filter-field list-filter-period"><label for="gps-filter-period">등록 기간</label><div class="obs-filter-control-row"><select id="gps-filter-period" name="period"><option value="all" selected>전체 기간</option><option value="day">일별</option><option value="month">월별</option><option value="year">년별</option><option value="range">기간 지정</option></select></div></div>
+        </div>
+        <div class="obs-filter-field list-filter-dates" hidden><label>날짜</label><div class="obs-filter-control-row"><input type="date" name="day" aria-label="조회 날짜" hidden><input type="month" name="month" aria-label="조회 월" hidden><input type="number" name="year" min="1900" max="9999" step="1" inputmode="numeric" placeholder="연도" aria-label="조회 연도" hidden><div class="list-filter-range" data-range hidden><input type="date" name="rangeStart" aria-label="조회 시작일"><span aria-hidden="true">~</span><input type="date" name="rangeEnd" aria-label="조회 종료일"></div></div></div>
+      </div></form>
+      <section class="gps-track-history" aria-label="기록 이력"><div class="gps-history-overview" aria-live="polite"><span data-history-count>0건</span></div><div class="gps-track-history-frame"><table class="gps-track-history-table" aria-label="이동 기록 이력"><colgroup><col style="width:25%"><col style="width:18%"><col style="width:22%"><col style="width:15%"><col style="width:20%"></colgroup><thead><tr><th scope="col">기록일시</th><th scope="col">담당자</th><th scope="col">팀명</th><th scope="col">시간</th><th scope="col">거리<span class="gps-history-unit">(km)</span></th></tr></thead><tbody class="gps-track-history-items"></tbody></table></div><button type="button" data-more hidden>더 보기</button></section></div>`;
     document.body.append(panel);
     const start=panel.querySelector('[data-start]'),stop=panel.querySelector('[data-stop]');
     const message=panel.querySelector('.gps-track-message'),summary=panel.querySelector('.gps-track-summary');
@@ -34,6 +40,7 @@
     const filters=root.BearGpsTrackFilters;
     let appliedQuery=filters.buildQuery(),historyLoaded=false,period='all',teamId='';
     function paintFilterState(){
+      panel.querySelector('[data-reset]').disabled=busy||(!search.elements.owner.value.trim()&&!teamId&&period==='all');
       const amount=Number(!!appliedQuery.team_id)+Number(appliedQuery.from!=null);
       filterButton.classList.toggle('has-filters',amount>0);filterBadge.hidden=!amount;filterBadge.textContent=String(amount);
       filterButton.title=(filterPanel.hidden?'필터 펼치기':'필터 접기')+(amount?' · '+amount+'개 조건 적용 중':'');
@@ -42,29 +49,41 @@
       filterPanel.hidden=!open;filterButton.setAttribute('aria-expanded',String(open));paintFilterState();
       root.BearMobileDock?.setFiltersOpen(open);place();
     }
-    const teamChips=panel.querySelector('.gps-history-team-chips'),dateRow=panel.querySelector('.gps-history-date-row');
+    const teamSelect=search.elements.team,mineButton=panel.querySelector('[data-mine]'),dateRow=panel.querySelector('.list-filter-dates');
     const today=filters.today();search.elements.day.value=today;search.elements.month.value=today.slice(0,7);search.elements.year.value=today.slice(0,4);
+    search.elements.rangeStart.value=today;search.elements.rangeEnd.value=today;
     function periodFields(){
-      dateRow.hidden=!['day','month','year'].includes(period);
-      for(const name of ['day','month','year']){const inactive=period!==name;search.elements[name].hidden=inactive;search.elements[name].disabled=inactive;}
-      filterPanel.querySelectorAll('[data-period]').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.period===period)));
+      panel.querySelector('[data-range]').hidden=period!=='range';
+      dateRow.hidden=!['day','month','year','range'].includes(period);
+      for(const name of ['day','month','year','rangeStart','rangeEnd']){const inactive=period!==(name.startsWith('range')?'range':name);search.elements[name].hidden=inactive;search.elements[name].disabled=inactive;}
+      search.elements.period.value=period;
     }
     periodFields();
+    function myOwner(){
+      const profile=root.BearAppSettings?.getProfile?.();
+      if(profile?.owner)return String(profile.owner).trim();
+      try{return String(root.localStorage?.getItem('bearpoint.lastRegisteredOwner')||'').trim();}catch(_){return '';}
+    }
+    function paintMine(){
+      const owner=myOwner();mineButton.disabled=busy||!owner;
+      mineButton.setAttribute('aria-pressed',String(!!owner&&search.elements.owner.value.trim()===owner));
+      mineButton.title=owner?'내 담당자: '+owner:'담당자를 설정하거나 관측점을 등록해주세요.';
+    }
     function paintTeams(items){
       const teams=new Map((items||[]).map(team=>[team.id,team]));
       for(const team of root.BearAppSettings?.store?.snapshot()?.items||[])if(!teams.has(team.id))teams.set(team.id,team);
-      if(teamId&&!teams.has(teamId))teams.set(teamId,{id:teamId,name:[...teamChips.querySelectorAll('[data-team]')].find(button=>button.dataset.team===teamId)?.textContent||teamId});
-      teamChips.replaceChildren();
-      for(const team of [{id:'',name:'전체'},...teams.values()]){
-        const option=document.createElement('button');option.type='button';option.dataset.team=team.id;option.textContent=team.name;option.setAttribute('aria-pressed',String(team.id===teamId));option.disabled=busy;
-        if(/^#[0-9a-f]{6}$/i.test(team.color||'')){const dot=document.createElement('i');dot.style.background=team.color;dot.setAttribute('aria-hidden','true');option.prepend(dot);}
-        teamChips.append(option);
+      if(teamId&&!teams.has(teamId))teams.set(teamId,{id:teamId,name:teamSelect.selectedOptions[0]?.textContent||teamId});
+      teamSelect.replaceChildren();
+      for(const team of [{id:'',name:'전체 팀'},...teams.values()]){
+        const option=document.createElement('option');option.value=team.id;option.textContent=team.name;teamSelect.append(option);
       }
+      teamSelect.value=teamId;
     }
     const syncMessage=panel.querySelector('.gps-track-sync-message');
     const syncClient=root.BearGpsTrackSync.create({plugin});
     let syncing=false,lastSync=0;
     async function syncRecords(force=false) {
+      if(!native)return;
       if(document.hidden || root.navigator.onLine===false || syncing || (!force && Date.now()-lastSync<30000))return;
       syncing=true;lastSync=Date.now();
       try {
@@ -97,15 +116,11 @@
       button.classList.toggle('is-recording',!!active);
       button.textContent=active?'● 기록 중 · '+elapsed(active):'이동 기록';
       button.setAttribute('aria-expanded',String(!panel.hidden));
-      start.hidden=!!active;stop.hidden=!active;
-      start.disabled=busy;stop.disabled=busy;
-      if(!native&&!root.navigator.locks) {
-        start.disabled=true;
-        start.title='이 브라우저에서는 기록 조회를 사용할 수 있습니다. 새 기록은 앱 또는 HTTPS에서 시작해주세요.';
-      }
+      start.hidden=!native||!!active;stop.hidden=!native||!active;
+      start.disabled=!native||busy;stop.disabled=!native||busy;
       refreshButton.disabled=busy;summary.hidden=!active&&!displayed;
-      filterPanel.querySelectorAll('[data-period],[data-team]').forEach(button=>{button.disabled=busy;});
-      for(const name of ['day','month','year'])search.elements[name].disabled=busy||search.elements[name].hidden;
+      teamSelect.disabled=busy;search.elements.period.disabled=busy;paintMine();paintFilterState();
+      for(const name of ['day','month','year','rangeStart','rangeEnd'])search.elements[name].disabled=busy||search.elements[name].hidden;
       if(active) summary.textContent=`${active.owner} · ${active.team_name} / ${elapsed(active)} · ${km(active.distance)}${active.point_count ? '' : ' · GPS 수신 대기'}`;
       else if(displayed) summary.textContent=`${date(displayed.started_at)} · ${elapsed(displayed)} · ${km(displayed.distance)}${displayed.status==='interrupted'?' · 중단된 기록':''}`;
       else summary.textContent='기록을 시작하면 이동 경로가 지도에 표시됩니다.';
@@ -212,8 +227,7 @@
       if(polling||document.hidden||busy)return;polling=true;
       try{
         const result=await plugin.status();if(busy)return;const previous=active;active=result.active||null;
-        if(result.other_tab)message.textContent='다른 웹 창에서 이동 기록을 사용 중입니다.';
-        else if(result.error)message.textContent=result.error;
+        if(result.error)message.textContent=result.error;
         if(active && (initial || displayed?.id===active.id || !displayed)) {
           if(displayed?.id!==active.id||displayed?.point_count!==active.point_count)await show(active.id,false);
           if(result.location_warning)message.textContent=result.location_warning;
@@ -230,6 +244,7 @@
       finally{polling=false;}
     }
     start.addEventListener('click',()=>void action(async()=>{
+      if(!native)return;
       const identity=await root.BearAppSettings.requireIdentity();
       await root.BearAppSettings.store.load();
       const options=root.BearAppSettings.store.snapshot().tracking;
@@ -239,6 +254,7 @@
       await loadHistory();
     }));
     stop.addEventListener('click',()=>void action(async()=>{
+      if(!native)return;
       const activeId=active?.id;
       let result=await plugin.stop();
       if(!result.id&&activeId)result=await plugin.detail({id:activeId});
@@ -249,7 +265,7 @@
     }));
     function close(){layer.setVisible(false);setFilterPanelOpen(false);panel.hidden=true;button.setAttribute('aria-expanded','false');if(root.BearMobileDock?.isMobile()&&root.BearMobileDock.getActive()==='tracking')root.BearMobileDock.collapse();}
     function open(){panel.hidden=false;layer.setVisible(true);displayed=null;++viewVersion;source.clear();root.BearMobileDock?.select('tracking',{activate:false});setFilterPanelOpen(false);paint();void refreshAndSync().then(()=>poll());}
-    button.addEventListener('click',()=>{if(panel.hidden){open();(active?stop:start).focus();}else close();});
+    button.addEventListener('click',()=>{if(panel.hidden){open();(native?(active?stop:start):search.elements.owner).focus();}else close();});
     panel.querySelector('[data-close]').addEventListener('click',close);
     async function refreshAndSync() {
       await action(()=>loadHistory());
@@ -260,20 +276,26 @@
     refreshButton.addEventListener('click',()=>void refreshAndSync());
     filterButton.addEventListener('click',()=>setFilterPanelOpen(filterPanel.hidden));
     async function applyFilters(close=false){
-      const next=filters.buildQuery({owner:search.elements.owner.value,team_id:teamId,period,day:search.elements.day.value,month:search.elements.month.value,year:search.elements.year.value});
+      const next=filters.buildQuery({owner:search.elements.owner.value,team_id:teamId,period,day:search.elements.day.value,month:search.elements.month.value,year:search.elements.year.value,start:search.elements.rangeStart.value,end:search.elements.rangeEnd.value});
       appliedQuery=next;message.textContent='';paintFilterState();
       await loadHistory();if(close)setFilterPanelOpen(false);
     }
-    filterPanel.addEventListener('click',event=>{
-      const button=event.target.closest('[data-period],[data-team]');if(!button||busy)return;
-      if(button.hasAttribute('data-period')){period=button.dataset.period;periodFields();}
-      else{teamId=button.dataset.team;teamChips.querySelectorAll('[data-team]').forEach(item=>item.setAttribute('aria-pressed',String(item.dataset.team===teamId)));}
-      void action(()=>applyFilters());
+    function filterInput(){
+      paintMine();
+      void applyFilters().catch(error=>{message.textContent=error.message||String(error);});
+    }
+    teamSelect.addEventListener('change',()=>{teamId=teamSelect.value;filterInput();});
+    search.elements.period.addEventListener('change',()=>{period=search.elements.period.value;periodFields();filterInput();});
+    search.elements.owner.addEventListener('input',filterInput);
+    for(const name of ['day','month','year','rangeStart','rangeEnd'])search.elements[name].addEventListener('input',filterInput);
+    search.addEventListener('submit',event=>{event.preventDefault();filterInput();});
+    mineButton.addEventListener('click',()=>{
+      const owner=myOwner();if(!owner)return;
+      search.elements.owner.value=search.elements.owner.value.trim()===owner?'':owner;filterInput();
     });
-    for(const name of ['day','month','year'])search.elements[name].addEventListener('change',()=>void action(()=>applyFilters()));
-    search.addEventListener('submit',event=>{event.preventDefault();void action(()=>applyFilters(true));});
+    root.addEventListener('bearpoint:profile-changed',paintMine);
     panel.querySelector('[data-reset]').addEventListener('click',()=>void action(async()=>{
-      search.elements.owner.value='';teamId='';period='all';periodFields();
+      search.elements.owner.value='';teamId='';teamSelect.value='';period='all';periodFields();paintMine();
       appliedQuery=filters.buildQuery();message.textContent='';setFilterPanelOpen(false);await loadHistory();
     }));
     more.addEventListener('click',()=>void action(()=>loadHistory(false)));
@@ -282,6 +304,7 @@
     document.addEventListener('visibilitychange',()=>{if(!document.hidden)void poll();});
     const timer=setInterval(()=>void poll(),3000);root.addEventListener('pagehide',()=>clearInterval(timer),{once:true});
     async function updateInterval(interval_seconds) {
+      if(!native)return;
       if(busy)throw new Error('이동 기록 작업을 마친 후 다시 저장해주세요.');
       busy=true;paint();
       try {

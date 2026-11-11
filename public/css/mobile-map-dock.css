@@ -59,7 +59,7 @@ body.bp-map-dock #mobile-map-dock .bear-code-search { flex: 0 0 auto; }
 body.bp-map-dock #mobile-map-dock .gps-track-content { min-height: 0; overflow: hidden; padding: 4px 0 0; }
 body.bp-map-dock #mobile-map-dock .gps-track-content > :not(.gps-track-history) { margin-left: 10px; margin-right: 10px; }
 body.bp-map-dock #mobile-map-dock .gps-track-history { margin-top: 4px; }
-body.bp-map-dock #mobile-map-dock .gps-history-overview { padding: 5px 10px; background: #f4f7fb; }
+body.bp-map-dock #mobile-map-dock .gps-history-overview { min-height: 36px; padding: 3px 10px; background: #f4f7fb; }
 body.bp-map-dock #mobile-map-dock .gps-track-history-frame { border-top: 0; }
 body.bp-map-dock #mobile-map-dock .obs-table th,
 body.bp-map-dock #mobile-map-dock .gps-track-history-table th { padding: 8px 6px; font-size: 11px; font-weight: 700; color: #536880; background: #edf2f8; }

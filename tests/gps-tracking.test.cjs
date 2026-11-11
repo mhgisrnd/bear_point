@@ -24,6 +24,16 @@ const options={owner:'Kim',team_id:'gurye',team_name:'구례팀',team_color:'#16
 const pos=(time,lat=35,lng=127,accuracy=5)=>({timestamp:time,coords:{latitude:lat,longitude:lng,accuracy}});
 const settle=()=>new Promise(resolve=>setImmediate(resolve));
 
+test('read-only web history never acquires a recording lock or changes existing tracks',async()=>{
+  const row={id:'existing',status:'recording',point_count:1,started_at:100,points:[{lat:35,lng:127}]};
+  const win={navigator:{locks:{request(){assert.fail('read-only pages must not acquire the recorder lock');}}},addEventListener(){}};
+  const recorder=createWebRecorder(win,{list:async()=>[row],detail:async()=>row,put(){assert.fail('history reads must not rewrite records');}},{readOnly:true});
+  assert.equal((await recorder.status()).other_tab,false);
+  assert.equal((await recorder.list()).total,1);
+  assert.equal((await recorder.detail({id:'existing'})).id,'existing');
+  await assert.rejects(recorder.start({}));
+});
+
 test('web history remains readable when recording locks are unavailable',async()=>{
   const row={id:'saved',status:'saved',point_count:1,started_at:100,points:[{lat:35,lng:127}]};
   const recorder=createWebRecorder({navigator:{},addEventListener(){}},{

@@ -3,6 +3,16 @@ const assert=require('node:assert/strict');
 const {buildQuery,filter,today,teams,sortHistory}=require('../public/js/tracking/gps-track-filters');
 const {createWebRecorder}=require('../public/js/tracking/gps-track-store');
 
+test('custom date ranges use inclusive calendar dates and exclusive following midnight',()=>{
+  const query=buildQuery({period:'range',start:'2026-11-10',end:'2026-11-11'});
+  assert.equal(query.from,Date.parse('2026-11-09T15:00:00Z'));
+  assert.equal(query.to,Date.parse('2026-11-11T15:00:00Z'));
+  const rows=[{id:'start',started_at:query.from},{id:'last',started_at:query.to-1},{id:'after',started_at:query.to}];
+  assert.deepEqual(filter(rows,query).map(row=>row.id),['start','last']);
+  assert.equal(buildQuery({period:'range',start:'2026-11-11',end:'2026-11-11'}).to-buildQuery({period:'range',start:'2026-11-11',end:'2026-11-11'}).from,86400000);
+  for(const dates of [{start:'',end:'2026-11-11'},{start:'2026-11-12',end:'2026-11-11'},{start:'2026-02-30',end:'2026-03-01'}])assert.throws(()=>buildQuery({period:'range',...dates}));
+});
+
 test('day/month/year ranges use Korean midnight and exclusive upper boundaries',()=>{
   const rows=[
     {id:'before',started_at:Date.parse('2026-11-01T14:59:59.999Z')},

@@ -15,6 +15,7 @@
   <link rel="stylesheet" href="css/app-settings.css" />
   <link rel="stylesheet" href="css/gps-tracking.css" />
   <link rel="stylesheet" href="css/mobile-map-dock.css" />
+  <link rel="stylesheet" href="css/list-search.css" />
 </head>
 <body>
 
@@ -32,33 +33,25 @@
       </div>
     </div>
 
-    <div class="obs-search-bar">
-      <div class="obs-search-picker">
-        <input type="hidden" id="search-field" value="obs" />
-        <button class="obs-search-select" id="btn-obs-search-field" type="button" aria-label="검색 항목: 관측점" aria-expanded="false" aria-controls="obs-search-options">관측점</button>
-        <div class="obs-search-options" id="obs-search-options" role="group" aria-label="검색 항목" hidden>
-          <button type="button" data-search-field="obs" aria-pressed="true">관측점</button>
-          <button type="button" data-search-field="bear" aria-pressed="false">코드</button>
-        </div>
-      </div>
-      <input class="obs-search-input" id="search-query" type="text" placeholder="검색..." aria-label="관측점 검색어" autocomplete="off" />
+    <div class="obs-search-bar list-search-row">
+      <input class="obs-search-input list-search-input" id="search-query" type="search" placeholder="관측점명·코드·담당자 검색" aria-label="관측점명, 개체 코드 또는 담당자 검색" autocomplete="off" spellcheck="false" enterkeyhint="search" />
+      <button class="list-owner-shortcut" id="btn-obs-filter-mine" type="button" title="이 기기에서 마지막으로 등록할 때 입력한 담당자" aria-pressed="false" aria-label="내 담당자명으로 검색">MY</button>
       <button class="list-filter-button" id="btn-obs-filter" type="button" aria-expanded="false" aria-controls="obs-filter-panel">필터<span class="list-filter-count" id="obs-filter-count" hidden></span></button>
-      <button class="obs-search-clear" id="btn-search-clear" type="button">초기화</button>
+      <button class="obs-search-clear list-search-reset" id="btn-search-clear" type="button" disabled>초기화</button>
     </div>
 
     <section class="obs-filter-panel" id="obs-filter-panel" aria-label="관측점 상세 필터" hidden>
       <div class="obs-filter-body">
-        <div class="obs-filter-field">
-          <label for="obs-filter-owner">담당자</label>
-          <div class="obs-filter-control-row"><select id="obs-filter-owner"><option value="">전체 담당자</option></select><button id="btn-obs-filter-mine" type="button" title="이 기기에서 마지막으로 등록할 때 입력한 담당자">내 담당자</button></div>
+        <div class="list-filter-selects">
+          <div class="obs-filter-field list-filter-team"><label for="obs-filter-team">팀</label><div class="obs-filter-control-row"><select id="obs-filter-team"><option value="">전체 팀</option></select></div></div>
+          <div class="obs-filter-field list-filter-period"><label for="obs-filter-period">등록 기간</label><div class="obs-filter-control-row"><select id="obs-filter-period"><option value="all" selected>전체 기간</option><option value="day">일별</option><option value="month">월별</option><option value="year">년별</option><option value="range">기간 지정</option></select></div></div>
         </div>
-        <div class="obs-filter-field">
-          <label for="obs-filter-period">등록 기간</label>
-          <div class="obs-filter-control-row">
-            <select id="obs-filter-period"><option value="all">전체 기간</option><option value="today">오늘</option><option value="day">일별</option><option value="month">월별</option><option value="year">년별</option></select>
+        <div class="obs-filter-field list-filter-dates" id="obs-filter-dates" hidden>
+          <label>날짜</label><div class="obs-filter-control-row">
             <input id="obs-filter-day" type="date" aria-label="등록일 선택" hidden />
             <input id="obs-filter-month" type="month" aria-label="등록월 선택" hidden />
             <input id="obs-filter-year" type="number" inputmode="numeric" min="1900" max="9999" step="1" aria-label="등록년도 입력" placeholder="예: 2026" hidden />
+            <div class="list-filter-range" id="obs-filter-range" hidden><input id="obs-filter-start" type="date" aria-label="조회 시작일" /><span aria-hidden="true">~</span><input id="obs-filter-end" type="date" aria-label="조회 종료일" /></div>
           </div>
           <p class="obs-filter-error" id="obs-filter-error" role="status" hidden></p>
         </div>
@@ -268,22 +261,23 @@
 
       <div class="panel-body" id="panel-body">
         <div class="tracking-source-heading"><span>개체 추적</span><button class="tracking-refresh list-refresh-button" id="btn-bears-refresh" type="button" title="공유 자료 새로고침" aria-label="개체 추적위치 새로고침">↻</button></div>
-        <form class="bear-code-search gps-history-search-row" id="bear-code-search-form" role="search" aria-label="개체 추적 검색">
-          <input id="bear-code-query" type="search" placeholder="개체 코드 검색" aria-label="검색할 개체 코드" autocomplete="off" spellcheck="false" enterkeyhint="search" />
-          <button type="submit" class="bear-code-search__submit">조회</button>
+        <form class="bear-code-search gps-history-search-row list-search-row" id="bear-code-search-form" role="search" aria-label="개체 추적 검색">
+          <input class="list-search-input" id="bear-code-query" type="search" placeholder="개체 코드·담당자 검색" aria-label="개체 코드 또는 담당자 검색" autocomplete="off" spellcheck="false" enterkeyhint="search" />
+          <button type="button" class="list-owner-shortcut" id="btn-bear-filter-mine" aria-pressed="false" disabled aria-label="내 담당자명으로 검색">MY</button>
           <button type="button" class="list-filter-button" id="btn-bear-filter" aria-expanded="false" aria-controls="bear-filter-panel">필터<span class="list-filter-count" id="bear-filter-count" hidden></span></button>
-          <button type="button" id="btn-bear-code-clear" disabled>초기화</button>
+          <button type="button" class="list-search-reset" id="btn-bear-code-clear" disabled>초기화</button>
         </form>
         <section class="gps-history-filters bear-estimate-filters" id="bear-filter-panel" aria-label="개체 추적 상세 필터" hidden>
-          <div class="obs-filter-field"><label for="bear-filter-owner">담당자</label><div class="obs-filter-control-row"><select id="bear-filter-owner"><option value="">전체 담당자</option></select></div></div>
-          <div class="obs-filter-field"><label for="bear-filter-team">팀</label><div class="obs-filter-control-row"><select id="bear-filter-team"><option value="">전체 팀</option></select></div></div>
-          <div class="obs-filter-field">
-            <label for="bear-filter-period">등록 기간</label>
-            <div class="obs-filter-control-row">
-              <select id="bear-filter-period"><option value="all">전체 기간</option><option value="today">오늘</option><option value="day">일별</option><option value="month">월별</option><option value="year">년별</option></select>
+          <div class="list-filter-selects">
+            <div class="obs-filter-field list-filter-team"><label for="bear-filter-team">팀</label><div class="obs-filter-control-row"><select id="bear-filter-team"><option value="">전체 팀</option></select></div></div>
+            <div class="obs-filter-field list-filter-period"><label for="bear-filter-period">등록 기간</label><div class="obs-filter-control-row"><select id="bear-filter-period"><option value="all" selected>전체 기간</option><option value="day">일별</option><option value="month">월별</option><option value="year">년별</option><option value="range">기간 지정</option></select></div></div>
+          </div>
+          <div class="obs-filter-field list-filter-dates" id="bear-filter-dates" hidden>
+            <label>날짜</label><div class="obs-filter-control-row">
               <input id="bear-filter-day" type="date" aria-label="등록일 선택" hidden />
               <input id="bear-filter-month" type="month" aria-label="등록월 선택" hidden />
               <input id="bear-filter-year" type="number" inputmode="numeric" min="1900" max="9999" step="1" aria-label="등록년도 입력" placeholder="예: 2026" hidden />
+            <div class="list-filter-range" id="bear-filter-range" hidden><input id="bear-filter-start" type="date" aria-label="조회 시작일" /><span aria-hidden="true">~</span><input id="bear-filter-end" type="date" aria-label="조회 종료일" /></div>
             </div>
             <p class="obs-filter-error" id="bear-filter-error" role="status" hidden></p>
           </div>
