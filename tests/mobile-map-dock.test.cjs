@@ -55,6 +55,23 @@ test('mobile uses one bounded dock with three menus and preserves the existing l
   dock.querySelector('[data-menu="observations"]').click();assert.equal(dock.classList.contains('is-expanded'),false);
   dock.querySelector('[data-menu="observations"]').click();assert.equal(dock.classList.contains('is-expanded'),true);
 });
+test('detail selection reduces the list and upward dragging restores it without resetting search',()=>{
+  const env=environment(),dock=env.document.getElementById('mobile-map-dock');
+  env.api.select('bears');
+  const fold=dock.querySelector('.mobile-dock-fold');
+  const input=env.document.getElementById('bear-code-search-form').querySelector('input');
+  input.setAttribute('value','KM-118');
+  env.api.prepareDetail();
+  assert.equal(dock.classList.contains('is-full'),false);
+  assert.equal(dock.classList.contains('is-detail'),true);
+  assert.equal(input.getAttribute('value'),'KM-118');
+  env.dispatch(fold,'pointerdown',{clientY:500});
+  env.dispatch(fold,'pointermove',{clientY:350});
+  env.dispatch(fold,'pointerup',{clientY:350});
+  assert.equal(dock.classList.contains('is-detail'),false);
+  assert.equal(dock.classList.contains('is-full'),true);
+});
+
 test('recording indicator persists across menu changes; folding the dock does not stop GPS',()=>{
   const env=environment(),dock=env.document.getElementById('mobile-map-dock');
   env.api.select('tracking');assert.equal(env.calls.gpsOpen,1);assert.equal(env.track.hidden,false);
@@ -93,7 +110,9 @@ test('tablet menus share one sidebar and its existing collapse control hides obs
   assert.ok(dock.querySelector('.mobile-dock-actions .obs-header-actions'));
   dock.querySelector('[data-menu="observations"]').click();assert.equal(env.calls.sidebarCollapsed,false);
   env.api.collapse();env.trigger(doc.body);assert.equal(env.calls.mapVisible,false);assert.equal(env.calls.sidebarCollapsed,true);
+  assert.equal(dock.hasAttribute('inert'),true);
   env.api.select('tracking');assert.equal(env.calls.sidebarCollapsed,false);assert.equal(env.calls.mapVisible,false);
+  assert.equal(dock.hasAttribute('inert'),false);
   assert.ok(dock.querySelector('.mobile-dock-actions .gps-track-header-actions'));
   assert.equal(doc.getElementById('obs-sheet').classList.contains('mobile-dock-inactive'),true);
   env.api.select('bears');assert.equal(doc.getElementById('panel').classList.contains('mobile-dock-inactive'),false);

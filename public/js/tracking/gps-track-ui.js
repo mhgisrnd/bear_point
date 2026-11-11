@@ -143,7 +143,10 @@
         point.setStyle(new ol.style.Style({image:new ol.style.Circle({radius:6,fill:new ol.style.Fill({color:i?color:'#ffffff'}),stroke:new ol.style.Stroke({color:i?'#ffffff':color,width:2.5})}),
           text:new ol.style.Text({text:points.length===1?'기록 위치':i?(track.status==='recording'?'현재':'종료'):'시작',offsetY:i?17:-17,font:'700 11px sans-serif',fill:new ol.style.Fill({color:'#243c56'}),stroke:new ol.style.Stroke({color:'#ffffff',width:3})})}));source.addFeature(point);
       });
-      if(fit&&points.length)map.getView().fit(source.getExtent(),{padding:[70,70,100,70],maxZoom:16,duration:450});
+      if(fit&&points.length){
+        root.BearMobileDock?.prepareDetail();
+        map.getView().fit(source.getExtent(),{padding:root.BearMobileDock?.getMapPadding()||[70,70,100,70],maxZoom:16,duration:450});
+      }
       paint();
     }
     async function show(id,fit,sharedOnly=false) {

@@ -40,6 +40,8 @@
     function paint(){
       if(mobile===null)return;
       if(!mobile)expanded=true;
+      const sidebarHidden=!mobile&&document.body.classList.contains('bp-sidebar-collapsed');
+      if(sidebarHidden)dock.setAttribute('inert','');else dock.removeAttribute('inert');
       dock.dataset.menu=active;dock.classList.toggle('is-expanded',expanded);content.hidden=!expanded;
       dock.classList.toggle('is-full',expanded&&full);
       dock.classList.toggle('is-filtering',expanded&&active==='tracking'&&filtering);
@@ -78,6 +80,7 @@
       if(active!==name||!expanded)full=false;
       if(active!==name)filtering=false;
       active=name;expanded=open;
+      dock.classList.remove('is-detail');
       if(!mobile)setSidebarCollapsed?.(false);
       onBeforeOpen?.();
       if(name!=='tracking')gps.close();
@@ -113,7 +116,7 @@
       const delta=drag.y-event.clientY;
       if(!drag.moved&&Math.abs(delta)<8)return;
       if(!drag.initial&&delta<0)return;
-      if(!drag.moved){drag.moved=true;if(!expanded)select(active);dock.classList.add('is-dragging');}
+      if(!drag.moved){drag.moved=true;if(delta>0){dock.classList.remove('is-detail');onBeforeOpen?.();}if(!expanded)select(active);dock.classList.add('is-dragging');}
       drag.delta=delta;
       const max=Math.max(60,root.innerHeight-140);
       const height=Math.max(0,Math.min(max,drag.height+delta));
@@ -178,6 +181,16 @@
     const sidebarObserver=new MutationObserver(()=>{if(!mobile&&!restoring)paint();});sidebarObserver.observe(document.body,{attributes:true,attributeFilter:['class']});
     tablet.addEventListener('change',layout);root.addEventListener('resize',()=>{finishDrag(null,true);measure();});
     root.BearMobileDock={select,collapse,isMobile:()=>!!mobile,isDocked:()=>true,getActive:()=>active,handleBack:collapse,
+      prepareDetail(){
+        full=false;filtering=false;
+        if(mobile)expanded=true;
+        dock.classList.add('is-detail');paint();measure();
+      },
+      getMapPadding(){
+        const bounds=dock.getBoundingClientRect();
+        if(!mobile)return document.body.classList.contains('bp-sidebar-collapsed')?[70,70,30,30]:[70,70,30,bounds.right+18];
+        return [70,70,Math.max(30,root.innerHeight-bounds.top+18),18];
+      },
       showObservationsAfterSave(){
         if(registrationWasOpen||(registration&&!registration.classList.contains('hidden')))showObservationsOnSave=true;
         else select('observations',{activate:false});

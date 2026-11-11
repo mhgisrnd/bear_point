@@ -265,13 +265,14 @@
       toast.style.bottom = "calc(var(--safe-bottom, 0px) + 72px)";
       toast.style.transform = "translate(-50%, 14px)";
       toast.style.maxWidth = "calc(100vw - 28px)";
-      toast.style.padding = "10px 14px";
-      toast.style.borderRadius = "999px";
+      toast.style.width = "max-content";
+      toast.style.padding = "9px 12px";
+      toast.style.borderRadius = "18px";
       toast.style.background = "rgba(30, 41, 59, 0.94)";
       toast.style.color = "#f8fafc";
-      toast.style.fontSize = "14px";
+      toast.style.fontSize = "13px";
       toast.style.fontWeight = "700";
-      toast.style.lineHeight = "1.2";
+      toast.style.lineHeight = "1.45";
       toast.style.display = "inline-flex";
       toast.style.alignItems = "center";
       toast.style.gap = "8px";
@@ -298,7 +299,8 @@
       textEl.style.display = "block";
       textEl.style.minWidth = "0";
       textEl.style.whiteSpace = "normal";
-      textEl.style.overflowWrap = "anywhere";
+      textEl.style.wordBreak = "keep-all";
+      textEl.style.overflowWrap = "break-word";
       textEl.style.overflow = "hidden";
       textEl.style.textOverflow = "ellipsis";
 
@@ -314,6 +316,7 @@
       // 측정 안내는 체크 대신 해당 도구 아이콘을 흰색으로 보여 준다.
       const measureIcon = /^거리(측정| )/.test(text) ? "css/svg/control-ruler.svg" : /^면적(측정| )/.test(text) ? "css/svg/control-area.svg" : "";
       backExitToastIconEl.src = measureIcon || "css/image/check.png";
+      backExitToastIconEl.hidden = !measureIcon;
       backExitToastIconEl.style.filter = measureIcon ? "brightness(0) invert(1)" : "";
     }
     if (backExitToastTextEl) {
@@ -323,6 +326,7 @@
     }
     backExitToastEl.style.opacity = "1";
     backExitToastEl.style.transform = "translate(-50%, 0)";
+    triggerHapticImpact("LIGHT");
 
     if (backExitToastHideTimer) {
       window.clearTimeout(backExitToastHideTimer);
@@ -3328,6 +3332,15 @@
     if (!Array.isArray(latlng) || latlng.length < 2) return;
     stopFollowing();
     const target = mapCoordFromWgs84(latlng[0], latlng[1]);
+    const dock = window.BearMobileDock;
+    if (dock?.isDocked()) {
+      dock.prepareDetail();
+      view.fit([target[0], target[1], target[0], target[1]], {
+        padding: dock.getMapPadding(), maxZoom: typeof zoom === "number" ? zoom : (view.getZoom() || 11),
+        duration: 700, callback: onComplete
+      });
+      return;
+    }
     const animation = {
       center: target,
       zoom: typeof zoom === "number" ? zoom : (view.getZoom() || 11),
@@ -3641,7 +3654,6 @@
 
       lastBackPressAt = now;
       showBackExitToast("한번 더 뒤로가면 앱이 꺼져요.");
-      triggerHapticImpact("LIGHT");
     });
 
     if (listener && typeof listener.remove === "function") {
@@ -4366,6 +4378,7 @@
     const popupHtml = feature && feature.get("popupHtml");
     const coordinate = feature && feature.getGeometry() ? feature.getGeometry().getCoordinates() : null;
     if (!popupHtml || !coordinate) return;
+    window.BearMobileDock?.prepareDetail();
 
     observationPopupEl._observationData = feature ? (feature.get("observationData") || feature.get("obsData") || null) : null;
     focusedObservationId = observationPopupEl._observationData?.id != null ? String(observationPopupEl._observationData.id) : null;
@@ -7507,7 +7520,7 @@
   updateRegistrationPreview();
   if (obsListModule) obsListModule.initialize();
   window.createMobileMapDock({ observations: obsListModule, gps: gpsTrackUi, expandBears: expandBearEstimatePanel, setSidebarCollapsed: setTabletSidebarCollapsed,
-    onBeforeOpen: function () { closeObservationPopup(); controlsManager?.deactivateMeasure?.('menu'); } });
+    onBeforeOpen: function () { view.cancelAnimations(); closeObservationPopup(); controlsManager?.deactivateMeasure?.('menu'); } });
   ensureStartupOverlay();
   if (startupOverlayRetryBtn && startupOverlayRetryBtn.dataset.bound !== "1") {
     startupOverlayRetryBtn.dataset.bound = "1";

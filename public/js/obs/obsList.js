@@ -516,7 +516,19 @@ window.createObsListModule = function createObsListModule({
     }
   }
 
+  let observationRefreshCount = 0;
   async function refreshObservationData(options = {}) {
+    observationRefreshCount += 1;
+    obsSheetEl?.setAttribute('aria-busy', 'true');
+    try {
+      return await performObservationRefresh(options);
+    } finally {
+      observationRefreshCount -= 1;
+      obsSheetEl?.setAttribute('aria-busy', String(observationRefreshCount > 0));
+    }
+  }
+
+  async function performObservationRefresh(options = {}) {
     await loadObservationSamples();
     if (!options.background) selectedObsIds.clear();
     else {
@@ -1694,7 +1706,7 @@ window.createObsListModule = function createObsListModule({
         analysisCloseSilently = false;
         return;
       }
-      statusEl.textContent = "ℹ️ 위치분석이 취소되었습니다.";
+      statusEl.textContent = "위치 분석을 취소했습니다.";
       return;
     }
     const analysisResult = optionInput.analysisResult;
@@ -1798,9 +1810,6 @@ window.createObsListModule = function createObsListModule({
 
     if (isList) {
       setPeekMode(false);
-      if (statusEl) {
-        statusEl.textContent = "📋 관측점 목록을 불러오는 중...";
-      }
       void refreshObservationData();
       return;
     }
