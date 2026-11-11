@@ -44,11 +44,14 @@
   #analysis-dialog-desc .analysis-help strong { color: #334d67; }
   #analysis-dialog-panel .analysis-input-label { color: #425970 !important; font-size: 12px !important; gap: 4px !important; }
   #analysis-dialog-panel .analysis-input { height: 40px !important; border-color: #cbd7e4 !important; font-size: 16px !important; background: #f8fafc !important; }
-  #analysis-dialog-body { align-items: start !important; }
-  #analysis-dialog-panel .analysis-declination-control { flex-direction: column; align-items: stretch !important; gap: 8px !important; }
-  #analysis-dialog-panel .analysis-declination-control > div:first-child { flex: 0 0 auto !important; }
-  #analysis-dialog-panel .analysis-declination-steps { flex-direction: row !important; flex: 0 0 44px !important; gap: 8px !important; }
-  #analysis-dialog-panel .analysis-declination-step { flex: 1 1 0; width: auto !important; min-width: 44px; color: #425970 !important; border-color: #cbd7e4 !important; background: #f1f5f9 !important; height: 44px !important; min-height: 44px !important; padding: 0 !important; touch-action: manipulation; }
+  body.analysis-mobile-active #analysis-dialog-body { grid-template-columns: minmax(76px, 1fr) minmax(0, 2.25fr) !important; align-items: end !important; gap: 6px !important; }
+  #analysis-dialog-panel .analysis-input { height: 44px !important; padding-right: 6px !important; }
+  #analysis-dialog-panel .analysis-declination-control { flex-direction: row; align-items: center !important; gap: 6px !important; }
+  #analysis-dialog-panel .analysis-declination-control > div:first-child { flex: 1 1 0 !important; }
+  #analysis-dialog-panel .analysis-declination-control .analysis-input { padding-left: 34px !important; }
+  #analysis-dialog-panel .analysis-declination-control > div:first-child > button { width: 26px !important; height: 34px !important; left: 4px !important; }
+  #analysis-dialog-panel .analysis-declination-steps { flex-direction: row !important; flex: 0 0 94px !important; gap: 6px !important; }
+  #analysis-dialog-panel .analysis-declination-step { flex: 0 0 44px; width: 44px !important; min-width: 44px; color: #425970 !important; border-color: #cbd7e4 !important; background: #f1f5f9 !important; height: 44px !important; min-height: 44px !important; padding: 0 !important; touch-action: manipulation; }
   #analysis-dialog-panel .analysis-declination-step:active { background: #dce8fa !important; border-color: #92b3e5 !important; }
   #analysis-dialog-panel .analysis-declination-step svg { display: block; flex: 0 0 12px; width: 12px; height: 12px; pointer-events: none; }
   body.analysis-mobile-active #analysis-dialog-actions { margin-top: 4px !important; }

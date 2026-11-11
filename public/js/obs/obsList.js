@@ -1348,7 +1348,6 @@ window.createObsListModule = function createObsListModule({
       button.style.minHeight = "0";
       button.style.lineHeight = "1";
       button.style.overflow = "hidden";
-      button.addEventListener('pointerdown', event => { if (event.isPrimary !== false && event.button === 0) event.preventDefault(); });
       button.setAttribute("aria-label", ariaLabel);
       button.style.width = "34px";
       button.style.height = "27px";
@@ -1476,7 +1475,10 @@ window.createObsListModule = function createObsListModule({
     if (!dialog || !dialog.resolve) return;
 
     const resolver = dialog.resolve;
+    if (!value) window.__bpTriggerHapticImpact?.("LIGHT");
     dialog.resolve = null;
+    dialog.stopRepeating?.();
+    dialog.stopRepeating = null;
     dialog.overlay.style.display = "none";
     window.BearAnalysisSheet?.closeStage('analysis');
     if (dialog.panel.contains(document.activeElement)) document.activeElement?.blur?.();
@@ -1588,7 +1590,7 @@ window.createObsListModule = function createObsListModule({
     dialog.distanceInput.value = String(defaults.distanceLimitM ?? 3000);//반경 기본값 설정
     dialog.declinationInput.value = String(defaults.declinationDeg ?? 0);//편각 기본값 설정
     dialog.errorEl.textContent = "";
-    dialog.body.style.setProperty("grid-template-columns", "repeat(2, minmax(0, 1fr))", "important");
+    dialog.body.style.removeProperty("grid-template-columns");
     dialog.overlay.style.display = "flex";
     const help = dialog.desc.querySelector('details');
     if (help) help.open = false;
@@ -1627,8 +1629,10 @@ window.createObsListModule = function createObsListModule({
         dialog.declinationInput.dispatchEvent(new Event("input", { bubbles: true }));
       }
 
-      dialog.declinationUpBtn.onclick = function () { adjustDeclination(1); };
-      dialog.declinationDownBtn.onclick = function () { adjustDeclination(-1); };
+      dialog.stopRepeating?.();
+      const stopUp = window.BearPressRepeat.bind(dialog.declinationUpBtn, () => adjustDeclination(1));
+      const stopDown = window.BearPressRepeat.bind(dialog.declinationDownBtn, () => adjustDeclination(-1));
+      dialog.stopRepeating = () => { stopUp(); stopDown(); };
       dialog.declinationSignBtn.onclick = function () {
         const current = parseDeclinationValue(dialog.declinationInput.value);
         dialog.declinationInput.value = String(current.ok ? -current.value : 0);
@@ -1643,6 +1647,7 @@ window.createObsListModule = function createObsListModule({
         const distanceValidation = parseDistanceValue(dialog.distanceInput.value);
         if (!distanceValidation.ok) {
           dialog.errorEl.textContent = distanceValidation.message;
+          triggerLightErrorVibration();
           dialog.distanceInput.focus();
           return;
         }
@@ -1650,6 +1655,7 @@ window.createObsListModule = function createObsListModule({
         const declinationValidation = parseDeclinationValue(dialog.declinationInput.value);
         if (!declinationValidation.ok) {
           dialog.errorEl.textContent = declinationValidation.message;
+          triggerLightErrorVibration();
           dialog.declinationInput.focus();
           return;
         }
@@ -1717,6 +1723,7 @@ window.createObsListModule = function createObsListModule({
     if (!analysisModule || typeof analysisModule.analyzePosition !== "function") {
       statusEl.textContent = "⚠️ 위치분석 모듈을 찾을 수 없습니다.";
       highlightStatusOnce();
+      triggerLightErrorVibration();
       return;
     }
 
@@ -1724,6 +1731,7 @@ window.createObsListModule = function createObsListModule({
     if (selectedItems.length < 1) {
       statusEl.textContent = "⚠️ 위치분석은 관측점 1개 이상을 선택해야 합니다.";
       highlightStatusOnce();
+      triggerLightErrorVibration();
       return;
     }
 
@@ -1731,6 +1739,7 @@ window.createObsListModule = function createObsListModule({
     if (bearCodes.size !== 1 || !Array.from(bearCodes)[0]) {
       statusEl.textContent = "⚠️ 동일한 코드의 관측점을 선택해주세요.";
       highlightStatusOnce();
+      triggerLightErrorVibration();
       return;
     }
 

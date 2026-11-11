@@ -841,6 +841,7 @@ window.createObsRegisterModule = function createObsRegisterModule({
         });
       }
 
+      window.__bpTriggerHapticImpact?.("LIGHT");
       statusEl.textContent = "관측점 로컬 저장 완료 · 공유 전송 중";
       hide(true);
       void window.BearObservationSync.upload(observation.id).then(function (result) {
@@ -912,6 +913,7 @@ window.createObsRegisterModule = function createObsRegisterModule({
         });
       }
 
+      window.__bpTriggerHapticImpact?.("LIGHT");
       statusEl.textContent = "관측점 로컬 수정 완료 · 공유 전송 중";
       hide(true);
       void window.BearObservationSync.upload(editedObservation.id).then(function (result) {
@@ -1611,6 +1613,7 @@ window.createObsRegisterModule = function createObsRegisterModule({
 
   // 등록 팝업을 닫고 onClose 콜백을 실행한다.
   function close() {
+    if (isRegisterPopupVisible()) window.__bpTriggerHapticImpact?.("LIGHT");
     var shouldSuppressClose = suppressCloseCallback;
     var returnToSdr = sdrReturn;
     hide(true);

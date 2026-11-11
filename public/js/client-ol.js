@@ -1163,6 +1163,7 @@
 
       function closeWith(confirmed) {
         if (isClosed) return;
+        if (!confirmed) triggerHapticImpact("LIGHT");
         isClosed = true;
         unregisterOverlayBackClose();
         overlay.close();
@@ -3540,10 +3541,15 @@
   //   WebView 보안 정책상 사용자가 한 번 이상 터치한 후에만 작동한다.
   //   앱 시작 직후 하드웨어 뒤로가기처럼 터치 없이 호출되면 무시될 수 있다.
   function triggerHapticImpact(style) {
+    const now = Date.now();
+    if (triggerHapticImpact.lastAt != null && now - triggerHapticImpact.lastAt < 150) return;
+    triggerHapticImpact.lastAt = now;
     const haptics = getCapacitorHapticsPlugin();
     if (haptics && typeof haptics.impact === "function") {
-      haptics.impact({ style: style || "LIGHT" }).catch(function () {});
-      return;
+      try {
+        Promise.resolve(haptics.impact({ style: style || "LIGHT" })).catch(function () {});
+        return;
+      } catch (_) { /* Use the browser fallback when the native bridge is unavailable. */ }
     }
     // Haptics 플러그인을 쓸 수 없는 환경(브라우저 등)에서는 navigator.vibrate 로 대체한다.
     if (typeof window.navigator !== "undefined" && window.navigator && typeof window.navigator.vibrate === "function") {
@@ -5990,12 +5996,18 @@
     if (analysisActionBarEl.contains(document.activeElement)) document.activeElement?.blur?.();
   }
 
+  function cancelAnalysisEstimate() {
+    triggerHapticImpact("LIGHT");
+    clearAnalysisEstimateVisuals();
+    setDefaultStatusWithIcon();
+  }
+
   // 추정 좌표에 맞춰 액션바 오버레이를 표시한다.
   function showAnalysisActionBar(anchorCoord) {
     if (!analysisActionBarEl || !analysisActionOverlay || !Array.isArray(anchorCoord)) return;
     analysisActionBarEl.style.display = "flex";
     document.body.classList.add("analysis-action-active");
-    window.BearAnalysisSheet?.setStage('save', function () { clearAnalysisEstimateVisuals(); setDefaultStatusWithIcon(); });
+    window.BearAnalysisSheet?.setStage('save', cancelAnalysisEstimate);
     analysisActionAnchorCoord = [anchorCoord[0], anchorCoord[1]];
     analysisActionOverlay.setPosition(analysisActionAnchorCoord);
     window.requestAnimationFrame(function () { resizeAnalysisOwner(); scheduleAnalysisActionBarLayoutUpdate(); });
@@ -6381,6 +6393,7 @@
           analysis_rays_json: analysisRaysJson, intersections_json: intersectionsJson, analysis_options_json: analysisOptionsJson,
           analysis_diagnostics_json: analysisDiagnosticsJson, created_at: createdAtKst, share_pending: shareRealtime });
         localSaved = true;
+        triggerHapticImpact("LIGHT");
         if (shareRealtime) pendingBearUploads.add(String(id));
         clearAnalysisEstimateVisuals();
         realtimeListModule?.openRealtimeTab();
@@ -6435,10 +6448,7 @@
       }
     });
 
-    cancelBtn.addEventListener("click", function () {
-      clearAnalysisEstimateVisuals();
-      setDefaultStatusWithIcon();
-    });
+    cancelBtn.addEventListener("click", cancelAnalysisEstimate);
 
     root.addEventListener("pointerdown", function (e) { e.stopPropagation(); });
     root.addEventListener("touchstart", function (e) { e.stopPropagation(); }, { passive: true });

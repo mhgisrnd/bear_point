@@ -257,6 +257,7 @@
       await root.BearAppSettings.store.load();
       const options=root.BearAppSettings.store.snapshot().tracking;
       active=await plugin.start({...identity,...options});displayed=null;++viewVersion;source.clear();
+      root.__bpTriggerHapticImpact?.('LIGHT');
       message.textContent=native?'GPS 수신을 기다리고 있습니다.':'웹은 화면이 꺼지거나 페이지를 닫으면 기록이 중단될 수 있습니다.';
       await show(active.id,false);
       await loadHistory();
@@ -267,6 +268,7 @@
       let result=await plugin.stop();
       if(!result.id&&activeId)result=await plugin.detail({id:activeId});
       if(result.status==='recording')throw new Error('기록 종료를 완료하지 못했습니다. 다시 시도해주세요.');
+      root.__bpTriggerHapticImpact?.('LIGHT');
       active=null;displayed=null;++viewVersion;source.clear();message.textContent=result.status==='discarded'?(result.error||'GPS 위치가 수신되지 않아 기록을 저장하지 않았습니다.'):'이동 기록을 저장했습니다.';
       void syncRecords(true);
       await loadHistory();
