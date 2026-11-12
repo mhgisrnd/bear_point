@@ -12,9 +12,10 @@ for(const succeeds of [true,false])test(succeeds?'recorder starts independently 
  plugin:{start:async()=>{events.push('start');if(!succeeds)throw Error('device location cancelled');return {id:'new'};}},
  displayed:{id:'old'},active:null,viewVersion:0,source:{clear(){events.push('clear');}},message:{},native:true,
  show:async()=>{},loadHistory:async()=>{}};
- const begin=source.indexOf("    start.addEventListener('click'");
- vm.runInNewContext(source.slice(begin,source.indexOf("    stop.addEventListener",begin)),context);
- click();await new Promise(resolve=>setImmediate(resolve));
+ context.paint=()=>{};
+ const begin=source.indexOf('    async function startRecording(');
+ vm.runInNewContext(source.slice(begin,source.indexOf('    async function stopRecording(',begin)),context);
+ await context.action(()=>context.startRecording());
  assert.deepEqual(events,succeeds?['start','clear']:['start']);
  assert.equal(context.displayed?.id,succeeds?undefined:'old');
  assert.equal(error?.message,succeeds?undefined:'device location cancelled');

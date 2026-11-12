@@ -4348,7 +4348,7 @@
     let top = Math.max(0, parseCssPx(safe.getPropertyValue("--safe-top")), (visual ? visual.offsetTop : 0) - rect.top) + 18;
     let bottom = Math.min(rect.height - parseCssPx(safe.getPropertyValue("--safe-bottom")), (visual ? visual.offsetTop + visual.height : window.innerHeight) - rect.top) - 18;
     // Reserve the actual control bounds rather than guessing their width.
-    for (const control of document.querySelectorAll?.('#btn-sdr-diagnostics, #btn-app-settings, #btn-map-layers, .map-right-controls, #compass') || []) {
+    for (const control of document.querySelectorAll?.('#btn-gps-record-toggle, #btn-sdr-diagnostics, #btn-app-settings, #btn-map-layers, .map-right-controls, #compass') || []) {
       if (!control.getClientRects().length) continue;
       const bounds = control.getBoundingClientRect();
       if (!bounds.width || !bounds.height) continue;
@@ -4462,7 +4462,7 @@
   document.addEventListener("click", function dismissDetailForMapTool(event) {
     const target = event.target;
     if (!target?.closest || target.closest('.map-detail-popup')) return;
-    if (target.closest('#btn-sdr-diagnostics, #btn-app-settings, #btn-map-layers, #map-layer-options, .map-right-controls, #compass, #btn-sidebar-toggle')) {
+    if (target.closest('#btn-gps-record-toggle, #btn-sdr-diagnostics, #btn-app-settings, #btn-map-layers, #map-layer-options, .map-right-controls, #compass, #btn-sidebar-toggle')) {
       closeObservationPopup();
     }
   }, true);

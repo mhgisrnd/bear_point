@@ -82,15 +82,17 @@
     const syncMessage=panel.querySelector('.gps-track-sync-message');
     const syncClient=root.BearGpsTrackSync.create({plugin});
     let syncing=false,lastSync=0;
-    async function syncRecords(force=false) {
+    async function syncRecords(force=false,notify=false) {
       if(!native)return;
+      if(notify&&root.navigator.onLine===false)root.__bpShowToast?.('기기에 저장했습니다. 인터넷 연결 후 서버 공유를 다시 시도합니다.');
       if(document.hidden || root.navigator.onLine===false || syncing || (!force && Date.now()-lastSync<30000))return;
       syncing=true;lastSync=Date.now();
       try {
         const result=await syncClient.sync();
         syncMessage.textContent=root.BearGpsTrackSync.notice(result);
         syncMessage.hidden=!syncMessage.textContent;
-      } catch(error) {syncMessage.hidden=false;syncMessage.textContent=error.message;}
+        if(notify&&result.remaining>0)root.__bpShowToast?.('기기에 저장했습니다. 서버 공유 상태는 다음 연결 시 다시 확인합니다.');
+      } catch(error) {syncMessage.hidden=false;syncMessage.textContent=error.message;if(notify)root.__bpShowToast?.('기기에 저장했습니다. 서버 공유를 완료하지 못해 나중에 다시 시도합니다.');}
       finally {syncing=false;place();}
     }
     root.addEventListener('online',()=>{
@@ -98,6 +100,9 @@
       void refreshSharedHistory(true);
     });
     let active=null,displayed=null,busy=false,polling=false,historyOffset=0,historyVersion=0,viewVersion=0,initial=true;
+    let recordingOperation=0;
+    let recordingTarget=null;
+    const quickRecord=root.BearGpsRecordingToggle.create({native,onChange:enabled=>void setRecording(enabled)});
     const source=new ol.source.Vector();
     const layer=new ol.layer.Vector({source});
     layer.setVisible(false);
@@ -113,10 +118,12 @@
       panel.style.top=Math.max(8,Math.min(r.top-panel.offsetHeight-8,innerHeight-panel.offsetHeight-8))+'px';
     }
     function paint() {
+      quickRecord.render({active,busy,ready:!initial,pending:recordingTarget});
       button.classList.toggle('is-recording',!!active);
       button.textContent=active?'● 기록 중 · '+elapsed(active):'이동 기록';
       button.setAttribute('aria-expanded',String(!panel.hidden));
-      start.hidden=!native||!!active;stop.hidden=!native||!active;
+      start.hidden=!!active;stop.hidden=!active;
+      if(!native)start.title='이동 기록은 앱에서 시작할 수 있습니다.';
       start.disabled=!native||busy;stop.disabled=!native||busy;
       refreshButton.disabled=busy;summary.hidden=!active&&!displayed;
       teamSelect.disabled=busy;search.elements.period.disabled=busy;paintMine();paintFilterState();
@@ -238,8 +245,9 @@
     let lastStorageWarning='';
     async function poll() {
       if(polling||document.hidden||busy)return;polling=true;
+      const operation=recordingOperation;
       try{
-        const result=await plugin.status();if(busy)return;const previous=active;active=result.active||null;
+        const result=await plugin.status();if(busy||operation!==recordingOperation)return;const previous=active;active=result.active||null;
         const storageWarning=/저장 공간/.test(result.location_warning||'')?result.location_warning:'';
         if(storageWarning&&storageWarning!==lastStorageWarning)root.__bpShowToast?.(storageWarning);
         lastStorageWarning=storageWarning;
@@ -259,18 +267,19 @@
       }catch(error){message.textContent=error.message||String(error);}
       finally{polling=false;}
     }
-    start.addEventListener('click',()=>void action(async()=>{
+    async function startRecording(){
       if(!native)return;
       const identity=await root.BearAppSettings.requireIdentity();
       await root.BearAppSettings.store.load();
       const options=root.BearAppSettings.store.snapshot().tracking;
       active=await plugin.start({...identity,...options});displayed=null;++viewVersion;source.clear();
+      initial=false;paint();
       root.__bpTriggerHapticImpact?.('LIGHT');
       message.textContent=native?'GPS 수신을 기다리고 있습니다.':'웹은 화면이 꺼지거나 페이지를 닫으면 기록이 중단될 수 있습니다.';
-      await show(active.id,false);
-      await loadHistory();
-    }));
-    stop.addEventListener('click',()=>void action(async()=>{
+      root.__bpShowToast?.('이동 기록을 시작했습니다.'+(active.point_count?'':' GPS 수신을 기다리고 있습니다.'));
+      try{await show(active.id,false);await loadHistory();}catch(_){message.textContent='기록은 시작되었습니다. 목록은 새로고침으로 다시 확인해주세요.';}
+    }
+    async function stopRecording(){
       if(!native)return;
       const activeId=active?.id;
       let result=await plugin.stop();
@@ -278,9 +287,23 @@
       if(result.status==='recording')throw new Error(result.save_error||'기록 종료를 완료하지 못했습니다. 다시 시도해주세요.');
       root.__bpTriggerHapticImpact?.('LIGHT');
       active=null;displayed=null;++viewVersion;source.clear();message.textContent=result.status==='discarded'?(result.error||'GPS 위치가 수신되지 않아 기록을 저장하지 않았습니다.'):'이동 기록을 저장했습니다.';
-      void syncRecords(true);
-      await loadHistory();
-    }));
+      initial=false;paint();root.__bpShowToast?.(message.textContent);
+      void syncRecords(true,result.status!=='discarded');
+      try{await loadHistory();}catch(_){message.textContent='기기에 저장했습니다. 목록은 새로고침으로 다시 확인해주세요.';}
+    }
+    async function setRecording(enabled){
+      if(!native||busy)return;
+      ++recordingOperation;
+      recordingTarget=enabled;
+      try{await action(async()=>{
+        // Read the recorder immediately before acting, including stops from the system notification.
+        const state=await plugin.status();active=state.active||null;initial=false;paint();
+        if(enabled===!!active)return;
+        if(enabled)await startRecording();else await stopRecording();
+      });}finally{recordingTarget=null;paint();}
+    }
+    start.addEventListener('click',()=>void setRecording(true));
+    stop.addEventListener('click',()=>void setRecording(false));
     function close(){layer.setVisible(false);setFilterPanelOpen(false);panel.hidden=true;button.setAttribute('aria-expanded','false');if(root.BearMobileDock?.isMobile()&&root.BearMobileDock.getActive()==='tracking')root.BearMobileDock.collapse();}
     function open(){panel.hidden=false;layer.setVisible(true);displayed=null;++viewVersion;source.clear();root.BearMobileDock?.select('tracking',{activate:false});setFilterPanelOpen(false);paint();void refreshAndSync().then(()=>poll());}
     button.addEventListener('click',()=>{if(panel.hidden){open();(native?(active?stop:start):search.elements.owner).focus();}else close();});
