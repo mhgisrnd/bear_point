@@ -28,8 +28,6 @@ import com.getcapacitor.annotation.Permission;
 import com.getcapacitor.annotation.PermissionCallback;
 import java.io.IOException;
 import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
 import java.util.UUID;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -370,23 +368,17 @@ public final class IcR30Plugin extends Plugin {
     }
     @PluginMethod public void shareTest(PluginCall call) {
         main.post(() -> {
-            if (test.active()) { call.reject("테스트를 종료한 뒤 CSV를 공유하세요."); return; }
-            if (stopped) { call.reject("앱 화면에서 CSV를 공유하세요."); return; }
+            if (test.active()) { call.reject("기록을 종료한 뒤 ZIP을 공유하세요."); return; }
+            if (stopped) { call.reject("앱 화면에서 ZIP을 공유하세요."); return; }
             try {
-                File source = logStore().find(call.getString("id", ""));
-                File shared = new File(getContext().getCacheDir(), source.getName());
-                try (FileInputStream input = new FileInputStream(source);
-                     FileOutputStream output = new FileOutputStream(shared)) {
-                    byte[] buffer = new byte[8192];
-                    int count;
-                    while ((count = input.read(buffer)) != -1) output.write(buffer, 0, count);
-                }
+                File shared = logStore().archive(call.getString("id", ""));
                 Uri uri = FileProvider.getUriForFile(getContext(), getContext().getPackageName() + ".fileprovider", shared);
-                Intent send = new Intent(Intent.ACTION_SEND).setType("text/csv").putExtra(Intent.EXTRA_STREAM, uri)
+                Intent send = new Intent(Intent.ACTION_SEND).setType("application/zip").putExtra(Intent.EXTRA_STREAM, uri)
                     .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-                getActivity().startActivity(Intent.createChooser(send, "S-Meter 테스트 CSV 공유"));
+                send.setClipData(android.content.ClipData.newRawUri("IC-R30 수신 진단 ZIP", uri));
+                getActivity().startActivity(Intent.createChooser(send, "IC-R30 수신 진단 ZIP 공유"));
                 call.resolve();
-            } catch (IOException | RuntimeException error) { call.reject("CSV 공유 실패: " + error.getMessage(), error); }
+            } catch (IOException | RuntimeException error) { call.reject("ZIP 공유 실패: " + error.getMessage(), error); }
         });
     }
     @PluginMethod public void deleteTest(PluginCall call) {

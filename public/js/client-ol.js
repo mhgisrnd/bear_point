@@ -3193,7 +3193,7 @@
     _onSidebarMqChange();
   })();
 
-  const gpsTrackUi = window.createGpsTrackUi({ ol, map, project: mapCoordFromWgs84, insertBefore: bearMarkerLayer });
+  const gpsTrackUi = window.createGpsTrackUi({ ol, map, project: mapCoordFromWgs84, insertBefore: bearMarkerLayer, onItemHaptic: () => triggerHapticImpact("LIGHT") });
   window.BearGpsTrackUi = gpsTrackUi;
   const controlsManager = window.createOlMapControlsManager ? window.createOlMapControlsManager({
     ol: ol,
@@ -7280,12 +7280,7 @@
 
       el.addEventListener("click", function () {
         focusBearListItem(it.id, !!it.remoteOnly, [it.lat, it.lng]);
-        if (statusEl) {
-          statusEl.textContent = bearCode !== "-"
-            ? `[${bearCode}] 개체의 추적 위치로 이동했습니다.`
-            : "선택한 개체의 추적 위치로 이동했습니다.";
-          statusEl.style.color = "#0a6f30";
-        }
+        triggerHapticImpact("LIGHT");
       });
 
       const dlBtn = el.querySelector(".bears-txt-dl-btn");
@@ -7528,6 +7523,7 @@
     map: olMapAdapter,
     statusEl: statusEl,
     flyToLatLng: flyToLatLng,
+    onItemHaptic: () => triggerHapticImpact("LIGHT"),
     fitToPoints: fitToPoints,
     observationMarkersLayer: observationMarkersLayer,
     onOpenList: function () {

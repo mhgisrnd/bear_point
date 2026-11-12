@@ -22,9 +22,10 @@ Object.defineProperties(HTMLElement.prototype,{
   value:{get(){return this.getAttribute('value')??this.querySelector('option')?.getAttribute('value')??'';},set(value){this.setAttribute('value',value);}},
   dataset:{get(){return new Proxy({},{get:(_,key)=>this.getAttribute('data-'+key),set:(_,key,value)=>{this.setAttribute('data-'+key,value);return true;}});}}
 });
-async function setup(loadItems){
+async function setup(loadItems,baseLayers=[]){
   const modules=await Promise.all(['ol/Feature.js','ol/geom/Point.js','ol/geom/LineString.js','ol/source/Vector.js','ol/style/Style.js','ol/style/Stroke.js','ol/style/Fill.js','ol/style/Circle.js','ol/style/RegularShape.js','ol/style/Text.js'].map(path=>import(path).then(module=>module.default)));
   const [Feature,Point,LineString,Vector,Style,Stroke,Fill,Circle,RegularShape,Text]=modules;
+  const XYZ=(await import('ol/source/XYZ.js')).default;
   let instance,unregistered=0,back;
   class MapMock{
     constructor(options){this.options=options;this.handlers={};instance=this;}
@@ -33,7 +34,7 @@ async function setup(loadItems){
     forEachFeatureAtPixel(_pixel,callback){return callback(this.hitFeature);}
     getPixelFromCoordinate(){return [100,100];}
   }
-  class Layer{constructor(options){this.source=options.source;}setSource(value){this.source=value;}}
+  class Layer{constructor(options){this.source=options.source;}setSource(value){this.source=value;}getSource(){return this.source;}}
   class Icon{constructor(options){this.options=options;}getSrc(){return this.options.src;}}
   const body=parse('<body></body>').firstChild;
   const documentEvents={},frames=new Map();let frameId=0;
@@ -41,12 +42,13 @@ async function setup(loadItems){
   const document={body,hidden:false,createElement:tag=>parse('<'+tag+'></'+tag+'>').firstChild,activeElement:null,addEventListener(type,fn){documentEvents[type]=fn;}};
   const root={BearObservationFilters:require('../public/js/obs/observation-filters'),BearEstimateHistoryModel:require('../public/js/realtime/estimate-history-model'),
     BearEstimateHistoryMarkers:require('../public/js/realtime/estimate-history-markers'),
+    BearEstimateHistoryTiles:require('../public/js/realtime/estimate-history-tiles'),
     matchMedia:query=>query.includes('reduced-motion')?motion:{matches:false},addEventListener(){},
     requestAnimationFrame(fn){if(fn.name==='animateHistory'){frames.set(++frameId,fn);return frameId;}fn();return 0;},cancelAnimationFrame:id=>frames.delete(id)};
   vm.runInNewContext(fs.readFileSync('public/js/realtime/estimate-history-ui.js','utf8'),{window:root,document,AbortController,Date});
-  const api=root.createEstimateHistoryUi({ol:{Map:MapMock,View:class{},Feature,geom:{Point,LineString},source:{Vector},layer:{Tile:Layer,Vector:Layer},
+  const api=root.createEstimateHistoryUi({ol:{Map:MapMock,View:class{constructor(options){Object.assign(this,options);}},Feature,geom:{Point,LineString},source:{Vector,XYZ},layer:{Tile:Layer,Vector:Layer},
     proj:{transform:coords=>coords},style:{Style,Stroke,Fill,Circle,RegularShape,Text,Icon},control:{defaults:{defaults:()=>[]}}},
-    projection:'EPSG:4326',getBaseLayers:()=>[],loadItems,registerBack(_dialog,fn){back=fn;return()=>unregistered++;}});
+    projection:'EPSG:4326',getBaseLayers:()=>baseLayers,loadItems,registerBack(_dialog,fn){back=fn;return()=>unregistered++;}});
   return {api,body,dialog:body.querySelector('dialog'),map:()=>instance,back:()=>back(),unregistered:()=>unregistered,document,documentEvents,motion,frames,
     frame(timestamp){const next=frames.entries().next().value;if(next){frames.delete(next[0]);next[1](timestamp);}}};
 }
@@ -55,6 +57,7 @@ test('history starts with the clicked point selected, filters dates, expands its
   const seed=row('current',10),old=row('old',9);
   const e=await setup(async()=>({items:[seed,old]}));await e.api.open(seed);
   assert.equal(e.api.isOpen(),true);
+  assert.deepEqual(Array.from(e.map().options.view.center),[seed.lng,seed.lat]);
   assert.equal(e.dialog.querySelector('h2').textContent,'MH-001');
   assert.equal(e.dialog.querySelector('[data-record="current"]').getAttribute('data-current'),'true');
   assert.equal(e.dialog.querySelector('[data-record="current"] .estimate-history-current').textContent,'현재');
@@ -157,4 +160,19 @@ test('route dashes and current ring animate, pause in the background, and stop o
   e.motion.matches=true;e.motion.change();assert.equal(e.frames.size,0);assert.equal(ring.getRadius(),13);
   e.motion.matches=false;e.motion.change();assert.equal(e.frames.size,1);
   e.api.close();assert.equal(e.frames.size,0);
+});
+
+test('history tiles use an isolated source and late failures after closing do not warn on the main map',async()=>{
+  const XYZ=(await import('ol/source/XYZ.js')).default,Tile=(await import('ol/layer/Tile.js')).default;
+  const original=new XYZ({url:'https://tiles.example/{z}/{x}/{y}.png'});
+  let warnings=0;original.on('tileloaderror',()=>warnings++);
+  const current=row('current',11);
+  const e=await setup(async()=>({items:[current]}),[new Tile({source:original})]);await e.api.open(current);
+  const copy=e.map().options.layers[0].getSource();assert.notEqual(copy,original);
+  copy.dispatchEvent('tileloaderror');assert.equal(warnings,0);
+  assert.match(e.dialog.querySelector('.estimate-history-notice').textContent,/이력 지도/);
+  e.api.close();const notice=e.dialog.querySelector('.estimate-history-notice').textContent;
+  copy.dispatchEvent('tileloaderror');assert.equal(warnings,0);
+  assert.equal(e.dialog.querySelector('.estimate-history-notice').textContent,notice);
+  assert.equal(copy.disposed,true);assert.equal(original.disposed,false);original.dispose();
 });

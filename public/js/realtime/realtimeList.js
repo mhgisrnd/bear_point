@@ -908,12 +908,7 @@
         });
       }
 
-      setStatus(
-        item.bearCode && item.bearCode !== "-"
-          ? `[${item.bearCode}] 개체의 실시간 위치로 이동했습니다.`
-          : "선택한 개체의 실시간 위치로 이동했습니다.",
-        "ok"
-      );
+      window.__bpTriggerHapticImpact?.("LIGHT");
     });
 
     listEl.addEventListener("change", function (event) {

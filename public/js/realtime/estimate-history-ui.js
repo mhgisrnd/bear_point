@@ -23,6 +23,7 @@
     for(const [key,value]of Object.entries({day:today,month:today.slice(0,7),year:today.slice(0,4),start:today,end:today}))form.elements[key].value=value;
     let map=null,source=null,layers=[],records=[],visible=[],selected=null,seed=null,controller=null,version=0,unregister=null,showCount=30,loadNotice='';
     let overlapIds=null,currentId=null;
+    let baseSources=[],tileNotice='';
     const wide=root.matchMedia('(min-width:900px) and (orientation:landscape)');
     const reducedMotion=root.matchMedia('(prefers-reduced-motion: reduce)');
     let animationFrame=null,animationStart=null,lastAnimationPaint=0,routeStroke=null,currentPulses=[];
@@ -161,7 +162,7 @@
       if(!visible.some(row=>row.id===selected))selected=visible.at(-1)?.id||null;
       const selectedIndex=visible.findIndex(row=>row.id===selected);
       if(selectedIndex>=0)showCount=Math.max(showCount,visible.length-selectedIndex);
-      notice.textContent=invalid?'조회 기간을 올바르게 입력해주세요.':loadNotice;notice.hidden=!notice.textContent;
+      notice.textContent=invalid?'조회 기간을 올바르게 입력해주세요.':[loadNotice,tileNotice].filter(Boolean).join(' ');notice.hidden=!notice.textContent;
       paintCount();
       paintCard();paintList();draw();root.requestAnimationFrame(()=>{map?.updateSize();fit();});
     }
@@ -173,9 +174,17 @@
     }
     function createMap(){
       source=new ol.source.Vector();
-      layers=getBaseLayers().map(layer=>new ol.layer.Tile({source:layer.getSource(),opacity:layer.getOpacity()}));
+      layers=root.BearEstimateHistoryTiles.clone(ol,getBaseLayers());
+      baseSources=layers.map(layer=>layer.getSource());
+      for(const tiles of baseSources)tiles.on('tileloaderror',()=>{
+        if(!dialog.open||!map||!baseSources.includes(tiles))return;
+        tileNotice='이력 지도의 일부를 불러오지 못했습니다. 네트워크 상태를 확인해주세요.';
+        notice.textContent=[loadNotice,tileNotice].filter(Boolean).join(' ');notice.hidden=false;
+      });
       const vector=new ol.layer.Vector({source});layers.push(vector);
-      map=new ol.Map({target:mapTarget,layers,view:new ol.View({projection,resolutions,center:[0,0],zoom:10,constrainRotation:false}),controls:ol.control.defaults.defaults({zoom:false,rotate:false})});
+      const initial=records.find(row=>row.id===String(seed.id))||records[0];
+      const center=initial?coords(initial):ol.proj.transform([127.6,35.3],'EPSG:4326',projection);
+      map=new ol.Map({target:mapTarget,layers,view:new ol.View({projection,resolutions,center,zoom:15,constrainRotation:false}),controls:ol.control.defaults.defaults({zoom:false,rotate:false})});
       map.on('singleclick',event=>{
         const feature=map.forEachFeatureAtPixel(event.pixel,feature=>feature.get('recordIds')?feature:undefined,{layerFilter:layer=>layer===vector,hitTolerance:8});
         if(!feature)return;
@@ -192,11 +201,13 @@
       stopAnimation();routeStroke=null;currentPulses=[];
       version++;controller?.abort();controller=null;unregister?.();unregister=null;
       if(dialog.open)dialog.close();
+      const ownedSources=baseSources;baseSources=[];
       map?.setTarget(undefined);map?.dispose();map=null;
       for(const layer of layers)layer.setSource(null);layers=[];source=null;
+      for(const tiles of ownedSources)tiles.dispose();
     }
     async function open(item){
-      if(dialog.open)close();seed=item;selected=String(item.id);currentId=String(item.id);showCount=30;overlapIds=null;loadNotice='이력을 불러오는 중입니다.';
+      if(dialog.open)close();seed=item;selected=String(item.id);currentId=String(item.id);showCount=30;overlapIds=null;tileNotice='';loadNotice='이력을 불러오는 중입니다.';
       records=model.normalize([item]);periodFields();dialog.querySelector('h2').textContent=item.bear_code||item.bearCode;
       dialog.showModal();unregister=registerBack?.(dialog,close);createMap();setExpanded(wide.matches);render();
       const current=++version;controller=new AbortController();

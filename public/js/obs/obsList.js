@@ -5,6 +5,7 @@ window.createObsListModule = function createObsListModule({
   map,
   statusEl,
   flyToLatLng,
+  onItemHaptic = () => window.__bpTriggerHapticImpact?.("LIGHT"),
   fitToPoints,
   observationMarkersLayer,
   onOpenList,
@@ -738,6 +739,7 @@ window.createObsListModule = function createObsListModule({
       return entry && entry.obsData && String(entry.obsData._obsKey) === String(item._obsKey);
     });
     const feature = marker && marker._feature;
+    onItemHaptic();
     flyToLatLng([item.lat, item.lng], currentZoom, function (completed) {
       if (completed === false || focusVersion !== observationFocusVersion) return;
       if (marker && typeof marker.openPopup === "function") marker.openPopup();

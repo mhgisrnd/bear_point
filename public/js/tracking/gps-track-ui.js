@@ -10,7 +10,7 @@
     const unavailable = async () => { throw new Error('이동 기록을 지원하는 최신 APK를 설치해주세요.'); };
     return {status:async()=>({active:null}),start:unavailable,stop:unavailable,list:unavailable,detail:unavailable};
   }
-  root.createGpsTrackUi = function ({ ol, map, project, insertBefore }) {
+  root.createGpsTrackUi = function ({ ol, map, project, insertBefore, onItemHaptic = () => root.__bpTriggerHapticImpact?.('LIGHT') }) {
     const native = !!root.Capacitor?.isNativePlatform?.();
     const plugin = native ? getNativeGpsPlugin() : root.BearGpsTracks.createWebRecorder(root, undefined, {readOnly:true});
     const button = document.getElementById('btn-gps-tracking');
@@ -194,7 +194,7 @@
           const team=cell(track.team_name||'미지정','gps-history-team');
           const dot=document.createElement('i');dot.setAttribute('aria-hidden','true');dot.style.background=/^#[0-9a-f]{6}$/i.test(track.team_color||'')?track.team_color:'#7e90a2';team.prepend(dot);
           cell(elapsed(track),'gps-history-number');cell((Number(track.distance||0)/1000).toFixed(2),'gps-history-number');
-          row.addEventListener('click',()=>void action(async()=>{message.textContent='';await show(track.id,true,track.sharedOnly);}));history.append(row);
+          row.addEventListener('click',()=>{onItemHaptic();void action(async()=>{message.textContent='';await show(track.id,true,track.sharedOnly);});});history.append(row);
         });
         historyOffset+=rows.length;more.hidden=historyOffset>=Number(result.total||0);
         if(frame)frame.scrollTop=scrollTop;
