@@ -12,6 +12,38 @@ import org.junit.rules.TemporaryFolder;
 
 public class IcR30TestRecordingTest {
     @Rule public TemporaryFolder folder = new TemporaryFolder();
+    @Test public void detailsRetainCaptureContextSValuesErrorsAndActualStopTime() throws Exception {
+        File file=folder.newFile();IcR30TestRecording test=new IcR30TestRecording();
+        test.start(file,1000,2000,"{\"app_version_name\":\"test\",\"rf_gain_raw\":{\"value\":255}}");
+        test.sample(2100,1100,148241000,"CW",136,30,0);
+        test.sample(2234,1234,148241000,"CW",170,28,134);
+        test.error(2300,1300,"timeout \"15 02\"\nclosed");
+        test.connectionClosed(2310,1310,"connection lost");
+        test.stop("disconnected",2320,1320);
+        String details=new String(Files.readAllBytes(new File(file.getPath()+".jsonl").toPath()),StandardCharsets.UTF_8);
+        assertTrue(details.contains("\"event\":\"start\",\"unix_ms\":2000,\"elapsed_ms\":0"));
+        assertTrue(details.contains("\"s_label_exact\":\"S7\""));assertTrue(details.contains("\"s_label_exact\":\"S9\""));
+        assertTrue(details.contains("timeout \\\"15 02\\\"\\u000aclosed"));
+        assertTrue(details.contains("\"event\":\"connection_closed\""));
+        assertTrue(details.contains("\"event\":\"stop\",\"unix_ms\":2320,\"elapsed_ms\":320"));
+        assertTrue(details.contains("\"poll_errors\":1"));assertTrue(details.contains("\"mean_interval_ms\":134"));
+        assertEquals(6,details.split("\n").length);
+    }
+    @Test public void officialSLabelsDoNotInterpolateOrInventDbmValues() {
+        assertEquals("S0",IcR30TestRecording.sLabel(0));assertEquals("S1",IcR30TestRecording.sLabel(34));
+        assertEquals("S7",IcR30TestRecording.sLabel(136));assertEquals("S9",IcR30TestRecording.sLabel(170));
+        assertEquals("unmapped",IcR30TestRecording.sLabel(135));
+        assertEquals("above S9 (not converted to dB)",IcR30TestRecording.sLabel(255));
+    }
+    @Test public void deadlineShowsAnUnfinishedPollWithoutInventingAZeroSignalSample() throws Exception {
+        File file=folder.newFile();IcR30TestRecording test=new IcR30TestRecording();test.start(file,1000,2000,"{}");
+        test.queryStarted(11900,10900);test.stop("time_limit",12000,11000);
+        long bytes=new File(file.getPath()+".jsonl").length();
+        test.error(13000,12000,"late timeout");assertEquals(bytes,new File(file.getPath()+".jsonl").length());
+        String details=new String(Files.readAllBytes(new File(file.getPath()+".jsonl").toPath()),StandardCharsets.UTF_8);
+        assertTrue(details.contains("\"poll_pending_at_stop\":true"));assertTrue(details.contains("\"samples\":0"));
+        assertFalse(new String(Files.readAllBytes(file.toPath()),StandardCharsets.UTF_8).contains("sample,"));
+    }
 
     @Test public void recordsRawValuesTimingAndManualMarksWithStableCsvColumns() throws Exception {
         File file = folder.newFile();

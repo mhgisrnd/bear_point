@@ -129,6 +129,15 @@ final class IcR30Civ implements Closeable {
 
     long frequency() throws IOException { return decodeFrequency(exchange(new byte[]{0x03}, false)); }
     int smeter() throws IOException { return decodeSmeter(exchange(new byte[]{0x15, 0x02}, false)); }
+    int rfGain() throws IOException { return decodeSmeter(exchange(new byte[]{0x14,0x02},false)); }
+    int squelch() throws IOException { return decodeSmeter(exchange(new byte[]{0x14,0x03},false)); }
+    int attenuator() throws IOException {
+        byte[] response=exchange(new byte[]{0x11},false);
+        if(response.length!=1)throw new IOException("CI-V ATT 응답 길이가 올바르지 않습니다.");
+        int value=(int)decodeBcd(response);
+        if(value!=0&&value!=15&&value!=30&&value!=45)throw new IOException("알 수 없는 CI-V ATT 설정입니다.");
+        return value;
+    }
     String mode() throws IOException {
         byte[] value = exchange(new byte[]{0x04}, false);
         if (value.length != 2) throw new IOException("CI-V 모드 응답 길이가 올바르지 않습니다.");

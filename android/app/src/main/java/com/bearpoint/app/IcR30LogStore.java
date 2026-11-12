@@ -52,6 +52,8 @@ final class IcR30LogStore {
         if (archive.exists() && !archive.delete()) throw new IOException("공유 ZIP을 삭제하지 못했습니다.");
         File partial = new File(archive.getPath() + ".partial");
         if (partial.exists() && !partial.delete()) throw new IOException("미완성 공유 ZIP을 삭제하지 못했습니다.");
+        File details = new File(source.getPath()+".jsonl");
+        if(details.exists()&&!details.delete())throw new IOException("상세 로그를 삭제하지 못했습니다.");
         if (!source.delete()) throw new IOException("로그를 삭제하지 못했습니다.");
     }
     private File archivePath(File source) {
@@ -69,10 +71,20 @@ final class IcR30LogStore {
                     while ((count = input.read(buffer)) != -1) zip.write(buffer, 0, count);
                 }
                 zip.closeEntry();
-                String metadata = "{\"schema_version\":1,\"transport\":\"bluetooth\",\"receiver\":\"Icom IC-R30\","
+                File details = new File(source.getPath()+".jsonl");
+                if(details.isFile()){
+                    zip.putNextEntry(new ZipEntry("events.jsonl"));
+                    try(FileInputStream input=new FileInputStream(details)){
+                        byte[] buffer=new byte[8192];int count;
+                        while((count=input.read(buffer))!=-1)zip.write(buffer,0,count);
+                    }
+                    zip.closeEntry();
+                }
+                String metadata = "{\"schema_version\":2,\"transport\":\"bluetooth\",\"receiver\":\"Icom IC-R30\","
                     + "\"protocol\":\"CI-V over Bluetooth SPP\",\"source_record\":\"" + source.getName() + "\","
                     + "\"source_modified_unix_ms\":" + source.lastModified() + ",\"csv_file\":\"smeter.csv\","
                     + "\"smeter_unit\":\"raw CI-V value 0..255; not dBm or dBFS\","
+                    + "\"recording_details_file\":"+(details.isFile()?"\"events.jsonl\"":"null")+","
                     + "\"contains_audio\":false,\"contains_iq\":false,\"automatic_cw_detection\":false}";
                 entry(zip, "metadata.json", metadata + "\n");
                 entry(zip, "README.txt", "IC-R30 Bluetooth 수신 진단\n\n"
@@ -81,6 +93,8 @@ final class IcR30LogStore {
                     + "smeter는 CI-V 원시값 0~255입니다. USB RTL-SDR의 dBFS·SNR·게이지 칸수와 직접 같은 값으로 비교할 수 없습니다.\n"
                     + "interval_ms는 측정 간격, query_ms는 조회 소요 시간, metadata_age_ms는 주파수·모드 정보의 경과 시간입니다.\n"
                     + "heard는 사용자가 청취 표시를 누른 시점이며 자동 비프 검출 결과가 아닙니다. stop 행에는 기록 종료 사유가 있습니다.\n"
+                    + "events.jsonl이 있으면 start의 실제 기록 시각·앱/수신기 정보·시작 설정, sample의 공식 S 대응값, poll_error의 오류, stop의 요약을 확인하세요. 과거 기록에는 없습니다.\n"
+                    + "s_label_exact는 공식 대응값만 표시합니다. 사이 값은 unmapped, S9 초과는 above S9이며 dBm으로 환산한 값이 아닙니다. 시작 설정은 기록 중 계속 조회한 값이 아닙니다.\n"
                     + "이 로그에는 오디오나 원본 I/Q가 없습니다. USB ZIP과 비교할 때 시간·주파수·모드·반복 변화와 측정 간격을 함께 확인하세요.\n"
                     + "과거 기록은 일부 열이 다를 수 있으므로 CSV 첫 줄의 실제 헤더를 기준으로 읽으세요.\n");
             }

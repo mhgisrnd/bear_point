@@ -54,7 +54,7 @@
         <summary>수신 진단 · 저장된 로그</summary>
         <div class="sdr-log-actions"><button type="button" data-bt-test-start class="sdr-primary">10초 기록</button><button type="button" data-bt-test-share disabled>파일 공유</button><button type="button" data-bt-test-delete class="sdr-danger" disabled>선택 삭제</button></div>
         <div class="sdr-log-actions" data-bt-recording-tools hidden><button type="button" data-bt-test-mark disabled>삡 들림 표시</button><button type="button" data-bt-test-stop class="sdr-quiet" disabled>기록 종료</button></div>
-        <p class="sdr-note">연결 중 S-Meter·주파수·모드·측정 시각을 10초간 기기에 기록합니다. 파일 공유 시 원본 CSV와 형식 설명을 ZIP으로 묶습니다. 저장된 로그는 연결 없이 공유·삭제할 수 있습니다. 오디오·I/Q나 자동 신호 판정은 포함하지 않습니다.</p>
+        <p class="sdr-note">시작 설정을 확인한 뒤 S-Meter를 10초간 기록합니다. ZIP에 원본 CSV, 기록 시각·수신기 설정·통신 오류를 함께 담습니다. 저장된 로그는 연결 없이 공유·삭제할 수 있습니다. 오디오·I/Q나 자동 신호 판정은 포함하지 않습니다.</p>
         <select data-bt-test-record aria-label="저장된 Bluetooth 수신 진단 기록" hidden></select>
         <p data-bt-test-summary class="sdr-note" role="status">기록 대기</p>
         <svg class="sdr-bt-test-chart" viewBox="0 0 300 90" role="img" aria-label="최근 100개 S-Meter 측정값. 세로축은 원시값 변화에 맞춰 자동 확대됩니다."><polyline data-bt-test-line fill="none" stroke="currentColor" stroke-width="1.5"></polyline></svg>
@@ -284,7 +284,7 @@
       }
       select.hidden = !records.length;
       select.disabled = busy || testing();
-      node("test-start").disabled = busy || !validReading() || testing() || draftFrequency || frequencyControls.editing();
+      node("test-start").disabled = busy || test.preparing || !validReading() || testing() || draftFrequency || frequencyControls.editing();
       node("test-stop").disabled = busy || !testing();
       node("recording-tools").hidden = !testing();
       node("test-mark").disabled = busy || !testing();
@@ -295,6 +295,7 @@
       if (!test.error && !testing() && !test.reason && !test.count) {
         node("test-summary").textContent = records.length ? `저장된 기록 ${records.length}개 · 선택한 기록을 공유·삭제할 수 있습니다.` : "저장된 기록 없음 · 수신기를 연결한 뒤 기록하세요.";
       }
+      if(test.preparing)node("test-summary").textContent="수신기 설정 확인 중 · 완료 후 10초 기록을 시작합니다.";
       const points = test.recent || [];
       if (!points.length) {
         node("test-line").setAttribute("points", "");

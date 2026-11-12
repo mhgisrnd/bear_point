@@ -114,6 +114,18 @@ public class IcR30CivTest {
         Transport invalid = new Transport(bytes(0xfe, 0xfe, 0xe0, 0x9c, 4, 0x55, 1, 0xfd), 100);
         assertThrows(IOException.class, () -> invalid.civ.mode());
     }
+    @Test public void diagnosticSettingsUseReadOnlyCommandsAndDecodeBcd() throws Exception {
+        Transport gain=new Transport(bytes(0xfe,0xfe,0xe0,0x9c,0x14,0x02,0x02,0x55,0xfd),100);
+        assertEquals(255,gain.civ.rfGain());
+        assertArrayEquals(bytes(0xfe,0xfe,0x9c,0xe0,0x14,0x02,0xfd),gain.sent.toByteArray());
+        Transport sql=new Transport(bytes(0xfe,0xfe,0xe0,0x9c,0x14,0x03,0x01,0x28,0xfd),100);
+        assertEquals(128,sql.civ.squelch());
+        Transport att=new Transport(bytes(0xfe,0xfe,0xe0,0x9c,0x11,0x30,0xfd),100);
+        assertEquals(30,att.civ.attenuator());
+        assertArrayEquals(bytes(0xfe,0xfe,0x9c,0xe0,0x11,0xfd),att.sent.toByteArray());
+        Transport unknown=new Transport(bytes(0xfe,0xfe,0xe0,0x9c,0x11,0x20,0xfd),100);
+        assertThrows(IOException.class,unknown.civ::attenuator);
+    }
     @Test public void timeoutDoesNotReturnOldMeasurement() {
         Transport empty = new Transport(new byte[0], 10);
         String message = assertThrows(IOException.class, empty.civ::frequency).getMessage();

@@ -48,6 +48,7 @@ final class SdrRuntime {
     }
 
     void closeUsb(SdrReceiver.CloseCompletion complete) {
+        serviceError = "";
         sdr.closeUsb(connection,complete);
         connection = null;
         connectedId = null;

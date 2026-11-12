@@ -132,22 +132,22 @@
       select(button.dataset.menu);
     }));
     let drag=null,suppressClickUntil=0;
+    fold.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' ')suppressClickUntil=0;});
     fold.addEventListener('click',event=>{
-      if(Date.now()<suppressClickUntil&&event.detail!==0){event.preventDefault();return;}
+      if(Date.now()<suppressClickUntil){event.preventDefault();return;}
       if(expanded)collapse();else select(active);
     });
     fold.addEventListener('pointerdown',event=>{
       if(!mobile||registrationWasOpen||event.isPrimary===false||(event.button!=null&&event.button!==0))return;
-      stopSlide();
-      drag={id:event.pointerId,y:event.clientY,initial:expanded,full:expanded&&full,height:expanded?content.getBoundingClientRect().height:0,moved:false,delta:0};
+      drag={id:event.pointerId,touch:event.pointerType==='touch',y:event.clientY,initial:expanded,full:expanded&&full,height:expanded?content.getBoundingClientRect().height:0,moved:false,delta:0};
       fold.setPointerCapture?.(event.pointerId);
     });
     fold.addEventListener('pointermove',event=>{
       if(!drag||event.pointerId!==drag.id)return;
       const delta=drag.y-event.clientY;
-      if(!drag.moved&&Math.abs(delta)<8)return;
+      if(!drag.moved&&Math.abs(delta)<(drag.touch?14:8))return;
       if(!drag.initial&&delta<0)return;
-      if(!drag.moved){drag.moved=true;if(delta>0){dock.classList.remove('is-detail');onBeforeOpen?.();}if(!expanded)select(active);dock.classList.add('is-dragging');}
+      if(!drag.moved){stopSlide();drag.moved=true;if(delta>0){dock.classList.remove('is-detail');onBeforeOpen?.();}if(!expanded)select(active);dock.classList.add('is-dragging');}
       drag.delta=delta;
       const max=Math.max(60,root.innerHeight-140);
       const height=Math.max(0,Math.min(max,drag.height+delta));
@@ -169,6 +169,9 @@
           expanded=previous.full&&previous.height+previous.delta>half*.5;full=false;
         }else{expanded=previous.initial;full=previous.full;}
         suppressClickUntil=Date.now()+400;paint();slideFrom(previousHeight);
+      }else if(previous.touch&&!cancel){
+        suppressClickUntil=Date.now()+400;
+        if(expanded)collapse();else select(active);
       }
       if(fold.hasPointerCapture?.(previous.id))fold.releasePointerCapture(previous.id);
     }

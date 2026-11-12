@@ -57,12 +57,14 @@ public final class IcR30Plugin extends Plugin {
     private final IcR30TestRecording test = new IcR30TestRecording();
     private long metadataAt;
     private Runnable testDeadline;
+    private boolean preparingTest;
 
     private File recordingFile;
     private IcR30LogStore logStore() { return new IcR30LogStore(getContext().getFilesDir()); }
     private JSObject testSnapshot() {
         JSObject result = new JSObject();
         result.put("active", test.active());
+        result.put("preparing",preparingTest);
         JSArray records = new JSArray();
         try {
             for (File file : logStore().list()) {
@@ -303,10 +305,12 @@ public final class IcR30Plugin extends Plugin {
         return reading;
     }
     private void schedulePoll(int token, IcR30Civ civ) {
+        if(preparingTest)return;
         JSObject previous = measurement;
         poll = io.schedule(() -> {
             if (token != generation) return;
             try {
+                test.queryStarted(System.currentTimeMillis(),SystemClock.elapsedRealtime());
                 JSObject reading = read(civ, test.active(), previous);
                 if (token != generation) return;
                 test.sample(requiredLong(reading, "time"), requiredLong(reading, "elapsedMs"),
@@ -320,6 +324,8 @@ public final class IcR30Plugin extends Plugin {
                     schedulePoll(token, civ);
                 });
             } catch (IOException error) {
+                try { test.error(System.currentTimeMillis(),SystemClock.elapsedRealtime(),error.getMessage()); }
+                catch(IOException logError){ Log.w(TAG,"Failed to record Bluetooth poll error",logError); }
                 main.post(() -> { if (token == generation) fail(error.getMessage()); });
             }
         }, test.active() ? IcR30TestRecording.POLL_DELAY_MS : 500, TimeUnit.MILLISECONDS);
@@ -329,12 +335,54 @@ public final class IcR30Plugin extends Plugin {
             if (!"connected".equals(state) || settingCall != null || measurement == null) {
                 call.reject("수신기 연결과 설정 완료 후 테스트를 시작하세요."); return;
             }
+            if (test.active()) { call.reject("이미 로그를 기록 중입니다."); return; }
+            int token=generation;IcR30Civ civ=client;
+            JSObject context=new JSObject().put("web_asset_revision",MainActivity.WEB_ASSET_REVISION)
+                .put("phone_manufacturer",Build.MANUFACTURER).put("phone_model",Build.MODEL).put("android_sdk",Build.VERSION.SDK_INT)
+                .put("receiver_name",deviceName).put("receiver_model","IC-R30").put("transport","bluetooth")
+                .put("requested_duration_ms",IcR30TestRecording.LIMIT_MS).put("poll_delay_ms",IcR30TestRecording.POLL_DELAY_MS)
+                .put("settings_scope","queried once before capture; not continuously monitored")
+                .put("clock","unix_ms=phone wall clock; elapsed_ms=Android elapsedRealtime relative to capture start");
+            try{
+                android.content.pm.PackageInfo info=getContext().getPackageManager().getPackageInfo(getContext().getPackageName(),0);
+                context.put("app_version_name",info.versionName).put("app_version_code",info.versionCode);
+            }catch(android.content.pm.PackageManager.NameNotFoundException error){context.put("app_version_error",error.getMessage());}
+            settingCall=call;preparingTest=true;publish();
+            if(poll!=null){poll.cancel(false);poll=null;}
+            io.execute(()->{
+                if(token!=generation)return;
+                context.put("rf_gain_raw",readSetting(civ::rfGain));
+                if(token!=generation)return;
+                context.put("attenuator_code",readSetting(civ::attenuator));
+                if(token!=generation)return;
+                context.put("squelch_raw",readSetting(civ::squelch));
+                if(token!=generation)return;
+                try{
+                    JSObject reading=read(civ);
+                    context.put("initial_measurement",reading);
+                    main.post(()->{
+                        if(token!=generation)return;
+                        settingCall=null;preparingTest=false;measurement=reading;
+                        beginTest(call,context);
+                    });
+                }catch(IOException error){main.post(()->{if(token==generation){settingCall=null;preparingTest=false;call.reject("기록 전 수신기 확인 실패: "+error.getMessage());fail(error.getMessage());}});}
+            });
+        });
+    }
+    private interface SettingRead { int read() throws IOException; }
+    private JSObject readSetting(SettingRead read){
+        long started=SystemClock.elapsedRealtime();JSObject result=new JSObject();
+        try{result.put("value",read.read());}
+        catch(IOException error){result.put("value",org.json.JSONObject.NULL).put("error",error.getMessage());}
+        return result.put("read_unix_ms",System.currentTimeMillis()).put("query_ms",SystemClock.elapsedRealtime()-started);
+    }
+    private void beginTest(PluginCall call,JSObject context){
             try {
-                if (test.active()) { call.reject("이미 로그를 기록 중입니다."); return; }
                 recordingFile = logStore().create();
-                try { test.start(recordingFile, SystemClock.elapsedRealtime()); }
+                try { test.start(recordingFile, SystemClock.elapsedRealtime(),System.currentTimeMillis(),context.toString()); }
                 catch (IOException error) {
                     if (!recordingFile.delete()) Log.e(TAG, "Failed recording file cleanup: " + recordingFile.getName());
+                    File sidecar=new File(recordingFile.getPath()+".jsonl");if(sidecar.exists()&&!sidecar.delete())Log.w(TAG,"Failed recording detail cleanup");
                     throw error;
                 }
                 if (testDeadline != null) main.removeCallbacks(testDeadline);
@@ -346,11 +394,11 @@ public final class IcR30Plugin extends Plugin {
                 publish();
                 call.resolve(snapshot());
             } catch (IOException error) { call.reject("테스트 기록 시작 실패: " + error.getMessage(), error); }
-        });
+            finally { if("connected".equals(state)&&client!=null)schedulePoll(generation,client); }
     }
     private void stopTestRecording(String reason) throws IOException {
         if (testDeadline != null) { main.removeCallbacks(testDeadline); testDeadline = null; }
-        test.stop(reason);
+        test.stop(reason,System.currentTimeMillis(),SystemClock.elapsedRealtime());
     }
     @PluginMethod public void stopTest(PluginCall call) {
         main.post(() -> {
@@ -452,8 +500,9 @@ public final class IcR30Plugin extends Plugin {
         deviceId = deviceName = "";
         if (connectingCall != null) { connectingCall.reject(reason); connectingCall = null; }
         if (settingCall != null) { settingCall.reject(reason); settingCall = null; }
+        preparingTest=false;
         IOException closeError = null;
-        try { stopTestRecording("disconnected"); }
+        try { test.connectionClosed(System.currentTimeMillis(),SystemClock.elapsedRealtime(),reason);stopTestRecording("disconnected"); }
         catch (IOException error) { closeError = error; }
         if (old != null) {
             try { old.close(); }

@@ -986,6 +986,8 @@ test('map SDR button changes state for pause, fixed reception and disconnect', a
   ui.state.receptionError=''; ui.state.receptionState='idle'; ui.state.scanResumeAvailable=false;
   ui.state.state='idle'; ui.emit();
   assert.equal(ui.trigger.dataset.status,undefined);
+  ui.state.receptionError='stale USB read failure'; ui.emit();
+  assert.equal(ui.trigger.dataset.status,undefined);
   assert.equal(ui.trigger.title,'탐색');
 });
 

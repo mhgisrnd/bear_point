@@ -215,7 +215,20 @@ test('mouse/touch header drag follows motion and snaps open or closed without a 
   env.dispatch(fold,'click',{detail:1});assert.equal(dock.classList.contains('is-expanded'),true);
   env.dispatch(fold,'pointerdown',{clientY:420});env.dispatch(fold,'pointermove',{clientY:500});env.dispatch(fold,'pointerup',{clientY:500});
   assert.equal(dock.classList.contains('is-expanded'),false);
+  env.dispatch(fold,'click',{detail:0});assert.equal(dock.classList.contains('is-expanded'),false);
+  env.dispatch(fold,'keydown',{key:'Enter'});
   env.dispatch(fold,'click',{detail:0});assert.equal(dock.classList.contains('is-expanded'),true);
+});
+
+test('touch taps with small finger movement toggle immediately and ignore synthetic clicks',()=>{
+  const env=environment(),dock=env.document.getElementById('mobile-map-dock'),fold=dock.querySelector('.mobile-dock-fold');
+  env.dispatch(fold,'pointerdown',{pointerType:'touch',clientY:500});
+  env.dispatch(fold,'pointermove',{pointerType:'touch',clientY:490});
+  assert.equal(dock.classList.contains('is-dragging'),false);
+  env.dispatch(fold,'pointerup',{pointerType:'touch',clientY:490});
+  assert.equal(dock.classList.contains('is-expanded'),true);
+  env.dispatch(fold,'click',{detail:0});
+  assert.equal(dock.classList.contains('is-expanded'),true);
 });
 test('header taps fold each menu while retaining its selection and map display',()=>{
   for(const name of ['observations','bears','tracking']){

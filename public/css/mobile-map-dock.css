@@ -5,6 +5,7 @@ body.bp-map-dock #mobile-map-dock { position: fixed; left: var(--safe-left,0px);
 .mobile-dock-head { display: flex; flex: 0 0 auto; align-items: center; min-height: 42px; padding: 6px 10px 3px; gap: 6px; position: relative; }
 .mobile-dock-fold { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; min-height: 32px; padding: 5px 4px; border: 0; color: inherit; background: none; text-align: left; font: inherit; cursor: pointer; }
 .mobile-dock-fold { touch-action: none; user-select: none; -webkit-user-select: none; cursor: grab; }
+.mobile-dock-fold:active { transform:none; opacity:1; transition:none; }
 .is-dragging .mobile-dock-fold { cursor: grabbing; }
 .mobile-dock-fold strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; }
 .mobile-dock-grip { position: absolute; width: 34px; height: 4px; border-radius: 4px; background: #b6c0cd; top: 4px; left: calc(50% - 17px); }

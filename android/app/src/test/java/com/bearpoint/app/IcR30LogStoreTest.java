@@ -87,4 +87,15 @@ public class IcR30LogStoreTest {
         try { store.archive(csv.getName());fail("Blocked ZIP replacement accepted"); }
         catch (IOException expected) { assertTrue(csv.isFile());assertFalse(new File(archive.getPath()+".partial").exists()); }
     }
+    @Test public void newRecordDetailsAreIncludedAndDeletedWithTheSelectedRecord() throws Exception {
+        IcR30LogStore store=new IcR30LogStore(folder.getRoot());File csv=store.create();
+        IcR30TestRecording recording=new IcR30TestRecording();recording.start(csv,1000,2000,"{\"transport\":\"bluetooth\"}");
+        recording.sample(2100,1100,148241000,"CW",136,30,0);recording.stop("manual",2200,1200);
+        try(ZipFile zip=new ZipFile(store.archive(csv.getName()))){
+            assertEquals(4,zip.size());String details=new String(read(zip,"events.jsonl"),StandardCharsets.UTF_8);
+            assertTrue(details.contains("\"unix_ms\":2000"));assertTrue(details.contains("\"s_label_exact\":\"S7\""));
+            assertTrue(new String(read(zip,"metadata.json"),StandardCharsets.UTF_8).contains("\"recording_details_file\":\"events.jsonl\""));
+        }
+        store.delete(csv.getName());assertFalse(new File(csv.getPath()+".jsonl").exists());assertEquals(0,store.list().size());
+    }
 }

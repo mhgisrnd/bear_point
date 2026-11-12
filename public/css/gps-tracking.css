@@ -63,6 +63,7 @@
 .gps-track-history-table tbody tr { cursor: pointer; }
 .gps-track-history-table tbody tr:hover td { background: #f5f8fd; }
 .gps-track-history-table .is-selected td { background: #eaf2ff; }
+.gps-track-history-table tbody tr.is-flashing td { animation: obsRowFlash .9s ease-out; }
 .gps-history-open { display: grid; gap: 2px; width: 100%; min-height: 32px; padding: 0; border: 0; color: #284567; background: none; font: 700 10px/1.4 system-ui,sans-serif; text-align: center; cursor: pointer; }
 .gps-history-open small { color: #78899a; font-size: 10px; font-weight: 400; }
 .gps-track-history-table .gps-history-team { white-space: nowrap; }

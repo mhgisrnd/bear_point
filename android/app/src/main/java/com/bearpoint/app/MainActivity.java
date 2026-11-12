@@ -11,7 +11,7 @@ import com.google.firebase.appcheck.playintegrity.PlayIntegrityAppCheckProviderF
 public class MainActivity extends BridgeActivity {
 	private static final String TAG = "BearPointMain";
 	private static final long LAUNCH_SPLASH_MIN_DURATION_MS = 1500L;
-	static final String WEB_ASSET_REVISION = "1.0.4-ui131";
+	static final String WEB_ASSET_REVISION = "1.0.4-ui134";
 
 	@Override
 	protected void load() {
@@ -67,6 +67,8 @@ public class MainActivity extends BridgeActivity {
 		controller.setAppearanceLightNavigationBars(false);
 		Runnable update = () -> {
 			android.view.View window = getWindow().getDecorView();
+			android.view.View webView = getBridge() == null ? null : getBridge().getWebView();
+			if (webView == null || webView.getWidth() == 0) return;
 			androidx.core.view.WindowInsetsCompat insets = androidx.core.view.ViewCompat.getRootWindowInsets(content);
 			if (insets == null) return;
 			androidx.core.graphics.Insets bars = insets.getInsets(
@@ -74,10 +76,13 @@ public class MainActivity extends BridgeActivity {
 					| androidx.core.view.WindowInsetsCompat.Type.displayCutout());
 			int[] origin = new int[2], location = new int[2];
 			window.getLocationInWindow(origin);
-			content.getLocationInWindow(location);
+			webView.getLocationInWindow(location);
 			double[] overlap = SdrViewport.overlap(
 				new int[]{origin[0], origin[1], origin[0] + window.getWidth(), origin[1] + window.getHeight()},
-				new int[]{location[0], location[1], location[0] + content.getWidth(), location[1] + content.getHeight()},
+				// Exclude our own padding, while retaining Capacitor's existing system-bar margins.
+				new int[]{location[0] - content.getPaddingLeft(), location[1] - content.getPaddingTop(),
+					location[0] + webView.getWidth() + content.getPaddingRight(),
+					location[1] + webView.getHeight() + content.getPaddingBottom()},
 				new int[]{bars.left, bars.top, bars.right, bars.bottom}, 1);
 			int left = (int) Math.ceil(overlap[0]), top = (int) Math.ceil(overlap[1]);
 			int right = (int) Math.ceil(overlap[2]), bottom = (int) Math.ceil(overlap[3]);
@@ -91,6 +96,8 @@ public class MainActivity extends BridgeActivity {
 			return insets;
 		});
 		content.addOnLayoutChangeListener((view, l, t, r, b, oldL, oldT, oldR, oldB) -> update.run());
+		if (getBridge() != null && getBridge().getWebView() != null)
+			getBridge().getWebView().addOnLayoutChangeListener((view, l, t, r, b, oldL, oldT, oldR, oldB) -> update.run());
 		content.post(update);
 		androidx.core.view.ViewCompat.requestApplyInsets(content);
 	}

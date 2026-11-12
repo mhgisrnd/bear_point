@@ -194,7 +194,7 @@
           const team=cell(track.team_name||'미지정','gps-history-team');
           const dot=document.createElement('i');dot.setAttribute('aria-hidden','true');dot.style.background=/^#[0-9a-f]{6}$/i.test(track.team_color||'')?track.team_color:'#7e90a2';team.prepend(dot);
           cell(elapsed(track),'gps-history-number');cell((Number(track.distance||0)/1000).toFixed(2),'gps-history-number');
-          row.addEventListener('click',()=>{onItemHaptic();void action(async()=>{message.textContent='';await show(track.id,true,track.sharedOnly);});});history.append(row);
+          row.addEventListener('click',()=>{onItemHaptic();row.classList.remove('is-flashing');void row.offsetWidth;row.classList.add('is-flashing');root.setTimeout(()=>row.classList.remove('is-flashing'),900);void action(async()=>{message.textContent='';await show(track.id,true,track.sharedOnly);});});history.append(row);
         });
         historyOffset+=rows.length;more.hidden=historyOffset>=Number(result.total||0);
         if(frame)frame.scrollTop=scrollTop;

@@ -312,14 +312,19 @@
   const threshold = dialog.querySelector("[data-threshold]");
   const scanButton = dialog.querySelector("[data-task-scan]");
   const fixedButton = dialog.querySelector("[data-task-fixed]");
+  let mapUsbConnected = false;
   function renderMapStatus(snapshot) {
     bluetooth?.updateUsb();
+    const bluetoothSelected = !!bluetooth?.selected();
+    const usbConnected = !bluetoothSelected && snapshot?.state === "connected";
+    if (mapUsbConnected && !usbConnected && !bluetoothSelected) window.__bpShowToast?.("USB 연결이 해제되었습니다.");
+    mapUsbConnected = usbConnected;
     if (bluetooth?.selected()) {
       const bt = bluetooth.status();
       snapshot = { receptionState: bt.state === "connected" ? "receiving" : "idle", receptionError: bt.error };
     }
     const reception = snapshot && snapshot.receptionState;
-    const state = snapshot && snapshot.receptionError ? "error" :
+    const state = !bluetoothSelected && !usbConnected ? "" : snapshot && snapshot.receptionError ? "error" :
       snapshot && snapshot.backgroundScanning && ["starting", "scanning"].includes(reception) ? "scanning" :
       reception === "receiving" ? "receiving" :
       snapshot && snapshot.scanResumeAvailable && snapshot.state === "connected" && reception === "idle" ? "paused" : "";
