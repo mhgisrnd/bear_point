@@ -81,7 +81,7 @@
       for(;;) {
         const {items=[]}=await plugin.list({offset});
         for(const track of items) {
-          if(!['saved','interrupted'].includes(track.status))continue;
+          if(!['saved','interrupted'].includes(track.status)||Number(track.local_archived)===1)continue;
           if(!(Number(track.point_count)>0)){skipped++;continue;}
           const id=String(track.id);
           if(isDeleted(id))continue;
@@ -135,7 +135,35 @@
       if(rejected) throw new Error((uploaded ? uploaded+'건 전송 완료 · ' : '')+rejected+'건 전송 실패: '+firstRejection+' 기기 기록은 보존했습니다.');
       return {uploaded,eligible,remaining,skipped};
     }
-    return {sync(){if(!pending)pending=run().finally(()=>{pending=null;});return pending;},acknowledged,
+    async function cleanup(cutoff) {
+      if(typeof plugin.archiveShared!=='function')return {tracks:0,points:0};
+      if(pending)await pending;
+      await refreshShared();
+      if(!hasSharedSnapshot)throw new Error('서버 목록을 모두 확인하지 못해 기기 원본을 보존했습니다.');
+      const candidates=[];
+      for(let offset=0;;){
+        const {items=[]}=await plugin.list({offset});
+        candidates.push(...items.filter(row=>sharedRows.has(String(row.id))&&['saved','interrupted'].includes(row.status)&&Number(row.ended_at)>0&&Number(row.ended_at)<cutoff));
+        if(items.length<30)break;offset+=items.length;
+      }
+      let tracks=0,points=0;
+      for(const row of candidates){
+        try {
+        // A local upload receipt alone cannot prove the complete route still exists.
+        const remote=await readShared('/'+encodeURIComponent(row.id));
+        if(String(remote.id)!==String(row.id)||!Array.isArray(remote.points))throw new Error('서버 경로를 확인하지 못해 기기 원본을 보존했습니다.');
+        const stamp=String(remote.uploaded_at||'').replace(' ','T');
+        const uploaded=Date.parse(/Z$|[+-]\d\d:\d\d$/.test(stamp)?stamp:stamp+'Z');
+        if(!Number.isFinite(uploaded)||uploaded>=cutoff)continue;
+        const result=await plugin.archiveShared({remote,cutoff});
+        if(result.removed){tracks++;points+=Number(result.points);try{win.localStorage.removeItem(key(row.id));}catch(_){}}
+        } catch(error) {
+          return {tracks,points,warning:'나머지 기기 경로는 보존했습니다. '+(error.message||String(error))};
+        }
+      }
+      return {tracks,points};
+    }
+    return {sync(){if(!pending)pending=run().finally(()=>{pending=null;});return pending;},acknowledged,cleanup,
       refreshShared, list, sharedDetail:id=>readShared("/"+encodeURIComponent(id))};
   }
   function notice(result,manual=false){

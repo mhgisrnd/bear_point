@@ -57,6 +57,8 @@ public final class GpsTrackingPlugin extends Plugin {
                 String owner = call.getString("owner","").trim(), team = call.getString("team_id","");
                 String color = call.getString("team_color","#2563EB"); int interval = call.getInt("interval_seconds",10);
                 if (owner.isEmpty() || owner.length()>100 || !team.matches("[a-zA-Z0-9_-]{1,100}") || !color.matches("#[0-9a-fA-F]{6}") || !(interval==5||interval==10||interval==30||interval==60)) throw new IllegalArgumentException("담당자·팀과 이동 기록 설정을 확인해주세요.");
+                if (getContext().getFilesDir().getUsableSpace() < 5L * 1024 * 1024)
+                    throw new IllegalStateException("기기 저장 공간이 부족하여 기록을 시작할 수 없습니다. 여유 공간을 확보한 뒤 다시 시도해주세요.");
                 store().recover();
                 call.getData().put("color",color);
                 JSObject track = store().create(call.getData()); created = track.getString("id");
@@ -64,7 +66,7 @@ public final class GpsTrackingPlugin extends Plugin {
             } catch (Exception error) {
                 awaitingLocationSettings=false;
                 if (created != null) { try { store().finish(created,"interrupted",error.getMessage()); } catch (RuntimeException ignored) {} }
-                call.reject(error.getMessage());
+                call.reject(StorageFailure.message(error));
             } finally { if (!awaitingLocationSettings) starting=false; }
         });
     }
@@ -88,7 +90,9 @@ public final class GpsTrackingPlugin extends Plugin {
                 if (!GpsTrackService.running()) store().recover();
                 JSObject track = store().active();
                 GpsTrackService.stop();
-                call.resolve(track == null ? new JSObject() : store().detail(track.getString("id"),false));
+                JSObject result = track == null ? new JSObject() : store().detail(track.getString("id"),false);
+                if ("recording".equals(result.getString("status"))) result.put("save_error",GpsTrackService.saveWarning());
+                call.resolve(result);
             } catch (Exception error) { call.reject(error.getMessage()); }
         });
     }
@@ -119,5 +123,22 @@ public final class GpsTrackingPlugin extends Plugin {
     @PluginMethod public void detail(PluginCall call) {
         try { call.resolve(store().detail(call.getString("id",""),true)); }
         catch (Exception error) { call.reject(error.getMessage()); }
+    }
+    @PluginMethod public void archiveShared(PluginCall call) {
+        // DB comparisons may cover a long route; do not block map touches or GPS callbacks.
+        new Thread(() -> {
+            try {
+                long requested = call.getData().getLong("cutoff");
+                long cutoff = Math.min(requested, System.currentTimeMillis() - 7L * 86400000L);
+                int removed = store().archiveShared(call.getObject("remote"), cutoff);
+                call.resolve(new JSObject().put("points", Math.max(0,removed)).put("removed",removed>=0));
+            } catch (Exception error) { call.reject("기기 경로 정리를 완료하지 못했습니다. 원본을 보존합니다. " + error.getMessage()); }
+        }, "gps-storage-cleanup").start();
+    }
+    @PluginMethod public void storageInfo(PluginCall call) {
+        java.io.File file = getContext().getDatabasePath("GpsTracks.db");
+        long bytes = file.length() + new java.io.File(file.getPath()+"-wal").length()
+            + new java.io.File(file.getPath()+"-shm").length();
+        call.resolve(new JSObject().put("availableBytes",getContext().getFilesDir().getUsableSpace()).put("databaseBytes",bytes));
     }
 }

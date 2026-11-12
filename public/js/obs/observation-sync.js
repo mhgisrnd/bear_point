@@ -7,6 +7,8 @@
   let retrying;
   let merging = Promise.resolve();
   const sending = new Set();
+  // Server-only records live in memory for this session, never in the offline store.
+  const serverRows = new Map();
   const newMutationId = () => window.crypto?.randomUUID?.() || "edit-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2);
   const revision = row => JSON.stringify([Number(row.server_version || 0), row.updated_at || "", row.sync_mutation_id || "", row.share_state]);
   function serialize(action) {
@@ -46,17 +48,30 @@
   }
   const plugin = () => window.Capacitor.Plugins.CapacitorSQLite;
   const run = (statement, values = []) => plugin().run({ database: database(), statement, values, transaction: true, readonly: false });
-  async function all() {
+  async function localRows() {
     await init();
-    if (!isNative()) return webRead().map(row => ({ ...row }));
+    if (!isNative()) return webRead().map(row=>({...row}));
     const result = await plugin().query({ database: database(), statement: "SELECT * FROM observations ORDER BY created_at DESC,id", values: [], readonly: false });
-    return result.values || [];
+    return result.values||[];
+  }
+  async function all() {
+    return [...new Map([...serverRows,...(await localRows()).map(row=>[String(row.id),row])]).values()];
   }
   async function find(id) {
     await init();
-    if (!isNative()) return webRead().find(row => row.id === id);
+    if (!isNative()) return webRead().find(row => row.id === id) || serverRows.get(String(id));
     const result = await plugin().query({ database: database(), statement: "SELECT * FROM observations WHERE id=?", values: [id], readonly: false });
-    return (result.values || [])[0];
+    return (result.values || [])[0] || serverRows.get(String(id));
+  }
+  async function materialize(row) {
+    if(!row||!serverRows.has(String(row.id)))return;
+    if(!isNative()) {
+      if(!webRead().some(item=>item.id===row.id))webWrite([...webRead(),{...row}]);
+    } else {
+      const keys=Object.keys(row);
+      await run('INSERT OR IGNORE INTO observations ('+keys.join(',')+') VALUES ('+keys.map(()=>'?').join(',')+')',keys.map(key=>row[key]));
+    }
+    serverRows.delete(String(row.id));
   }
   function payload(row) {
     return { id: row.id, bear_code: row.bear_code, owner: row.owner, place: row.place,
@@ -66,6 +81,10 @@
       created_at: row.created_at && /Z$|[+]\d\d:\d\d$/.test(row.created_at) ? row.created_at : String(row.created_at || "").replace(" ", "T") + "Z" };
   }
   async function patch(id, fields) {
+    if(serverRows.has(String(id))){
+      if(fields.share_state==='shared'){serverRows.set(String(id),{...serverRows.get(String(id)),...fields});return;}
+      await materialize(serverRows.get(String(id)));
+    }
     if (!isNative()) { webWrite(webRead().map(row => row.id === id ? { ...row, ...fields } : row)); return; }
     const keys = Object.keys(fields);
     await run("UPDATE observations SET " + keys.map(key => key + "=?").join(",") + " WHERE id=?", [...keys.map(key => fields[key]), id]);
@@ -82,6 +101,7 @@
     await init();
     return serialize(async () => {
     const original = edit ? await assertEditable(observation.id) : null;
+    if(original)await materialize(original);
     if (original && observation.editRevision != null && observation.editRevision !== revision(original)) throw new Error("수정 중 관측점이 변경되었습니다. 입력 내용은 유지됩니다. 최신 자료를 확인하고 다시 수정해주세요.");
     const fields = { bear_code: observation.bearCode, owner: original ? original.owner : observation.owner, place: observation.place,
       team_id: (original ? original.team_id : observation.team_id) || null,
@@ -121,6 +141,8 @@
   }
   async function mergeOne(remote, acknowledged = false) {
     const local = await find(remote.id);
+    // Old server deletions are not useful offline. Never discard a local draft or backup.
+    if (!local && remote.deleted && window.BearStorageCleanup?.older(remote.updated_at || remote.uploaded_at)) return;
     if (local && local.share_state !== "shared" && !acknowledged) {
       if (!sending.has(local.id) && local.share_state !== "sending" && Number(local.server_version || 0) > 0 && Number(remote.server_version) > Number(local.server_version)) {
         // A matching receipt can safely acknowledge a response lost after commit.
@@ -139,6 +161,12 @@
       detectors_json: detectors, created_at: remote.created_at, updated_at: remote.updated_at,
       share_state: "shared", shared_at: remote.uploaded_at, server_version: remote.server_version,
       server_deleted: remote.deleted ? 1 : 0, sync_error: null, sync_mutation_id: null, conflict_json: null };
+    if(acknowledged && local?.share_state!=='shared')fields.shared_at=new Date().toISOString();
+    else if(local?.shared_at && Date.parse(local.shared_at)>Date.parse(fields.shared_at))fields.shared_at=local.shared_at;
+    if(!local && window.BearStorageCleanup?.older(remote.uploaded_at)) {
+      if(!remote.deleted)serverRows.set(String(remote.id),{id:remote.id,...fields});
+      return;
+    }
     // If an earlier successful response was lost, retain later unsent edits
     // before adopting the immutable canonical server record.
     if (local && acknowledged && local.share_state !== "shared") {
@@ -284,5 +312,26 @@
       throw new Error(error.status === 409 ? error.message : "삭제하지 못했습니다. 자료는 기기에 유지됩니다. " + error.message);
     } finally { sending.delete(id); changed(); }
   }
-  window.BearObservationSync = { init, all, find, saveDraft, upload, pull, retryPending, assertEditable, removeDraft, locked, deletable, revision, resolveConflict, remove };
+  async function cleanup(cutoff) {
+    const remote = await pull(); // Require a fresh, fully paginated server response.
+    return serialize(async () => {
+      const confirmed = new Map(remote.map(row=>[String(row.id),row]));
+      const candidates = (await localRows()).filter(row=>{
+        const proof=confirmed.get(String(row.id));
+        return proof && row.share_state==='shared' && row.unshared_backup==null
+          && row.conflict_json==null && !sending.has(row.id) && Number(row.server_version)===Number(proof.server_version)
+          && window.BearStorageCleanup.older(row.shared_at,cutoff) && window.BearStorageCleanup.older(proof.uploaded_at,cutoff);
+      });
+      if(isNative()) {
+        for(const row of candidates)await run("DELETE FROM observations WHERE id=? AND share_state='shared' AND server_version=? AND unshared_backup IS NULL AND conflict_json IS NULL",[row.id,row.server_version]);
+      } else {
+        const ids=new Set(candidates.map(row=>row.id));webWrite(webRead().filter(row=>!ids.has(row.id)));
+      }
+      for(const row of candidates)if(!Number(row.server_deleted))serverRows.set(String(row.id),row);
+      if(candidates.length)changed();
+      return {observations:candidates.length};
+    });
+  }
+  window.BearObservationSync = { init, all, find, saveDraft, upload, pull, retryPending, assertEditable, removeDraft, locked, deletable, revision, resolveConflict, remove, cleanup };
+  window.BearStorageCleanup?.register('observations',cleanup);
 })();

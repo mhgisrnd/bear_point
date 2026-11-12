@@ -313,6 +313,7 @@
     }
     async function fetchRealtimeSnapshot(options) {
       const requestedAt = Date.now();
+      let lastCompleteSnapshot = false;
       const opts = options && typeof options === "object" ? options : {};
       const silent = !!opts.silent;
 
@@ -341,6 +342,7 @@
         items = Array.isArray(data.items)
           ? rawItems.map(normalizeItem).filter(Boolean).slice(0, unified ? undefined : MAX_ITEMS)
           : [];
+        lastCompleteSnapshot = data.total != null && Number(data.total) === rawItems.length;
         if (onRemoteEstimatesLoaded) {
           await onRemoteEstimatesLoaded(rawItems, { complete: data.total != null && Number(data.total) === rawItems.length, requestedAt });
         }
@@ -372,6 +374,7 @@
       return {
         ok: true,
         items: items.slice(),
+        complete: !unified || !loadError && lastCompleteSnapshot,
       };
     }
 

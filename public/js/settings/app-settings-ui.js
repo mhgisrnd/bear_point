@@ -11,6 +11,7 @@
       <button type="button" class="app-settings-tab" id="app-settings-tracking-tab" role="tab" aria-selected="false" aria-controls="app-settings-tracking-panel" tabindex="-1">이동 기록</button>
       <button type="button" class="app-settings-tab" id="app-settings-notifications-tab" role="tab" aria-selected="false" aria-controls="app-settings-notifications-panel" tabindex="-1">알림</button>
       <button type="button" class="app-settings-tab" id="app-settings-version-tab" role="tab" aria-selected="false" aria-controls="app-settings-version-panel" tabindex="-1">앱 버전</button>
+      <button type="button" class="app-settings-tab" id="app-settings-storage-tab" role="tab" aria-selected="false" aria-controls="app-settings-storage-panel" tabindex="-1">저장 공간</button>
     </div>
     <div class="app-settings-scroll"><section id="app-settings-profile-panel" role="tabpanel" aria-labelledby="app-settings-profile-tab">
     <form class="app-settings-form"><div class="app-settings-body app-settings-fields"><p class="app-settings-intro">담당자 이름과 소속 팀을 설정해주세요.</p>
@@ -50,6 +51,11 @@
       </div>
     </section><section id="app-settings-version-panel" role="tabpanel" aria-labelledby="app-settings-version-tab" hidden></section></div>`;
   document.body.append(dialog);
+  const storagePanel=document.createElement('section');
+  storagePanel.id='app-settings-storage-panel';storagePanel.hidden=true;
+  storagePanel.setAttribute('role','tabpanel');storagePanel.setAttribute('aria-labelledby','app-settings-storage-tab');
+  dialog.querySelector('.app-settings-scroll').append(storagePanel);
+  window.BearStorageCleanup?.mount(storagePanel);
   window.BearAppUpdates?.mount(dialog.querySelector('#app-settings-version-panel'));
   window.BearNotificationSettings.mount(dialog.querySelector("#app-settings-notifications-panel"), dialog);
   const pushRegistration = window.BearPushRegistrationStatus;
@@ -78,6 +84,7 @@
       item.setAttribute("aria-selected", String(active));
       item.tabIndex = active ? 0 : -1;
       dialog.querySelector("#" + item.getAttribute("aria-controls")).hidden = !active;
+      if(active&&item.id==='app-settings-storage-tab')storagePanel.dispatchEvent(new Event('storage-refresh'));
     });
     const fields = dialog.querySelector("#" + tab.getAttribute("aria-controls") + " .app-settings-fields");
     if (fields) fields.scrollTop = 0;

@@ -151,7 +151,11 @@
     }
     async function show(id,fit,sharedOnly=false) {
       const version=++viewVersion;
-      const track=await (sharedOnly ? syncClient.sharedDetail(id) : plugin.detail({id}));
+      let track=await (sharedOnly ? syncClient.sharedDetail(id) : plugin.detail({id}));
+      if(Number(track?.local_archived)===1){
+        try {track=await syncClient.sharedDetail(id);}
+        catch(_){throw new Error('기기 사본이 정리된 공유 완료 경로입니다. 인터넷 연결 후 다시 조회해주세요.');}
+      }
       if(version!==viewVersion)return;
       if(!track)throw new Error('기록을 찾을 수 없습니다.');
       draw(track,fit);
@@ -228,13 +232,17 @@
     }
     async function action(fn) {
       if(busy)return;busy=true;paint();
-      try{await fn();}catch(error){message.textContent=error.message||String(error);}
+      try{await fn();}catch(error){message.textContent=root.BearStorageCleanup?.formatError(error)||error.message||String(error);root.__bpShowToast?.(message.textContent);}
       finally{busy=false;paint();}
     }
+    let lastStorageWarning='';
     async function poll() {
       if(polling||document.hidden||busy)return;polling=true;
       try{
         const result=await plugin.status();if(busy)return;const previous=active;active=result.active||null;
+        const storageWarning=/저장 공간/.test(result.location_warning||'')?result.location_warning:'';
+        if(storageWarning&&storageWarning!==lastStorageWarning)root.__bpShowToast?.(storageWarning);
+        lastStorageWarning=storageWarning;
         if(result.error)message.textContent=result.error;
         if(active && (initial || displayed?.id===active.id || !displayed)) {
           if(displayed?.id!==active.id||displayed?.point_count!==active.point_count)await show(active.id,false);
@@ -267,7 +275,7 @@
       const activeId=active?.id;
       let result=await plugin.stop();
       if(!result.id&&activeId)result=await plugin.detail({id:activeId});
-      if(result.status==='recording')throw new Error('기록 종료를 완료하지 못했습니다. 다시 시도해주세요.');
+      if(result.status==='recording')throw new Error(result.save_error||'기록 종료를 완료하지 못했습니다. 다시 시도해주세요.');
       root.__bpTriggerHapticImpact?.('LIGHT');
       active=null;displayed=null;++viewVersion;source.clear();message.textContent=result.status==='discarded'?(result.error||'GPS 위치가 수신되지 않아 기록을 저장하지 않았습니다.'):'이동 기록을 저장했습니다.';
       void syncRecords(true);
@@ -323,6 +331,11 @@
         if(active && displayed?.id===active.id)displayed={...displayed,interval_seconds:active.interval_seconds};
       } finally {busy=false;paint();}
     }
+    root.BearStorageCleanup?.register('tracking',async cutoff=>{
+      const result=await syncClient.cleanup(cutoff);
+      if(!panel.hidden)await loadHistory(true,Math.max(30,historyOffset));
+      return result;
+    });
     void poll();return {open,close,panel,refreshPlacement:paint,isOpen:()=>!panel.hidden,updateInterval,setMapVisible:visible=>layer.setVisible(visible)};
   };
 })(window);

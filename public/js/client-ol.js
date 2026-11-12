@@ -94,6 +94,19 @@
   let bearPanelReady = false;
   const unifiedBearStore = window.BearEstimateStore.createStore(window);
   const localEstimateStore = window.BearEstimateStore.createLocalStore(window);
+  window.BearStorageCleanup?.register('estimates',async cutoff=>{
+    // Refresh all active server records before compacting duplicated local originals.
+    const refreshed=await realtimeListModule?.refresh?.({silent:true});
+    if(!refreshed?.ok||!refreshed.complete)throw new Error('개체 추적 서버 자료를 모두 확인하지 못해 기기 원본을 보존했습니다.');
+    const proofs=unifiedBearStore.raw().filter(row=>!row._cacheDeleted);
+    const old=(await localEstimateStore.list()).filter(row=>row.shared_at&&window.BearStorageCleanup.older(row.shared_at,cutoff));
+    for(const code of new Set(old.map(row=>row.bear_code))){
+      proofs.push(...await realtimeListModule.fetchHistory(code));
+    }
+    const result=await unifiedBearStore.cleanup(cutoff,localEstimateStore,proofs);
+    await refreshBearEstimatePanel();
+    return result;
+  });
   const pendingBearUploads = new Set();
   const pendingBearDeletions = new Set();
   let currentBearEstimateFallbackMode = false;
@@ -255,6 +268,7 @@
 
   // 안드로이드 뒤로가기 종료 안내를 하단 토스트로 표시한다.
   function showBackExitToast(message, durationMs = BACK_EXIT_DOUBLE_PRESS_MS) {
+    if (message) message = window.BearStorageCleanup?.formatError(message) || message;
     const text = String(message || "한번 더 뒤로가면 앱이 꺼져요.").trim();
     if (!text) return;
 

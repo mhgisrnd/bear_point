@@ -1,5 +1,44 @@
 const {test}=require('node:test'),assert=require('node:assert/strict');
 const {create,endpoint,notice}=require('../public/js/tracking/gps-track-sync');
+
+test('cleanup deletes complete device copies including legacy archived metadata after verifying server routes',async()=>{
+ const cutoff=Date.parse('2026-10-01T00:00:00Z'),old=Date.parse('2026-08-01T00:00:00Z');
+ const tracks=[{id:'old',status:'saved',ended_at:old,point_count:1},{id:'active',status:'recording',ended_at:old,point_count:1},
+   {id:'new',status:'saved',ended_at:cutoff+1,point_count:1},{id:'archived',status:'saved',ended_at:old,point_count:1,local_archived:1},
+   {id:'unsent',status:'saved',ended_at:old,point_count:1}];
+ const calls=[],archived=[];
+ const plugin={status:async()=>({}),list:async()=>({items:tracks}),archiveShared:async input=>{archived.push(input);const i=tracks.findIndex(row=>row.id===input.remote.id);const row=tracks.splice(i,1)[0];return {points:row.local_archived?0:1,removed:true};}};
+ const remote={...tracks[0],uploaded_at:'2026-08-02T00:00:00Z',points:[{lat:35,lng:127,accuracy:5,recorded_at:old}]};
+ const win={fetch(){},setTimeout,clearTimeout,localStorage:{getItem:()=>null,setItem(){}}};
+ const client=create({win,plugin,fetchImpl:async(url,options)=>{calls.push({url,options});return {ok:true,json:async()=>url.includes('/archived')?{...remote,id:'archived'}:url.includes('/old')?remote:{ok:true,items:tracks.slice(0,4),pageSize:100,total:4}};}});
+ const result=await client.cleanup(cutoff);assert.equal(result.tracks,2);assert.equal(result.points,1);
+ assert.equal(archived.length,2);assert.deepEqual(archived[0].remote.points,remote.points);
+ assert.equal(calls.length,3);assert.ok(calls.every(call=>!call.options.body));
+ assert.deepEqual(tracks.map(row=>row.id),['active','new','unsent'],'only expired shared device copies are removed');
+ tracks.splice(1);await client.sync();assert.equal(calls.length,3,'removed history must never be uploaded again');
+});
+
+test('cleanup retains local paths on failed detail lookup or incomplete server pagination',async()=>{
+ const local={id:'old',status:'saved',ended_at:1,point_count:2};let removed=0;
+ const win={fetch(){},setTimeout,clearTimeout,localStorage:{getItem:()=>null}};
+ const plugin={list:async()=>({items:[local]}),archiveShared:async()=>{removed++;}};
+ let detail=false;
+ const client=create({win,plugin,fetchImpl:async url=>{
+   if(url.includes('/old')){detail=true;throw Error('offline');}
+   return {ok:true,json:async()=>({ok:true,items:[local],total:1,pageSize:100})};
+ }});
+ const result=await client.cleanup(Date.now());assert.match(result.warning,/offline/);assert.equal(detail,true);assert.equal(removed,0);
+});
+
+test('an old GPS recording shared recently must keep a full 7 days from successful sharing',async()=>{
+ const cutoff=Date.parse('2026-10-01T00:00:00Z'),row={id:'recent-share',status:'saved',ended_at:1,point_count:1};let removed=0;
+ const plugin={list:async()=>({items:[row]}),archiveShared:async()=>{removed++;return {removed:true,points:1};}};
+ const win={fetch(){},localStorage:{getItem:()=>null}};
+ const client=create({win,plugin,fetchImpl:async url=>({ok:true,json:async()=>url.includes('/recent-share')
+   ?{...row,uploaded_at:'2026-11-12T00:00:00Z',points:[{lat:35,lng:127,accuracy:5,recorded_at:1}]}
+   :{ok:true,items:[row],pageSize:100,total:1}})});
+ assert.equal((await client.cleanup(cutoff)).tracks,0);assert.equal(removed,0);
+});
 function fixture({failure=false,count=1}={}) {
  const calls=[],saved=new Map(),tracks=Array.from({length:count},(_,i)=>({id:'id-'+i,status:'saved',owner:'Kim',point_count:1,points:[{lat:35,lng:127,accuracy:5,recorded_at:1}]}));
  const win={fetch(){},setTimeout,clearTimeout,localStorage:{getItem:k=>saved.get(k),setItem:(k,v)=>saved.set(k,v)}};

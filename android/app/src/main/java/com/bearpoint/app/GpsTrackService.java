@@ -41,6 +41,7 @@ public final class GpsTrackService extends Service implements LocationListener {
         }
     };
     static boolean running() { return requested; }
+    static String saveWarning() { return active == null || active.saveError == null ? "" : active.saveError; }
     static JSObject updateInterval(int interval) throws Exception {
         GpsTrackService service = active;
         if (service == null || service.id == null) {
@@ -69,6 +70,7 @@ public final class GpsTrackService extends Service implements LocationListener {
     static String locationWarning() {
         GpsTrackService service = active;
         if (service == null) return "";
+        if (service.saveError != null) return service.saveError + " 종료·저장을 다시 눌러주세요.";
         long now = SystemClock.elapsedRealtime();
         if (now - service.lastReceivedAt > Math.max(30000, service.locationIntervalMs * 2 + 10000)) return "GPS 위치 갱신을 기다리고 있습니다.";
         if ("accuracy".equals(service.lastDecision)) return service.lastAccuracy < 0 ? "GPS 정확도 정보를 기다리고 있습니다." : "GPS 정확도 부족 · 오차 약 " + Math.round(service.lastAccuracy) + "m";
@@ -139,7 +141,7 @@ public final class GpsTrackService extends Service implements LocationListener {
         if (id != null) {
             try { GpsTrackStore.get(this).finish(id,status,error); }
             catch (RuntimeException failure) { // Keep the foreground service alive so the user can retry saving.
-                saveError = failure.getMessage();
+                saveError = StorageFailure.message(failure);
                 handler.removeCallbacks(heartbeat); handler.postDelayed(heartbeat,1000); return;
             }
         }
@@ -155,7 +157,7 @@ public final class GpsTrackService extends Service implements LocationListener {
             lastDecision = GpsTrackStore.get(this).append(id,location);
             if ("saved".equals(lastDecision)) lastSavedAt = lastReceivedAt;
         }
-        catch (Exception error) { finish("interrupted", "위치 저장 실패: " + error.getMessage()); }
+        catch (Exception error) { finish("interrupted", "위치 저장 실패: " + StorageFailure.message(error)); }
     }
     @Override public void onProviderDisabled(String provider) {}
     @Override public void onProviderEnabled(String provider) {}

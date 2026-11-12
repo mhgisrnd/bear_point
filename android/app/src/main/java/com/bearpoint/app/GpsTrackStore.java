@@ -17,17 +17,52 @@ final class GpsTrackStore extends SQLiteOpenHelper {
         if (instance == null) instance = new GpsTrackStore(context.getApplicationContext());
         return instance;
     }
-    private GpsTrackStore(Context context) { super(context, "GpsTracks.db", null, 2); }
+    private GpsTrackStore(Context context) { super(context, "GpsTracks.db", null, 3); }
     @Override public void onCreate(SQLiteDatabase db) {
         db.execSQL("CREATE TABLE tracks (id TEXT PRIMARY KEY, owner TEXT NOT NULL, team_id TEXT, team_name TEXT, team_color TEXT, color TEXT NOT NULL, interval_seconds INTEGER NOT NULL, started_at INTEGER NOT NULL, ended_at INTEGER, status TEXT NOT NULL, distance REAL NOT NULL DEFAULT 0, point_count INTEGER NOT NULL DEFAULT 0, error TEXT)");
         db.execSQL("CREATE TABLE points (track_id TEXT NOT NULL, seq INTEGER NOT NULL, lat REAL NOT NULL, lng REAL NOT NULL, recorded_at INTEGER NOT NULL, accuracy REAL NOT NULL, PRIMARY KEY(track_id,seq))");
+        db.execSQL("ALTER TABLE tracks ADD COLUMN local_archived INTEGER NOT NULL DEFAULT 0");
         indexes(db);
     }
     private void indexes(SQLiteDatabase db) {
         db.execSQL("CREATE INDEX IF NOT EXISTS tracks_started_idx ON tracks(started_at DESC)");
         db.execSQL("CREATE INDEX IF NOT EXISTS tracks_team_started_idx ON tracks(team_id,started_at DESC)");
     }
-    @Override public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) { if(oldVersion<2)indexes(db); }
+    @Override public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
+        if(oldVersion<2)indexes(db);
+        if(oldVersion<3)db.execSQL("ALTER TABLE tracks ADD COLUMN local_archived INTEGER NOT NULL DEFAULT 0");
+    }
+
+    /** Delete the complete device copy only after verifying a fresh full server detail. */
+    synchronized int archiveShared(JSObject remote, long cutoff) throws Exception {
+        String id = remote.getString("id", "");
+        SQLiteDatabase db = getWritableDatabase();
+        db.beginTransaction();
+        try {
+            JSObject local = detail(id, true);
+            String status = local.getString("status", "");
+            if (!GpsArchivePolicy.eligible(status,false,local.optLong("ended_at",0),cutoff)
+                || remote.optBoolean("deleted", false)
+                || !id.equals(remote.getString("id")) || !status.equals(remote.getString("status"))) return -1;
+            for (String field : new String[]{"started_at", "ended_at", "point_count"})
+                if (local.getLong(field) != remote.getLong(field)) return -1;
+            for (String field : new String[]{"owner", "team_id"})
+                if (!java.util.Objects.equals(local.optString(field, ""), remote.optString(field, ""))) return -1;
+            org.json.JSONArray localPoints = local.getJSONArray("points"), serverPoints = remote.getJSONArray("points");
+            boolean previouslyVerified = local.optInt("local_archived",0)==1 && localPoints.length()==0;
+            if (serverPoints.length()!=local.getInt("point_count") || serverPoints.length()==0
+                || (!previouslyVerified && localPoints.length()!=serverPoints.length())) return -1;
+            for (int i = 0; i < localPoints.length(); i++) {
+                org.json.JSONObject a = localPoints.getJSONObject(i), b = serverPoints.getJSONObject(i);
+                if (!GpsArchivePolicy.samePoint(a.getDouble("lat"),a.getDouble("lng"),a.getDouble("accuracy"),a.getLong("recorded_at"),
+                    b.getDouble("lat"),b.getDouble("lng"),b.getDouble("accuracy"),b.getLong("recorded_at"))) return -1;
+            }
+            int removed = db.delete("points", "track_id=?", new String[]{id});
+            db.delete("tracks", "id=?", new String[]{id});
+            db.setTransactionSuccessful();
+            return removed;
+        } finally { db.endTransaction(); }
+    }
     synchronized JSObject create(JSObject options) throws Exception {
         if (active() != null) throw new IllegalStateException("이미 이동 기록이 진행 중입니다.");
         String id = UUID.randomUUID().toString();

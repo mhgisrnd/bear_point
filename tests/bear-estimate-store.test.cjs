@@ -6,6 +6,42 @@ const { merge, createStore, originId } = require('../public/js/realtime/bear-est
 const receipt = (id, origin, extra = {}) => ({ id, bear_estimate_id: origin, bear_code: 'KF-58', lat: 35.3, lng: 127.7, uploaded_at: '2026-10-29 10:00:00', ...extra });
 const draft = id => ({ id, bear_code: 'KF-58', lat: 35, lng: 127, created_at: '2026-10-28', source_observations: [{ id: 'observation-a' }] });
 
+test('cleanup removes expired shared originals and disk cache; server-only rows remain queryable in memory',async()=>{
+  const {createLocalStore}=require('../public/js/realtime/bear-estimate-store');
+  const previous=global.BearStorageCleanup;global.BearStorageCleanup={older:stamp=>String(stamp).startsWith('2020')};
+  try{
+    const data=new Map(),window={localStorage:{getItem:key=>data.get(key)||null,setItem:(key,value)=>data.set(key,value)}};
+    const local=createLocalStore(window),cache=createStore(window);
+    await local.insert({id:'a',bear_code:'A',lat:35,lng:127,source_observations_json:'[{"id":"o"}]'});
+    await local.insert({id:'unsent',bear_code:'A',lat:35,lng:127});
+    await local.markShared(['a'],'2020-01-01');
+    const payload=(await local.list()).find(row=>row.id==='a');
+    await cache.accept([receipt(1,'a',{uploaded_at:'2020-01-01',payload})],{complete:true});
+    assert.equal((await cache.cleanup(Date.now(),local)).estimates,1);
+    assert.deepEqual((await local.list()).map(row=>row.id),['unsent']);
+    assert.equal(cache.merge(await local.list()).find(row=>row.id==='a').source_observations.length,1);
+    const reopened=createStore(window);await reopened.load();
+    assert.equal(reopened.merge([]).length,0,'expired shared cache must not survive an offline restart');
+    await reopened.accept([receipt(1,'a',{uploaded_at:'2020-01-01',payload})],{complete:true});
+    assert.equal(reopened.merge([])[0].source_observations.length,1,'online refresh restores the server result');
+    assert.deepEqual(JSON.parse(data.get('bearpoint.remote-estimates.v1')),[],'online refresh does not put expired data back on disk');
+  }finally{global.BearStorageCleanup=previous;}
+});
+
+test('recent live receipt overrides an old tombstone and incomplete payload cannot remove local analysis',async()=>{
+  const {createLocalStore}=require('../public/js/realtime/bear-estimate-store');
+  const previous=global.BearStorageCleanup;global.BearStorageCleanup={older:stamp=>String(stamp).startsWith('2020')};
+  try{
+    const data=new Map(),window={localStorage:{getItem:key=>data.get(key)||null,setItem:(key,value)=>data.set(key,value)}};
+    const local=createLocalStore(window);await local.insert({id:'a',bear_code:'A',lat:35,lng:127});await local.markShared(['a'],'2020-01-01');
+    const payload=(await local.list())[0];
+    assert.equal(await local.removeSharedCopies([receipt(0,'a',{uploaded_at:'2020-01-01',_cacheDeleted:true})],Date.now()),0,'absence from active list cannot authorize deleting the original');
+    assert.equal(await local.removeSharedCopies([receipt(1,'a',{uploaded_at:'2020-01-01',_cacheDeleted:true}),receipt(2,'a',{uploaded_at:'2026-11-12',payload})],Date.now()),0);
+    assert.equal(await local.removeSharedCopies([receipt(3,'a',{uploaded_at:'2020-01-01',payload:{id:'a'}})],Date.now()),0);
+    assert.equal((await local.list()).length,1);
+  }finally{global.BearStorageCleanup=previous;}
+});
+
 test('complete snapshot hides legacy shared local records absent from server without deleting originals', async () => {
   const data = new Map();
   const window = { localStorage: { getItem: key => data.get(key) || null, setItem: (key, value) => data.set(key, value) } };

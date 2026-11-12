@@ -20,12 +20,12 @@ function fixture(native = false) {
   // Older rows keep null team values when upgrading.
   config.BearSQLiteConfig.migrations[18].filter(sql => sql.startsWith("ALTER TABLE observations ")).forEach(sql => db.exec(sql));
   let transport = async () => { throw new Error("offline"); };
-  function boot(runtimeConfig = {}) {
+  function boot(runtimeConfig = {}, cleanup) {
     const window = { Capacitor: { isNativePlatform: () => native, Plugins: { CapacitorSQLite: {
       run: async options => ({ changes: { changes: db.prepare(options.statement).run(...options.values).changes } }),
       query: async options => ({ values: db.prepare(options.statement).all(...options.values) })
     } } }, BearSQLite: { initialize: async () => ({ ready: true }) },
-    BEAR_RUNTIME_CONFIG: runtimeConfig,
+    BEAR_RUNTIME_CONFIG: runtimeConfig, BearStorageCleanup: cleanup,
     localStorage: { getItem: key => storage.get(key), setItem: (key, value) => storage.set(key, value) } };
     vm.runInNewContext(source, { window, setTimeout, clearTimeout, AbortController, fetch: (...args) => transport(...args) });
     return window.BearObservationSync;
@@ -38,6 +38,47 @@ function remote(overrides = {}) {
     detectors_json: [], created_at: "2026-10-28T01:00:00Z", updated_at: "2026-10-28T01:00:00Z", uploaded_at: "2026-10-28T01:00:00Z", server_version: 1, deleted: false, ...overrides };
 }
 const response = result => ({ ok: true, json: async () => ({ ok: true, ...result }) });
+
+test('cleanup deletes expired shared observations, preserves drafts/backups/recent shares, and restores server-only rows',async()=>{
+  const f=fixture(true),policy={older:stamp=>String(stamp).startsWith('2020'),register(){}};
+  try{
+    const api=f.boot({},policy);
+    for(const id of ['deleted','backup','current','recent']){
+      await api.saveDraft(draft(id),[]);
+      f.setTransport(async()=>response({item:remote({id})}));assert.equal((await api.upload(id)).ok,true);
+    }
+    await api.saveDraft(draft('unsent'),[]);
+    f.db.prepare("UPDATE observations SET shared_at='2020-01-01T00:00:00Z' WHERE id!='recent'").run();
+    f.db.prepare("UPDATE observations SET unshared_backup='important offline draft' WHERE id='backup'").run();
+    f.setTransport(async()=>response({items:['deleted','backup','current','recent'].map(id=>remote({id,deleted:['deleted','backup'].includes(id),server_version:2,uploaded_at:'2020-01-01T00:00:00Z',updated_at:'2020-01-01T00:00:00Z'})),next:null}));
+    assert.equal((await api.cleanup(Date.now())).observations,2);
+    assert.equal(await api.find('deleted'),undefined);
+    assert.ok(await api.find('current'));assert.ok(await api.find('unsent'));
+    assert.equal(f.db.prepare("SELECT COUNT(*) AS n FROM observations WHERE id='current'").get().n,0);
+    assert.ok(f.db.prepare("SELECT id FROM observations WHERE id='recent'").get(),'recent successful share must get its own full 7 days');
+    assert.equal((await api.find('backup')).unshared_backup,'important offline draft');
+    const reopened=f.boot({},policy);
+    assert.equal(await reopened.find('current'),undefined,'expired copy is absent offline after restart');
+    await reopened.pull();assert.ok(await reopened.find('current'));
+    assert.equal(f.db.prepare("SELECT COUNT(*) AS n FROM observations WHERE id='current'").get().n,0,'server query must not recreate expired disk copy');
+    await reopened.saveDraft({...draft('current'),place:'new offline edit'},[],true);
+    assert.equal((await reopened.find('current')).share_state,'local');
+    assert.ok(f.db.prepare("SELECT id FROM observations WHERE id='current'").get(),'editing server-only data must first create a durable draft');
+    assert.equal(await reopened.find('deleted'),undefined,'old tombstone must not repopulate storage');
+  }finally{f.db.close();}
+});
+
+test('web server-only observations are not recached; editing makes a durable unsent draft',async()=>{
+  const f=fixture(false),policy={older:stamp=>String(stamp).startsWith('2020'),register(){}};
+  try{
+    f.setTransport(async()=>response({items:[remote({uploaded_at:'2020-01-01T00:00:00Z'})],next:null}));
+    const api=f.boot({},policy);await api.pull();assert.ok(await api.find('obs-test'));
+    const offline=f.boot({},policy);assert.equal(await offline.find('obs-test'),undefined);
+    await api.saveDraft({...draft(),place:'unsent edited place'},[],true);
+    const restarted=f.boot({},policy);assert.equal((await restarted.find('obs-test')).place,'unsent edited place');
+    assert.equal((await restarted.find('obs-test')).share_state,'local');
+  }finally{f.db.close();}
+});
 
 test("web observations stay on the current server while native uses the remote API", async () => {
   for (const native of [false, true]) {

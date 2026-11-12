@@ -32,10 +32,10 @@
         created_at: row.source_created_at || payload.created_at || previous?.created_at || row.uploaded_at,
         shared_at: row.uploaded_at || previous?.shared_at || "shared",
         remoteOnly, isRealtime: remoteOnly,
-        source_observations: decode(row.source_observations) || previous?.source_observations || payload.source_observations || [],
-        analysis_options: decode(row.analysis_options) || previous?.analysis_options || payload.analysis_options || {},
-        analysis_rays: decode(row.analysis_rays) || previous?.analysis_rays || payload.analysis_rays || [],
-        analysis_intersections: decode(row.analysis_intersections) || previous?.analysis_intersections || payload.analysis_intersections || [],
+        source_observations: decode(row.source_observations) || previous?.source_observations || decode(payload.source_observations_json) || payload.source_observations || [],
+        analysis_options: decode(row.analysis_options) || previous?.analysis_options || decode(payload.analysis_options_json) || payload.analysis_options || {},
+        analysis_rays: decode(row.analysis_rays) || previous?.analysis_rays || decode(payload.analysis_rays_json) || payload.analysis_rays || [],
+        analysis_intersections: decode(row.analysis_intersections) || previous?.analysis_intersections || decode(payload.intersections_json) || payload.analysis_intersections || [],
         estimation_method: row.estimation_method ?? payload.estimation_method ?? previous?.estimation_method ?? null,
         intersections_count: row.intersections_count ?? previous?.intersections_count ?? null
       });
@@ -47,6 +47,7 @@
     const dbName = () => window.BearSQLiteConfig?.dbName || "BearPointData";
     const plugin = () => window.Capacitor.Plugins.CapacitorSQLite;
     let rows = [], loaded, queue = Promise.resolve(), completeSnapshot = false;
+    let diskIds = new Set();
     const storageKey = "bearpoint.remote-estimates.v1";
     async function load() {
       if (!loaded) loaded = (async () => {
@@ -58,6 +59,7 @@
           rows = (result.values || []).map(row => decode(row.payload_json)).filter(Boolean);
         } else rows = decode(window.localStorage.getItem(storageKey) || "[]") || [];
         if (!Array.isArray(rows)) rows = [];
+        diskIds=new Set(rows.map(row=>String(row.id)));
         return rows;
       })().catch(error => { loaded = null; throw error; });
       await loaded; return rows;
@@ -72,17 +74,36 @@
         }
         for (const row of incoming) next.set(String(row.id), { ...row, _cacheDeleted: false, _receivedAt: Date.now() });
         const values = [...next.values()];
-        if (native() && values.length) {
+        const offline=values.filter(row=>!root.BearStorageCleanup?.older(row.uploaded_at));
+        if (native() && offline.length) {
           await plugin().executeSet({ database: dbName(), readonly: false, transaction: true,
-            set: values.map(row => ({ statement: "INSERT OR REPLACE INTO bear_estimate_remote_cache (server_id,payload_json) VALUES (?,?)", values: [String(row.id), JSON.stringify(row)] })) });
-        } else if (!native()) window.localStorage.setItem(storageKey, JSON.stringify(values));
+            set: offline.map(row => ({ statement: "INSERT OR REPLACE INTO bear_estimate_remote_cache (server_id,payload_json) VALUES (?,?)", values: [String(row.id), JSON.stringify(row)] })) });
+        } else if (!native()) window.localStorage.setItem(storageKey, JSON.stringify(offline));
+        if(native())offline.forEach(row=>diskIds.add(String(row.id)));else diskIds=new Set(offline.map(row=>String(row.id)));
         rows = values;
         if (options.complete) completeSnapshot = true;
         return rows;
       });
       queue = task.catch(() => {}); return task;
     }
-    return { load, accept, merge: local => {
+    function cleanup(cutoff,localStore,verified=rows) {
+      const task=queue.then(async()=>{
+        await load();
+        const old=row=>root.BearStorageCleanup?.older(row.uploaded_at,cutoff);
+        const removed=await localStore.removeSharedCopies(verified,cutoff);
+        const discarded=rows.filter(row=>old(row)&&diskIds.has(String(row.id)));
+        const ids=new Set(discarded.map(row=>String(row.id)));
+        if(native()&&ids.size)await plugin().executeSet({database:dbName(),readonly:false,transaction:true,
+          set:[...ids].map(id=>({statement:'DELETE FROM bear_estimate_remote_cache WHERE server_id=?',values:[id]}))});
+        const next=rows.filter(row=>!ids.has(String(row.id)));
+        if(!native()&&ids.size)window.localStorage.setItem(storageKey,JSON.stringify(next));
+        ids.forEach(id=>diskIds.delete(id));
+        // Keep live server rows in RAM for this session; reopening requires a server query.
+        return {estimates:removed,cache:ids.size};
+      });
+      queue=task.catch(()=>{});return task;
+    }
+    return { load, accept, cleanup, merge: local => {
       // A complete server snapshot governs shared records, including old local
       // receipts which predate the remote cache. Keep original local data intact.
       const active = new Set(rows.filter(row => !row.deleted && !row._cacheDeleted).map(originId).filter(Boolean));
@@ -164,7 +185,39 @@
         return rows.length - remaining.length;
       });
     }
-    return {list,insert,markShared,removeUnshared};
+    function removeSharedCopies(remote,cutoff) {
+      return serialize(async()=>{
+        await ready();
+        const proofs=new Map(remote.slice().sort((a,b)=>Number(!a.deleted&&!a._cacheDeleted)-Number(!b.deleted&&!b._cacheDeleted)
+          ||String(a.updated_at||a.uploaded_at||'').localeCompare(String(b.updated_at||b.uploaded_at||''))).map(row=>[originId(row),row]));
+        const local=native()?(await sqlite().query({database:database(),readonly:false,statement:'SELECT * FROM bear_estimates',values:[]})).values||[]:readWeb();
+        const ids=local.filter(row=>{
+          if(!row.shared_at||Number(row.share_pending))return false;
+          const proof=proofs.get(String(row.id));if(!proof)return false;
+          if(!root.BearStorageCleanup?.older(row.shared_at,cutoff)||!root.BearStorageCleanup?.older(proof.uploaded_at,cutoff))return false;
+          if(proof.deleted)return true;
+          // Missing from the active list may mean historical/inactive, never proof of deletion.
+          if(proof._cacheDeleted)return false;
+          const payload=decode(proof.payload);
+          // Keep the original unless the cached server payload contains its complete analysis.
+          if(!payload||String(payload.id)!==String(row.id))return false;
+          const cached=merge([], [proof])[0];
+          if(!cached)return false;
+          for(const [field,json]of [['source_observations','source_observations_json'],['analysis_options','analysis_options_json'],['analysis_rays','analysis_rays_json'],['analysis_intersections','intersections_json']]) {
+            if(row[json]!=null&&JSON.stringify(decode(row[json]))!==JSON.stringify(cached[field]))return false;
+          }
+          return columns.filter(key=>!['shared_at','share_pending'].includes(key)).every(key=>{
+            const a=row[key]??null,b=payload[key]??null;
+            return JSON.stringify(a)===JSON.stringify(b);
+          });
+        }).map(row=>String(row.id));
+        if(native()&&ids.length)await sqlite().executeSet({database:database(),readonly:false,transaction:true,
+          set:ids.map(id=>({statement:'DELETE FROM bear_estimates WHERE id=? AND shared_at IS NOT NULL AND COALESCE(share_pending,0)=0',values:[id]}))});
+        else if(!native()&&ids.length)window.localStorage.setItem(key,JSON.stringify(local.filter(row=>!ids.includes(String(row.id)))));
+        return ids.length;
+      });
+    }
+    return {list,insert,markShared,removeUnshared,removeSharedCopies};
   }
   const api = { merge, originId, createStore, createLocalStore };
   if (typeof module === "object" && module.exports) module.exports = api;
