@@ -53,6 +53,54 @@ async function setup(overrides = {}, runtime = {}) {
   return { get, calls, module, click, window };
 }
 
+test('successful upload immediately replaces the previous active position through a full server refresh',async()=>{
+  const {createStore}=require('../public/js/realtime/bear-estimate-store');
+  const cache=createStore({localStorage:{getItem:()=>null,setItem(){}}});
+  const old={id:1,bear_estimate_id:'old',bear_code:'KF-58',lat:35,lng:127};
+  const next={id:2,bear_estimate_id:'new',bear_code:'KF-58',lat:35.1,lng:127.1};
+  let server=[old];const requests=[];
+  const f=await setup({unified:true,onRemoteEstimatesLoaded:(rows,metadata)=>cache.accept(rows,metadata)},
+    {fetch:async(url,options)=>{
+      requests.push(options.method);
+      if(options.method==='POST'){server=[next];return {ok:true,json:async()=>({ok:true,item:next})};}
+      return {ok:true,json:async()=>({ok:true,items:server,total:server.length})};
+    }});
+  const local=[{...old,id:'old',shared_at:'shared'},{...next,id:'new',shared_at:'shared'}];
+  const result=await f.module.sendEstimate({...next,id:'new'});
+  assert.equal(result.ok,true);
+  assert.deepEqual(requests.slice(-2),['POST','GET']);
+  assert.deepEqual(cache.merge(local).map(row=>row.id),['new']);
+  assert.equal(local.length,2,'original history is preserved');
+});
+
+test('post-upload refresh waits out a stale in-flight request and fetches again',async()=>{
+  let reads=0,releaseOld,posted=false;const requests=[];
+  const item={id:1,bear_code:'KF-58',lat:35,lng:127};
+  const f=await setup({unified:true},{fetch:async(url,options)=>{
+    requests.push(options.method);
+    if(options.method==='POST'){posted=true;return {ok:true,json:async()=>({ok:true,item:{...item,id:2}})};}
+    reads++;
+    if(reads===2)return new Promise(resolve=>{releaseOld=()=>resolve({ok:true,json:async()=>({items:[item],total:1})});});
+    return {ok:true,json:async()=>({items:[{...item,id:posted?2:1}],total:1})};
+  }});
+  const stale=f.module.refresh({silent:true});await new Promise(setImmediate);
+  const saving=f.module.sendEstimate({...item,id:'new'});await new Promise(setImmediate);
+  assert.equal(posted,false,'existing refresh finishes before upload');assert.equal(reads,2);
+  releaseOld();await stale;assert.equal((await saving).ok,true);
+  assert.equal(reads,3);assert.deepEqual(requests.slice(-2),['POST','GET']);
+});
+
+test('refresh failure after upload preserves upload success and does not post twice',async()=>{
+  let posted=0;
+  const item={id:2,bear_code:'KF-58',lat:35,lng:127};
+  const f=await setup({unified:true},{fetch:async(url,options)=>{
+    if(options.method==='POST'){posted++;return {ok:true,json:async()=>({ok:true,item})};}
+    if(posted)throw Error('offline');
+    return {ok:true,json:async()=>({items:[],total:0})};
+  }});
+  assert.equal((await f.module.sendEstimate(item)).ok,true);assert.equal(posted,1);
+});
+
 test('automatic push registration reports App Check failure, server rejection, and successful retry', async () => {
   let failure = true;
   let denied = true;

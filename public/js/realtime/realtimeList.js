@@ -719,6 +719,18 @@
       return normalizeItem(Object.assign({}, payload || {}, response.item || {}));
     }
 
+    async function refreshAfterUpload() {
+      // A refresh started before POST may contain the previous active position.
+      // Let it finish, then request a fresh snapshot through the normal merge path.
+      try {
+        if (refreshPromise) await refreshPromise;
+        return await fetchRealtimeItems({ silent: true });
+      } catch (error) {
+        // The upload has succeeded; a failed refresh must not turn it into a retry.
+        return { ok: false, message: error.message || String(error) };
+      }
+    }
+
     async function sendEstimate(payload, { silent = false } = {}) {
       const normalized = normalizeItem(payload);
       if (!normalized) {
@@ -740,7 +752,8 @@
         }
 
         notifyItemsChanged();
-        if (!silent) setStatus("실시간 목록에 업로드했습니다.", "ok");
+        const refreshed = await refreshAfterUpload();
+        if (!silent) setStatus(refreshed.ok ? "실시간 목록에 업로드했습니다." : "공유는 완료되었습니다. 목록은 다음 갱신 때 다시 확인합니다.", refreshed.ok ? "ok" : "warn");
         return {
           ok: true,
           item: savedItem,
@@ -784,6 +797,7 @@
           }
         }
       } catch (error) {
+        if (savedItems.length) await refreshAfterUpload();
         setStatus(error && error.message ? error.message : "실시간 업로드에 실패했습니다.", "error");
         return {
           ok: false,
@@ -805,7 +819,8 @@
       }
 
       notifyItemsChanged();
-      setStatus("선택한 항목을 실시간 목록에 업로드했습니다.", "ok");
+      const refreshed = await refreshAfterUpload();
+      setStatus(refreshed.ok ? "선택한 항목을 실시간 목록에 업로드했습니다." : "공유는 완료되었습니다. 목록은 다음 갱신 때 다시 확인합니다.", refreshed.ok ? "ok" : "warn");
 
       return {
         ok: true,
