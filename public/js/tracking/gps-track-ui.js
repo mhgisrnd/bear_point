@@ -18,7 +18,6 @@
     panel.className='gps-track-panel'; panel.hidden=true; panel.setAttribute('aria-label','이동 기록');
     panel.innerHTML=`<header><strong>이동 기록</strong><div class="gps-track-header-actions"><button type="button" data-start>기록 시작</button><button type="button" data-stop hidden>종료·저장</button><button type="button" class="list-refresh-button" data-refresh aria-label="기록 이력 새로고침" title="기록 이력 새로고침">↻</button></div><button type="button" data-close aria-label="이동 기록 닫기">×</button></header>
       <div class="gps-track-content"><p class="gps-track-summary">기록을 시작하면 이동 경로가 지도에 표시됩니다.</p>
-      <p class="gps-track-message" role="status" aria-live="polite"></p><p class="gps-track-sync-message" role="status" aria-live="polite" hidden></p>
       <p class="gps-track-access" hidden><a target="_blank" rel="noopener">관리자 로그인</a></p>
       <form class="gps-history-search" role="search" aria-label="이동 기록 검색"><div class="gps-history-search-row list-search-row"><input type="search" class="list-search-input" name="owner" placeholder="담당자 검색" aria-label="담당자 검색" autocomplete="off"><button type="button" class="list-owner-shortcut" data-mine aria-pressed="false" aria-label="내 담당자명으로 검색">MY</button><button class="list-filter-button" type="button" data-filter aria-expanded="false" aria-controls="gps-history-filters">필터</button><button type="button" class="list-search-reset" data-reset disabled>초기화</button></div>
       <div class="gps-history-filters" id="gps-history-filters" hidden>
@@ -32,7 +31,19 @@
     document.body.append(panel);
     const start=panel.querySelector('[data-start]'),stop=panel.querySelector('[data-stop]');
     stop.textContent='기록 종료';
-    const message=panel.querySelector('.gps-track-message'),summary=panel.querySelector('.gps-track-summary');
+    function createNoticeChannel() {
+      let text='';
+      return {
+        get textContent(){return text;},
+        set textContent(value){
+          const next=String(value||'').trim();
+          if(next===text)return;
+          text=next;
+          if(next)root.__bpShowToast?.(next);
+        }
+      };
+    }
+    const message=createNoticeChannel(),summary=panel.querySelector('.gps-track-summary');
     const history=panel.querySelector('.gps-track-history-items'),more=panel.querySelector('[data-more]');
     const search=panel.querySelector('.gps-history-search'),filterButton=panel.querySelector('[data-filter]'),filterPanel=panel.querySelector('.gps-history-filters');
     const filterBadge=document.createElement('span');filterBadge.className='list-filter-count';filterBadge.hidden=true;filterButton.append(filterBadge);
@@ -80,7 +91,7 @@
       }
       teamSelect.value=teamId;
     }
-    const syncMessage=panel.querySelector('.gps-track-sync-message');
+    const syncMessage=createNoticeChannel();
     const syncClient=root.BearGpsTrackSync.create({plugin});
     let syncing=false,lastSync=0;
     async function syncRecords(force=false,notify=false) {
@@ -90,10 +101,8 @@
       syncing=true;lastSync=Date.now();
       try {
         const result=await syncClient.sync();
-        syncMessage.textContent=root.BearGpsTrackSync.notice(result);
-        syncMessage.hidden=!syncMessage.textContent;
-        if(notify&&result.remaining>0)root.__bpShowToast?.('기기에 저장했습니다. 서버 공유 상태는 다음 연결 시 다시 확인합니다.');
-      } catch(error) {syncMessage.hidden=false;syncMessage.textContent=error.message;if(notify)root.__bpShowToast?.('기기에 저장했습니다. 서버 공유를 완료하지 못해 나중에 다시 시도합니다.');}
+        syncMessage.textContent=notify&&result.remaining>0?'기기에 저장했습니다. 서버 공유 상태는 다음 연결 시 다시 확인합니다.':root.BearGpsTrackSync.notice(result);
+      } catch(error) {syncMessage.textContent=notify?'기기에 저장했습니다. 서버 공유를 완료하지 못해 나중에 다시 시도합니다.':error.message;}
       finally {syncing=false;place();}
     }
     root.addEventListener('online',()=>{
@@ -240,18 +249,14 @@
     }
     async function action(fn) {
       if(busy)return;busy=true;paint();
-      try{await fn();}catch(error){message.textContent=root.BearStorageCleanup?.formatError(error)||error.message||String(error);root.__bpShowToast?.(message.textContent);}
+      try{await fn();}catch(error){message.textContent=root.BearStorageCleanup?.formatError(error)||error.message||String(error);}
       finally{busy=false;paint();}
     }
-    let lastStorageWarning='';
     async function poll() {
       if(polling||document.hidden||busy)return;polling=true;
       const operation=recordingOperation;
       try{
         const result=await plugin.status();if(busy||operation!==recordingOperation)return;const previous=active;active=result.active||null;
-        const storageWarning=/저장 공간/.test(result.location_warning||'')?result.location_warning:'';
-        if(storageWarning&&storageWarning!==lastStorageWarning)root.__bpShowToast?.(storageWarning);
-        lastStorageWarning=storageWarning;
         if(result.error)message.textContent=result.error;
         if(active && (initial || displayed?.id===active.id || !displayed)) {
           if(displayed?.id!==active.id||displayed?.point_count!==active.point_count)await show(active.id,false);
@@ -276,8 +281,7 @@
       active=await plugin.start({...identity,...options});displayed=null;++viewVersion;source.clear();
       initial=false;paint();
       root.__bpTriggerHapticImpact?.('LIGHT');
-      message.textContent=native?'GPS 수신을 기다리고 있습니다.':'웹은 화면이 꺼지거나 페이지를 닫으면 기록이 중단될 수 있습니다.';
-      root.__bpShowToast?.('이동 기록을 시작했습니다.'+(active.point_count?'':' GPS 수신을 기다리고 있습니다.'));
+      message.textContent='이동 기록을 시작했습니다.'+(active.point_count?'':' GPS 수신을 기다리고 있습니다.');
       try{await show(active.id,false);await loadHistory();}catch(_){message.textContent='기록은 시작되었습니다. 목록은 새로고침으로 다시 확인해주세요.';}
     }
     async function stopRecording(save=true){
@@ -288,7 +292,7 @@
       if(result.status==='recording')throw new Error(result.save_error||'기록 종료를 완료하지 못했습니다. 다시 시도해주세요.');
       root.__bpTriggerHapticImpact?.('LIGHT');
       active=null;displayed=null;++viewVersion;source.clear();message.textContent=!save?'이동 기록을 저장하지 않고 종료했습니다.':result.status==='discarded'?(result.error||'GPS 위치가 수신되지 않아 기록을 저장하지 않았습니다.'):'이동 기록을 저장했습니다.';
-      initial=false;paint();root.__bpShowToast?.(message.textContent);
+      initial=false;paint();
       if(save)void syncRecords(true,result.status!=='discarded');
       try{await loadHistory();}catch(_){message.textContent='기록은 종료되었습니다. 목록은 새로고침으로 다시 확인해주세요.';}
     }

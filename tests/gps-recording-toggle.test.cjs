@@ -10,6 +10,9 @@ function commands(){
     show:async()=>{},loadHistory:async()=>{},syncRecords(){}};
   context.action=async fn=>{if(context.busy)return;context.busy=true;try{await fn();}catch(error){errors.push(error.message);}finally{context.busy=false;}};
   vm.createContext(context);
+  const noticeStart=source.indexOf('    function createNoticeChannel()');
+  vm.runInContext(source.slice(noticeStart,source.indexOf('    const message=',noticeStart)),context);
+  context.message=context.createNoticeChannel();
   vm.runInContext(source.slice(source.indexOf('    async function startRecording('),source.indexOf('    function close()')),context);
   return {context,errors,toasts,events,starts:()=>starts,stops:()=>stops,setState:value=>state=value};
 }
