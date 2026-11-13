@@ -1,5 +1,8 @@
 {
   "appId": "com.bearpoint.app",
   "appName": "BearMap",
-  "webDir": "public"
+  "webDir": "public",
+  "android": {
+    "adjustMarginsForEdgeToEdge": "disable"
+  }
 }
