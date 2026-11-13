@@ -39,6 +39,22 @@ function remote(overrides = {}) {
 }
 const response = result => ({ ok: true, json: async () => ({ ok: true, ...result }) });
 
+for (const native of [false, true]) test(`merged observations stay newest first after refresh (${native ? 'native' : 'web'})`, async () => {
+  const f = fixture(native);
+  try {
+    const sync = f.boot();
+    await sync.saveDraft(draft('local-new'), []);
+    f.setTransport(async () => response({ items: [
+      remote({id:'server-old',created_at:'2020-01-01T00:00:00Z'}),
+      remote({id:'server-newer',created_at:'2020-01-01T10:00:00+09:00'})
+    ], next:null }));
+    await sync.pull();
+    assert.deepEqual(Array.from(await sync.all(), row=>row.id), ['local-new','server-newer','server-old']);
+    await sync.pull();
+    assert.deepEqual(Array.from(await sync.all(), row=>row.id), ['local-new','server-newer','server-old']);
+  } finally { f.db.close(); }
+});
+
 test('cleanup deletes expired shared observations, preserves drafts/backups/recent shares, and restores server-only rows',async()=>{
   const f=fixture(true),policy={older:stamp=>String(stamp).startsWith('2020'),register(){}};
   try{

@@ -71,7 +71,8 @@ test("observation detail table preserves long text, detector rows and zero headi
   assert.match(html, /--team-color:#16A34A/);
   assert.match(html, /좌표·방향/);
   assert.match(html, /class="obs-detail-heading" title="방향각">0°/);
-  assert.match(html, /<details class="obs-detail-more"><summary>등록정보/);
+  assert.match(html, /<th scope="row">등록일시<\/th>/);
+  assert.doesNotMatch(html, /<summary>등록정보/);
   assert.doesNotMatch(html, /<details[^>]*\sopen[\s>]/);
   assert.doesNotMatch(html, /관리자 페이지/);
   assert.doesNotMatch(html, /data-observation-action="delete"/);

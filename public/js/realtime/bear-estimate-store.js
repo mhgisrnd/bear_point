@@ -40,7 +40,11 @@
         intersections_count: row.intersections_count ?? previous?.intersections_count ?? null
       });
     }
-    return [...result.values()].sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")) || String(a.id).localeCompare(String(b.id)));
+    const timestamp = value => {
+      const text = String(value || "");
+      return Date.parse(/Z$|[+-]\d\d:\d\d$/.test(text) ? text : text.replace(" ", "T") + "Z") || 0;
+    };
+    return [...result.values()].sort((a, b) => timestamp(b.created_at)-timestamp(a.created_at) || String(b.id).localeCompare(String(a.id)));
   }
   function createStore(window) {
     const native = () => !!window.Capacitor?.isNativePlatform();

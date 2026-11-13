@@ -9,6 +9,7 @@ const functions=source.slice(start,source.indexOf('  function readCachedBearEnti
 test('native localhost loads the configured public catalog rather than Capacitor assets',()=>{
   for(const capacitor of [{isNativePlatform:()=>true},{getPlatform:()=> 'android'}]){
     const context=vm.createContext({window:{location:{hostname:'localhost'},Capacitor:capacitor,BEAR_RUNTIME_CONFIG:{realtimeApiBase:'https://radio.test/api/realtime/'}}});
+    vm.runInContext(fs.readFileSync('public/js/sdr/animal-catalog.js','utf8'),context);
     vm.runInContext(functions,context);
     assert.equal(context.getBearEntityApiUrl(),'https://radio.test/api/realtime/bear-entities');
     const rows=context.normalizeBearEntities([{id:'1',bear_code:'MH-001',sex:'M'}]);

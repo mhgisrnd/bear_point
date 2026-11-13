@@ -6,13 +6,28 @@ const vm=require('node:vm');
 test('observation row uses injected haptic before moving the map',()=>{
   const code=fs.readFileSync('public/js/obs/obsList.js','utf8');
   const events=[];
-  const context=vm.createContext({observationFocusVersion:0,map:{getZoom:()=>15},observationMarkers:[],
+  const context=vm.createContext({window:{},observationFocusVersion:0,map:{getZoom:()=>15},observationMarkers:[],
     onItemHaptic:()=>events.push('haptic'),flyToLatLng:()=>events.push('move')});
   const start=code.indexOf('  function moveToObservation(');
   const end=code.indexOf('  function updateObservationMarkerScale',start);
   vm.runInContext(code.slice(start,end),context);
   context.moveToObservation({lat:35,lng:127},null);
   assert.deepEqual(events,['haptic','move']);
+});
+
+test('mobile observation selection folds the list before centering and opening details; desktop keeps its list',()=>{
+  const code=fs.readFileSync('public/js/obs/obsList.js','utf8');
+  for(const mobile of [true,false]){
+    const events=[];
+    const context=vm.createContext({window:{BearMobileDock:{isMobile:()=>mobile,collapse:()=>events.push('collapse')}},
+      observationFocusVersion:0,map:{getZoom:()=>15},observationMarkers:[{obsData:{_obsKey:'one'},openPopup:()=>events.push('popup')}],
+      observationMarkersLayer:{},onItemHaptic:()=>events.push('haptic'),
+      flyToLatLng:(coordinate,zoom,done)=>{events.push('move');done(true);}});
+    const start=code.indexOf('  function moveToObservation('),end=code.indexOf('  function updateObservationMarkerScale',start);
+    vm.runInContext(code.slice(start,end),context);
+    context.moveToObservation({_obsKey:'one',lat:35,lng:127},null);
+    assert.deepEqual(events,mobile?['haptic','collapse','move','popup']:['haptic','move','popup']);
+  }
 });
 
 test('movement history row vibrates immediately even while detail loading is pending',()=>{

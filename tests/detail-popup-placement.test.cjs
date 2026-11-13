@@ -6,6 +6,49 @@ const code=fs.readFileSync('public/js/client-ol.js','utf8');
 const start=code.indexOf('  function syncObservationPopupPlacement(');
 const fn=code.slice(start,code.indexOf('\n  observationPopupContentEl.addEventListener',start));
 
+function mobileFixture(width,height,mobile=true) {
+  const style={},size=[width,height];let pixel=[width/2,height/2],offset,moves=0;
+  const bounds={left:0,right:width,top:height-200,width,height:200};
+  const popup={style,getBoundingClientRect:()=>({width:parseFloat(style.width),height:Math.min(340,parseFloat(style.maxHeight))})};
+  const context={parseCssPx:parseFloat,document:{documentElement:{},
+    querySelectorAll:()=>[{getClientRects:()=>[1],matches:()=>false,getBoundingClientRect:()=>({width:52,height:52,bottom:80})}],
+    getElementById:()=>({classList:{contains:()=>false},getClientRects:()=>[1],getBoundingClientRect:()=>bounds})},
+    window:{innerWidth:width,innerHeight:height,BearMobileDock:{isDocked:()=>true,isMobile:()=>mobile},getComputedStyle:()=>({getPropertyValue:()=> '0'})},
+    map:{getViewport:()=>({getBoundingClientRect:()=>({left:0,top:0,width:size[0],height:size[1]})}),getPixelFromCoordinate:()=>pixel,
+      getSize:()=>size,getView:()=>({centerOn:(coordinate,viewSize,target)=>{moves++;pixel=target;},getAnimating:()=>false,getInteracting:()=>false})},
+    observationPopupContentEl:{querySelector:()=>({})},observationPopupEl:popup,
+    observationPopupOverlay:{getPosition:()=>[127,35],setPositioning(){},setOffset:value=>{offset=value;}}};
+  vm.createContext(context);vm.runInContext(fn,context);
+  return {context,popup,bounds,size,pixel:()=>pixel,moves:()=>moves,setPixel:value=>{pixel=value;},card:()=>({x:pixel[0]+offset[0],y:pixel[1]+offset[1],...popup.getBoundingClientRect()})};
+}
+
+test('small mobile screens reserve visible space for the pin above a scrollable detail without repeated panning',()=>{
+  for(const [width,height] of [[320,640],[390,844],[430,932]]){
+    const f=mobileFixture(width,height);
+    f.context.syncObservationPopupPlacement(undefined,true);
+    const card=f.card(),pin=f.pixel();
+    assert.ok(card.y>=18&&card.y+card.height<=f.bounds.top-18);
+    assert.ok(pin[0]>=18&&pin[0]<=width-74);
+    assert.ok(pin[1]>=70&&pin[1]<card.y-20,JSON.stringify({width,height,pin,card}));
+    assert.equal(f.moves(),1);
+    for(let n=0;n<5;n++)f.context.syncObservationPopupPlacement();
+    assert.equal(f.moves(),1,'postrender must not recenter repeatedly');
+    f.setPixel([-200,-200]);f.context.syncObservationPopupPlacement();
+    assert.equal(f.moves(),1,'manual map movement must not be pulled back');
+  }
+});
+
+test('detail reflows after resize, while roomy layouts keep the existing marker placement',()=>{
+  const f=mobileFixture(390,844);f.context.syncObservationPopupPlacement(undefined,true);
+  f.size[1]=640;f.context.window.innerHeight=640;f.bounds.top=440;
+  f.setPixel([195,300]);f.context.syncObservationPopupPlacement(undefined,true);
+  assert.ok(f.pixel()[1]<f.card().y-20);assert.equal(f.moves(),2);
+  const roomy=mobileFixture(1180,820,true);roomy.context.syncObservationPopupPlacement(undefined,true);
+  assert.equal(roomy.moves(),0);
+  const desktop=mobileFixture(390,844,false);desktop.context.syncObservationPopupPlacement(undefined,true);
+  assert.equal(desktop.moves(),0,'desktop behavior stays unchanged');
+});
+
 test('detail bounds reserve visible top and right tools',()=>{
   const style={};let offset;
   const controls=[

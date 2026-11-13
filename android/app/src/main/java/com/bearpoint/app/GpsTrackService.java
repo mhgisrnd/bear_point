@@ -97,6 +97,7 @@ public final class GpsTrackService extends Service implements LocationListener {
         catch (RuntimeException error) { requested = false; throw error; }
     }
     static void stop() { if (active != null) active.finish("saved", null); }
+    static void stop(boolean save) { if (active != null) active.finish(save ? "saved" : "discarded", save ? null : "이동 기록을 저장하지 않고 종료했습니다."); }
     @Override public IBinder onBind(Intent intent) { return null; }
     @Override public int onStartCommand(Intent intent, int flags, int startId) {
         if (intent != null && STOP.equals(intent.getAction())) { finish("saved", null); return START_NOT_STICKY; }

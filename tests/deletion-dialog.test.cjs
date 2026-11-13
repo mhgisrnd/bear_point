@@ -22,7 +22,7 @@ function dialogFixture() {
   document.body=element('body');
   document.createElement=tag=>{const node=element(tag);if(tag==='button')buttons.push(node);return node;};
   const trigger=element('button');trigger.isConnected=true;document.activeElement=trigger;
-  const context=vm.createContext({document,Promise,registerBackClosableOverlay:()=>{registered++;return ()=>{unregistered++;};}});
+  const context=vm.createContext({document,Promise,triggerHapticImpact(){},registerBackClosableOverlay:()=>{registered++;return ()=>{unregistered++;};}});
   const start=client.indexOf('  let styledConfirmPending'),end=client.indexOf('  window.__bpShowConfirmDialog',start);
   vm.runInContext(client.slice(start,end),context);
   return {context,document,buttons,trigger,counts:()=>({registered,unregistered})};
@@ -32,6 +32,8 @@ test('confirmation uses native top layer and rejects repeated opens without conf
   const first=c.showStyledConfirmDialog({title:'삭제 확인',confirmText:'삭제'});
   const dialog=f.document.body.children[0];
   assert.equal(dialog.tag,'dialog');assert.equal(dialog.topLayer,true);assert.equal(dialog.attributes.role,'alertdialog');
+  const footer=dialog.children[0].children[1];
+  assert.deepEqual(footer.children.map(button=>button.textContent),['삭제','취소']);
   assert.equal(f.document.activeElement.textContent,'취소');
   assert.equal(await c.showStyledConfirmDialog({title:'Other delete'}),false);
   assert.equal(f.document.body.children.length,1);
@@ -43,6 +45,42 @@ test('confirmation uses native top layer and rejects repeated opens without conf
   nextDialog.listeners.cancel({preventDefault(){prevented=true;}});
   assert.equal(await next,false);assert.equal(prevented,true);assert.equal(f.document.body.children.length,0);
 });
+test('confirmation renders a text-only frequency table and blurs the keyboard input',async()=>{
+  const f=dialogFixture();let blurred=false;f.trigger.blur=()=>{blurred=true;};
+  const result=f.context.showStyledConfirmDialog({blurInput:true,table:{caption:'KF-58',columns:['구분','주파수'],rows:[['A 발신기','148.241 MHz'],['B 발신기','미등록'],['C 발신기','미등록'],['현재 수신','150.000 MHz']]}});
+  const body=f.document.body.children[0].children[0].children[0];
+  const table=body.children.find(node=>node.tag==='table');
+  assert.equal(blurred,true);assert.equal(table.className,'bp-confirm-table');
+  assert.equal(table.children[0].textContent,'KF-58');
+  assert.equal(table.children[2].children.length,4);
+  assert.equal(table.children[2].children[0].children[1].textContent,'148.241 MHz');
+  f.buttons[1].listeners.click();assert.equal(await result,true);
+});
+
+test('save/discard choice distinguishes explicit no from back or backdrop dismissal',async()=>{
+  for(const exit of ['no','back','outside']){
+    const f=dialogFixture();
+    const result=f.context.showStyledConfirmDialog({distinguishDismiss:true,confirmText:'예',cancelText:'아니오'});
+    const dialog=f.document.body.children[0];
+    assert.deepEqual(dialog.children[0].children[1].children.map(button=>button.textContent),['예','아니오']);
+    assert.equal(await f.context.showStyledConfirmDialog({distinguishDismiss:true}),null);
+    if(exit==='no')f.buttons[0].listeners.click();
+    else if(exit==='back')dialog.listeners.cancel({preventDefault(){}});
+    else dialog.listeners.click({target:dialog});
+    assert.equal(await result,exit==='no'?false:null);
+  }
+});
+
+test('recording dialog X dismisses without choosing save or discard and receives initial focus',async()=>{
+  const f=dialogFixture();
+  const result=f.context.showStyledConfirmDialog({distinguishDismiss:true,showClose:true,closeLabel:'닫고 기록 계속하기',confirmText:'저장 후 종료',cancelText:'저장 없이 종료'});
+  const close=f.buttons.find(button=>button.className==='bp-confirm-close');
+  assert.ok(close);assert.equal(close.attributes['aria-label'],'닫고 기록 계속하기');
+  assert.equal(f.document.activeElement,close);
+  close.listeners.click();
+  assert.equal(await result,null);
+});
+
 test('Enter on the cancel button is not overridden into destructive confirmation',async()=>{
   const f=dialogFixture();let settled=false;
   const result=f.context.showStyledConfirmDialog({}).then(value=>{settled=true;return value;});

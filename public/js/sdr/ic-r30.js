@@ -249,13 +249,12 @@
       node("meter").dataset.state = updating ? "updating" : reading ? "live" : "stopped";
       const bars = reading ? Math.ceil(reading.smeter * 10 / 255) : 0;
       for (let i = 0; i < 10; i++) panel.querySelector(`[data-bt-bar="${i}"]`).classList.toggle("is-active", i < bars);
-      const canRegister = !busy && !testing() && !draftFrequency && !frequencyControls.editing() && !localError &&
-        target && liveReading && matchesFrequency(target.hz, liveReading.frequencyHz);
+      const canRegister = !busy && !testing() && !draftFrequency && !draftMode && !frequencyControls.editing() && !localError &&
+        liveReading;
       node("measurement-status").textContent = updating ? "수신기 설정 적용 중 · 마지막 측정을 유지하며 새 응답을 기다립니다."
         : reading ? "자동 측정 중 · 연결하면 S-Meter 측정이 바로 시작됩니다. 소리는 IC-R30에서 확인하세요."
         : "측정값 대기 · 수신기 응답을 확인하고 있습니다.";
       const reason = updating ? "설정 적용 중 · 확인 후 등록할 수 있습니다."
-        : !target ? "개체의 A/B/C 주파수를 선택하세요."
         : testing() ? "로그 기록 종료 후 등록할 수 있습니다."
         : draftFrequency || frequencyControls.editing() ? "주파수 직접 입력을 완료하고 적용값을 확인하세요."
         : !reading || localError ? "수신기 측정값과 오류를 확인하세요." : "관측점 등록 가능";
@@ -433,10 +432,9 @@
     }, true));
     node("register").addEventListener("click", () => run(async () => {
       applySnapshot(await plugin.getStatus());
-      if (!target || !validReading() || draftFrequency || testing() || frequencyControls.editing() ||
-          !matchesFrequency(target.hz, snapshot.measurement.frequencyHz)) throw new Error("개체 주파수를 다시 선택하고 현재 수신을 확인하세요.");
+      if (!validReading() || draftFrequency || draftMode || testing() || frequencyControls.editing()) throw new Error("수신기의 적용 주파수와 현재 수신을 확인하세요.");
       if (typeof root.BearSdrRegistration?.open !== "function") throw new Error("관측점 등록 화면을 준비하지 못했습니다.");
-      const context = { bearCode: target.code, frequencyHz: snapshot.measurement.frequencyHz, receiver: "IC-R30", mode: snapshot.measurement.mode };
+      const context = { bearCode: target?.code || "", frequencyHz: snapshot.measurement.frequencyHz, receiver: "IC-R30", mode: snapshot.measurement.mode };
       const back = () => { if (!dialog.open) dialog.showModal(); render(); };
       dialog.close();
       try {

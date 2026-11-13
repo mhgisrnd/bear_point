@@ -89,7 +89,7 @@ public final class GpsTrackingPlugin extends Plugin {
             try {
                 if (!GpsTrackService.running()) store().recover();
                 JSObject track = store().active();
-                GpsTrackService.stop();
+                GpsTrackService.stop(call.getBoolean("save", true));
                 JSObject result = track == null ? new JSObject() : store().detail(track.getString("id"),false);
                 if ("recording".equals(result.getString("status"))) result.put("save_error",GpsTrackService.saveWarning());
                 call.resolve(result);

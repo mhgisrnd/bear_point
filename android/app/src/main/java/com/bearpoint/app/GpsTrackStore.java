@@ -78,6 +78,16 @@ final class GpsTrackStore extends SQLiteOpenHelper {
         return detail(id,false);
     }
     synchronized void finish(String id, String status, String error) {
+        if ("discarded".equals(status)) {
+            SQLiteDatabase db = getWritableDatabase();
+            db.beginTransaction();
+            try {
+                db.execSQL("DELETE FROM points WHERE track_id=? AND EXISTS (SELECT 1 FROM tracks WHERE id=? AND status='recording')", new Object[]{id,id});
+                db.execSQL("UPDATE tracks SET status='discarded',point_count=0,distance=0,ended_at=?,error=? WHERE id=? AND status='recording'", new Object[]{System.currentTimeMillis(),error,id});
+                db.setTransactionSuccessful();
+            } finally { db.endTransaction(); }
+            return;
+        }
         String emptyError=(error==null?"":error+" ")+"GPS 위치가 수신되지 않아 기록을 저장하지 않았습니다.";
         getWritableDatabase().execSQL("UPDATE tracks SET status=CASE WHEN point_count=0 THEN 'discarded' ELSE ? END,ended_at=?,error=CASE WHEN point_count=0 THEN ? ELSE ? END WHERE id=? AND status='recording'",new Object[]{status,System.currentTimeMillis(),emptyError,error,id});
     }

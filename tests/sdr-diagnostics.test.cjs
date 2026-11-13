@@ -328,12 +328,12 @@ test('USB preserves explicit selection within 900 Hz including both boundaries a
     ui.state.receptionState='receiving';
     ui.state.reception={mode:'cw',frequencyHz:hz-12000,listenFrequencyHz:hz,hasSamples:true,powerDbfs:-56};
     ui.emit();
-    assert.equal(button.disabled,Math.abs(offset)>900,`offset ${offset}`);
-    if(Math.abs(offset)<=900) {
+    assert.equal(button.disabled,false,`offset ${offset}`);
+    {
       let context;
       ui.window.BearSdrRegistration={open:value=>{context=value;return true;}};
       await button.click();
-      assert.equal(context.bearCode,'KF-110','overlapping ranges must not switch subjects');
+      assert.equal(context.bearCode,Math.abs(offset)<=900?'KF-110':'','overlapping ranges must not switch subjects');
       assert.equal(context.frequencyHz,hz);
     }
   }

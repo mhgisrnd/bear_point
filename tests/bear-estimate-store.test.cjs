@@ -6,6 +6,14 @@ const { merge, createStore, originId } = require('../public/js/realtime/bear-est
 const receipt = (id, origin, extra = {}) => ({ id, bear_estimate_id: origin, bear_code: 'KF-58', lat: 35.3, lng: 127.7, uploaded_at: '2026-10-29 10:00:00', ...extra });
 const draft = id => ({ id, bear_code: 'KF-58', lat: 35, lng: 127, created_at: '2026-10-28', source_observations: [{ id: 'observation-a' }] });
 
+test('merged positions sort by actual registration time across UTC, KST and SQLite dates',()=>{
+  const rows=merge([
+    {...draft('kst-old'),created_at:'2026-11-13T10:00:00+09:00'},
+    {...draft('sqlite'),created_at:'2026-11-13 01:30:00'}
+  ],[receipt(3,'utc-new',{source_created_at:'2026-11-13T02:00:00Z'})]);
+  assert.deepEqual(rows.map(row=>row.id),['utc-new','sqlite','kst-old']);
+});
+
 test('cleanup removes expired shared originals and disk cache; server-only rows remain queryable in memory',async()=>{
   const {createLocalStore}=require('../public/js/realtime/bear-estimate-store');
   const previous=global.BearStorageCleanup;global.BearStorageCleanup={older:stamp=>String(stamp).startsWith('2020')};

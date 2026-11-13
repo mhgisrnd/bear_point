@@ -55,7 +55,12 @@
     return result.values||[];
   }
   async function all() {
-    return [...new Map([...serverRows,...(await localRows()).map(row=>[String(row.id),row])]).values()];
+    const timestamp = value => {
+      const text = String(value || "");
+      return Date.parse(/Z$|[+-]\d\d:\d\d$/.test(text) ? text : text.replace(" ", "T") + "Z") || 0;
+    };
+    return [...new Map([...serverRows,...(await localRows()).map(row=>[String(row.id),row])]).values()]
+      .sort((a,b)=>timestamp(b.created_at)-timestamp(a.created_at)||String(b.id).localeCompare(String(a.id)));
   }
   async function find(id) {
     await init();

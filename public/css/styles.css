@@ -67,6 +67,19 @@ body::after {
 
 /* Native modal top layer stays above OpenLayers overlays and makes the map inert. */
 .bp-confirm-dialog::backdrop { background: transparent; }
+.bp-confirm-close { position:absolute; top:12px; right:12px; width:32px; height:32px; display:flex; align-items:center; justify-content:center; padding:0; border:0; border-radius:9px; background:#f1f5f9; color:#64748b; font:400 26px/1 system-ui,sans-serif; cursor:pointer; }
+.bp-confirm-close:focus-visible { outline:2px solid #38bdf8; outline-offset:2px; }
+.bp-confirm-table { width: 100%; border-collapse: collapse; margin-top: 14px; font-size: 14px; font-variant-numeric: tabular-nums; }
+.bp-confirm-table caption { text-align: left; font-weight: 700; padding-bottom: 8px; color: #0f172a; }
+.bp-confirm-table th, .bp-confirm-table td { padding: 9px 10px; border: 1px solid #e2e8f0; text-align: left; }
+.bp-confirm-table thead { background: #f1f5f9; color: #475569; }
+.bp-confirm-table tbody th { width: 32%; font-weight: 600; }
+.bp-frequency-warning { color: #9a3412; background: #fff7ed; border-left: 3px solid #ea580c; border-radius: 6px; padding: 10px 12px; font-weight: 700; }
+.bp-frequency-question { margin-top: 10px; }
+.bp-frequency-table caption { color: #075985; }
+.bp-frequency-table .bp-frequency-current { background: #f0f9ff; color: #075985; }
+.bp-frequency-table .bp-frequency-current th, .bp-frequency-table .bp-frequency-current td { border-color: #7dd3fc; font-weight: 800; }
+.bp-frequency-table .bp-frequency-empty { color: #64748b; }
 
 /* 위치분석 추가정보 오버레이를 관측점 목록 패널 위 계층으로 유지 */
 #map .analysis-action-overlay,

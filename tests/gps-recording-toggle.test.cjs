@@ -5,7 +5,7 @@ function commands(){
   const errors=[],toasts=[],events=[];
   const context={native:true,active:null,displayed:{id:'previous-route'},initial:false,busy:false,recordingOperation:0,recordingTarget:null,viewVersion:0,
     start:{addEventListener(){}},stop:{addEventListener(){}},paint(){},message:{},source:{clear:()=>events.push('clear')},
-    root:{__bpShowToast:text=>toasts.push(text),BearAppSettings:{requireIdentity:async()=>({owner:'Tester'}),store:{load:async()=>{},snapshot:()=>({tracking:{interval_seconds:10}})}}},
+    root:{__bpShowConfirmDialog:async()=>true,__bpShowToast:text=>toasts.push(text),BearAppSettings:{requireIdentity:async()=>({owner:'Tester'}),store:{load:async()=>{},snapshot:()=>({tracking:{interval_seconds:10}})}}},
     plugin:{status:async()=>({active:state}),start:async()=>{starts++;state={id:'new',point_count:0};return state;},stop:async()=>{stops++;state=null;return {id:'new',status:'saved'};}},
     show:async()=>{},loadHistory:async()=>{},syncRecords(){}};
   context.action=async fn=>{if(context.busy)return;context.busy=true;try{await fn();}catch(error){errors.push(error.message);}finally{context.busy=false;}};
@@ -25,6 +25,31 @@ test('denied permission keeps OFF and preserves the previously displayed route',
   await f.context.setRecording(true);
   assert.equal(f.context.active,null);assert.equal(f.context.displayed.id,'previous-route');assert.deepEqual(f.events,[]);
   assert.deepEqual(f.errors,['permission denied']);assert.equal(f.context.busy,false);assert.equal(f.context.recordingTarget,null);
+});
+
+test('both stop choices and dismissal use the shared command without duplicate stops or discarded uploads',async()=>{
+  for(const choice of [true,false,null]){
+    const f=commands();await f.context.setRecording(true);
+    let options,stops=0,syncs=0;
+    f.context.root.__bpShowConfirmDialog=async value=>{options=value;return choice;};
+    f.context.syncRecords=()=>{syncs++;};
+    f.context.plugin.stop=async({save})=>{stops++;assert.equal(save,choice);f.setState(null);return {id:'new',status:save?'saved':'discarded'};};
+    await f.context.setRecording(false);
+    assert.equal(options.distinguishDismiss,true);
+    assert.equal(options.showClose,true);
+    assert.match(options.detail,/X나 뒤로가기를 누르면 기록을 계속합니다/);
+    assert.equal(options.confirmText,'저장 후 종료');assert.equal(options.cancelText,'저장 없이 종료');
+    assert.equal(stops,choice===null?0:1);
+    assert.equal(syncs,choice===true?1:0);
+    assert.equal(!!f.context.active,choice===null);
+  }
+});
+
+test('confirmation cannot stop a different recording started while the dialog was open',async()=>{
+  const f=commands();await f.context.setRecording(true);
+  f.context.root.__bpShowConfirmDialog=async()=>{f.setState({id:'another'});return false;};
+  await f.context.setRecording(false);
+  assert.equal(f.stops(),0);assert.equal(f.context.active.id,'another');
 });
 test('saving failure keeps ON; rapid repeated presses cannot duplicate a pending start',async()=>{
   const f=commands();let release,calls=0;
@@ -50,12 +75,23 @@ test('native switch renders actual states; web displays the design without enabl
   vm.runInNewContext(fs.readFileSync('public/js/tracking/gps-recording-toggle.js','utf8'),{window:root,document});
   const preview=root.BearGpsRecordingToggle.create({native:false,onChange:value=>changes.push(value)});assert.equal(appended,1);
   preview.render({active:null,busy:false,ready:true});events.click();
-  assert.equal(state.textContent,'OFF');assert.equal(button.disabled,true);assert.equal(changes.length,0);assert.match(button.title,/앱에서/);
+  assert.equal(state.textContent,'기록 ON');assert.equal(button.disabled,true);assert.equal(changes.length,0);assert.match(button.title,/앱에서/);
   const control=root.BearGpsRecordingToggle.create({native:true,onChange:value=>changes.push(value)});
   control.render({active:null,busy:false,ready:false});events.click();assert.equal(changes.length,0);
-  control.render({active:null,busy:false,ready:true});events.click();assert.deepEqual(changes,[true]);assert.equal(state.textContent,'OFF');
-  control.render({active:{point_count:0},busy:false,ready:true});assert.equal(attributes['aria-checked'],'true');assert.equal(button.dataset.waiting,'true');assert.match(button.title,/GPS/);
+  control.render({active:null,busy:false,ready:true});events.click();assert.deepEqual(changes,[true]);assert.equal(state.textContent,'기록 ON');
+  control.render({active:{point_count:0},busy:false,ready:true});assert.equal(attributes['aria-pressed'],'true');assert.equal(button.dataset.waiting,'true');assert.match(button.title,/GPS/);
   events.click();assert.deepEqual(changes,[true,false]);
-  control.render({active:{point_count:1},busy:true,ready:true,pending:false});assert.equal(state.textContent,'저장 중');events.click();assert.equal(changes.length,2);
-  control.render({active:{point_count:1},busy:true,ready:true});assert.equal(state.textContent,'확인 중');
+  control.render({active:{point_count:1},busy:true,ready:true,pending:false});assert.equal(state.textContent,'종료 중');events.click();assert.equal(changes.length,2);
+  control.render({active:{point_count:1},busy:true,ready:true});assert.equal(state.textContent,'기록 OFF');
+  assert.equal(button.dataset.pending,'false');assert.equal(attributes['aria-busy'],'false');
+  assert.equal(button.disabled,true,'history loading still prevents concurrent recording commands');
+  for(const active of [null,{point_count:1}]){
+    for(const busy of [false,true,false,true,false]){
+      control.render({active,busy,ready:true});
+      assert.equal(state.textContent,active?'기록 OFF':'기록 ON');
+      assert.equal(button.dataset.pending,'false','opening or refreshing history must not hide the switch thumb');
+    }
+  }
+  control.render({active:null,busy:true,ready:true,pending:true});
+  assert.equal(state.textContent,'시작 중');assert.equal(button.dataset.pending,'true');
 });

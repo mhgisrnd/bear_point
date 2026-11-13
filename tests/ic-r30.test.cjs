@@ -144,7 +144,7 @@ test('lists paired devices, connects, renders raw meter and prevents switching c
   assert.equal(ui.node('meter').attributes['aria-valuenow'], '153');
   assert.match(ui.node('readout').textContent, /145.52 MHz · CW/);
   assert.equal(ui.tab('usb').disabled, true);
-  assert.equal(ui.node('register').disabled, true);
+  assert.equal(ui.node('register').disabled, false);
   assert.equal(ui.node('status').hidden, true);
   assert.equal(ui.node('connected').hidden, false);
   assert.equal(ui.node('connected-name').textContent, 'IC-R30');
@@ -224,7 +224,7 @@ test('Bluetooth selected target remains in the fixed footer and can be cleared w
   const calls = ui.calls.length;
   await ui.node('clear').click();
   assert.equal(ui.calls.length, calls);
-  assert.equal(ui.node('register').disabled, true);
+  assert.equal(ui.node('register').disabled, false);
   assert.equal(ui.node('clear').disabled, true);
   assert.doesNotMatch(ui.node('target').textContent, /KF-110/);
 });
@@ -273,7 +273,7 @@ test('out-of-range manual tuning, physical radio retuning and disconnect invalid
   assert.equal(ui.calls.at(-1)[1].frequencyHz, 148243000);
   await choose();
   ui.emit({ state: 'connected', measurement: ui.reading(149000000), error: '' });
-  assert.equal(ui.node('register').disabled, true);
+  assert.equal(ui.node('register').disabled, false);
   await choose();
   ui.emit({ state: 'idle', measurement: null, error: 'CI-V timeout' });
   assert.equal(ui.node('register').disabled, true);
@@ -333,23 +333,23 @@ test('Bluetooth retains only the selected animal within inclusive 900 Hz and reg
     await ui.node('animals').children[0].children[1].children[0].click();
     const hz = 148241500 + offset;
     ui.emit({ state: 'connected', measurement: ui.reading(hz), error: '' });
-    assert.equal(ui.node('register').disabled, Math.abs(offset) > 900, `offset ${offset}`);
+    assert.equal(ui.node('register').disabled, false, `offset ${offset}`);
     assert.equal(ui.node('clear').disabled, Math.abs(offset) > 900);
     assert.equal(ui.node('frequency-animal').hidden, Math.abs(offset) > 900);
     assert.equal(ui.node('frequency-animal').textContent, Math.abs(offset) <= 900 ? 'KF-110' : '');
-    if (Math.abs(offset) <= 900) {
+    {
       await ui.node('register').click();
       assert.equal(ui.registration().frequencyHz, hz);
-      assert.equal(ui.registration().bearCode, 'KF-110');
+      assert.equal(ui.registration().bearCode, Math.abs(offset) <= 900 ? 'KF-110' : '');
     }
   }
 });
-test('Bluetooth range badge works without selecting an animal and follows draft input without enabling registration', async () => {
+test('Bluetooth range badge works without selecting an animal and allows registration only after draft input is applied', async () => {
   const ui = setup(); await ui.connect();
   ui.emit({ state: 'connected', measurement: ui.reading(148241500), error: '' });
   assert.equal(ui.node('frequency-animal').textContent, 'KF-110');
   assert.equal(ui.node('frequency-animal').hidden, false);
-  assert.equal(ui.node('register').disabled, true);
+  assert.equal(ui.node('register').disabled, false);
   await ui.node('frequency-edit').click();
   ui.node('frequency').value = '148.2424'; ui.node('frequency').events.input();
   assert.equal(ui.node('frequency-animal').hidden, false);

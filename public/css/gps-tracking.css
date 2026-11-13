@@ -1,22 +1,15 @@
 #btn-gps-tracking { flex: 0 1 auto; color: #315c70; }
-#btn-gps-record-toggle { position:absolute; top:calc(12px + var(--safe-top)); right:calc(176px + var(--safe-right)); z-index:9990; width:132px; height:44px; display:flex; align-items:center; justify-content:space-between; gap:8px; padding:0 10px; box-sizing:border-box; border:1px solid #dbe4ee; border-radius:11px; background:#fff; color:#334e68; box-shadow:0 2px 8px #17344c20,0 1px 2px #17344c12; cursor:pointer; font:700 12px/1 system-ui,sans-serif; white-space:nowrap; transition:background .15s ease,border-color .15s ease; }
+#btn-gps-record-toggle { position:absolute; top:calc(12px + var(--safe-top)); right:calc(176px + var(--safe-right)); z-index:9990; width:96px; height:44px; display:flex; align-items:center; justify-content:space-between; gap:8px; padding:0 10px; box-sizing:border-box; border:1px solid #dbe4ee; border-radius:11px; background:#fff; color:#334e68; box-shadow:0 2px 8px #17344c20,0 1px 2px #17344c12; cursor:pointer; font:700 12px/1 system-ui,sans-serif; white-space:nowrap; transition:background .15s ease,border-color .15s ease; }
 #btn-gps-record-toggle:active { transform:none; }
-#btn-gps-record-toggle:disabled { opacity:.85; cursor:wait; }
+#btn-gps-record-toggle:disabled { opacity:1; cursor:wait; }
 #btn-gps-record-toggle[data-preview=true]:disabled { opacity:1; cursor:default; }
 #btn-gps-record-toggle:focus-visible { outline:3px solid #86b6fb; outline-offset:2px; }
-#btn-gps-record-toggle[aria-checked=true] { color:#1d4ed8; background:#f5f9ff; border-color:#bed3f3; }
-.gps-record-control { position:relative; display:block; width:48px; height:26px; flex:0 0 48px; }
-.gps-record-switch { position:absolute; inset:0; display:block; border-radius:16px; background:#e5ebf2; box-shadow:inset 0 0 0 1px #dce4ed; transition:background .15s ease; }
-.gps-record-switch::after { content:''; position:absolute; width:20px; height:20px; top:3px; left:3px; background:#fff; border-radius:50%; box-shadow:0 1px 4px #203b5526; transition:transform .18s ease,opacity .15s ease; }
-.gps-record-control [data-record-state] { position:absolute; inset:0; display:flex; align-items:center; justify-content:flex-end; padding:0 5px 0 23px; color:#62758a; font:800 9px/1 system-ui,sans-serif; letter-spacing:.15px; }
-#btn-gps-record-toggle[aria-checked=true] .gps-record-switch { background:#2563eb; }
-#btn-gps-record-toggle[aria-checked=true] .gps-record-switch::after { transform:translateX(22px); }
-#btn-gps-record-toggle[aria-checked=true] [data-record-state] { justify-content:flex-start; padding:0 23px 0 6px; color:#fff; }
-#btn-gps-record-toggle[data-waiting=true] .gps-record-switch { background:#b9770e; }
-#btn-gps-record-toggle[data-pending=true] .gps-record-switch::after { opacity:0; }
-#btn-gps-record-toggle[data-pending=true] [data-record-state] { justify-content:center; padding:0; font-size:10px; letter-spacing:0; }
-@media (max-width:330px) { #btn-gps-record-toggle { width:124px; padding:0 7px; gap:6px; font-size:11px; } }
-@media (prefers-reduced-motion:reduce) { #btn-gps-record-toggle,.gps-record-switch,.gps-record-switch::after { transition:none; } }
+#btn-gps-record-toggle { justify-content:center; }
+#btn-gps-record-toggle[aria-pressed=true] { color:#1d4ed8; background:#eff6ff; border-color:#93c5fd; }
+#btn-gps-record-toggle[data-waiting=true] { color:#92400e; background:#fffbeb; border-color:#fcd34d; }
+#btn-gps-record-toggle [data-record-state] { font-weight:800; white-space:nowrap; }
+@media (max-width:330px) { #btn-gps-record-toggle { width:88px; padding:0 7px; font-size:11px; } }
+@media (prefers-reduced-motion:reduce) { #btn-gps-record-toggle { transition:none; } }
 #btn-gps-tracking.is-recording { color: #b52b3c; background: #fff2f3; border-color: #edbbc2; }
 .gps-track-panel { position: fixed; width: min(340px,calc(100vw - 24px)); max-height: min(48dvh,400px); z-index: 10010; display: flex; flex-direction: column; overflow: hidden; border: 1px solid #d9e2ec; border-radius: 12px; background: #fffffff5; color: #243c56; box-shadow: 0 8px 26px #1233; font: 12px/1.5 system-ui,sans-serif; }
 .gps-track-panel[hidden],.gps-track-panel [hidden] { display: none !important; }

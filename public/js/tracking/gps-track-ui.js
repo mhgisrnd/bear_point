@@ -31,6 +31,7 @@
       <section class="gps-track-history" aria-label="기록 이력"><div class="gps-history-overview" aria-live="polite"><span data-history-count>0건</span></div><div class="gps-track-history-frame"><table class="gps-track-history-table" aria-label="이동 기록 이력"><colgroup><col style="width:25%"><col style="width:18%"><col style="width:22%"><col style="width:15%"><col style="width:20%"></colgroup><thead><tr><th scope="col">기록일시</th><th scope="col">담당자</th><th scope="col">팀명</th><th scope="col">시간</th><th scope="col">거리<span class="gps-history-unit">(km)</span></th></tr></thead><tbody class="gps-track-history-items"></tbody></table></div><button type="button" data-more hidden>더 보기</button></section></div>`;
     document.body.append(panel);
     const start=panel.querySelector('[data-start]'),stop=panel.querySelector('[data-stop]');
+    stop.textContent='기록 종료';
     const message=panel.querySelector('.gps-track-message'),summary=panel.querySelector('.gps-track-summary');
     const history=panel.querySelector('.gps-track-history-items'),more=panel.querySelector('[data-more]');
     const search=panel.querySelector('.gps-history-search'),filterButton=panel.querySelector('[data-filter]'),filterPanel=panel.querySelector('.gps-history-filters');
@@ -279,27 +280,39 @@
       root.__bpShowToast?.('이동 기록을 시작했습니다.'+(active.point_count?'':' GPS 수신을 기다리고 있습니다.'));
       try{await show(active.id,false);await loadHistory();}catch(_){message.textContent='기록은 시작되었습니다. 목록은 새로고침으로 다시 확인해주세요.';}
     }
-    async function stopRecording(){
+    async function stopRecording(save=true){
       if(!native)return;
       const activeId=active?.id;
-      let result=await plugin.stop();
+      let result=await plugin.stop({save});
       if(!result.id&&activeId)result=await plugin.detail({id:activeId});
       if(result.status==='recording')throw new Error(result.save_error||'기록 종료를 완료하지 못했습니다. 다시 시도해주세요.');
       root.__bpTriggerHapticImpact?.('LIGHT');
-      active=null;displayed=null;++viewVersion;source.clear();message.textContent=result.status==='discarded'?(result.error||'GPS 위치가 수신되지 않아 기록을 저장하지 않았습니다.'):'이동 기록을 저장했습니다.';
+      active=null;displayed=null;++viewVersion;source.clear();message.textContent=!save?'이동 기록을 저장하지 않고 종료했습니다.':result.status==='discarded'?(result.error||'GPS 위치가 수신되지 않아 기록을 저장하지 않았습니다.'):'이동 기록을 저장했습니다.';
       initial=false;paint();root.__bpShowToast?.(message.textContent);
-      void syncRecords(true,result.status!=='discarded');
-      try{await loadHistory();}catch(_){message.textContent='기기에 저장했습니다. 목록은 새로고침으로 다시 확인해주세요.';}
+      if(save)void syncRecords(true,result.status!=='discarded');
+      try{await loadHistory();}catch(_){message.textContent='기록은 종료되었습니다. 목록은 새로고침으로 다시 확인해주세요.';}
     }
     async function setRecording(enabled){
       if(!native||busy)return;
       ++recordingOperation;
-      recordingTarget=enabled;
+      recordingTarget=enabled?true:'confirm';
       try{await action(async()=>{
         // Read the recorder immediately before acting, including stops from the system notification.
         const state=await plugin.status();active=state.active||null;initial=false;paint();
         if(enabled===!!active)return;
-        if(enabled)await startRecording();else await stopRecording();
+        if(enabled)await startRecording();else {
+          const id=active.id;
+          const save=await root.__bpShowConfirmDialog({
+            title:'이동 기록 종료',message:'이동 기록을 저장하고 종료하시겠습니까?',
+            detail:'저장 없이 종료하면 이번 이동 기록은 복구할 수 없습니다.\nX나 뒤로가기를 누르면 기록을 계속합니다.',
+            confirmText:'저장 후 종료',cancelText:'저장 없이 종료',distinguishDismiss:true,showClose:true,closeLabel:'닫고 기록 계속하기',blurInput:true
+          });
+          if(save!==true&&save!==false)return;
+          const latest=await plugin.status();active=latest.active||null;
+          if(active?.id!==id)return;
+          recordingTarget=false;paint();
+          await stopRecording(save);
+        }
       });}finally{recordingTarget=null;paint();}
     }
     start.addEventListener('click',()=>void setRecording(true));

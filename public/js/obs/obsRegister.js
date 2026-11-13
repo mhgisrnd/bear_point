@@ -26,9 +26,11 @@ window.createObsRegisterModule = function createObsRegisterModule({
   var regionField = window.createEditableRegionField(regAdminRegionEl);
   var isSubmitting = false;
   var sdrReturn = null;
+  var sdrFrequencyHz = null;
   var sdrSourceEl = document.getElementById("reg-sdr-source");
   function clearSdrContext() {
     sdrReturn = null;
+    sdrFrequencyHz = null;
     if (sdrSourceEl) { sdrSourceEl.hidden = true; sdrSourceEl.textContent = ""; }
     if (regBearEl) regBearEl.readOnly = false;
     if (btnBearFind) btnBearFind.disabled = false;
@@ -310,6 +312,7 @@ window.createObsRegisterModule = function createObsRegisterModule({
       return {
         id: row && row.id != null ? String(row.id) : null,
         bearCode: code,
+        frequencies: window.BearSdrAnimals.normalize([row])[0]?.frequencies || [],
         sex: row && row.sex != null ? String(row.sex).trim().toUpperCase() : "",
         birthYear: row && Number.isInteger(Number(row.birth_year != null ? row.birth_year : row.birthYear)) &&
           (row.birth_year != null || row.birthYear != null)
@@ -810,6 +813,30 @@ window.createObsRegisterModule = function createObsRegisterModule({
   }
 
   // 제출 버튼 진입점으로, payload 생성부터 저장 후 콜백 호출까지 처리한다.
+  async function confirmSdrFrequency(code) {
+    if (sdrFrequencyHz === null) return true;
+    var item = bearEntityItems.find(function (entry) { return entry.bearCode === code; });
+    if (item && item.frequencies.some(function (frequency) {
+      return window.BearSdrFrequency.matchesAnimalFrequency(frequency.hz, sdrFrequencyHz);
+    })) return true;
+    var message = item && item.frequencies.length
+      ? "개체코드의 등록 주파수와 수신 주파수가 일치하지 않습니다."
+      : "선택한 개체의 등록 주파수를 확인할 수 없습니다.";
+    var format = function (hz) { return window.BearSdrAnimals.formatHz(hz) + " MHz"; };
+    var rows = ["A", "B", "C"].map(function (slot) {
+      var frequency = item && item.frequencies.find(function (entry) { return entry.slot === slot; });
+      return [slot + " 발신기", frequency ? format(frequency.hz) : "미등록"];
+    });
+    rows.push(["현재 수신", format(sdrFrequencyHz)]);
+    return window.__bpShowConfirmDialog({
+      title: "수신 주파수 확인",
+      emphasis: "frequency",
+      message: message + "\n선택한 개체로 관측점을 등록하시겠습니까?",
+      table: { caption: "개체코드 · " + code, columns: ["구분", "주파수"], rows: rows },
+      confirmText: "등록", cancelText: "취소", blurInput: true
+    });
+  }
+
   async function submitObservation() {
     if (isSubmitting) return;
     isSubmitting = true;
@@ -817,6 +844,7 @@ window.createObsRegisterModule = function createObsRegisterModule({
       clearAllValidationErrors();
       var identity = await getRegistrationIdentity();
       var observation = buildObservationPayload(identity);
+      if (!await confirmSdrFrequency(observation.bearCode)) return;
       await attachBoundary(observation);
       var detectors = collectDetectorRows();
       var source = "demo";
@@ -1487,7 +1515,7 @@ window.createObsRegisterModule = function createObsRegisterModule({
     var code = String(context && context.bearCode || "").trim();
     var hz = Number(context && context.frequencyHz);
     var maxHz = context && context.receiver === "IC-R30" ? 3304999000 : 999999990;
-    if (!code || !Number.isSafeInteger(hz) || hz < 100000 || hz > maxHz) return false;
+    if (!Number.isSafeInteger(hz) || hz < 100000 || hz > maxHz) return false;
     var reuseDraft = isRegisterPopupVisible();
     if (reuseDraft && formMode !== "create") return false;
     if (reuseDraft) {
@@ -1499,11 +1527,13 @@ window.createObsRegisterModule = function createObsRegisterModule({
     }
     regBearEl.value = code;
     clearCoreFieldError(regBearEl);
-    regBearEl.readOnly = true;
-    if (btnBearFind) btnBearFind.disabled = true;
+    regBearEl.readOnly = false;
+    if (btnBearFind) btnBearFind.disabled = false;
+    sdrFrequencyHz = hz;
+    void loadBearEntityCatalog();
     if (sdrSourceEl) {
       sdrSourceEl.textContent = (context.receiver === "IC-R30" ? "IC-R30 Bluetooth" : "SDR") +
-        " · " + code + " · " + window.BearSdrAnimals.formatHz(hz) + " MHz · " +
+        " · " + window.BearSdrAnimals.formatHz(hz) + " MHz · " +
         (context.receiver === "IC-R30" ? String(context.mode || "") : "CW");
       sdrSourceEl.hidden = false;
     }

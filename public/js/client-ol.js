@@ -1070,10 +1070,11 @@
   let styledConfirmPending = false;
   function showStyledConfirmDialog(options) {
     // Never share a positive answer with a second caller: each action needs its own confirmation.
-    if (styledConfirmPending) return Promise.resolve(false);
+    if (styledConfirmPending) return Promise.resolve(options && options.distinguishDismiss ? null : false);
     styledConfirmPending = true;
     return new Promise(function (resolve) {
       const previousFocus = document.activeElement;
+      if (options && options.blurInput && previousFocus && typeof previousFocus.blur === "function") previousFocus.blur();
       const titleText = options && options.title ? String(options.title) : "확인";
       const messageText = options && options.message ? String(options.message) : "계속 진행할까요?";
       const detailText = options && options.detail ? String(options.detail) : "";
@@ -1130,9 +1131,49 @@
       message.style.lineHeight = "1.55";
       message.style.color = "#334155";
       message.style.whiteSpace = "pre-line";
+      const frequencyEmphasis = options && options.emphasis === "frequency";
+      if (frequencyEmphasis) {
+        message.textContent = "";
+        const lines = messageText.split("\n");
+        const warning = document.createElement("div");
+        warning.className = "bp-frequency-warning";
+        warning.textContent = lines.shift();
+        const question = document.createElement("div");
+        question.className = "bp-frequency-question";
+        question.textContent = lines.join("\n");
+        message.appendChild(warning); message.appendChild(question);
+      }
 
       body.appendChild(title);
       body.appendChild(message);
+
+      if (options && options.table) {
+        const table = document.createElement("table");
+        table.className = "bp-confirm-table";
+        if (frequencyEmphasis) table.className += " bp-frequency-table";
+        const caption = document.createElement("caption");
+        caption.textContent = String(options.table.caption || "");
+        table.appendChild(caption);
+        const head = document.createElement("thead"), heading = document.createElement("tr");
+        for (const label of options.table.columns || []) {
+          const cell = document.createElement("th");
+          cell.scope = "col"; cell.textContent = String(label); heading.appendChild(cell);
+        }
+        head.appendChild(heading); table.appendChild(head);
+        const rows = document.createElement("tbody");
+        for (const values of options.table.rows || []) {
+          const row = document.createElement("tr");
+          if (frequencyEmphasis && values[0] === "현재 수신") row.className = "bp-frequency-current";
+          values.forEach(function (value, index) {
+            const cell = document.createElement(index === 0 ? "th" : "td");
+            if (index === 0) cell.scope = "row";
+            if (frequencyEmphasis && value === "미등록") cell.className = "bp-frequency-empty";
+            cell.textContent = String(value); row.appendChild(cell);
+          });
+          rows.appendChild(row);
+        }
+        table.appendChild(rows); body.appendChild(table);
+      }
 
       if (detailText) {
         const detail = document.createElement("div");
@@ -1184,36 +1225,51 @@
         overlay.close();
         if (overlay && overlay.parentNode) overlay.parentNode.removeChild(overlay);
         if (previousFocus && previousFocus.isConnected && typeof previousFocus.focus === "function") previousFocus.focus();
-        resolve(!!confirmed);
+        resolve(confirmed === null && options && options.distinguishDismiss ? null : !!confirmed);
       }
 
+      const dismissValue = options && options.distinguishDismiss ? null : false;
       unregisterOverlayBackClose = registerBackClosableOverlay(overlay, function () {
-        closeWith(false);
+        closeWith(dismissValue);
       });
 
       overlay.addEventListener("click", function (event) {
-        if (event.target === overlay) closeWith(false);
+        if (event.target === overlay) closeWith(dismissValue);
       });
-      overlay.addEventListener("cancel", function (event) { event.preventDefault(); closeWith(false); });
+      overlay.addEventListener("cancel", function (event) { event.preventDefault(); closeWith(dismissValue); });
       cancelBtn.addEventListener("click", function () { closeWith(false); });
       confirmBtn.addEventListener("click", function () { closeWith(true); });
+
+      let dismissBtn = null;
+      if (options && options.showClose) {
+        card.style.position = "relative";
+        title.style.paddingRight = "40px";
+        dismissBtn = document.createElement("button");
+        dismissBtn.type = "button";
+        dismissBtn.className = "bp-confirm-close";
+        dismissBtn.textContent = "×";
+        dismissBtn.setAttribute("aria-label", options.closeLabel || "닫기");
+        dismissBtn.title = options.closeLabel || "닫기";
+        dismissBtn.addEventListener("click", function () { closeWith(dismissValue); });
+        card.appendChild(dismissBtn);
+      }
 
       card.addEventListener("keydown", function (event) {
         if (event.key === "Escape") {
           event.preventDefault();
-          closeWith(false);
+          closeWith(dismissValue);
           return;
         }
       });
 
-      footer.appendChild(cancelBtn);
       footer.appendChild(confirmBtn);
+      footer.appendChild(cancelBtn);
       card.appendChild(body);
       card.appendChild(footer);
       overlay.appendChild(card);
       document.body.appendChild(overlay);
       overlay.showModal();
-      cancelBtn.focus();
+      if (dismissBtn) dismissBtn.focus(); else cancelBtn.focus();
     }).finally(function () { styledConfirmPending = false; });
   }
 
@@ -4333,11 +4389,11 @@
   map.addOverlay(observationPopupOverlay);
 
   // 화면 하단/상단 여유 공간을 기준으로 상세 팝업이 잘리지 않게 배치한다.
-  function syncObservationPopupPlacement(coordinate) {
+  function syncObservationPopupPlacement(coordinate, allowMapAdjustment = false) {
     coordinate = coordinate || observationPopupOverlay.getPosition();
     if (!coordinate) return;
     const rect = map.getViewport().getBoundingClientRect();
-    const pixel = map.getPixelFromCoordinate(coordinate);
+    let pixel = map.getPixelFromCoordinate(coordinate);
     if (!pixel) return;
     const visual = window.visualViewport;
     const safe = window.getComputedStyle(document.documentElement);
@@ -4390,7 +4446,7 @@
     observationPopupEl.style.minWidth = "0";
     observationPopupEl.style.maxWidth = `${popupWidth}px`;
     observationPopupEl.style.maxHeight = `${Math.max(0, bottom - top)}px`;
-    const card = observationPopupEl.getBoundingClientRect();
+    let card = observationPopupEl.getBoundingClientRect();
     const clamp = (value, min, max) => Math.max(min, Math.min(value, Math.max(min, max)));
     const sideY = clamp(pixel[1] - card.height / 2, top, bottom - card.height);
     const centerX = clamp(pixel[0] - card.width / 2, left, right - card.width);
@@ -4402,6 +4458,36 @@
     ];
     let position = candidates.find(([x, y]) => x >= left && x + card.width <= right &&
       y >= top && y + card.height <= bottom);
+    // Only compact mobile details need a shared vertical layout for the pin and card.
+    // Keep ordinary placements, zoom, list state and desktop behavior unchanged.
+    const mobileDetail = isCompactDetail && !!window.BearMobileDock?.isMobile?.();
+    const boundsKey = [left, right, top, bottom].map(Math.round).join(',');
+    const layoutChanged = observationPopupEl._detailStableBounds !== boundsKey;
+    const layoutMoving = panel?.classList?.contains('is-sliding') || panel?.classList?.contains('is-dragging');
+    const markerOutside = pixel[0] < left + 24 || pixel[0] > right - 24 || pixel[1] < top + 52 || pixel[1] > bottom - 24;
+    if (mobileDetail && (!position || observationPopupEl._detailBottomBounds === boundsKey ||
+        (markerOutside && (allowMapAdjustment || layoutChanged)))) {
+      const availableHeight = bottom - top;
+      const pinSpace = Math.min(140, Math.max(80, availableHeight * 0.28));
+      // Leave room for the marker and its label; the existing content area scrolls.
+      observationPopupEl.style.maxHeight = `${Math.max(72, availableHeight - pinSpace - 16)}px`;
+      card = observationPopupEl.getBoundingClientRect();
+      position = [clamp((left + right - card.width) / 2, left, right - card.width), bottom - card.height];
+      observationPopupEl._detailBottomBounds = boundsKey;
+      const pinBottom = position[1] - 24;
+      const pinVisible = pixel[0] >= left + 24 && pixel[0] <= right - 24 &&
+        pixel[1] >= top + 52 && pixel[1] <= pinBottom;
+      const mapView = map.getView?.();
+      if (!layoutMoving && (allowMapAdjustment || layoutChanged) && !pinVisible &&
+          mapView?.centerOn && !mapView.getAnimating?.() && !mapView.getInteracting?.()) {
+        const target = [(left + right) / 2, Math.min(pinBottom, top + (position[1] - top + 28) / 2)];
+        // Record the bounds before moving: postrender must not repeatedly recenter.
+        observationPopupEl._detailStableBounds = boundsKey;
+        mapView.centerOn(coordinate, map.getSize(), target);
+        pixel = map.getPixelFromCoordinate(coordinate);
+      }
+    }
+    if (mobileDetail && !layoutMoving) observationPopupEl._detailStableBounds = boundsKey;
     if (!position) {
       observationPopupEl.style.maxHeight = `${Math.max(0, bottom - top)}px`;
       position = [clamp(pixel[0] + 44, left, right - card.width), top];
@@ -4413,7 +4499,7 @@
   }
 
   observationPopupContentEl.addEventListener("toggle", function () {
-    if (observationPopupEl.style.display !== "none") syncObservationPopupPlacement();
+    if (observationPopupEl.style.display !== "none") syncObservationPopupPlacement(undefined, true);
   }, true);
 
   function openObservationPopup(feature) {
@@ -4434,7 +4520,9 @@
     observationPopupEl.style.display = "flex";
     // Make the overlay parent visible before measuring its contents.
     observationPopupOverlay.setPosition(coordinate);
-    syncObservationPopupPlacement(coordinate);
+    observationPopupEl._detailStableBounds = null;
+    observationPopupEl._detailBottomBounds = null;
+    syncObservationPopupPlacement(coordinate, true);
     observationPopupEl.style.visibility = "visible";
   }
 
@@ -4503,11 +4591,11 @@
   });
 
   window.addEventListener("resize", function () {
-    syncObservationPopupPlacement();
+    syncObservationPopupPlacement(undefined, true);
   });
   if (window.visualViewport) {
     window.visualViewport.addEventListener("resize", function () {
-      syncObservationPopupPlacement();
+      syncObservationPopupPlacement(undefined, true);
     });
     window.visualViewport.addEventListener("scroll", function () { syncObservationPopupPlacement(); });
   }

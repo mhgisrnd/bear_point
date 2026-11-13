@@ -251,7 +251,7 @@
     dialog.querySelector("[data-animal-picker]").hidden = task !== "fixed";
     const rf = current?.reception || {};
     const receivedHz = rf.listenFrequencyHz || rf.frequencyHz;
-    const canRegister = task === "fixed" && selected && !frequencyControls.editing() && current?.state === "connected" && current?.fixedResultAvailable &&
+    const canRegister = task === "fixed" && !frequencyControls.editing() && current?.state === "connected" && current?.fixedResultAvailable &&
       rf.hasSamples && receivedHz === tunedHz && ["receiving", "idle"].includes(current?.receptionState);
     registerObservationButton.hidden = task !== "fixed";
     registerObservationButton.disabled = busy || !canRegister;
@@ -927,11 +927,11 @@
     return run(() => plugin.deleteDiagnostic({ id }));
   });
   registerObservationButton.addEventListener("click", () => run(async () => {
-    if (registerObservationButton.hidden || frequencyControls.editing() || !animalMatchesFrequency() || !current?.fixedResultAvailable || !current?.reception?.hasSamples ||
+    if (registerObservationButton.hidden || frequencyControls.editing() || !current?.fixedResultAvailable || !current?.reception?.hasSamples ||
         (current.reception.listenFrequencyHz || current.reception.frequencyHz) !== Math.round(Number(frequency.value) * 1e6) ||
         !["receiving", "idle"].includes(current.receptionState)) return;
     if (typeof window.BearSdrRegistration?.open !== "function") throw new Error("관측점 등록 화면을 준비하지 못했습니다. 앱을 다시 열어주세요.");
-    const context = { bearCode: selectedAnimal.code, frequencyHz: current.reception.listenFrequencyHz || current.reception.frequencyHz };
+    const context = { bearCode: selectedAnimal?.code || "", frequencyHz: current.reception.listenFrequencyHz || current.reception.frequencyHz };
     const attempt = ++connectionAttempt;
     await plugin.stopReception();
     await refresh();

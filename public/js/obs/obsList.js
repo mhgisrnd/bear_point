@@ -393,9 +393,9 @@ window.createObsListModule = function createObsListModule({
             ${row("위치", item && item.adminRegion)}
             <tr><th scope="row">좌표·방향</th><td><div class="obs-detail-coordinate-row"><span class="obs-detail-value obs-detail-value--mono">${escapeHtml(formatCoordinate(item && item.lat))}, ${escapeHtml(formatCoordinate(item && item.lng))}</span><span class="obs-detail-heading" title="방향각">${heading}</span></div></td></tr>
             ${buildDetectorRowsHtml(item && item.detectors)}
+            ${row("등록일시", formatDateTimeSeconds(item && item.createdAt))}
           </tbody></table>
         </div>
-        <details class="obs-detail-more"><summary>등록정보</summary><div>등록일시 <span class="obs-detail-value">${escapeHtml(formatDateTimeSeconds(item && item.createdAt))}</span></div></details>
         ${item.shareState === "sending" ? '' : '<div class="obs-popup-card__actions"><button class="obs-popup-card__action-btn obs-popup-card__action-btn--edit" type="button" data-observation-action="edit">수정</button></div>'}
       </div>
     `;
@@ -740,6 +740,7 @@ window.createObsListModule = function createObsListModule({
     });
     const feature = marker && marker._feature;
     onItemHaptic();
+    if (window.BearMobileDock?.isMobile?.()) window.BearMobileDock.collapse();
     flyToLatLng([item.lat, item.lng], currentZoom, function (completed) {
       if (completed === false || focusVersion !== observationFocusVersion) return;
       if (marker && typeof marker.openPopup === "function") marker.openPopup();
