@@ -45,6 +45,8 @@ body.bp-map-dock #mobile-map-dock .obs-sheet.hidden, body.bp-map-dock #mobile-ma
 body.bp-map-dock #mobile-map-dock .obs-sheet-header, body.bp-map-dock #mobile-map-dock .tracking-source-heading, body.bp-map-dock #mobile-map-dock .gps-track-panel > header { display: none; }
 body.bp-map-dock .mobile-dock-actions .obs-sheet-close, body.bp-map-dock .mobile-dock-actions .obs-panel-icon-btn { display: none !important; }
 body.bp-map-dock .mobile-dock-actions .obs-header-add, body.bp-map-dock .mobile-dock-actions .obs-header-refresh { color: #285eb9; background: #edf4ff; border-color: #d1def2; height: 30px; min-height: 30px; font-size: 11px; }
+.obs-header-actions #btn-obs-labels, body.bp-map-dock .mobile-dock-actions #btn-obs-labels { color:#166534; background:#f0fdf4; border-color:#86efac; white-space:nowrap; }
+.obs-header-actions #btn-obs-labels[aria-pressed=false], body.bp-map-dock .mobile-dock-actions #btn-obs-labels[aria-pressed=false] { color:#b91c1c; background:#fef2f2; border-color:#fca5a5; }
 body.bp-map-dock .mobile-dock-actions .tracking-refresh { margin: 0; width: 30px; height: 30px; }
 body.bp-map-dock #mobile-map-dock .obs-table-wrap { overflow: auto; min-height: 0; padding: 0; }
 body.bp-map-dock #mobile-map-dock .obs-search-bar { margin: 0; padding: 4px 10px; }

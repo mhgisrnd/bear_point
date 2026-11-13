@@ -18,6 +18,24 @@ window.createObsListModule = function createObsListModule({
 }) {
   const btnBear = document.getElementById("btn-obs-list");
   const btnObsAdd = document.getElementById("btn-obs-add-inline");
+  const btnObsLabels = document.getElementById("btn-obs-labels");
+  let observationLabelsVisible = true;
+  try { observationLabelsVisible = window.localStorage.getItem('bearpoint.observation-labels') !== 'off'; } catch (_) {}
+  function paintLabelButton() {
+    if (!btnObsLabels) return;
+    btnObsLabels.textContent = observationLabelsVisible ? '라벨 ON' : '라벨 OFF';
+    btnObsLabels.setAttribute('aria-pressed', String(observationLabelsVisible));
+    btnObsLabels.setAttribute('aria-label', observationLabelsVisible ? '관측점 라벨 숨기기' : '관측점 라벨 표시');
+  }
+  paintLabelButton();
+  btnObsLabels?.addEventListener('click', function (event) {
+    event.stopPropagation();
+    observationLabelsVisible = !observationLabelsVisible;
+    try { window.localStorage.setItem('bearpoint.observation-labels', observationLabelsVisible ? 'on' : 'off'); } catch (_) {}
+    onItemHaptic();
+    paintLabelButton();
+    updateObservationMarkerScale();
+  });
   const btnAnalysis = document.getElementById("btn-analysis");
   const btnDeleteSelected = document.getElementById("btn-delete-selected");
   const btnRefresh = document.getElementById("btn-obs-refresh");
@@ -655,6 +673,7 @@ window.createObsListModule = function createObsListModule({
 
   // 줌 레벨에 따라 크기가 변하는 관측점 아이콘을 생성한다.
   function createObservationIcon(item, zoom = map.getZoom()) {
+    item.showLabel = observationLabelsVisible;
     const baseZoom = 14;
     const rawScale = Math.pow(2, (zoom - baseZoom) * 0.16);
     const isSelected = !!(item && item.isSelected);
@@ -684,7 +703,7 @@ window.createObsListModule = function createObsListModule({
       html: `
         <div style="position:relative;width:${wrapperWidth}px;height:${wrapperHeight}px;display:flex;align-items:flex-start;justify-content:center;">
           <div style="position:absolute;left:50%;bottom:0;transform:translateX(-50%);width:0;height:0;border-left:${pointerSide}px solid transparent;border-right:${pointerSide}px solid transparent;border-top:${pointerHeight}px solid ${pointerColor};"></div>
-          <div style="min-width:${pillMinWidth}px;max-width:${wrapperWidth}px;height:${pillHeight}px;padding:0 ${horizontalPadding}px;border-radius:${Math.round(999 * scale)}px;background:${badgeBackground};border:${badgeBorder};color:#fff;font-weight:800;font-size:${fontSize}px;line-height:${pillHeight - 4}px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;box-shadow:${badgeShadow};">${labelText}</div>
+          <div style="display:${observationLabelsVisible ? 'block' : 'none'};min-width:${pillMinWidth}px;max-width:${wrapperWidth}px;height:${pillHeight}px;padding:0 ${horizontalPadding}px;border-radius:${Math.round(999 * scale)}px;background:${badgeBackground};border:${badgeBorder};color:#fff;font-weight:800;font-size:${fontSize}px;line-height:${pillHeight - 4}px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;box-shadow:${badgeShadow};">${labelText}</div>
         </div>
       `,
       iconSize: [wrapperWidth, wrapperHeight],

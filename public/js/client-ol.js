@@ -4263,7 +4263,7 @@
             opacity: 1
           }),
           text: new ol.style.Text({
-            text: labelText,
+            text: obsData?.showLabel === false ? '' : labelText,
             offsetY: -22,
             padding: [4, 8, 4, 8],
             font: "700 11px sans-serif",

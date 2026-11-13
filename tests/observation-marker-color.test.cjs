@@ -64,4 +64,8 @@ test('observation marker and label use each saved team color, retaining selectio
   assert.equal(highlight().length, 1);
   context.focusedObservationId = null;
   assert.equal(highlight().length, 1);
+  const hidden=context.createObservationStyleFromMarker({obsData:{id:'hidden',place:'name',showLabel:false,team_color:'#9333EA',isSelected:true}})();
+  assert.equal(hidden.at(-1).text.text,'');
+  assert.equal(hidden.at(-1).image.src,'icon:#9333EA');
+  assert.equal(hidden.length,2,'selection highlight remains when labels are hidden');
 });
