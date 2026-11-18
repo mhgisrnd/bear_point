@@ -63,6 +63,7 @@
       </details>
       <details class="sdr-help"><summary>연결 유지 · 지원 기능 안내</summary><p>SPP에는 오디오·I/Q가 없어 앱 청취, 스펙트럼, 자동 CW 검출, 대역 탐색은 지원하지 않습니다. 홈 화면·다른 앱·화면 잠금에서도 알림을 표시하며 연결을 유지합니다. 앱이나 알림의 연결 해제로 종료하세요.</p></details>`;
     const node = key => (key === "target" || key === "register" ? footer : panel).querySelector(`[data-bt-${key}]`);
+    const meterBars = Array.from({ length: 10 }, (_, i) => panel.querySelector(`[data-bt-bar="${i}"]`));
     const usbButton = selector.querySelector("[data-receiver-usb]");
     const btButton = selector.querySelector("[data-receiver-bt]");
     let selected = false, plugin = null, listener = null, busy = false, loadingCatalog = false;
@@ -247,8 +248,11 @@
       node("meter").setAttribute("aria-valuenow", reading ? String(reading.smeter) : "0");
       node("meter").setAttribute("aria-valuetext", reading ? `${reading.smeter} / 255 · ${updating ? "설정 중 · 마지막 측정" : "원시값"}` : "측정 대기");
       node("meter").dataset.state = updating ? "updating" : reading ? "live" : "stopped";
-      const bars = reading ? Math.ceil(reading.smeter * 10 / 255) : 0;
-      for (let i = 0; i < 10; i++) panel.querySelector(`[data-bt-bar="${i}"]`).classList.toggle("is-active", i < bars);
+      const filledBars = (reading?.smeter ?? 0) * meterBars.length / 255;
+      meterBars.forEach((bar, index) => {
+        const fill = Math.max(0, Math.min(1, filledBars - index));
+        bar.style.setProperty("--sdr-meter-fill", `${fill * 100}%`);
+      });
       const canRegister = !busy && !testing() && !draftFrequency && !draftMode && !frequencyControls.editing() && !localError &&
         liveReading;
       node("measurement-status").textContent = updating ? "수신기 설정 적용 중 · 마지막 측정을 유지하며 새 응답을 기다립니다."

@@ -8,6 +8,7 @@ class Element {
     this.nodes = {}; this.events = {}; this.children = []; this.attributes = {};
     this.dataset = {}; this.value = ''; this.disabled = false; this.hidden = false;
     this.classList = { toggle: (key, on) => { this[key] = on; } };
+    this.style = { setProperty: (key, value) => { this.style[key] = value; } };
   }
   querySelector(key) { return this.nodes[key] ||= new Element(); }
   setAttribute(key, value) { this.attributes[key] = value; }
@@ -155,6 +156,24 @@ test('lists paired devices, connects, renders raw meter and prevents switching c
   assert.equal(ui.node('status').hidden, false);
   assert.equal(ui.node('connected').hidden, true);
   assert.equal(ui.footer.hidden, true);
+});
+
+test('the live meter shows changes within a segment and clears on disconnect', async () => {
+  const ui = setup(); await ui.connect();
+  const bar = index => ui.panel.querySelector(`[data-bt-bar="${index}"]`).style['--sdr-meter-fill'];
+  const connected = ui.controller.status();
+  ui.emit({ ...connected, measurement: { ...connected.measurement, smeter: 100 } });
+  const firstFill = parseFloat(bar(3));
+  assert.equal(bar(2), '100%');
+  assert.equal(bar(4), '0%');
+  assert.ok(firstFill > 0 && firstFill < 100);
+
+  ui.emit({ ...connected, measurement: { ...connected.measurement, smeter: 101 } });
+  assert.ok(parseFloat(bar(3)) > firstFill && parseFloat(bar(3)) < 100);
+  assert.equal(ui.node('meter').attributes['aria-valuenow'], '101');
+
+  await ui.node('disconnect').click();
+  assert.equal(bar(3), '0%');
 });
 test('paired list filters by SPP service regardless of name and leaves unconfirmed devices in a collapsed fallback', async () => {
   const ui = setup();

@@ -42,6 +42,9 @@ public final class IcR30Plugin extends Plugin {
     private static final String TAG = "IcR30";
     private static final UUID SPP = UUID.fromString("00001101-0000-1000-8000-00805f9b34fb");
     private static final long CIV_STARTUP_DELAY_MS = 1500;
+    private static final long METER_POLL_DELAY_MS = 50;
+    private static final long LIVE_METADATA_INTERVAL_MS = 500;
+    private static final long TEST_METADATA_INTERVAL_MS = 2000;
     private final Handler main = new Handler(Looper.getMainLooper());
     private final ScheduledExecutorService io = Executors.newSingleThreadScheduledExecutor();
     private BluetoothSocket socket;
@@ -51,7 +54,7 @@ public final class IcR30Plugin extends Plugin {
     private PluginCall settingCall;
     private PluginCall permissionCall;
     private volatile int generation;
-    private boolean stopped;
+    private volatile boolean stopped;
     private String state = "idle", deviceId = "", deviceName = "", lastError = "";
     private JSObject measurement;
     private final IcR30TestRecording test = new IcR30TestRecording();
@@ -238,7 +241,10 @@ public final class IcR30Plugin extends Plugin {
                         Log.d(TAG, "SPP connected; waiting for IC-R30 CI-V startup");
                         boolean debug = (getContext().getApplicationInfo().flags & android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0;
                         IcR30Civ civ = new IcR30Civ(opened.getInputStream(), opened.getOutputStream(), 3000,
-                            message -> { if (debug) Log.d(TAG, message); });
+                            message -> { if (debug) Log.d(TAG, message); },
+                            error -> main.post(() -> {
+                                if (token == generation && !test.active()) fail(error.getMessage());
+                            }));
                         pendingClient = civ;
                         // The IC-R30 accepts RFCOMM before its CI-V endpoint is ready; early requests get no reply.
                         try { Thread.sleep(CIV_STARTUP_DELAY_MS); }
@@ -259,6 +265,7 @@ public final class IcR30Plugin extends Plugin {
                             state = "connected";
                             measurement = reading;
                             connectingCall = null;
+                            IcR30Service.keepAwakeForOperation(false);
                             publish();
                             call.resolve(snapshot());
                             schedulePoll(token, civ);
@@ -281,14 +288,14 @@ public final class IcR30Plugin extends Plugin {
             }
         });
     }
-    private JSObject read(IcR30Civ civ) throws IOException { return read(civ, false, null); }
+    private JSObject read(IcR30Civ civ) throws IOException { return read(civ, null, 0); }
     private static long requiredLong(JSObject value, String key) throws IOException {
         try { return value.getLong(key); }
         catch (org.json.JSONException error) { throw new IOException("측정값 필드 오류: " + key, error); }
     }
-    private JSObject read(IcR30Civ civ, boolean fast, JSObject previous) throws IOException {
+    private JSObject read(IcR30Civ civ, JSObject previous, long metadataIntervalMs) throws IOException {
         JSObject reading = new JSObject();
-        if (!fast || previous == null || SystemClock.elapsedRealtime() - metadataAt >= 2000) {
+        if (previous == null || SystemClock.elapsedRealtime() - metadataAt >= metadataIntervalMs) {
             reading.put("frequencyHz", civ.frequency());
             reading.put("mode", civ.mode());
             metadataAt = SystemClock.elapsedRealtime();
@@ -305,30 +312,44 @@ public final class IcR30Plugin extends Plugin {
         return reading;
     }
     private void schedulePoll(int token, IcR30Civ civ) {
-        if(preparingTest)return;
+        schedulePoll(token, civ, METER_POLL_DELAY_MS);
+    }
+    private boolean pollingAllowed() { return !stopped || test.active(); }
+    private void schedulePoll(int token, IcR30Civ civ, long delayMs) {
+        if (poll != null || settingCall != null || !pollingAllowed()) return;
         JSObject previous = measurement;
+        boolean recording = test.active();
         poll = io.schedule(() -> {
             if (token != generation) return;
+            if (!pollingAllowed()) {
+                main.post(() -> finishPoll(token, civ, null));
+                return;
+            }
             try {
                 test.queryStarted(System.currentTimeMillis(),SystemClock.elapsedRealtime());
-                JSObject reading = read(civ, test.active(), previous);
+                JSObject reading = read(civ, previous, recording ? TEST_METADATA_INTERVAL_MS : LIVE_METADATA_INTERVAL_MS);
                 if (token != generation) return;
                 test.sample(requiredLong(reading, "time"), requiredLong(reading, "elapsedMs"),
                     requiredLong(reading, "frequencyHz"), reading.getString("mode"), reading.getInteger("smeter"),
                     requiredLong(reading, "queryMs"), requiredLong(reading, "metadataAgeMs"));
-                main.post(() -> {
-                    if (token != generation) return;
-                    measurement = reading;
-                    lastError = "";
-                    publish();
-                    schedulePoll(token, civ);
-                });
+                main.post(() -> finishPoll(token, civ, reading));
             } catch (IOException error) {
                 try { test.error(System.currentTimeMillis(),SystemClock.elapsedRealtime(),error.getMessage()); }
                 catch(IOException logError){ Log.w(TAG,"Failed to record Bluetooth poll error",logError); }
                 main.post(() -> { if (token == generation) fail(error.getMessage()); });
             }
-        }, test.active() ? IcR30TestRecording.POLL_DELAY_MS : 500, TimeUnit.MILLISECONDS);
+        }, delayMs, TimeUnit.MILLISECONDS);
+    }
+    private void finishPoll(int token, IcR30Civ civ, JSObject reading) {
+        if (token != generation || settingCall != null) return;
+        poll = null;
+        if (!pollingAllowed()) return;
+        if (reading != null) {
+            measurement = reading;
+            lastError = "";
+            publish();
+        }
+        schedulePoll(token, civ, reading == null ? 0 : METER_POLL_DELAY_MS);
     }
     @PluginMethod public void startTest(PluginCall call) {
         main.post(() -> {
@@ -340,14 +361,16 @@ public final class IcR30Plugin extends Plugin {
             JSObject context=new JSObject().put("web_asset_revision",MainActivity.WEB_ASSET_REVISION)
                 .put("phone_manufacturer",Build.MANUFACTURER).put("phone_model",Build.MODEL).put("android_sdk",Build.VERSION.SDK_INT)
                 .put("receiver_name",deviceName).put("receiver_model","IC-R30").put("transport","bluetooth")
-                .put("requested_duration_ms",IcR30TestRecording.LIMIT_MS).put("poll_delay_ms",IcR30TestRecording.POLL_DELAY_MS)
+                .put("requested_duration_ms",IcR30TestRecording.LIMIT_MS).put("poll_delay_ms",METER_POLL_DELAY_MS)
                 .put("settings_scope","queried once before capture; not continuously monitored")
                 .put("clock","unix_ms=phone wall clock; elapsed_ms=Android elapsedRealtime relative to capture start");
             try{
                 android.content.pm.PackageInfo info=getContext().getPackageManager().getPackageInfo(getContext().getPackageName(),0);
                 context.put("app_version_name",info.versionName).put("app_version_code",info.versionCode);
             }catch(android.content.pm.PackageManager.NameNotFoundException error){context.put("app_version_error",error.getMessage());}
-            settingCall=call;preparingTest=true;publish();
+            settingCall=call;preparingTest=true;
+            IcR30Service.keepAwakeForOperation(true);
+            publish();
             if(poll!=null){poll.cancel(false);poll=null;}
             io.execute(()->{
                 if(token!=generation)return;
@@ -393,12 +416,19 @@ public final class IcR30Plugin extends Plugin {
                 main.postDelayed(testDeadline, IcR30TestRecording.LIMIT_MS);
                 publish();
                 call.resolve(snapshot());
-            } catch (IOException error) { call.reject("테스트 기록 시작 실패: " + error.getMessage(), error); }
+            } catch (IOException error) {
+                IcR30Service.keepAwakeForOperation(false);
+                call.reject("테스트 기록 시작 실패: " + error.getMessage(), error);
+            }
             finally { if("connected".equals(state)&&client!=null)schedulePoll(generation,client); }
     }
     private void stopTestRecording(String reason) throws IOException {
         if (testDeadline != null) { main.removeCallbacks(testDeadline); testDeadline = null; }
-        test.stop(reason,System.currentTimeMillis(),SystemClock.elapsedRealtime());
+        try { test.stop(reason,System.currentTimeMillis(),SystemClock.elapsedRealtime()); }
+        finally {
+            if (settingCall == null && connectingCall == null) IcR30Service.keepAwakeForOperation(false);
+            if (stopped) measurement = null;
+        }
     }
     @PluginMethod public void stopTest(PluginCall call) {
         main.post(() -> {
@@ -460,6 +490,8 @@ public final class IcR30Plugin extends Plugin {
             int token = generation;
             IcR30Civ civ = client;
             settingCall = call;
+            IcR30Service.keepAwakeForOperation(true);
+            if (poll != null) { poll.cancel(false); poll = null; }
             measurement = null;
             publish();
             io.execute(() -> {
@@ -470,9 +502,11 @@ public final class IcR30Plugin extends Plugin {
                     main.post(() -> {
                         if (token != generation) return;
                         settingCall = null;
+                        IcR30Service.keepAwakeForOperation(false);
                         measurement = reading;
                         publish();
                         call.resolve(snapshot());
+                        schedulePoll(token, civ);
                     });
                 } catch (IOException error) {
                     main.post(() -> { if (token == generation) fail(error.getMessage()); });
@@ -530,9 +564,20 @@ public final class IcR30Plugin extends Plugin {
         closeSession(lastError);
         publish();
     }
-    @Override protected void handleOnStart() { main.post(() -> stopped = false); }
+    @Override protected void handleOnStart() {
+        main.post(() -> {
+            stopped = false;
+            if (client != null) schedulePoll(generation, client, 0);
+        });
+    }
     @Override protected void handleOnStop() {
-        main.post(() -> stopped = true);
+        main.post(() -> {
+            stopped = true;
+            if (!test.active() && measurement != null) {
+                measurement = null;
+                publish();
+            }
+        });
     }
     @Override protected void handleOnDestroy() {
         main.post(() -> {

@@ -22,19 +22,13 @@ public final class IcR30Service extends Service {
     private static final String CHANNEL = "ic_r30_connection";
     private static final String STOP = "com.bearpoint.app.IC_R30_STOP";
     private static final int ID = 2402;
+    private static final long OPERATION_WAKE_TIMEOUT_MS = 40_000;
     private static IcR30Service active;
     private static Runnable onStop;
+    private static boolean operationInProgress;
     private final Handler main = new Handler(Looper.getMainLooper());
     private PowerManager.WakeLock wakeLock;
     private final Runnable retire = () -> { if (onStop == null) stopSelf(); };
-    private final Runnable renew = new Runnable() {
-        @Override public void run() {
-            if (wakeLock == null) return;
-            if (wakeLock.isHeld()) wakeLock.release();
-            wakeLock.acquire(10 * 60 * 1000L);
-            main.postDelayed(this, 9 * 60 * 1000L);
-        }
-    };
 
     static boolean notificationsAllowed(Context context) {
         NotificationManager manager = (NotificationManager) context.getSystemService(NOTIFICATION_SERVICE);
@@ -48,17 +42,30 @@ public final class IcR30Service extends Service {
     static void launch(Context context, Runnable stop) {
         if (!notificationsAllowed(context)) throw new IllegalStateException("백그라운드 연결 상태와 해제 버튼을 표시하려면 알림을 허용해주세요.");
         onStop = stop;
+        keepAwakeForOperation(true);
         if (active != null) active.main.removeCallbacks(active.retire);
         try { ContextCompat.startForegroundService(context, new Intent(context, IcR30Service.class)); }
-        catch (RuntimeException error) { onStop = null; throw error; }
+        catch (RuntimeException error) { onStop = null; keepAwakeForOperation(false); throw error; }
     }
 
     static void release() {
         onStop = null;
+        keepAwakeForOperation(false);
         if (active != null) {
             active.main.removeCallbacks(active.retire);
             active.main.postDelayed(active.retire, 300);
         }
+    }
+
+    static void keepAwakeForOperation(boolean needed) {
+        operationInProgress = needed;
+        if (active != null) active.updateWakeLock();
+    }
+
+    private void updateWakeLock() {
+        if (wakeLock == null) return;
+        if (operationInProgress && !wakeLock.isHeld()) wakeLock.acquire(OPERATION_WAKE_TIMEOUT_MS);
+        if (!operationInProgress && wakeLock.isHeld()) wakeLock.release();
     }
 
     private static void stopConnection() {
@@ -88,7 +95,7 @@ public final class IcR30Service extends Service {
             ServiceCompat.startForeground(this, ID,
                 new NotificationCompat.Builder(this, CHANNEL).setSmallIcon(R.drawable.ic_sdr_notification)
                     .setContentTitle("IC-R30 Bluetooth 연결 유지")
-                    .setContentText("화면을 꺼도 주파수·신호 세기 조회를 계속합니다.")
+                    .setContentText("화면을 꺼도 연결을 유지합니다.")
                     .setContentIntent(open).setOngoing(true).setOnlyAlertOnce(true)
                     .addAction(0, "연결 해제", stop).build(),
                 Build.VERSION.SDK_INT >= 29 ? ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE : 0);
@@ -96,8 +103,8 @@ public final class IcR30Service extends Service {
             if (wakeLock == null) {
                 wakeLock = ((PowerManager) getSystemService(POWER_SERVICE))
                     .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "BearPoint:IcR30");
-                renew.run();
             }
+            updateWakeLock();
         } catch (RuntimeException error) {
             Log.e("IcR30", "Foreground connection service failed", error);
             stopConnection();
@@ -107,7 +114,6 @@ public final class IcR30Service extends Service {
     }
 
     @Override public void onDestroy() {
-        main.removeCallbacks(renew);
         main.removeCallbacks(retire);
         if (wakeLock != null && wakeLock.isHeld()) wakeLock.release();
         if (active == this) {

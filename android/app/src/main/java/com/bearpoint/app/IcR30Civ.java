@@ -36,28 +36,25 @@ final class IcR30Civ implements Closeable {
     private final OutputStream output;
     private final long timeoutMillis;
     interface Trace { void log(String message); }
+    interface InputFailure { void report(IOException error); }
     private final Trace trace;
     private final ArrayBlockingQueue<Integer> receivedBytes = new ArrayBlockingQueue<>(4096);
     private final Thread reader;
     private volatile IOException inputError;
     private volatile boolean closed;
 
-    IcR30Civ(InputStream input, OutputStream output, long timeoutMillis) {
-        this(input, output, timeoutMillis, message -> {});
-    }
-
-    IcR30Civ(InputStream input, OutputStream output, long timeoutMillis, Trace trace) {
+    IcR30Civ(InputStream input, OutputStream output, long timeoutMillis, Trace trace, InputFailure failure) {
         this.input = input;
         this.output = output;
         this.timeoutMillis = timeoutMillis;
         this.trace = trace;
         // Bluetooth InputStream.available() is only an estimate; zero must not suppress a read.
-        reader = new Thread(this::readInput, "ic-r30-input");
+        reader = new Thread(() -> readInput(failure), "ic-r30-input");
         reader.setDaemon(true);
         reader.start();
     }
 
-    private void readInput() {
+    private void readInput(InputFailure failure) {
         byte[] buffer = new byte[256];
         try {
             while (!closed) {
@@ -68,7 +65,10 @@ final class IcR30Civ implements Closeable {
                 }
             }
         } catch (IOException error) {
-            if (!closed) inputError = error;
+            if (!closed) {
+                inputError = error;
+                failure.report(error);
+            }
         } finally {
             receivedBytes.offer(-1);
         }

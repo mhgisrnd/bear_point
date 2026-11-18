@@ -151,6 +151,7 @@
 .sdr-strength-bars { display: flex; align-items: flex-end; gap: 5px; height: 40px; margin-top: 8px; }
 .sdr-strength-bars span { flex: 1; background: #dde7eb; border-radius: 2px 2px 0 0; }
 .sdr-strength-bars span.is-active { background: #148078; }
+.sdr-strength-bars [data-bt-bar] { background: linear-gradient(to top, #148078 var(--sdr-meter-fill, 0%), #dde7eb 0); }
 .sdr-strength-bars[data-state="stopped"] { opacity: .45; }
 .sdr-strength .sdr-note { margin-bottom: 0; }
 .sdr-frequency-readout { margin: 0 0 12px; padding: 12px; border-radius: 9px; background: #e4f0f3; color: #145d75; font-size: clamp(14px, 3.8vw, 21px); font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }

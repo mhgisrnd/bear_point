@@ -31,6 +31,9 @@ public class IcR30CivTest {
         final CountDownLatch written = new CountDownLatch(1);
         final IcR30Civ civ;
         Transport(byte[] response, long timeout) {
+            this(response, timeout, error -> {});
+        }
+        Transport(byte[] response, long timeout, IcR30Civ.InputFailure failure) {
             InputStream input = new InputStream() {
                 @Override public int available() { return 0; }
                 @Override public int read() throws IOException {
@@ -59,9 +62,17 @@ public class IcR30CivTest {
                     written.countDown();
                 }
             };
-            civ = new IcR30Civ(input, output, timeout);
+            civ = new IcR30Civ(input, output, timeout, message -> {}, failure);
             transports.add(this);
         }
+    }
+
+    @Test public void reportsConnectionLossWithoutAnActiveQuery() throws Exception {
+        CompletableFuture<IOException> disconnected = new CompletableFuture<>();
+        Transport transport = new Transport(new byte[0], 100, disconnected::complete);
+        transport.reply.offer(-1);
+        assertTrue(disconnected.get(1, TimeUnit.SECONDS).getMessage().contains("Bluetooth"));
+        assertEquals(0, transport.sent.size());
     }
 
     @Test public void decodesSmeterAsBcdNotBinary() throws Exception {

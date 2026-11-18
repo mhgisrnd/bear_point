@@ -12,7 +12,6 @@ import java.util.List;
 
 final class IcR30TestRecording {
     static final long LIMIT_MS = 10000;
-    static final long POLL_DELAY_MS = 100;
     private BufferedWriter writer;
     private BufferedWriter events;
     private long startedUnix;
