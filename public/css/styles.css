@@ -65,6 +65,32 @@ body::after {
   height: 100%;
 }
 
+.bear-map-scale {
+  padding: 4px 6px 5px;
+  color: #172b3a;
+  font: 700 11px/1.2 system-ui, sans-serif;
+  pointer-events: none;
+}
+.bear-map-scale-inner {
+  position: relative;
+  box-sizing: border-box;
+  padding-bottom: 5px;
+  text-align: center;
+  text-shadow: -1px 0 #fff, 1px 0 #fff, 0 -1px #fff, 0 1px #fff;
+  white-space: nowrap;
+}
+.bear-map-scale-inner::after {
+  content: "";
+  position: absolute;
+  inset: auto 0 0;
+  height: 50%;
+  box-sizing: border-box;
+  border: solid currentColor;
+  border-width: 0 2px 2px;
+  filter: drop-shadow(0 0 1px #fff);
+}
+:root[data-display-size="large"] .bear-map-scale { font-size: 14px; }
+
 /* Native modal top layer stays above OpenLayers overlays and makes the map inert. */
 .bp-confirm-dialog::backdrop { background: transparent; }
 .bp-confirm-close { position:absolute; top:12px; right:12px; width:32px; height:32px; display:flex; align-items:center; justify-content:center; padding:0; border:0; border-radius:9px; background:#f1f5f9; color:#64748b; font:400 26px/1 system-ui,sans-serif; cursor:pointer; }
@@ -200,9 +226,17 @@ a.leaflet-control-locate-btn.is-active svg{
   z-index: 1400;
   display: flex;
   flex-direction: column;
+  align-items: flex-end;
   gap: 12px;
+  pointer-events: none;
 }
+.map-right-controls > * { flex: 0 0 auto; }
 .map-ctl-group { display: flex; flex-direction: column; gap: 8px; }
+.map-right-controls .map-ctl { pointer-events: auto; }
+.map-navigation-controls { align-items: flex-end; }
+.map-ctl-locate-row { display: flex; align-items: center; gap: 6px; }
+.map-ctl-scale-slot { display: flex; align-items: center; height: 44px; }
+:root[data-display-size="large"] .map-ctl-scale-slot { height: var(--bp-large-touch); }
 
 .map-ctl-compass svg { transition: transform 0.1s linear; }
 

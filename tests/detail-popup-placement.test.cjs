@@ -53,8 +53,9 @@ test('detail bounds reserve visible top and right tools',()=>{
   const style={};let offset;
   const controls=[
     {left:240,top:12,bottom:64,width:52,height:52,rightTool:false},
-    {left:320,top:180,bottom:500,width:58,height:320,rightTool:true}
-  ].map(bounds=>({getClientRects:()=>[1],getBoundingClientRect:()=>bounds,matches:()=>bounds.rightTool}));
+    {left:220,top:180,bottom:500,width:158,height:320,rightTool:true}
+  ].map(bounds=>({getClientRects:()=>[1],getBoundingClientRect:()=>bounds,matches:()=>bounds.rightTool,
+    querySelector:selector=>bounds.rightTool&&selector==='.map-ctl-compass'?{getBoundingClientRect:()=>({left:320})}:null}));
   const context={parseCssPx:parseFloat,
     document:{documentElement:{},querySelectorAll:()=>controls,getElementById:()=>null},
     window:{innerWidth:390,innerHeight:844,BearMobileDock:{isDocked:()=>true},getComputedStyle:()=>({getPropertyValue:()=> '0'})},

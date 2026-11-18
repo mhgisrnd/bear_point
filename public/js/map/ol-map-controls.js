@@ -265,7 +265,7 @@ window.createOlMapControlsManager = function createOlMapControlsManager(options)
 
       measureActionPanelEl.style.position = "absolute";
       measureActionPanelEl.style.right = "calc(64px + var(--safe-right))";
-      measureActionPanelEl.style.bottom = mobileDock ? "calc(var(--mobile-dock-height) + 12px)" : "calc(20px + var(--safe-bottom))";
+      measureActionPanelEl.style.bottom = mobileDock ? "calc(var(--mobile-dock-height) + 66px)" : "calc(76px + var(--safe-bottom))";
       measureActionPanelEl.style.left = "auto";
       measureActionPanelEl.style.top = "auto";
       measureActionPanelEl.style.marginBottom = "0";
@@ -589,13 +589,13 @@ window.createOlMapControlsManager = function createOlMapControlsManager(options)
     }
   }
 
-  // 우하단: 지리산 · 나침반(지도 북쪽) · 내 위치, 그 아래 측정 도구 묶음. 확대/축소는 두 손가락으로 한다.
+  // 우하단: 측정 도구 · 지리산 · 나침반 · 내 위치, 내 위치 버튼 왼쪽에 축척.
   function mountRightBottomControls() {
     const root = document.createElement("div");
     root.className = "map-right-controls";
 
     const mainControlGroup = document.createElement("div");
-    mainControlGroup.className = "map-ctl-group";
+    mainControlGroup.className = "map-ctl-group map-navigation-controls";
 
     function createMaskIconMarkup(iconPath, sizePx) {
       return '<span aria-hidden="true" style="display:block;width:' + sizePx + 'px;height:' + sizePx + 'px;background-color:currentColor;-webkit-mask:url(\'' + iconPath + '\') center / contain no-repeat;mask:url(\'' + iconPath + '\') center / contain no-repeat;"></span>';
@@ -688,11 +688,20 @@ window.createOlMapControlsManager = function createOlMapControlsManager(options)
         measureItemsEl.hidden = !open;
         toolsToggleBtn.setAttribute("aria-expanded", String(open));
         measureToolsEl.classList.toggle("is-open", open);
+        keepControlVisible(open ? toolsToggleBtn : locateBtnEl);
         if (!open && measureModeActive) setMeasureMode(false, "toggle");
       }
     );
     toolsToggleBtn.setAttribute("aria-expanded", "false");
     toolsToggleBtn.setAttribute("aria-controls", measureItemsEl.id);
+
+    function keepControlVisible(control) {
+      if (root.clientHeight >= root.scrollHeight) return;
+      const button = control.getBoundingClientRect();
+      const viewport = root.getBoundingClientRect();
+      if (button.bottom > viewport.bottom) root.scrollTop += Math.ceil(button.bottom - viewport.bottom);
+      else if (button.top < viewport.top) root.scrollTop -= Math.ceil(viewport.top - button.top);
+    }
 
     measureDistanceBtnEl = makeBtn(
       "map-ctl-measure",
@@ -789,15 +798,20 @@ window.createOlMapControlsManager = function createOlMapControlsManager(options)
 
     mainControlGroup.appendChild(btnJiri);
     mainControlGroup.appendChild(compassBtn);
-    mainControlGroup.appendChild(locateBtnEl);
 
     measureItemsEl.appendChild(measureDistanceBtnEl);
     measureItemsEl.appendChild(measureAreaBtnEl);
     measureToolsEl.appendChild(measureItemsEl);
     measureToolsEl.appendChild(toolsToggleBtn);
 
-    root.appendChild(mainControlGroup);
+    const scaleTarget = document.createElement("div");
+    scaleTarget.className = "map-ctl-scale-slot";
+    const locateRow = document.createElement("div");
+    locateRow.className = "map-ctl-locate-row";
+    locateRow.append(scaleTarget, locateBtnEl);
+    mainControlGroup.appendChild(locateRow);
     root.appendChild(measureToolsEl);
+    root.appendChild(mainControlGroup);
 
     syncMeasureActionPanelContainer();
 
@@ -818,6 +832,24 @@ window.createOlMapControlsManager = function createOlMapControlsManager(options)
     window.addEventListener("bearpoint:mobile-dock-layout", onMeasureLayoutChange);
 
     mapEl.appendChild(root);
+    if (typeof ResizeObserver === "function") {
+      let viewportHeight = 0, locateHeight = 0;
+      const sizeObserver = new ResizeObserver(() => {
+        if (viewportHeight === root.clientHeight && locateHeight === locateRow.clientHeight) return;
+        viewportHeight = root.clientHeight;
+        locateHeight = locateRow.clientHeight;
+        keepControlVisible(measureItemsEl.hidden ? locateBtnEl : toolsToggleBtn);
+      });
+      sizeObserver.observe(root);
+      sizeObserver.observe(locateRow);
+    }
+    map.addControl(new ol.control.ScaleLine({
+      target: scaleTarget,
+      className: "bear-map-scale",
+      units: "metric",
+      minWidth: 54,
+      maxWidth: 118
+    }));
   }
 
   // 지도 유형 패널: 네이버 지도처럼 미리보기 타일을 눌러 배경지도를 고르고, 겹쳐 보기는 스위치로 켠다.

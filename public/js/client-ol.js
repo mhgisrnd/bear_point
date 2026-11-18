@@ -4408,7 +4408,8 @@
       const bounds = control.getBoundingClientRect();
       if (!bounds.width || !bounds.height) continue;
       if (control.matches('.map-right-controls, #compass')) {
-        right = Math.min(right, bounds.left - rect.left - 12);
+        const rail = control.querySelector('.map-ctl-compass');
+        right = Math.min(right, (rail?.getBoundingClientRect().left ?? bounds.left) - rect.left - 12);
       } else {
         top = Math.max(top, bounds.bottom - rect.top + 12);
       }
