@@ -690,9 +690,9 @@
     gpsBlendAlphaMax: 0.88,  
     gpsBlendSpeedMaxMps: 8,
     jumpThresholdDeg: 70,
-    unstableWindowMs: 2500,
-    unstableCount: 6,
-    freezeOnUnstable: true
+    jumpToleranceDeg: 12,
+    jumpConfirmSamples: 3,
+    jumpSettleMs: 250
   };
 
   if (!window.proj4 || !ol.proj || !ol.proj.proj4 || typeof ol.proj.proj4.register !== "function") {
@@ -783,8 +783,7 @@
   let lastGpsHeadingTs = 0;
   let lastGpsSampleLatLng = null;
   let lastGpsSampleTs = 0;
-  let unstableHits = [];
-  let lastStableDeg = null;
+  let pendingHeadingJump = null;
   // 나침반 센서가 준 실제 바라보는 방향(각 고정과 무관). 방향 모드의 지도 회전에 쓴다.
   let lastSensorHeadingDeg = null;
   // 내 위치 버튼 상태: off(꺼짐) | on(켜짐, 지도 자유) | follow(따라가기) | heading(바라보는 방향이 위)
@@ -3888,38 +3887,43 @@
     return Number.isFinite(event.alpha) ? norm360(screenAngle - event.alpha) : null;
   }
 
-  // 급격한 방향 점프를 완화해 시각적으로 안정적인 헤딩을 만든다.
-  function filterHeading(nextDeg) {
+  function clearHeadingJump() {
+    if (pendingHeadingJump?.timer !== undefined) window.clearTimeout(pendingHeadingJump.timer);
+    pendingHeadingJump = null;
+  }
+
+  // 큰 변화는 새 방향이 연속으로 관측되고 잠시 유지된 뒤 반영한다.
+  function filterHeading(nextDeg, onSettled) {
     if (headingSmoothed === null) {
       headingSmoothed = nextDeg;
-      lastStableDeg = nextDeg;
       return nextDeg;
     }
 
     const delta = angleDelta(nextDeg, headingSmoothed);
-    const absDelta = Math.abs(delta);
-
-    if (absDelta >= COMPASS_CFG.jumpThresholdDeg) {
-      unstableHits.push(Date.now());
-      const cutoff = Date.now() - COMPASS_CFG.unstableWindowMs;
-      unstableHits = unstableHits.filter(function (timestamp) {
-        return timestamp >= cutoff;
-      });
-
-      if (unstableHits.length >= COMPASS_CFG.unstableCount) {
-        if (COMPASS_CFG.freezeOnUnstable && lastStableDeg !== null) {
-          return lastStableDeg;
-        }
-        headingSmoothed = norm360(headingSmoothed + delta * 0.08);
-        return headingSmoothed;
-      }
-
-      headingSmoothed = norm360(headingSmoothed + delta * 0.12);
+    if (Math.abs(delta) < COMPASS_CFG.jumpThresholdDeg) {
+      clearHeadingJump();
+      headingSmoothed = norm360(headingSmoothed + delta * COMPASS_CFG.smoothAlpha);
       return headingSmoothed;
     }
 
-    headingSmoothed = norm360(headingSmoothed + delta * COMPASS_CFG.smoothAlpha);
-    lastStableDeg = headingSmoothed;
+    const jump = pendingHeadingJump;
+    if (!jump || Math.abs(angleDelta(nextDeg, jump.first)) > COMPASS_CFG.jumpToleranceDeg) {
+      clearHeadingJump();
+      pendingHeadingJump = { first: nextDeg, latest: nextDeg, samples: 1 };
+      return headingSmoothed;
+    }
+
+    jump.latest = nextDeg;
+    jump.samples += 1;
+    if (jump.samples === COMPASS_CFG.jumpConfirmSamples) {
+      // WebView may stop sending events once the device is still.
+      jump.timer = window.setTimeout(() => {
+        if (pendingHeadingJump !== jump) return;
+        pendingHeadingJump = null;
+        headingSmoothed = jump.latest;
+        onSettled(headingSmoothed);
+      }, COMPASS_CFG.jumpSettleMs);
+    }
     return headingSmoothed;
   }
 
@@ -4067,24 +4071,27 @@
 
     let lastDirectionSample = null;
     let lastScreenAngle = null;
+    function publishDirection(heading) {
+      const fused = fuseHeadingWithGps(heading);
+      lastSensorHeadingDeg = fused;
+      setHeading(fused);
+      scheduleHeadingTurn();
+    }
+
     function applyDirectionSample(event, screenAngle) {
+      if (document.hidden) return;
       const heading = computeHeadingFromEvent(event, screenAngle);
       if (!Number.isFinite(heading)) return;
 
       if (lastScreenAngle !== null && screenAngle !== lastScreenAngle) {
         headingSmoothed = null;
-        lastStableDeg = null;
-        unstableHits = [];
+        clearHeadingJump();
       }
       lastDirectionSample = event;
       lastScreenAngle = screenAngle;
 
       const corrected = applyHeadingOffset(heading);
-      const smoothed = filterHeading(corrected);
-      const fused = fuseHeadingWithGps(smoothed);
-      lastSensorHeadingDeg = fused;
-      setHeading(fused);
-      scheduleHeadingTurn();
+      publishDirection(filterHeading(corrected, publishDirection));
     }
 
     compassHandler = function (event) {
@@ -4120,6 +4127,7 @@
     };
     rotationTarget.addEventListener(rotationEvent, onRotation);
     removeCompassScreenListener = () => rotationTarget.removeEventListener(rotationEvent, onRotation);
+    document.addEventListener("visibilitychange", clearHeadingJump);
 
     compassEnabled = true;
   }
@@ -4132,12 +4140,12 @@
     window.removeEventListener("deviceorientation", compassHandler, true);
     removeCompassScreenListener?.();
     removeCompassScreenListener = null;
+    document.removeEventListener("visibilitychange", clearHeadingJump);
+    clearHeadingJump();
     compassHandler = null;
     compassEnabled = false;
     compassEventName = null;
     headingSmoothed = null;
-    unstableHits = [];
-    lastStableDeg = null;
     lastAbsoluteSampleTs = 0;
     lastSensorHeadingDeg = null;
 

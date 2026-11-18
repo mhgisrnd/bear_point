@@ -19,20 +19,32 @@ test('compass heading uses the displayed top edge for all screen rotations',()=>
   assert.equal(context.computeHeadingFromEvent({alpha:null},context.getScreenAngle()),null);
 });
 
-test('rotating the screen reapplies the most recent direction without waiting for another sample',async()=>{
+async function startTestCompass(){
   const samples=[];
   const window=new EventTarget();
+  const document=new EventTarget();
   const orientation=Object.assign(new EventTarget(),{angle:0});
   window.screen={orientation};
-  const context={window,compassEnabled:false,compassHandler:null,compassEventName:null,removeCompassScreenListener:null,
-    headingSmoothed:null,lastStableDeg:null,unstableHits:[],lastAbsoluteSampleTs:0,lastSensorHeadingDeg:null,headingDialEl:null,
+  const timers=new Map();
+  let timerId=0;
+  window.setTimeout=(callback,delay)=>{timers.set(++timerId,{callback,delay});return timerId;};
+  window.clearTimeout=id=>timers.delete(id);
+  const context={window,document,compassEnabled:false,compassHandler:null,compassEventName:null,removeCompassScreenListener:null,
+    headingSmoothed:null,pendingHeadingJump:null,lastAbsoluteSampleTs:0,lastSensorHeadingDeg:null,headingDialEl:null,
     applyHeadingOffset:heading=>heading,fuseHeadingWithGps:heading=>heading,setHeading:heading=>samples.push(heading),scheduleHeadingTurn(){}};
   vm.createContext(context);
-  for(const name of ['norm360','getScreenAngle','computeHeadingFromEvent','filterHeading','stopCompass'])vm.runInContext(extract(name),context);
+  vm.runInContext(source.match(/const COMPASS_CFG = \{[\s\S]*?\n  \};/)[0],context);
+  for(const name of ['norm360','angleDelta','getScreenAngle','computeHeadingFromEvent','clearHeadingJump','filterHeading','stopCompass'])vm.runInContext(extract(name),context);
   const start=source.indexOf('  async function startCompass(');
   vm.runInContext(source.slice(start,source.indexOf('\n  }',start)+4),context);
   await context.startCompass();
-  window.dispatchEvent(Object.assign(new Event('deviceorientation'),{alpha:330}));
+  return {context,document,orientation,samples,timers,
+    sample(heading){window.dispatchEvent(Object.assign(new Event('deviceorientation'),{alpha:(360-heading)%360}));}};
+}
+
+test('rotating the screen reapplies the most recent direction without waiting for another sample',async()=>{
+  const {context,orientation,samples,sample}=await startTestCompass();
+  sample(30);
   orientation.angle=90;
   orientation.dispatchEvent(new Event('change'));
   orientation.angle=270;
@@ -43,6 +55,48 @@ test('rotating the screen reapplies the most recent direction without waiting fo
   orientation.angle=0;
   orientation.dispatchEvent(new Event('change'));
   assert.deepEqual(samples,[30,120,300]);
+});
+
+test('a brief compass spike is held back and a sustained new direction across north is accepted',async()=>{
+  const {context,samples,timers,sample}=await startTestCompass();
+  sample(180);
+  for(const heading of [270,271,272])sample(heading);
+  assert.equal(timers.size,1);
+  assert.equal(samples.at(-1),180);
+  sample(180);
+  assert.equal(timers.size,0);
+  assert.equal(samples.at(-1),180);
+
+  for(const heading of [358,2,3])sample(heading);
+  assert.equal(samples.at(-1),180);
+  assert.equal(timers.size,1);
+  const [id,{callback,delay}]=timers.entries().next().value;
+  assert.equal(delay,250);
+  timers.delete(id);
+  callback();
+  assert.equal(samples.at(-1),3);
+  assert.equal(context.pendingHeadingJump,null);
+  sample(7);
+  assert.equal(samples.at(-1),4);
+});
+
+test('a pending compass jump is discarded on backgrounding or when the compass stops',async()=>{
+  const {context,document,samples,timers,sample}=await startTestCompass();
+  sample(180);
+  for(const heading of [270,271,272])sample(heading);
+  document.hidden=true;
+  document.dispatchEvent(new Event('visibilitychange'));
+  assert.equal(timers.size,0);
+  for(const heading of [270,271,272])sample(heading);
+  assert.equal(timers.size,0);
+  assert.equal(samples.at(-1),180);
+
+  document.hidden=false;
+  document.dispatchEvent(new Event('visibilitychange'));
+  for(const heading of [270,271,272])sample(heading);
+  assert.equal(timers.size,1);
+  context.stopCompass();
+  assert.equal(timers.size,0);
 });
 
 test('manual heading handle hit area follows the rendered handle at every map rotation',()=>{
