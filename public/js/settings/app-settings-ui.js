@@ -11,6 +11,7 @@
       <nav class="app-settings-categories" aria-label="설정 대분류">
         <button type="button" class="app-settings-category" id="app-settings-field-category" aria-current="true" aria-controls="app-settings-field-items">현장 기능</button>
         <button type="button" class="app-settings-category" id="app-settings-app-category" aria-current="false" aria-controls="app-settings-app-items">앱 관리</button>
+        <button type="button" class="app-settings-category" id="app-settings-general-category" aria-current="false" aria-controls="app-settings-general-items">일반</button>
       </nav>
       <div class="app-settings-subnav">
         <div class="app-settings-tabs" id="app-settings-field-items" role="tablist" aria-orientation="vertical" aria-labelledby="app-settings-field-category">
@@ -21,6 +22,9 @@
           <button type="button" class="app-settings-tab" id="app-settings-notifications-tab" role="tab" aria-selected="false" aria-controls="app-settings-notifications-panel" tabindex="-1">알림</button>
           <button type="button" class="app-settings-tab" id="app-settings-version-tab" role="tab" aria-selected="false" aria-controls="app-settings-version-panel" tabindex="-1">앱 버전</button>
           <button type="button" class="app-settings-tab" id="app-settings-storage-tab" role="tab" aria-selected="false" aria-controls="app-settings-storage-panel" tabindex="-1">저장 공간</button>
+        </div>
+        <div class="app-settings-tabs" id="app-settings-general-items" role="tablist" aria-orientation="vertical" aria-labelledby="app-settings-general-category" hidden>
+          <button type="button" class="app-settings-tab" id="app-settings-display-tab" role="tab" aria-selected="false" aria-controls="app-settings-display-panel" tabindex="-1">화면 크기</button>
         </div>
       </div>
       <div class="app-settings-content">
@@ -64,6 +68,17 @@
     </section>
           <section id="app-settings-version-panel" role="tabpanel" aria-labelledby="app-settings-version-tab" hidden></section>
           <section id="app-settings-storage-panel" role="tabpanel" aria-labelledby="app-settings-storage-tab" hidden></section>
+          <section id="app-settings-display-panel" role="tabpanel" aria-labelledby="app-settings-display-tab" hidden>
+            <div class="app-settings-body app-settings-fields">
+              <fieldset class="app-settings-display-options" disabled>
+                <legend>글자와 버튼 크기</legend>
+                <label><input type="radio" name="display-size" value="standard" checked /> 기본</label>
+                <label><input type="radio" name="display-size" value="large" /> 크게</label>
+              </fieldset>
+              <p class="app-settings-help">선택하면 이 기기에 바로 적용됩니다.</p>
+              <p class="app-settings-status app-settings-display-status" role="status"></p>
+            </div>
+          </section>
         </div>
       </div>
     </div>`;
@@ -150,6 +165,9 @@
   const closeButtons = [...dialog.querySelectorAll(".app-settings-close,.app-settings-cancel")];
   const trackingForm = dialog.querySelector(".app-settings-tracking-form");
   const trackingMessage = dialog.querySelector(".app-settings-tracking-status");
+  const displayOptions = dialog.querySelector(".app-settings-display-options");
+  const displayMessage = dialog.querySelector(".app-settings-display-status");
+  const displayChoices = [...displayOptions.querySelectorAll('input[type="radio"]')];
   function paintTracking() {
     const options = store.snapshot().tracking;
     trackingForm.elements.interval.value = String(options.interval_seconds);
@@ -157,6 +175,12 @@
     dialog.querySelector("#app-settings-tracking-tab").disabled = !loaded;
   }
   let loaded = false, required = true, saving = false, refreshing = false, selection = "", closing = false, deferred = false;
+  function paintDisplaySize() {
+    const size = store.snapshot().displaySize;
+    document.documentElement.dataset.displaySize = size;
+    displayChoices.forEach(choice => { choice.checked = choice.value === size; });
+    displayOptions.disabled = !loaded;
+  }
   function paintCloseButtons() {
     closeButtons.forEach(button => { button.hidden = required && !button.classList.contains("app-settings-close"); });
   }
@@ -191,6 +215,7 @@
     if (window.BearStartupReady) await window.BearStartupReady;
     if (dialog.open) return;
     message.textContent = "";
+    displayMessage.textContent = "";
     required = !store.snapshot().profile;
     paintCloseButtons();
     selectedTab = tabs[0];
@@ -220,6 +245,7 @@
       const state = store.snapshot();
       required = !state.profile;
       paintTracking();
+      paintDisplaySize();
       paintCloseButtons();
       saveButton.textContent = required ? "저장하고 시작" : "저장";
       trigger.dataset.required = String(!state.profile);
@@ -244,6 +270,15 @@
     }
   }
   form.addEventListener("change", event => { if (event.target.name === "team") selection = event.target.value; });
+  displayOptions.addEventListener("change", async event => {
+    if (!loaded || saving) { paintDisplaySize(); return; }
+    saving = true;
+    displayOptions.disabled = true;
+    displayMessage.textContent = "";
+    try { await store.saveDisplaySize(event.target.value); }
+    catch (error) { displayMessage.textContent = "화면 크기를 저장하지 못했습니다. " + error.message; }
+    finally { saving = false; paintDisplaySize(); }
+  });
   trackingForm.addEventListener("submit", async event => {
     event.preventDefault(); if (!loaded || saving) return;
     saving = true; const button = trackingForm.querySelector('[type="submit"]'); button.disabled = true;

@@ -35,6 +35,7 @@
     const database = () => win.BearSQLiteConfig?.dbName || "BearPointData";
     let profile = null, catalog = { items: clone(DEFAULT_TEAMS), source: "builtin", updated_at: null };
     let tracking = clone(DEFAULT_TRACKING);
+    let displaySize = "standard";
     let loading, refreshing, writes = Promise.resolve();
     async function read(key) {
       if (!native()) return decode(win.localStorage.getItem("bearpoint.settings." + key));
@@ -59,6 +60,7 @@
         profile = validProfile(saved) ? saved : null;
         const savedTracking = await read("tracking.v1");
         try { if (savedTracking) tracking = normalizeTracking(savedTracking); } catch (_) { /* use valid defaults */ }
+        displaySize = await read("display-size.v1") === "large" ? "large" : "standard";
         if (teams && Array.isArray(teams.items)) {
           try { catalog = { items: normalizeTeams(teams.items), source: "cache", updated_at: teams.updated_at || null }; } catch (_) { /* keep bundled defaults for invalid cache */ }
         }
@@ -66,11 +68,19 @@
       })().catch(error => { loading = null; throw error; });
       return loading.then(() => snapshot());
     }
-    function snapshot() { return clone({ profile, ...catalog, tracking }); }
+    function snapshot() { return clone({ profile, ...catalog, tracking, displaySize }); }
     function saveTracking(value) {
       return enqueue(async () => {
         await load(); const next = normalizeTracking(value);
         await write("tracking.v1", next); tracking = next; return clone(next);
+      });
+    }
+    function saveDisplaySize(size) {
+      return enqueue(async () => {
+        await load();
+        if (size !== "standard" && size !== "large") throw new Error("화면 크기 설정을 확인해주세요.");
+        await write("display-size.v1", size);
+        displaySize = size;
       });
     }
     function url() {
@@ -124,7 +134,7 @@
       if (!team) throw new Error("소속 팀을 선택해주세요.");
       return { owner: name, team_id: team.id, team_name: team.name, team_color: team.color };
     }
-    return { load, snapshot, refresh, save, saveTracking, identity, manualIdentity };
+    return { load, snapshot, refresh, save, saveTracking, saveDisplaySize, identity, manualIdentity };
   }
   const api = { DEFAULT_TEAMS, DEFAULT_TRACKING, normalizeTracking, normalizeTeams, validProfile, createStore };
   if (typeof module === "object" && module.exports) module.exports = api;

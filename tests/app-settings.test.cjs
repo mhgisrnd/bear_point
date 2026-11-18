@@ -50,6 +50,20 @@ for (const native of [false,true]) {
     await assert.rejects(()=>reboot.saveTracking({interval_seconds:60,color:'#FFFFFF'}),/full/);
     assert.equal(reboot.snapshot().tracking.interval_seconds,30);
   });
+  test(`${native?'SQLite':'web'}: display size defaults, persists across restart and survives a failed write`, async t => {
+    const {win,db}=environment(native);t.after(()=>db.close());
+    const store=createStore(win);
+    assert.equal((await store.load()).displaySize,'standard');
+    await store.saveDisplaySize('large');
+    const reboot=createStore(win);
+    assert.equal((await reboot.load()).displaySize,'large');
+    await assert.rejects(()=>reboot.saveDisplaySize('unknown'),/화면 크기/);
+    if(native)win.Capacitor.Plugins.CapacitorSQLite.run=async()=>{throw new Error('disk full');};
+    else win.localStorage.setItem=()=>{throw new Error('quota full');};
+    await assert.rejects(()=>reboot.saveDisplaySize('standard'),/full/);
+    assert.equal(reboot.snapshot().displaySize,'large');
+    assert.equal((await createStore(win).load()).displaySize,'large');
+  });
   test(`${native?'SQLite':'web'}: first setup, restart, profile edits and offline catalog preserve stored identity`, async t => {
     const {win,db}=environment(native);t.after(()=>db.close());
     const first=createStore(win);

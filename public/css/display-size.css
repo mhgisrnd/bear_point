@@ -1,0 +1,74 @@
+:root[data-display-size="large"] {
+  --bp-large-touch: 50px;
+  --bp-large-text: 16px;
+  --bp-large-secondary: 14px;
+  --map-dialog-toolbar-space: 74px;
+}
+
+/* Keep map geometry and viewport positioning in CSS pixels. */
+:root[data-display-size="large"] :is(.map-ctl, #btn-app-settings) { width: var(--bp-large-touch); height: var(--bp-large-touch); }
+:root[data-display-size="large"] .map-ctl span:not([aria-hidden]) { font-size: 12px; }
+:root[data-display-size="large"] .map-layer-panel { top: 58px; font-size: var(--bp-large-text); }
+:root[data-display-size="large"] #btn-app-settings { right: calc(70px + var(--safe-right)); }
+:root[data-display-size="large"] #btn-sdr-diagnostics { right: calc(128px + var(--safe-right)); width: 56px; height: var(--bp-large-touch); font-size: 15px; }
+:root[data-display-size="large"] #btn-gps-record-toggle { right: calc(192px + var(--safe-right)); width: 106px; height: var(--bp-large-touch); font-size: 14px; }
+:root[data-display-size="large"] .mobile-dock-nav button { min-height: 56px; font-size: 14px; }
+:root[data-display-size="large"] :is(.mobile-dock-fold strong, .tab-btn) { font-size: var(--bp-large-text); }
+:root[data-display-size="large"] :is(.mobile-dock-fold, .tab-btn) { min-height: 44px; }
+
+/* Settings, confirmation dialogs and the most-used form controls. */
+:root[data-display-size="large"] :is(.app-settings-dialog, .obs-register-popup, .bear-picker, .sdr-dialog, .gps-track-panel, .estimate-history, .bp-confirm-dialog) { font-size: var(--bp-large-text); }
+:root[data-display-size="large"] :is(.app-settings-head, .obs-register-header, .obs-sheet-header, .sdr-header, .bear-picker__header, .estimate-history-head) h2 { font-size: 20px; }
+:root[data-display-size="large"] :is(.app-settings-section-title, .sdr-stage-heading, .sdr-dialog .sdr-frequency-heading strong) { font-size: 18px; }
+:root[data-display-size="large"] :is(.app-settings-intro, .app-settings-help, .app-settings-catalog-note, .app-settings-status, .app-settings-tracking-status, .app-notification-footnote, .sdr-note, .sdr-message, .sdr-status, .sdr-dialog .sdr-connection-status, .sdr-footer-context, .obs-reg-sdr-source) { font-size: var(--bp-large-secondary); }
+:root[data-display-size="large"] .app-settings-dialog :is(.app-settings-field input, .app-settings-field select, .app-settings-actions button, .app-settings-category, .app-settings-tab, .app-settings-refresh, .app-settings-display-options label) { min-height: var(--bp-large-touch); font-size: var(--bp-large-text); }
+:root[data-display-size="large"] .app-settings-dialog :is(.app-settings-close, .app-settings-back) { flex-basis: 48px; width: 48px; height: 48px; }
+:root[data-display-size="large"] .app-settings-notification-toggle input { width: 50px; height: 50px; }
+:root[data-display-size="large"] .app-notification-track { flex-basis: 50px; width: 50px; height: 30px; padding: 5px 4px; }
+:root[data-display-size="large"] .app-settings-notification-toggle input:checked + span::after { transform: translateX(22px); }
+:root[data-display-size="large"] .bp-confirm-dialog button { min-height: 48px; font-size: var(--bp-large-text); }
+:root[data-display-size="large"] .bp-confirm-dialog .bp-confirm-close { min-width: 48px; }
+:root[data-display-size="large"] :is(.obs-register-popup, .bear-picker, .estimate-history) :is(button, input:not([type=checkbox]):not([type=radio]), select, textarea) { min-height: 48px; }
+:root[data-display-size="large"] :is(.obs-reg-label, .obs-reg-identity-label, .obs-reg-lock-label, .obs-reg-input, .obs-reg-select, .obs-reg-identity textarea, .obs-reg-identity input, .obs-reg-identity select, .obs-reg-btn, .obs-reg-bear-find, .obs-reg-det-toggle, .bear-picker__item, .bear-picker__footer button, .estimate-history button) { font-size: var(--bp-large-text); }
+:root[data-display-size="large"] .obs-reg-label { flex-basis: auto; width: auto; min-width: max-content; }
+:root[data-display-size="large"] .obs-reg-heading-wrap .obs-reg-lock-label { min-height: 44px; }
+:root[data-display-size="large"] :is(.obs-reg-lock-label, .obs-table, .gps-track-history-table, .bears-select-all, .app-settings-dialog) input:is([type=checkbox], [type=radio]):not([role=switch]) { width: 20px; height: 20px; }
+:root[data-display-size="large"] .obs-reg-identity textarea { line-height: 1.35; }
+
+/* Preserve usable search and list columns as the text grows. */
+:root[data-display-size="large"] .list-search-row input.list-search-input { min-height: 48px; font-size: var(--bp-large-text); }
+:root[data-display-size="large"] .list-search-row > button { min-height: 48px; min-width: 42px; font-size: var(--bp-large-secondary); }
+:root[data-display-size="large"] .list-search-row { flex-wrap: wrap; }
+:root[data-display-size="large"] .list-search-row .list-search-input { flex-basis: 130px; }
+:root[data-display-size="large"] :is(.obs-table, .gps-track-history-table) :is(th, td) { font-size: var(--bp-large-secondary); }
+:root[data-display-size="large"] body.bp-map-dock #mobile-map-dock :is(.obs-table, .gps-track-history-table) th { font-size: var(--bp-large-secondary); }
+:root[data-display-size="large"] .gps-history-open { min-height: 48px; font-size: var(--bp-large-secondary); }
+:root[data-display-size="large"] :is(.obs-sheet, .gps-track-panel, .panel-stack) :is(.obs-header-add, .analysis-btn, .obs-inline-register-btn, .bears-toolbar-btn, .gps-history-open),
+:root[data-display-size="large"] body.bp-map-dock .mobile-dock-actions :is(.obs-header-add, .obs-header-refresh, .tracking-refresh) { min-height: 44px; font-size: var(--bp-large-secondary); }
+:root[data-display-size="large"] .bears-item--unified .bears-item__code { font-size: 20px; }
+:root[data-display-size="large"] .bears-item__detail-table :is(th, td) { font-size: var(--bp-large-secondary); }
+:root[data-display-size="large"] .bears-item__detail-table th { width: 58px; }
+:root[data-display-size="large"] .bears-item__detail-value--coords { font-size: var(--bp-large-secondary); }
+:root[data-display-size="large"] .map-detail-title { font-size: var(--bp-large-text); }
+:root[data-display-size="large"] :is(.map-detail-history-button, .map-detail-close-button, .obs-popup-card__action-btn) { min-height: 44px; font-size: var(--bp-large-secondary); }
+
+/* Keep the frequency digits in one row and give each preset a taller hit area. */
+:root[data-display-size="large"] .sdr-dialog :is(button, summary, input:not([type=checkbox]):not([type=radio]), select) { min-height: var(--bp-large-touch); font-size: var(--bp-large-text); }
+:root[data-display-size="large"] .sdr-dialog :is([data-bt-disconnect], [data-disconnect]) { height: auto; }
+:root[data-display-size="large"] .sdr-dialog:not([data-search-compact="true"]) [data-close] { flex-basis: 48px; width: 48px; height: 48px; min-height: 48px; font-size: 24px; }
+:root[data-display-size="large"] .sdr-dialog[data-search-compact="true"] .sdr-header button { min-height: 36px; }
+:root[data-display-size="large"] .sdr-dialog [data-receiver-selector] strong { font-size: 18px; }
+:root[data-display-size="large"] .sdr-dialog [data-receiver-selector] span { font-size: var(--bp-large-secondary); }
+:root[data-display-size="large"] .sdr-dialog :is([data-frequency-edit], [data-bt-frequency-edit], [data-audio], .sdr-usb-tools button, .sdr-connection-tools button) { font-size: var(--bp-large-secondary); }
+:root[data-display-size="large"] .sdr-dialog .sdr-animal-list { grid-template-rows: 152px; grid-auto-columns: min(100%, 258px); }
+:root[data-display-size="large"] .sdr-dialog .sdr-animal-option > strong { align-items: flex-end; padding: 8px; font-size: 16px; }
+:root[data-display-size="large"] .sdr-dialog .sdr-animal-favorite { left: 4px; width: 48px; font-size: 25px; }
+:root[data-display-size="large"] .sdr-dialog .sdr-animal-slots button { font-size: var(--bp-large-secondary); }
+
+@media (max-width: 640px) {
+  :root[data-display-size="large"] .app-settings-layout { grid-template-columns: clamp(86px, 25%, 112px) minmax(0, 1fr); }
+  :root[data-display-size="large"] .app-settings-category { font-size: var(--bp-large-secondary); }
+}
+@media (max-width: 340px) {
+  :root[data-display-size="large"] #btn-gps-record-toggle { width: 100px; padding-inline: 5px; }
+}
