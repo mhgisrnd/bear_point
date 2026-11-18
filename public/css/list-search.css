@@ -45,8 +45,11 @@
   white-space: nowrap;
   cursor: pointer;
 }
-.list-search-row > button:not(:disabled):hover { background: #f8fafc; }
+@media (hover: hover) {
+  .list-search-row > button:where(:not(:disabled, [aria-expanded="true"], [aria-pressed="true"], .has-filters)):hover { background: #f8fafc; }
+}
 .list-search-row > button:disabled,
 .list-search-row > button:disabled:hover { opacity: .45; cursor: default; background: #fff; color: #486384; border-color: #d7e1ed; }
 .list-search-row .list-owner-shortcut[aria-pressed="true"],
 .list-search-row .list-filter-button.has-filters { color: #2257c5; border-color: #aec5ec; background: #edf3ff; }
+.list-search-row .list-filter-button[aria-expanded="true"] { color: #fff; border-color: #235ee8; background: #235ee8; }
