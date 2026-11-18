@@ -24,6 +24,13 @@ final class SdrReceiver {
     private final SdrDiagnosticCapture diagnostic;
     private final SdrCaptureWriter captureWriter;
     private JSObject diagnosticContext = new JSObject();
+    final SdrComparison comparison;
+    private SdrComparison.Settings currentSettings;
+    private boolean comparisonAudioEnabled;
+    private double comparisonVolume;
+    private int comparisonAudioGain;
+    private File comparisonRoot;
+    private UsbDeviceConnection comparisonConnection;
     String mode = "iq";
     int tunedFrequencyHz;
     private SdrScanSession scanSession;
@@ -64,14 +71,46 @@ final class SdrReceiver {
         this.main = main; this.changed = changed;
         diagnostic = new SdrDiagnosticCapture(() -> main.post(changed));
         captureWriter=new SdrCaptureWriter(diagnostic);
+        comparison=new SdrComparison(new SdrComparison.Host(){
+            public String reception(){return state;} public String captureState(){return diagnostic.state();}
+            public String error(){return SdrReceiver.this.error+" "+diagnostic.error();}
+            public void stop(Runnable done){stopInternal(done);}
+            public void start(SdrComparison.Settings s){startConfigured(comparisonConnection,s);}
+            public void record(int index,String name){
+                JSObject context=new JSObject();
+                try{context=new JSObject(diagnosticContext.toString());}catch(org.json.JSONException failure){throw new IllegalStateException(failure);}
+                context.put("comparisonStep",index+1);context.put("comparisonName",name);
+                startDiagnosticInternal(comparisonRoot,context);
+            }
+            public File file(){return diagnostic.readyFile();}
+            public void bundle(java.util.List<File> files,java.util.List<String> names,String reason){diagnostic.bundle(comparisonRoot,files,names,reason);}
+            public void later(Runnable action){main.postDelayed(action,250);}
+            public void changed(){changed.run();}
+            public void restoreAudio(){audio.setGainDb(comparisonAudioGain);audio.set(comparisonAudioEnabled,comparisonVolume);}
+        },SystemClock::elapsedRealtime);
     }
     void diagnosticStorage(File files,File cache) { diagnostic.storage(new File(files,"sdr-diagnostics"),cache); }
     void startDiagnostic(File root,JSObject context) {
         if (!"receiving".equals(state) || !"cw".equals(mode)) throw new IllegalStateException("개별 CW 수신 중에 진단 기록을 시작하세요.");
+        if(comparison.active)throw new IllegalStateException("비교 진단이 진행 중입니다.");
+        comparison.message="";comparison.phase="idle";
+        startDiagnosticInternal(root,context);
+    }
+    private void startDiagnosticInternal(File root,JSObject context) {
         diagnosticContext=context;
         try { captureWriter.request(root); }
         catch (java.io.IOException failure) { throw new IllegalStateException(failure.getMessage(),failure); }
     }
+    void startComparison(UsbDeviceConnection connection,File root,JSObject context) {
+        if(!"receiving".equals(state)||!"cw".equals(mode)||currentSettings==null)throw new IllegalStateException("개별 CW 수신 중에 시작하세요.");
+        if(java.util.Arrays.asList("waiting","recording","packaging").contains(diagnostic.state()))throw new IllegalStateException("진단 기록 완료 후 시작하세요.");
+        if(!root.isDirectory()&&!root.mkdirs())throw new IllegalStateException("진단 폴더를 만들지 못했습니다.");
+        if(root.getUsableSpace()<600L*1024*1024)throw new IllegalStateException("비교 진단에는 여유 공간 600MB 이상이 필요합니다.");
+        comparisonRoot=root;comparisonConnection=connection;diagnosticContext=context;
+        JSObject a=audio.snapshot();comparisonAudioEnabled=a.optBoolean("enabled");comparisonVolume=a.optDouble("volume",1);comparisonAudioGain=audio.gainDb();
+        comparison.begin(currentSettings);
+    }
+    void stopComparison(){comparison.cancel();}
     File diagnosticFile() { return diagnostic.readyFile(); }
     File diagnosticFile(String id) { return diagnostic.file(id); }
     void deleteDiagnostic(String id) {
@@ -84,27 +123,37 @@ final class SdrReceiver {
         result.put("writerDroppedBlocks",diagnostic.writerDroppedBlocks());result.put("pendingFrames",captureWriter.pending());
         JSArray records=new JSArray();
         for(SdrDiagnosticCapture.Saved record:diagnostic.saved()) {
-            JSObject item=new JSObject();item.put("id",record.id);item.put("time",record.time);item.put("sizeBytes",record.size);records.put(item);
+            JSObject item=new JSObject();item.put("id",record.id);item.put("time",record.time);item.put("sizeBytes",record.size);item.put("comparison",record.comparison);records.put(item);
         }
-        result.put("records",records);return result;
+        result.put("records",records);
+        JSObject cmp=new JSObject();cmp.put("active",comparison.active);cmp.put("phase",comparison.phase);cmp.put("message",comparison.message);
+        cmp.put("step",comparison.index+1);cmp.put("total",comparison.steps==null?0:comparison.steps.size());result.put("comparison",cmp);return result;
     }
 
     void start(UsbDeviceConnection connection, int hz, int rate, int gain, int ppm, String mode, int listenHz, int deemphasisUs) {
+        if(comparison.active)throw new IllegalStateException("비교 진단을 먼저 중단하세요.");
+        this.mode=mode;
+        startConfigured(connection,new SdrComparison.Settings(hz,rate,gain,ppm,listenHz,deemphasisUs,12000));
+    }
+    private void startConfigured(UsbDeviceConnection connection,SdrComparison.Settings settings) {
         if (!state.equals("idle") && !state.equals("error")) throw new IllegalStateException("정지 후 다시 시작하세요.");
+        currentSettings=settings;
+        int hz=settings.hz,rate=settings.rate,gain=settings.gain,ppm=settings.ppm,listenHz=settings.listen,deemphasisUs=settings.deemphasis;
+        String mode=this.mode;
         int token = generation.incrementAndGet();
         audio.stop(); this.mode = mode;
         tunedFrequencyHz = hz;
         fixedResultAvailable = true;
         state = "starting"; error = ""; metrics = new JSObject();
         if (scanSession == null) scan = new JSObject();
-        worker.execute(() -> receive(token, connection, hz, rate, gain, ppm, mode, listenHz, deemphasisUs));
+        worker.execute(() -> receive(token, connection, hz, rate, gain, ppm, mode, listenHz, deemphasisUs, settings.offset));
     }
 
-    private void receive(int token, UsbDeviceConnection connection, int hz, int rate, int gain, int ppm, String mode, int listenHz, int deemphasisUs) {
+    private void receive(int token, UsbDeviceConnection connection, int hz, int rate, int gain, int ppm, String mode, int listenHz, int deemphasisUs, int offsetHz) {
         long handle = 0, demodulator = 0;
         try {
             if (generation.get() != token) return;
-            int hardwareHz = "cw".equals(mode) ? hz - 12000 : hz;
+            int hardwareHz = "cw".equals(mode) ? hz - offsetHz : hz;
             handle = SdrNative.open(connection.getFileDescriptor(), hardwareHz, rate, gain, ppm);
             tunerInfo = SdrNative.describeTuner(handle);
             SdrNative.startStreaming(handle);
@@ -285,7 +334,10 @@ final class SdrReceiver {
                     boolean firstReception = "starting".equals(state);
                     result.put("displayPublishedMs",SystemClock.elapsedRealtime());result.put("audioSourceSequenceAtDisplay",audio.playingSequence());
                     state = "receiving"; metrics = result;
-                    if (firstReception && ("wfm".equals(mode) || "cw".equals(mode))) audio.startDefault();
+                    if (firstReception && ("wfm".equals(mode) || "cw".equals(mode))) {
+                        audio.startDefault();
+                        if(comparison.active){audio.setGainDb(comparisonAudioGain);audio.set(comparisonAudioEnabled,comparisonVolume);}
+                    }
                     changed.run();
                 },displayDelay);
                 bytes = 0; power = 0; clipped = 0; updated = now;
@@ -305,6 +357,7 @@ final class SdrReceiver {
     }
 
     void startScan(UsbDeviceConnection connection, SdrScan plan, int gain, int ppm) {
+        if(comparison.active)throw new IllegalStateException("비교 진단을 먼저 중단하세요.");
         if (!state.equals("idle") && !state.equals("error")) throw new IllegalStateException("정지 후 다시 시작하세요.");
         scanSession = new SdrScanSession(plan, gain, ppm, SystemClock.elapsedRealtime());
         scan = scanSnapshot(scanSession, SystemClock.elapsedRealtime());
@@ -410,6 +463,9 @@ final class SdrReceiver {
     void stop() { stop(null); }
 
     void stop(Runnable complete) {
+        comparison.interrupt();stopInternal(complete);
+    }
+    private void stopInternal(Runnable complete) {
         audio.stop();
         int token = generation.incrementAndGet(); state = "stopping";
         SdrScanSession session = scanSession;
@@ -430,6 +486,7 @@ final class SdrReceiver {
     interface CloseCompletion { void finished(RuntimeException failure); }
 
     void closeUsb(UsbDeviceConnection connection,CloseCompletion complete) {
+        comparison.interrupt();
         tunerInfo = new double[0];
         if (audio != null) audio.stop();
         generation.incrementAndGet(); state = "idle"; metrics = new JSObject(); scan = new JSObject(); error = "";
@@ -465,6 +522,7 @@ final class SdrReceiver {
     }
 
     void setAudio(Boolean enabled, Double volume, Integer gainDb) {
+        if(comparison.active)throw new IllegalStateException("비교 진단 중에는 청취 설정을 유지합니다.");
         if (Boolean.TRUE.equals(enabled) && (!"receiving".equals(state) || !("wfm".equals(mode) || "cw".equals(mode))))
             throw new IllegalStateException("CW 또는 WFM 수신을 시작한 뒤 소리를 켜주세요.");
         if (gainDb != null) audio.setGainDb(gainDb);
@@ -472,6 +530,7 @@ final class SdrReceiver {
     }
 
     void shutdown() {
+        comparison.interrupt();
         audio.shutdown();generation.incrementAndGet();
         worker.execute(() -> captureWriter.shutdown(SystemClock.elapsedRealtime()));worker.shutdown();
     }

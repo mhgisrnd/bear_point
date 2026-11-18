@@ -34,8 +34,8 @@ final class SdrDiagnosticCapture {
     private final ArrayDeque<String[]> recent = new ArrayDeque<>();
     private File[] roots = new File[0];
     static final class Saved {
-        final String id; final File file; final long size, time;
-        Saved(File file) { this.file=file;id=file.getParentFile().getName();size=file.length();time=file.lastModified(); }
+        final String id; final File file; final long size, time; final boolean comparison;
+        Saved(File file,boolean comparison) { this.comparison=comparison;this.file=file;id=file.getParentFile().getName();size=file.length();time=file.lastModified(); }
     }
     private volatile Saved[] saved = new Saved[0];
     Saved[] saved() { return saved; }
@@ -48,7 +48,7 @@ final class SdrDiagnosticCapture {
             for(File folder:folders) {
                 File archive=new File(folder,"sdr-diagnostic.zip");
                 if(archive.isFile()&&archive.length()>0)try(ZipFile zip=new ZipFile(archive)) {
-                    if(zip.getEntry("metadata.json")!=null&&zip.getEntry("samples.cu8")!=null)found.add(new Saved(archive));
+                    if(zip.getEntry("metadata.json")!=null&&(zip.getEntry("samples.cu8")!=null||zip.getEntry("comparison.json")!=null))found.add(new Saved(archive,zip.getEntry("comparison.json")!=null));
                 }catch(IOException ignored){}
             }
         }
@@ -171,6 +171,43 @@ final class SdrDiagnosticCapture {
             final File folder=directory;
             packager.execute(()->packageFiles(folder));
         } catch (Exception failure) { fail(failure); }
+    }
+    private static String quote(String value) {
+        StringBuilder result=new StringBuilder("\"");
+        for(char c:value.toCharArray()) {
+            if(c=='"'||c=='\\')result.append('\\').append(c);
+            else if(c<32)result.append(String.format(java.util.Locale.ROOT,"\\u%04x",(int)c));
+            else result.append(c);
+        }
+        return result.append('"').toString();
+    }
+    synchronized void bundle(File root,java.util.List<File> files,java.util.List<String> names,String reason) {
+        if("waiting".equals(state)||"recording".equals(state)||"packaging".equals(state))throw new IllegalStateException("기록 저장을 기다려주세요.");
+        state="packaging";error="";changed.run();
+        packager.execute(()->{
+            try {
+                File folder=new File(root,"sdr-diagnostic-"+UUID.randomUUID());
+                if(!folder.mkdirs())throw new IOException("비교 진단 저장 공간을 만들지 못했습니다.");
+                StringBuilder stages=new StringBuilder();
+                File partial=new File(folder,"sdr-diagnostic.zip.partial"),archive=new File(folder,"sdr-diagnostic.zip");
+                try(ZipOutputStream zip=new ZipOutputStream(new FileOutputStream(partial))) {
+                    zip.setLevel(Deflater.NO_COMPRESSION);
+                    for(int i=0;i<files.size();i++) {
+                        String entry=String.format(java.util.Locale.ROOT,"stages/%02d.zip",i+1);
+                        if(i>0)stages.append(',');
+                        stages.append("{\"file\":").append(quote(entry)).append(",\"name\":").append(quote(names.get(i))).append('}');
+                        zip.putNextEntry(new ZipEntry(entry));copy(files.get(i),zip);zip.closeEntry();
+                    }
+                    String manifest="{\"schema_version\":1,\"type\":\"rf-comparison\",\"reason\":"+quote(reason)+
+                        ",\"created_unix_ms\":"+System.currentTimeMillis()+",\"note\":\"Sequential trials, keep antenna and transmitter fixed. Requested and applied settings are inside each stage. Not proof of hardware sensitivity.\",\"stages\":["+stages+"]}";
+                    for(String name:new String[]{"metadata.json","comparison.json"}) {
+                        zip.putNextEntry(new ZipEntry(name));zip.write(manifest.getBytes(StandardCharsets.UTF_8));zip.closeEntry();
+                    }
+                }
+                if(!partial.renameTo(archive))throw new IOException("비교 ZIP 저장을 마무리하지 못했습니다.");
+                synchronized(this){path=archive.getAbsolutePath();refreshSaved();state="ready";}changed.run();
+            }catch(Exception failure){synchronized(this){fail(failure);}}
+        });
     }
     private void packageFiles(File folder) {
         try {

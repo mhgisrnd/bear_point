@@ -64,7 +64,7 @@
       </div>
     </section>
     <section data-diagnostic-section class="sdr-section">
-      <details class="sdr-reception-diagnostic" aria-label="USB 수신 진단 로그"><summary>수신 진단 · 저장된 로그</summary><div class="sdr-log-actions"><button type="button" data-diagnostic-start class="sdr-primary" disabled>10초 기록</button><button type="button" data-diagnostic-share disabled>파일 공유</button><button type="button" data-diagnostic-delete class="sdr-danger" disabled>선택 삭제</button></div><p class="sdr-note">CW 수신 중 원본 I/Q와 청취 소리를 10초간 기기에 기록합니다. 저장된 로그는 연결 없이 공유·삭제할 수 있습니다.</p><select data-diagnostic-record aria-label="저장된 수신 진단 기록" hidden></select><p data-diagnostic-status class="sdr-note" role="status">저장된 기록 없음 · CW 수신을 시작한 뒤 기록하세요.</p></details>
+      <details class="sdr-reception-diagnostic" aria-label="USB 수신 진단 로그"><summary>수신 진단 · 저장된 로그</summary><div class="sdr-log-actions"><button type="button" data-diagnostic-start class="sdr-primary" disabled>10초 기록</button><button type="button" data-diagnostic-compare>수신 비교 진단</button><button type="button" data-diagnostic-share disabled>파일 공유</button><button type="button" data-diagnostic-delete class="sdr-danger" disabled>선택 삭제</button></div><p class="sdr-note">CW 수신 중 10초 기록 또는 약 2분 비교 진단을 실행합니다. 비교 중에는 위치와 안테나 방향을 유지하세요. 저장된 로그는 연결 없이 공유·삭제할 수 있습니다.</p><select data-diagnostic-record aria-label="저장된 수신 진단 기록" hidden></select><p data-diagnostic-status class="sdr-note" role="status">저장된 기록 없음 · CW 수신을 시작한 뒤 기록하세요.</p></details>
     </section>
 
     </div></div>
@@ -657,7 +657,9 @@
     else delete status.dataset.activity;
     const audio = snapshot.audio || {};
     const diagnostic = snapshot.diagnostic || {};
-    const capturing = ["waiting", "recording", "packaging"].includes(diagnostic.state);
+    const comparison = diagnostic.comparison || {};
+    const comparing = !!comparison.active;
+    const capturing = comparing || ["waiting", "recording", "packaging"].includes(diagnostic.state);
     const records = Array.isArray(diagnostic.records) ? diagnostic.records : [];
     const recordSelect = dialog.querySelector("[data-diagnostic-record]");
     const recordKeys = records.map(record => record.id).join(",");
@@ -665,7 +667,7 @@
       const previous = recordSelect.value;recordSelect.replaceChildren();
       for (const record of records) {
         const option = document.createElement("option");option.value = record.id;
-        option.textContent = `${new Date(record.time).toLocaleString("ko-KR")} · ${(record.sizeBytes / 1e6).toFixed(1)} MB`;
+        option.textContent = `${record.comparison ? "비교 진단 · " : ""}${new Date(record.time).toLocaleString("ko-KR")} · ${(record.sizeBytes / 1e6).toFixed(1)} MB`;
         recordSelect.append(option);
       }
       recordSelect.value = diagnostic.state === "ready" || !records.some(record => record.id === previous) ? records[0]?.id || "" : previous;
@@ -677,10 +679,15 @@
     if (Number.isInteger(audio.gainDb)) audioGain.value = String(audio.gainDb);
     audioGain.disabled = busy || capturing || typeof plugin?.setAudio !== "function" || snapshot.receptionState === "stopping";
     dialog.querySelector(".sdr-listening-level").hidden = task !== "fixed";
+    const compareButton = dialog.querySelector("[data-diagnostic-compare]");
+    compareButton.textContent = comparing ? "비교 중단" : "수신 비교 진단";
+    compareButton.disabled = busy || (comparing ? ["restoring", "bundling"].includes(comparison.phase) : capturing || snapshot.receptionState !== "receiving" || rf.mode !== "cw" || typeof plugin?.startComparisonDiagnostic !== "function");
     dialog.querySelector("[data-diagnostic-start]").disabled = busy || capturing || snapshot.receptionState !== "receiving" || rf.mode !== "cw" || typeof plugin?.startDiagnostic !== "function";
     dialog.querySelector("[data-diagnostic-share]").disabled = busy || capturing || (!records.length && diagnostic.state !== "ready") || typeof plugin?.shareDiagnostic !== "function";
     dialog.querySelector("[data-diagnostic-delete]").disabled = busy || capturing || !records.length || typeof plugin?.deleteDiagnostic !== "function";
-    dialog.querySelector("[data-diagnostic-status]").textContent = diagnostic.state === "error" ? `진단 기록 실패: ${diagnostic.error}`
+    dialog.querySelector("[data-diagnostic-status]").textContent = comparing ? `${comparison.message || "비교 진단"} · 약 2분 · 위치와 안테나 방향을 유지하세요.`
+      : comparison.message ? comparison.message
+      : diagnostic.state === "error" ? `진단 기록 실패: ${diagnostic.error}`
       : diagnostic.state === "ready" ? diagnostic.writerDroppedBlocks > 0 ? "저장 지연으로 일부만 기록됨 · 파일 공유 가능" : "기록 완료 · 파일을 공유해 수신 상태를 비교할 수 있습니다."
       : diagnostic.state === "packaging" ? "진단 파일 준비 중…"
       : capturing ? `원본 수신 기록 중 · ${(Number(diagnostic.iqBytes || 0) / 1e6).toFixed(1)} MB`
@@ -692,7 +699,7 @@
       : "기본 최대 요청 · 튜너 지원값으로 적용";
     dialog.querySelector("[data-audio-status]").hidden = !audio.notice;
     const wfm = ["wfm", "cw"].includes(rf.mode) && snapshot.receptionState === "receiving";
-    audioButton.disabled = busy || !wfm || !plugin || typeof plugin.setAudio !== "function";
+    audioButton.disabled = busy || comparing || !wfm || !plugin || typeof plugin.setAudio !== "function";
     audioButton.textContent = audio.enabled ? "음소거" : "소리 켜기";
     audioButton.setAttribute("aria-pressed", String(!!audio.enabled));
     dialog.querySelector("[data-audio-status]").textContent = audio.notice ||
@@ -914,6 +921,8 @@
     return run(() => plugin.setAudio({ gainDb }));
   });
   dialog.querySelector("[data-diagnostic-start]").addEventListener("click", () => run(() => plugin.startDiagnostic()));
+  dialog.querySelector("[data-diagnostic-compare]").addEventListener("click", () => run(() =>
+    current?.diagnostic?.comparison?.active ? plugin.stopComparisonDiagnostic() : plugin.startComparisonDiagnostic()));
   dialog.querySelector("[data-diagnostic-share]").addEventListener("click", () => {
     const id = dialog.querySelector("[data-diagnostic-record]").value;
     return run(() => plugin.shareDiagnostic(id ? { id } : {}));

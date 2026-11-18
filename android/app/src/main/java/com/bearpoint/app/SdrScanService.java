@@ -163,6 +163,9 @@ public final class SdrScanService extends Service {
             active.stopSelf();
             return;
         }
+        // A comparison variant may fail on a tuner; let it restore the original
+        // configuration before deciding that the entire USB session must close.
+        if ("error".equals(runtime.sdr.state) && runtime.sdr.comparison.active) return;
         if ("error".equals(runtime.sdr.state)) {
             runtime.serviceError = runtime.sdr.error;
             requested = false;
