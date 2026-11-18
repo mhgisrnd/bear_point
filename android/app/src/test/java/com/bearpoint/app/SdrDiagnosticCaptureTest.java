@@ -25,6 +25,21 @@ public class SdrDiagnosticCaptureTest {
             byte[] buffer=new byte[1024];int n;while((n=input.read(buffer))!=-1)output.write(buffer,0,n);return output.toByteArray();
         }
     }
+    @Test public void comparisonZipPreservesStageAndSurvivesReload() throws Exception {
+        File root=temporary.newFolder("comparison");SdrDiagnosticCapture capture=new SdrDiagnosticCapture(()->{},10,100);
+        try {
+            capture.storage(root);capture.request(root);capture.observe(frame(2,7,8),null,0,"{}");capture.finish(10,"completed");
+            File stage=ready(capture);
+            capture.bundle(root,java.util.Collections.singletonList(stage),java.util.Collections.singletonList("기준"),"완료");
+            File archive=ready(capture);
+            try(ZipFile zip=new ZipFile(archive)){
+                assertNotNull(zip.getEntry("comparison.json"));assertNotNull(zip.getEntry("stages/01.zip"));
+                assertArrayEquals(java.nio.file.Files.readAllBytes(stage.toPath()),entry(zip,"stages/01.zip"));
+            }
+            capture.storage(root);assertEquals(2,capture.saved().length);assertTrue(capture.saved()[0].comparison);
+            assertTrue(stage.isFile());
+        }finally{capture.shutdown(20);}
+    }
     @Test public void deletingSelectedArchivePreservesOtherRecordsAndUnrelatedFiles() throws Exception {
         File root=temporary.newFolder("diagnostics");
         File unrelated=new File(root,"observations.db");assertTrue(unrelated.createNewFile());

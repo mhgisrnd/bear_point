@@ -444,6 +444,19 @@ public class RtlSdrPlugin extends Plugin {
             call.resolve(snapshot());publish();
         });
     }
+    @PluginMethod public void startComparisonDiagnostic(PluginCall call) {
+        execute(call,()->{
+            if(paused||runtime.connection==null)throw new IllegalStateException("USB 연결 후 앱 화면에서 시작하세요.");
+            JSObject device=new JSObject();device.put("manufacturer",Build.MANUFACTURER);device.put("model",Build.MODEL);
+            device.put("androidSdk",Build.VERSION.SDK_INT);device.put("androidRelease",Build.VERSION.RELEASE);
+            device.put("webAssetRevision",MainActivity.WEB_ASSET_REVISION);
+            sdr.startComparison(runtime.connection,new java.io.File(getContext().getFilesDir(),"sdr-diagnostics"),device);
+            call.resolve(snapshot());publish();
+        });
+    }
+    @PluginMethod public void stopComparisonDiagnostic(PluginCall call) {
+        execute(call,()->{sdr.stopComparison();call.resolve(snapshot());publish();});
+    }
     @PluginMethod public void acknowledgeReceiverUi(PluginCall call) {
         execute(call, () -> {
             long requestId = call.getData().optLong("requestId", 0);

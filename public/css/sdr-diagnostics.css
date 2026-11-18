@@ -331,7 +331,7 @@
 .sdr-dialog [data-diagnostic-section] { padding: 0; background: transparent; border: 0; }
 .sdr-reception-diagnostic[open] { padding-bottom: 12px; }
 .sdr-reception-diagnostic select { display: block; width: 100%; min-width: 0; min-height: 34px; margin-top: 6px; border: 1px solid #c7dce2; border-radius: 6px; padding: 4px; font: inherit; color: #145d75; background: #fff; }
-.sdr-reception-diagnostic > .sdr-log-actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin: 8px 0; }
+.sdr-reception-diagnostic .sdr-log-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; margin: 8px 0; }
 .sdr-dialog .sdr-bt-test { margin: 0; }
 .sdr-dialog .sdr-register-observation { min-height: 48px; font-size: 14px; }
 .sdr-reception-diagnostic > [data-bt-recording-tools] { grid-template-columns: repeat(2, minmax(0, 1fr)); }
