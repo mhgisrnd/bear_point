@@ -5,6 +5,46 @@ const vm=require('node:vm');
 const source=fs.readFileSync('public/js/client-ol.js','utf8');
 function extract(name){const start=source.indexOf('  function '+name+'(');return source.slice(start,source.indexOf('\n  }',start)+4);}
 
+test('compass heading uses the displayed top edge for all screen rotations',()=>{
+  const context={window:{screen:{orientation:{angle:0}},orientation:-90}};
+  vm.createContext(context);
+  for(const name of ['norm360','getScreenAngle','computeHeadingFromEvent'])vm.runInContext(extract(name),context);
+  for(const [screenAngle,alpha] of [[0,315],[90,45],[180,135],[270,225]]){
+    context.window.screen.orientation.angle=screenAngle;
+    assert.equal(context.computeHeadingFromEvent({alpha},context.getScreenAngle()),45);
+  }
+  delete context.window.screen.orientation;
+  assert.equal(context.getScreenAngle(),270);
+  assert.equal(context.computeHeadingFromEvent({alpha:280},context.getScreenAngle()),350);
+  assert.equal(context.computeHeadingFromEvent({alpha:null},context.getScreenAngle()),null);
+});
+
+test('rotating the screen reapplies the most recent direction without waiting for another sample',async()=>{
+  const samples=[];
+  const window=new EventTarget();
+  const orientation=Object.assign(new EventTarget(),{angle:0});
+  window.screen={orientation};
+  const context={window,compassEnabled:false,compassHandler:null,compassEventName:null,removeCompassScreenListener:null,
+    headingSmoothed:null,lastStableDeg:null,unstableHits:[],lastAbsoluteSampleTs:0,lastSensorHeadingDeg:null,headingDialEl:null,
+    applyHeadingOffset:heading=>heading,fuseHeadingWithGps:heading=>heading,setHeading:heading=>samples.push(heading),scheduleHeadingTurn(){}};
+  vm.createContext(context);
+  for(const name of ['norm360','getScreenAngle','computeHeadingFromEvent','filterHeading','stopCompass'])vm.runInContext(extract(name),context);
+  const start=source.indexOf('  async function startCompass(');
+  vm.runInContext(source.slice(start,source.indexOf('\n  }',start)+4),context);
+  await context.startCompass();
+  window.dispatchEvent(Object.assign(new Event('deviceorientation'),{alpha:330}));
+  orientation.angle=90;
+  orientation.dispatchEvent(new Event('change'));
+  orientation.angle=270;
+  orientation.dispatchEvent(new Event('change'));
+  assert.deepEqual(samples,[30,120,300]);
+
+  context.stopCompass();
+  orientation.angle=0;
+  orientation.dispatchEvent(new Event('change'));
+  assert.deepEqual(samples,[30,120,300]);
+});
+
 test('manual heading handle hit area follows the rendered handle at every map rotation',()=>{
   for(const rotation of [0,Math.PI/2,-Math.PI/2,Math.PI]){
     const context={Number,Math,Array,lastLatLng:[35,127],lastHeadingDeg:0,

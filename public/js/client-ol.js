@@ -773,6 +773,7 @@
   let compassEnabled = false;
   let compassHandler = null;
   let compassEventName = null;
+  let removeCompassScreenListener = null;
   let headingSmoothed = null;
   let lastHeadingDeg = null;
   let lastTrackedHeadingDeg = null;
@@ -3549,27 +3550,10 @@
   }
 
   function getScreenAngle() {
-    const screenAngle = screen && screen.orientation ? screen.orientation.angle : undefined;
-    if (typeof screenAngle === "number") return screenAngle;
+    const screenAngle = window.screen?.orientation?.angle;
+    if (Number.isFinite(screenAngle)) return norm360(screenAngle);
     const orientation = window.orientation;
-    if (typeof orientation === "number") return orientation;
-    return 0;
-  }
-
-  function pickClosestHeading(candidates, referenceDeg) {
-    if (!Array.isArray(candidates) || candidates.length === 0) return null;
-    if (!Number.isFinite(referenceDeg)) return candidates[0];
-
-    let best = candidates[0];
-    let bestDiff = Math.abs(angleDelta(candidates[0], referenceDeg));
-    for (let index = 1; index < candidates.length; index += 1) {
-      const diff = Math.abs(angleDelta(candidates[index], referenceDeg));
-      if (diff < bestDiff) {
-        best = candidates[index];
-        bestDiff = diff;
-      }
-    }
-    return best;
+    return Number.isFinite(orientation) ? norm360(orientation) : 0;
   }
 
   function getPlatform() {
@@ -3896,32 +3880,12 @@
     return norm360(sensorDeg + delta * getAdaptiveGpsBlendAlpha());
   }
 
-  function computeHeadingFromEvent(event) {
-    const screenAngle = getScreenAngle();
-
-    if (typeof event.webkitCompassHeading === "number") {
+  function computeHeadingFromEvent(event, screenAngle) {
+    if (Number.isFinite(event.webkitCompassHeading)) {
       return norm360(event.webkitCompassHeading);
     }
-
-    if (event.absolute === true && typeof event.alpha === "number") {
-      const raw = norm360(360 - event.alpha);
-      return pickClosestHeading([
-        raw,
-        norm360(raw + screenAngle),
-        norm360(raw - screenAngle)
-      ], headingSmoothed);
-    }
-
-    if (typeof event.alpha === "number") {
-      const raw = norm360(360 - event.alpha);
-      return pickClosestHeading([
-        raw,
-        norm360(raw + screenAngle),
-        norm360(raw - screenAngle)
-      ], headingSmoothed);
-    }
-
-    return null;
+    // DeviceOrientation uses the natural device axes. Rotate the heading to the displayed top edge.
+    return Number.isFinite(event.alpha) ? norm360(screenAngle - event.alpha) : null;
   }
 
   // 급격한 방향 점프를 완화해 시각적으로 안정적인 헤딩을 만든다.
@@ -4101,6 +4065,28 @@
       }
     }
 
+    let lastDirectionSample = null;
+    let lastScreenAngle = null;
+    function applyDirectionSample(event, screenAngle) {
+      const heading = computeHeadingFromEvent(event, screenAngle);
+      if (!Number.isFinite(heading)) return;
+
+      if (lastScreenAngle !== null && screenAngle !== lastScreenAngle) {
+        headingSmoothed = null;
+        lastStableDeg = null;
+        unstableHits = [];
+      }
+      lastDirectionSample = event;
+      lastScreenAngle = screenAngle;
+
+      const corrected = applyHeadingOffset(heading);
+      const smoothed = filterHeading(corrected);
+      const fused = fuseHeadingWithGps(smoothed);
+      lastSensorHeadingDeg = fused;
+      setHeading(fused);
+      scheduleHeadingTurn();
+    }
+
     compassHandler = function (event) {
       if (event.type === "deviceorientationabsolute") {
         lastAbsoluteSampleTs = Date.now();
@@ -4114,15 +4100,7 @@
         return;
       }
 
-      const heading = computeHeadingFromEvent(event);
-      if (!Number.isFinite(heading)) return;
-
-      const corrected = applyHeadingOffset(heading);
-      const smoothed = filterHeading(corrected);
-      const fused = fuseHeadingWithGps(smoothed);
-      lastSensorHeadingDeg = fused;
-      setHeading(fused);
-      scheduleHeadingTurn();
+      applyDirectionSample(event, getScreenAngle());
     };
 
     const hasAbsoluteEvent = "ondeviceorientationabsolute" in window;
@@ -4131,6 +4109,17 @@
     if (hasAbsoluteEvent) {
       window.addEventListener("deviceorientation", compassHandler, true);
     }
+    const screenOrientation = window.screen?.orientation;
+    const rotationTarget = screenOrientation?.addEventListener ? screenOrientation : window;
+    const rotationEvent = rotationTarget === window ? "orientationchange" : "change";
+    const onRotation = function () {
+      const screenAngle = getScreenAngle();
+      if (lastDirectionSample && screenAngle !== lastScreenAngle) {
+        applyDirectionSample(lastDirectionSample, screenAngle);
+      }
+    };
+    rotationTarget.addEventListener(rotationEvent, onRotation);
+    removeCompassScreenListener = () => rotationTarget.removeEventListener(rotationEvent, onRotation);
 
     compassEnabled = true;
   }
@@ -4141,6 +4130,8 @@
       window.removeEventListener(compassEventName, compassHandler, true);
     }
     window.removeEventListener("deviceorientation", compassHandler, true);
+    removeCompassScreenListener?.();
+    removeCompassScreenListener = null;
     compassHandler = null;
     compassEnabled = false;
     compassEventName = null;
