@@ -9,8 +9,9 @@
     <div class="sdr-header"><div class="sdr-title-group"><h2 id="sdr-title">수신기</h2><span class="sdr-header-caption">연결부터 관측점 등록까지</span></div><button type="button" data-back hidden aria-label="탐색 재개">‹ 탐색</button><button type="button" data-close aria-label="수신기 닫기">×</button></div>
     <div class="sdr-body">
     <div data-receiver-selector class="sdr-operation" role="group" aria-label="수신기 연결 방식"></div>
-    <section data-bluetooth hidden aria-label="Bluetooth IC-R30 수신기"></section>
-    <div data-usb-content>
+    <section data-bluetooth class="sdr-workspace" hidden aria-label="Bluetooth IC-R30 수신기"></section>
+    <div data-usb-content class="sdr-workspace">
+    <div class="sdr-connection-pane">
     <p class="sdr-message" role="alert"></p>
     <section data-usb-section class="sdr-usb-section sdr-connection" data-connected="false" aria-label="USB 수신기">
       <div class="sdr-connection-heading"><h3 data-usb-heading class="sdr-stage-heading"><span class="sdr-step" aria-hidden="true">1</span> 수신기 연결</h3><div class="sdr-usb-tools sdr-connection-tools"><button type="button" data-refresh>기기 새로고침</button><button type="button" data-disconnect class="sdr-quiet" hidden>연결 해제</button></div></div>
@@ -18,19 +19,24 @@
       <div data-devices class="sdr-device-list"></div>
       <details data-usb-pairing class="sdr-help"><summary>처음 연결하는 경우</summary><p>USB OTG 어댑터로 RTL-SDR을 연결한 뒤 기기 목록에서 연결을 누르고 USB 접근 권한을 허용하세요.</p></details>
     </section>
+    </div>
     <section data-settings-section class="sdr-section" hidden>
+      <div class="sdr-animals-pane">
         <h3 class="sdr-stage-heading"><span class="sdr-step" aria-hidden="true">2</span> 개체 · 주파수 설정</h3>
         <div class="sdr-operation" role="group" aria-label="수신 방식"><button type="button" data-task-scan aria-pressed="false">대역 탐색</button><button type="button" data-task-fixed aria-pressed="true">개별 탐색</button></div>
         <div data-animal-picker class="sdr-animal-picker">
           <div class="sdr-animal-heading"><strong>찾을 개체</strong><button type="button" data-animal-clear disabled>선택 해제</button><button type="button" data-animal-refresh>목록 새로고침</button></div>
-          <div data-animal-results>
+          <div data-animal-results class="sdr-catalog-results">
           <form data-animal-search-form role="search"><input type="search" data-animal-search aria-label="개체 번호 검색" placeholder="개체 번호 검색" autocomplete="off" enterkeyhint="search"></form>
           <p data-animal-notice class="sdr-note" role="status"></p><div class="sdr-animal-list-tools"><p data-animal-count class="sdr-note" role="status"></p><button type="button" data-animal-favorites-filter aria-pressed="false">☆ 즐겨찾기</button></div><div data-animal-list class="sdr-animal-list" aria-label="개체 검색 결과"></div></div>
         </div>
+      </div>
+      <div class="sdr-tuning-pane">
         <div class="sdr-wide sdr-frequency-field" data-frequency-field>
           <div class="sdr-frequency-heading"><div><strong>수신 주파수</strong><span data-frequency-range>MHz</span><span data-frequency-animal class="sdr-frequency-animal" aria-live="polite" hidden></span></div><button type="button" data-frequency-edit aria-expanded="false">직접 입력</button></div>
+          <div data-frequency-entry class="sdr-frequency-entry" hidden><input data-frequency-draft type="text" inputmode="decimal" enterkeyhint="done" autocomplete="off" aria-label="수신 주파수 MHz" aria-describedby="sdr-frequency-error" placeholder="148.24130" /><span data-frequency-error id="sdr-frequency-error" role="status" hidden></span></div>
           <div data-frequency-digits class="sdr-frequency-digits" role="group" aria-label="주파수 자릿수 조정">${window.BearSdrFrequency.markup()}</div>
-          <label data-frequency-entry hidden>직접 입력<input data-frequency type="number" min="0.1" max="999.99999" step="0.00001" value="150.000" inputmode="decimal" aria-label="수신 주파수 MHz"></label>
+          <input data-frequency type="hidden" value="150.000" />
         </div>
       <fieldset data-settings class="sdr-settings" disabled>
         <div class="sdr-fields">
@@ -44,8 +50,9 @@
         <label data-threshold-field hidden>감지 기준 <span>주변 잡음 대비 dB</span><input data-threshold type="number" min="6" max="30" step="1" value="10" inputmode="numeric"></label>
         </div></details><input data-rate type="hidden" value="1024000"><input data-dwell type="hidden" value="5000"><p data-window class="sdr-note" hidden></p>
       </fieldset>
+      </div>
     </section>
-    <section data-result class="sdr-section" hidden>
+    <section data-result class="sdr-section sdr-signal-pane" hidden>
       <h3 class="sdr-stage-heading"><span class="sdr-step" aria-hidden="true">3</span> 신호 확인</h3>
       <p data-animal-target class="sdr-animal-target" hidden></p>
       <div data-scan-results hidden><p data-scan-progress class="sdr-scan-progress">탐색 대기</p><div class="sdr-candidate-heading"><strong data-candidate-heading>신호 후보</strong><span data-candidate-count>0개</span></div><div data-candidates></div></div>
@@ -63,7 +70,7 @@
       <p data-spectrum-info class="sdr-note" hidden></p>
       </div>
     </section>
-    <section data-diagnostic-section class="sdr-section">
+    <section data-diagnostic-section class="sdr-section sdr-diagnostics-pane">
       <details class="sdr-reception-diagnostic" aria-label="USB 수신 진단 로그"><summary>수신 진단 · 저장된 로그</summary><div class="sdr-log-actions"><button type="button" data-diagnostic-start class="sdr-primary" disabled>10초 기록</button><button type="button" data-diagnostic-compare>수신 비교 진단</button><button type="button" data-diagnostic-share disabled>파일 공유</button><button type="button" data-diagnostic-delete class="sdr-danger" disabled>선택 삭제</button></div><p class="sdr-note">CW 수신 중 10초 기록 또는 약 2분 비교 진단을 실행합니다. 비교 중에는 위치와 안테나 방향을 유지하세요. 저장된 로그는 연결 없이 공유·삭제할 수 있습니다.</p><select data-diagnostic-record aria-label="저장된 수신 진단 기록" hidden></select><p data-diagnostic-status class="sdr-note" role="status">저장된 기록 없음 · CW 수신을 시작한 뒤 기록하세요.</p></details>
     </section>
 
@@ -180,7 +187,7 @@
     if (selectedAnimal && !animalMatchesFrequency()) {
       selectedAnimal = null; selectedAnimalHz = null;
     }
-    const tunedHz = frequency.value.trim() ? Math.round(Number(frequency.value) * 1e6) : NaN;
+    const tunedHz = frequencyControls.previewHz();
     const matchingCodes = window.BearSdrFrequency.matchingAnimalCodes(animalItems, tunedHz);
     const frequencyAnimal = dialog.querySelector("[data-frequency-animal]");
     frequencyAnimal.textContent = matchingCodes.join(", ");
@@ -395,6 +402,7 @@
     dialog.querySelector("[data-scan-results]").hidden = next !== "scan";
     dialog.querySelector("[data-fixed-results]").hidden = next === "scan";
     dialog.querySelector("[data-window]").hidden = next !== "scan";
+    if (next === "scan" && frequencyControls.editing()) frequencyControls.cancel();
     updateTaskControls();
     if (current && rerender) render(current);
   }
@@ -406,8 +414,7 @@
     bounds: () => frequencyBounds,
     format: animalFormat,
     onChange: updateWindow,
-    onCommit: commitUsbFrequency,
-    onError: text => { message.textContent = text; }
+    onCommit: commitUsbFrequency
   });
   function commitUsbFrequency() {
     if (current?.receptionState !== "receiving") return true;
@@ -461,8 +468,14 @@
     spectrumCanvas.setAttribute("aria-label", spectrumSummary.textContent);
   }
 
+  function updateStartAvailability() {
+    startButton.disabled = settings.disabled || current?.state !== "connected" ||
+      (task === "fixed" && frequencyControls.editing()) || typeof plugin?.startReception !== "function";
+  }
+
   function updateWindow() {
     updateRunButtons();
+    updateStartAvailability();
     updateFrequencyDigits();
     renderAnimalPicker();
     const center = Number(frequency.value), width = Number(rate.value) / 1e6;
@@ -544,9 +557,6 @@
     }
     if (snapshot.backgroundReceiving && !restoredFixed && snapshot.reception?.frequencyHz) {
       const rf = snapshot.reception;
-      const bounds = frequencyBounds;
-      frequency.min = String(bounds.min);
-      frequency.max = String(bounds.max);
       dialog.querySelector("[data-frequency-range]").textContent = "MHz";
       const restoredHz = rf.listenFrequencyHz || rf.frequencyHz;
       frequency.value = selectedAnimalHz === restoredHz ? String(restoredHz / 1e6) : animalFormat(restoredHz);
@@ -615,7 +625,7 @@
     dialog.querySelector("[data-back]").disabled = busy || snapshot.state !== "connected" ||
       snapshot.receptionState === "stopping";
     updateFrequencyDigits();
-    startButton.disabled = settings.disabled || snapshot.state !== "connected" || !plugin || typeof plugin.startReception !== "function";
+    updateStartAvailability();
     const canClearScan = task === "scan" && snapshot.receptionState === "idle" &&
       snapshot.scanResumeAvailable && typeof plugin?.clearScanHistory === "function";
     const canClearFixed = task === "fixed" && ["idle", "error"].includes(snapshot.receptionState) &&
@@ -736,7 +746,7 @@
     renderCandidates(snapshot);
     renderAnimalPicker();
     if (["scanning", "receiving"].includes(snapshot.receptionState) && previousReception !== snapshot.receptionState) {
-      resultSection.scrollIntoView?.({ block: "start", behavior: "smooth" });
+      revealSignal(resultSection, "smooth");
     }
   }
 
@@ -1050,6 +1060,11 @@
     return true;
   }
   window.SdrDiagnostics = { handleBackNavigation, exitAppSafely };
+  function revealSignal(section, behavior = "auto") {
+    const wideLandscape = window.matchMedia?.("(min-width: 720px) and (orientation: landscape)").matches;
+    if (wideLandscape && dialog.dataset.searchCompact !== "true") return;
+    section.scrollIntoView?.({ block: "start", behavior });
+  }
   bluetooth = window.BearIcR30?.mount(dialog, {
     usbLocked: () => busy || (plugin && !current) || ["connected", "permissionPending"].includes(current?.state),
     favorites: {
@@ -1059,7 +1074,8 @@
       only: () => favoritesOnly,
       toggleFilter: toggleFavoritesFilter
     },
-    onChange: () => renderMapStatus(current)
+    onChange: () => renderMapStatus(current),
+    revealSignal
   }) || null;
   dialog.addEventListener("cancel", event => { event.preventDefault(); handleBackNavigation(); });
 
@@ -1085,6 +1101,8 @@
   dialog.querySelector("[data-close]").addEventListener("click", () => dialog.close());
   dialog.addEventListener("close", async function () {
     finishAnimalSearch();
+    if (frequencyControls.editing()) frequencyControls.cancel();
+    bluetooth?.cancelFrequencyEditing();
     ++connectionAttempt;
     // Cancel an outstanding Android permission prompt, but keep an opened USB receiver.
     if (plugin && current && current.state === "permissionPending") {

@@ -729,12 +729,14 @@ test('direct frequency editing keeps arrows visible, validates range, and reache
   const edit = ui.dialog.querySelector('[data-frequency-edit]');
   const entry = ui.dialog.querySelector('[data-frequency-entry]');
   const frequency = ui.dialog.querySelector('[data-frequency]');
-  await edit.click(); assert.equal(entry.hidden, true);
+  const draft = ui.dialog.querySelector('[data-frequency-draft]');
+  await edit.click(); assert.equal(entry.hidden, false);
+  assert.equal(ui.dialog.querySelector('[data-start]').disabled, true);
   assert.equal(ui.dialog.querySelector('[data-frequency-digits]').hidden, false);
-  frequency.value = '2001'; await edit.click();
-  assert.equal(entry.hidden, true);
-  assert.match(ui.dialog.querySelector('.sdr-message').textContent, /0.1.*999.999/);
-  frequency.value = '151.125'; await edit.click();
+  draft.value = '2001'; await edit.click();
+  assert.equal(entry.hidden, false);
+  assert.match(ui.dialog.querySelector('[data-frequency-error]').textContent, /0.1.*999.999/);
+  draft.value = '151.125'; await edit.click();
   assert.equal(entry.hidden, true);
   assert.equal(ui.dialog.querySelector('[data-frequency-digits]').hidden, false);
   await ui.dialog.querySelector('[data-start]').click(); await tick();
@@ -873,19 +875,20 @@ test('restored CW shows the listening frequency instead of the offset hardware c
   assert.equal(ui.dialog.querySelector('[data-frequency]').value,'148.241');
 });
 
-test('editing the existing digit cells keeps arrows and starts CW at 148 MHz', async () => {
+test('typing a whole frequency keeps arrows and starts CW at 148 MHz', async () => {
   const ui = setup(); ui.device.hasPermission = true;
   await ui.trigger.click(); await ui.button().click(); await tick();
   await ui.dialog.querySelector('[data-frequency-edit]').click();
-  for (const [index, text] of [...'148000'].entries()) {
-    const digit = ui.dialog.querySelector(`[data-freq-digit="${index}"]`);
-    digit.textContent = text; digit.events.input();
+  const draft = ui.dialog.querySelector('[data-frequency-draft]');
+  draft.value = '';
+  for (const text of '148.000') {
+    draft.value += text; draft.events.input();
     assert.equal(ui.dialog.querySelector('[data-frequency-digits]').hidden, false);
-    assert.equal(ui.dialog.querySelector('[data-frequency-entry]').hidden, true);
+    assert.equal(ui.dialog.querySelector('[data-frequency-entry]').hidden, false);
   }
-  assert.equal(ui.dialog.querySelector('[data-frequency]').value, '148.000');
+  assert.equal(draft.value, '148.000');
   await ui.dialog.querySelector('[data-freq-up="1000"]').click();
-  assert.equal(ui.dialog.querySelector('[data-frequency]').value, '148.001');
+  assert.equal(draft.value, '148.001');
   await ui.dialog.querySelector('[data-freq-down="1000"]').click();
   await ui.dialog.querySelector('[data-frequency-edit]').click();
   await ui.dialog.querySelector('[data-start]').click(); await tick();
@@ -1386,7 +1389,7 @@ test('back first leaves direct entry without committing invalid input or losing 
   await ui.dialog.querySelector('[data-candidates]').children[0].click(); await tick();
   await ui.dialog.querySelector('[data-stop]').click(); await tick();
   await ui.dialog.querySelector('[data-frequency-edit]').click();
-  ui.dialog.querySelector('[data-frequency]').value='invalid';
+  ui.dialog.querySelector('[data-frequency-draft]').value='invalid';
   assert.equal(ui.window.SdrDiagnostics.handleBackNavigation(),true);
   assert.equal(ui.dialog.querySelector('[data-frequency-entry]').hidden,true);
   assert.equal(ui.dialog.querySelector('[data-frequency]').value,'103.505');
@@ -1426,7 +1429,10 @@ test('five decimal digit tuning preserves 10 Hz steps through editing and CW rec
   await ui.dialog.querySelector('[data-freq-down="100"]').click();
   assert.equal(frequency.value,'148.24114');
   await ui.dialog.querySelector('[data-frequency-edit]').click();
-  const last=ui.dialog.querySelector('[data-freq-digit="7"]');let blurs=0;last.blur=()=>{blurs++;};last.textContent='7';last.events.input();
+  const draft=ui.dialog.querySelector('[data-frequency-draft]');let blurs=0;draft.blur=()=>{blurs++;};
+  draft.value='148.24117';draft.events.input();
+  assert.equal(frequency.value,'148.24114');
+  await ui.dialog.querySelector('[data-frequency-edit]').click();
   assert.equal(blurs,1);
   assert.equal(ui.dialog.querySelector('[data-frequency-edit]').textContent,'\uC9C1\uC811 \uC785\uB825');
   assert.equal(frequency.value,'148.24117');
@@ -1458,7 +1464,7 @@ test('USB live digit and direct edits retune CW without restarting the stream', 
   assert.equal(node('freq-up="100"').disabled, false);
   await node('freq-up="100"').click();
   await node('frequency-edit').click();
-  node('frequency').value = '148.24130';
+  node('frequency-draft').value = '148.24130';
   await node('frequency-edit').click();
   assert.deepEqual(tuned, [148241100, 148241300]);
   assert.equal(ui.plugin.starts.length, 1);
@@ -1629,16 +1635,16 @@ test('invalid favorite storage does not stop the receiver and failed writes do n
 
 test('frequency Done, final Tab and Android line-break actions exit editing without advancing to tuning inputs', async () => {
   const ui=setup();ui.device.hasPermission=true;await ui.trigger.click();await ui.button().click();
-  const edit=ui.dialog.querySelector('[data-frequency-edit]'),first=ui.dialog.querySelector('[data-freq-digit="0"]'),last=ui.dialog.querySelector('[data-freq-digit="7"]');
-  let blurs=0,prevented=0,tuningFocus=0;last.blur=()=>{blurs++;};
+  const edit=ui.dialog.querySelector('[data-frequency-edit]'),draft=ui.dialog.querySelector('[data-frequency-draft]');
+  let blurs=0,prevented=0,tuningFocus=0;draft.blur=()=>{blurs++;};
   ui.dialog.querySelector('[data-gain]').focus=ui.dialog.querySelector('[data-ppm]').focus=()=>{tuningFocus++;};
   for(const action of ['Enter','Tab','lineBreak']){
     await edit.click();
-    if(action==='lineBreak')first.events.beforeinput({inputType:'insertParagraph',preventDefault(){prevented++;}});
-    else last.events.keydown({key:action,preventDefault(){prevented++;}});
+    if(action==='lineBreak')draft.events.beforeinput({inputType:'insertParagraph',preventDefault(){prevented++;}});
+    else draft.events.keydown({key:action,preventDefault(){prevented++;}});
     assert.equal(edit.textContent,'\uC9C1\uC811 \uC785\uB825');
   }
   assert.equal(blurs,3);assert.equal(prevented,3);assert.equal(tuningFocus,0);
-  await edit.click();ui.dialog.querySelector('[data-frequency]').value='0';last.textContent='0';last.events.input();
+  await edit.click();draft.value='0';draft.events.keydown({key:'Enter',preventDefault(){}});
   assert.equal(edit.textContent,'\uC644\uB8CC');assert.equal(blurs,3,'invalid frequency should remain editable');
 });

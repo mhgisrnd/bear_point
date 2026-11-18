@@ -3,12 +3,14 @@
   const MODES = ["LSB", "USB", "AM", "AM-N", "CW", "FM", "FM-N", "WFM", "CW-R", "P25", "D-STAR", "dPMR", "NXDN-VN", "NXDN-N", "DCR"];
   const formatHz = hz => root.BearSdrAnimals.formatHz(hz);
   function mount(dialog, options) {
+    const { revealSignal = section => section.scrollIntoView?.({ block: "start" }) } = options;
     const selector = dialog.querySelector("[data-receiver-selector]");
     selector.innerHTML = `<button type="button" data-receiver-usb aria-pressed="true"><strong>USB</strong><span>RTL-SDR · 청취 · 탐색</span></button><button type="button" data-receiver-bt aria-pressed="false"><strong>Bluetooth</strong><span>IC-R30 · 제어 · S-Meter</span></button>`;
     const panel = dialog.querySelector("[data-bluetooth]");
     const footer = dialog.querySelector("[data-bt-footer]");
     footer.innerHTML = `<p data-bt-target class="sdr-footer-context" role="status"></p><button type="button" data-bt-register class="sdr-primary sdr-register-observation" disabled>수신 확인 · 관측점 등록</button>`;
     panel.innerHTML = `
+      <div class="sdr-connection-pane">
       <p data-bt-error class="sdr-message" role="alert"></p>
       <section data-bt-connection class="sdr-connection" data-connected="false" aria-label="Bluetooth 수신기">
       <div class="sdr-connection-heading"><h3 data-bt-heading class="sdr-stage-heading"><span class="sdr-step" aria-hidden="true">1</span> 수신기 연결</h3><div class="sdr-connection-tools"><button type="button" data-bt-refresh>기기 새로고침</button><button type="button" data-bt-disconnect class="sdr-quiet" hidden>연결 해제</button></div></div>
@@ -19,19 +21,25 @@
       <p data-bt-service-help class="sdr-note">기본 목록은 SPP 직렬 통신 서비스가 확인된 기기입니다. SPP 지원만으로 수신기 호환이 보장되지는 않습니다. 현재 제어는 IC-R30용입니다.</p>
       <details data-bt-pairing class="sdr-help"><summary>처음 연결하는 경우</summary><p>Android 설정에서 IC-R30을 먼저 페어링하세요. Serialport Function = CI-V (Echo Back OFF), CI-V 주소 9C를 사용합니다.</p><button type="button" data-bt-settings class="sdr-quiet">Android Bluetooth 설정 열기</button></details>
       </section>
-      <section data-bt-controls hidden>
-        <div class="sdr-section">
+      </div>
+      <section data-bt-controls class="sdr-section" hidden>
+        <div class="sdr-animals-pane">
         <h3 class="sdr-stage-heading"><span class="sdr-step" aria-hidden="true">2</span> 개체 · 주파수 설정</h3>
         <div class="sdr-animal-picker">
         <div class="sdr-animal-heading"><strong>찾을 개체</strong><button type="button" data-bt-clear disabled>선택 해제</button><button type="button" data-bt-catalog-refresh>목록 새로고침</button></div>
+        <div class="sdr-catalog-results">
         <form data-bt-search-form role="search"><input type="search" data-bt-search aria-label="IC-R30 개체 번호 검색" placeholder="개체 번호 검색" autocomplete="off" enterkeyhint="search"></form>
         <p data-bt-catalog-notice class="sdr-note" role="status"></p><div class="sdr-animal-list-tools"><p data-bt-animal-count class="sdr-note" role="status"></p><button type="button" data-bt-favorites-filter aria-pressed="false">☆ 즐겨찾기</button></div><div data-bt-animals class="sdr-animal-list" aria-label="IC-R30 개체 검색 결과"></div>
         </div>
+        </div>
+        </div>
+        <div class="sdr-tuning-pane">
         <fieldset data-bt-fields class="sdr-settings">
           <div class="sdr-frequency-field">
             <div class="sdr-frequency-heading"><div><strong>수신 주파수</strong><span>MHz · 0.1–3304.999</span><span data-bt-frequency-animal class="sdr-frequency-animal" aria-live="polite" hidden></span></div><button type="button" data-bt-frequency-edit aria-expanded="false">직접 입력</button></div>
+            <div data-bt-frequency-entry class="sdr-frequency-entry" hidden><input data-bt-frequency-draft type="text" inputmode="decimal" enterkeyhint="done" autocomplete="off" aria-label="IC-R30 수신 주파수 MHz" aria-describedby="sdr-bt-frequency-error" placeholder="148.24130" /><span data-bt-frequency-error id="sdr-bt-frequency-error" role="status" hidden></span></div>
             <div data-bt-frequency-digits class="sdr-frequency-digits sdr-frequency-four" role="group" aria-label="주파수 자릿수 조정">${root.BearSdrFrequency.markup("bt-", 4)}</div>
-            <label data-bt-frequency-entry hidden>직접 입력<input data-bt-frequency type="number" min="0.1" max="3304.999" step="0.00001" inputmode="decimal" aria-label="IC-R30 수신 주파수 MHz"></label>
+            <input data-bt-frequency type="hidden" />
           </div>
           <details data-bt-advanced-settings class="sdr-advanced"><summary>상세 설정<svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6 4 4 4-4"/></svg></summary>
           <div class="sdr-bt-mode"><label for="sdr-bt-mode">수신 모드</label><select id="sdr-bt-mode" data-bt-mode aria-label="IC-R30 수신 모드">${MODES.map(mode => `<option>${mode}</option>`).join("")}</select><button type="button" data-bt-apply-mode class="sdr-secondary">적용</button></div>
@@ -39,7 +47,8 @@
           </details>
         </fieldset>
         </div>
-        <div class="sdr-section" data-bt-signal>
+      </section>
+        <div class="sdr-section sdr-signal-pane" data-bt-signal hidden>
         <h3 class="sdr-stage-heading"><span class="sdr-step" aria-hidden="true">3</span> 신호 확인</h3>
         <p data-bt-measurement-status class="sdr-note" role="status"></p>
         <p data-bt-readout class="sdr-frequency-readout" aria-live="polite">수신 주파수 —</p>
@@ -49,7 +58,7 @@
         </div>
         <p class="sdr-note">소리는 IC-R30에서 직접 확인하세요. Bluetooth는 오디오·I/Q를 전달하지 않습니다.</p>
         </div>
-      </section>
+      <div class="sdr-diagnostics-pane">
       <details class="sdr-reception-diagnostic sdr-bt-test" aria-label="Bluetooth 수신 진단 로그">
         <summary>수신 진단 · 저장된 로그</summary>
         <div class="sdr-log-actions"><button type="button" data-bt-test-start class="sdr-primary">10초 기록</button><button type="button" data-bt-test-share disabled>파일 공유</button><button type="button" data-bt-test-delete class="sdr-danger" disabled>선택 삭제</button></div>
@@ -61,7 +70,8 @@
         <p data-bt-test-range class="sdr-note"></p>
         <p class="sdr-note">R30에서 희미한 삡이 들릴 때 표시 버튼을 누르세요. 표시는 사람의 반응 지연이 포함된 참고 시점입니다. 수신기에서도 주파수·모드를 바꾸지 마세요. 홈 화면·화면 잠금 중에도 네이티브 기록을 계속하지만 앱 강제 종료는 보장하지 않습니다.</p>
       </details>
-      <details class="sdr-help"><summary>연결 유지 · 지원 기능 안내</summary><p>SPP에는 오디오·I/Q가 없어 앱 청취, 스펙트럼, 자동 CW 검출, 대역 탐색은 지원하지 않습니다. 홈 화면·다른 앱·화면 잠금에서도 알림을 표시하며 연결을 유지합니다. 앱이나 알림의 연결 해제로 종료하세요.</p></details>`;
+      <details class="sdr-help"><summary>연결 유지 · 지원 기능 안내</summary><p>SPP에는 오디오·I/Q가 없어 앱 청취, 스펙트럼, 자동 CW 검출, 대역 탐색은 지원하지 않습니다. 홈 화면·다른 앱·화면 잠금에서도 알림을 표시하며 연결을 유지합니다. 앱이나 알림의 연결 해제로 종료하세요.</p></details>
+      </div>`;
     const node = key => (key === "target" || key === "register" ? footer : panel).querySelector(`[data-bt-${key}]`);
     const meterBars = Array.from({ length: 10 }, (_, i) => panel.querySelector(`[data-bt-bar="${i}"]`));
     const usbButton = selector.querySelector("[data-receiver-usb]");
@@ -81,8 +91,7 @@
         render();
       },
       onCommit: () => run(() => tune(Math.round(Number(node("frequency").value) * 1e6)), true),
-      onCancel: () => { if (validReading()) node("frequency").value = formatHz(snapshot.measurement.frequencyHz); },
-      onError: text => { localError = text; node("error").textContent = text; }
+      onCancel: () => { if (validReading()) node("frequency").value = formatHz(snapshot.measurement.frequencyHz); }
     });
     const native = root.Capacitor?.getPlatform?.() === "android";
     function connected() { return snapshot.state === "connected"; }
@@ -171,7 +180,7 @@
             frequencyControls.setEditing(false);
             node("search").blur?.();
             render();
-            node("signal").scrollIntoView?.({ block: "start" });
+            revealSignal(node("signal"));
           }, true));
           slotControls.push({ button, frequency, check });
           slots.appendChild(button);
@@ -229,7 +238,7 @@
       node("devices").hidden = busy || connected() || snapshot.state === "connecting";
       node("other-devices").hidden = node("devices").hidden || !node("other-device-list").children.length;
       node("service-help").hidden = connected();
-      node("controls").hidden = !connected();
+      node("controls").hidden = node("signal").hidden = !connected();
       node("fields").disabled = busy || !connected() || testing();
       node("catalog-refresh").disabled = busy || loadingCatalog;
       node("clear").disabled = busy || !target || testing();
@@ -237,7 +246,7 @@
       const liveReading = validReading() ? snapshot.measurement : null;
       const reading = liveReading || (updating ? lastReading : null);
       if (liveReading && !draftFrequency) node("frequency").value = formatHz(liveReading.frequencyHz);
-      const tunedHz = node("frequency").value.trim() ? Math.round(Number(node("frequency").value) * 1e6) : NaN;
+      const tunedHz = frequencyControls.previewHz();
       const matchingCodes = root.BearSdrFrequency.matchingAnimalCodes(animals, tunedHz);
       node("frequency-animal").textContent = matchingCodes.join(", ");
       node("frequency-animal").hidden = !matchingCodes.length;
@@ -422,7 +431,6 @@
       if (!id || !root.confirm("선택한 Bluetooth 로그를 삭제할까요? 삭제한 기록은 복구할 수 없습니다.")) return;
       return run(async () => { applySnapshot(await plugin.deleteTest({ id })); });
     });
-    node("frequency").addEventListener("input", () => { draftFrequency = true; render(); });
     node("mode").addEventListener("change", () => { draftMode = true; });
     async function tune(hz) {
       if (!Number.isSafeInteger(hz) || hz < 100000 || hz > 3304999000) throw new Error("주파수는 0.1–3304.999 MHz 범위여야 합니다.");

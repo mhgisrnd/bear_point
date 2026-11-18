@@ -286,7 +286,7 @@ test('out-of-range manual tuning, physical radio retuning and disconnect invalid
   const choose = () => ui.node('animals').children[0].children[1].children[0].click();
   await choose();
   await ui.node('frequency-edit').click();
-  ui.node('frequency').value = '148.243'; ui.node('frequency').events.input();
+  ui.node('frequency-draft').value = '148.243'; ui.node('frequency-draft').events.input();
   assert.equal(ui.node('register').disabled, true);
   await ui.node('frequency-edit').click();
   assert.equal(ui.calls.at(-1)[1].frequencyHz, 148243000);
@@ -318,11 +318,11 @@ test('mode changes and frequency steps use measured values and validate range be
   await ui.node('freq-up="1000"').click();
   assert.equal(ui.calls.at(-1)[1].frequencyHz, 145521000);
   await ui.node('frequency-edit').click();
-  ui.node('frequency').value = '3305'; ui.node('frequency').events.input();
+  ui.node('frequency-draft').value = '3305'; ui.node('frequency-draft').events.input();
   const count = ui.calls.length;
   await ui.node('frequency-edit').click();
   assert.equal(ui.calls.length, count);
-  assert.match(ui.node('error').textContent, /범위/);
+  assert.match(ui.node('frequency-error').textContent, /범위/);
 });
 test('Bluetooth uses USB-style digit buttons, commits once per tap and locks them during recording', async () => {
   const ui = setup(); await ui.connect();
@@ -370,9 +370,9 @@ test('Bluetooth range badge works without selecting an animal and allows registr
   assert.equal(ui.node('frequency-animal').hidden, false);
   assert.equal(ui.node('register').disabled, false);
   await ui.node('frequency-edit').click();
-  ui.node('frequency').value = '148.2424'; ui.node('frequency').events.input();
+  ui.node('frequency-draft').value = '148.2424'; ui.node('frequency-draft').events.input();
   assert.equal(ui.node('frequency-animal').hidden, false);
-  ui.node('frequency').value = '148.24241'; ui.node('frequency').events.input();
+  ui.node('frequency-draft').value = '148.24241'; ui.node('frequency-draft').events.input();
   assert.equal(ui.node('frequency-animal').hidden, true);
   assert.equal(ui.node('register').disabled, true);
 });
@@ -384,12 +384,12 @@ test('Bluetooth small digit adjustment preserves selection, uncommitted input bl
   assert.equal(ui.node('clear').disabled, false);
   await ui.node('frequency-edit').click();
   assert.equal(ui.node('register').disabled, true);
-  ui.node('frequency').value = '148.2417'; ui.node('frequency').events.input();
+  ui.node('frequency-draft').value = '148,2417'; ui.node('frequency-draft').events.input();
   await ui.node('frequency-edit').click();
   assert.equal(ui.calls.at(-1)[1].frequencyHz, 148241700);
   assert.equal(ui.node('register').disabled, false);
   await ui.node('frequency-edit').click();
-  ui.node('freq-digit="6"').events.keydown({ key: 'Escape', preventDefault() {} });
+  ui.node('frequency-draft').events.keydown({ key: 'Escape', preventDefault() {} });
   assert.equal(ui.node('register').disabled, false);
 });
 test('pending Bluetooth tuning preserves card nodes, scroll and last confirmed display without allowing stale actions', async () => {

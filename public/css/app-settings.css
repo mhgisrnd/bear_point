@@ -177,6 +177,24 @@ body:has(.sdr-dialog[open]) #btn-sdr-diagnostics,
 }
 .sdr-dialog[data-search-compact="true"] .sdr-header { min-height: 40px; }
 
+@media (orientation: landscape) {
+  .sdr-dialog,
+  .sdr-dialog[data-search-compact="true"] {
+    --sdr-landscape-height: max(0px, calc(var(--sdr-viewport-height, 100dvh) - var(--map-dialog-safe-top) - var(--sdr-safe-bottom) - 16px));
+    inset-block-start: calc(var(--sdr-viewport-top, 0px) + var(--map-dialog-safe-top) + 8px);
+    height: var(--sdr-landscape-height);
+    max-height: var(--sdr-landscape-height);
+    width: min(680px, calc(100vw - var(--map-dialog-safe-left) - var(--map-dialog-safe-right) - 32px));
+  }
+  .sdr-dialog .sdr-header { min-height: 48px; padding-block: 6px; }
+  .sdr-dialog[data-search-compact="true"] .sdr-header { min-height: 40px; padding-block: 4px; }
+}
+@media (min-width: 720px) and (orientation: landscape) {
+  .sdr-dialog:not([data-search-compact="true"]) {
+    width: min(1100px, calc(100vw - var(--map-dialog-safe-left) - var(--map-dialog-safe-right) - 32px));
+  }
+}
+
 .app-settings-dialog--navigation { width: min(800px, calc(100vw - var(--map-dialog-safe-left) - var(--map-dialog-safe-right) - 48px)); }
 @media (max-width: 520px) {
   .app-settings-dialog--navigation {
