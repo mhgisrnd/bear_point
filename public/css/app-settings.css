@@ -6,7 +6,7 @@
 .app-settings-dialog { overflow: hidden; }
 .app-settings-dialog[open] { display: flex; flex-direction: column; }
 .app-settings-head { flex-shrink: 0; }
-/* Keep both map dialogs below the 44px toolbar (12px top + 12px gap). */
+/* Leave space for the map toolbar beneath the receiver and update prompts. */
 :root { --map-dialog-toolbar-space: 68px; }
 .app-settings-dialog {
   position: fixed;
@@ -15,7 +15,10 @@
   max-height: max(0px, calc(100dvh - var(--safe-top, 0px) - var(--safe-bottom, 0px) - var(--map-dialog-toolbar-space) - 12px));
 }
 .app-settings-dialog--navigation {
-  height: min(680px, calc(100dvh - var(--safe-top, 0px) - var(--safe-bottom, 0px) - var(--map-dialog-toolbar-space) - 12px));
+  --app-settings-height: max(0px, calc(100dvh - var(--safe-top, 0px) - var(--safe-bottom, 0px) - 16px));
+  inset-block-start: calc(var(--safe-top, 0px) + 8px);
+  height: var(--app-settings-height);
+  max-height: var(--app-settings-height);
 }
 .sdr-dialog, .sdr-dialog[data-search-compact="true"] {
   --map-dialog-safe-top: max(var(--sdr-safe-top), var(--safe-top, 0px));
@@ -43,7 +46,7 @@ body:has(.sdr-dialog[open]) #btn-sdr-diagnostics,
 .app-settings-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 18px 22px 0; }
 .app-settings-head h2 { margin: 0; font-size: 20px; letter-spacing: -.6px; }
 .app-settings-close { border: 0; background: #f0f4f8; border-radius: 9px; color: #64768a; width: 36px; height: 36px; font-size: 24px; cursor: pointer; }
-.app-settings-layout { display: grid; grid-template-columns: clamp(112px, 17%, 156px) clamp(128px, 20%, 184px) minmax(0, 1fr); flex: 1; min-height: 0; }
+.app-settings-layout { display: grid; grid-template-columns: clamp(96px, 16%, 124px) clamp(104px, 15%, 124px) minmax(0, 1fr); flex: 1; min-height: 0; }
 .app-settings-categories, .app-settings-subnav { min-width: 0; padding: 12px 8px; border-inline-end: 1px solid #dce6eb; overflow-y: auto; overscroll-behavior: contain; }
 .app-settings-categories { display: flex; flex-direction: column; gap: 4px; background: #edf3f6; }
 .app-settings-subnav { background: #f8fafb; }
@@ -174,8 +177,8 @@ body:has(.sdr-dialog[open]) #btn-sdr-diagnostics,
 }
 .sdr-dialog[data-search-compact="true"] .sdr-header { min-height: 40px; }
 
-.app-settings-dialog--navigation { width: min(920px, calc(100vw - var(--map-dialog-safe-left) - var(--map-dialog-safe-right) - 32px)); }
-@media (max-width: 640px) {
+.app-settings-dialog--navigation { width: min(800px, calc(100vw - var(--map-dialog-safe-left) - var(--map-dialog-safe-right) - 48px)); }
+@media (max-width: 520px) {
   .app-settings-dialog--navigation {
     inset-inline: calc(var(--map-dialog-safe-left) + 8px) calc(var(--map-dialog-safe-right) + 8px);
     width: calc(100vw - var(--map-dialog-safe-left) - var(--map-dialog-safe-right) - 16px);
