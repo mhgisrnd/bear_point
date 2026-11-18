@@ -5,9 +5,7 @@
 .app-settings-dialog::backdrop { background: #142b4166; }
 .app-settings-dialog { overflow: hidden; }
 .app-settings-dialog[open] { display: flex; flex-direction: column; }
-.app-settings-head, .app-settings-tabs { flex-shrink: 0; }
-.app-settings-scroll { min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
-.app-settings-dialog--tabs { height: min(680px, calc(100dvh - 32px - var(--safe-top, 0px) - var(--safe-bottom, 0px))); }
+.app-settings-head { flex-shrink: 0; }
 /* Keep both map dialogs below the 44px toolbar (12px top + 12px gap). */
 :root { --map-dialog-toolbar-space: 68px; }
 .app-settings-dialog {
@@ -16,7 +14,7 @@
   margin: 0 auto;
   max-height: max(0px, calc(100dvh - var(--safe-top, 0px) - var(--safe-bottom, 0px) - var(--map-dialog-toolbar-space) - 12px));
 }
-.app-settings-dialog--tabs {
+.app-settings-dialog--navigation {
   height: min(680px, calc(100dvh - var(--safe-top, 0px) - var(--safe-bottom, 0px) - var(--map-dialog-toolbar-space) - 12px));
 }
 .sdr-dialog, .sdr-dialog[data-search-compact="true"] {
@@ -25,14 +23,14 @@
   height: min(800px, calc(var(--sdr-viewport-height, 100dvh) - var(--map-dialog-safe-top) - var(--sdr-safe-bottom) - var(--map-dialog-toolbar-space) - 12px));
   max-height: max(0px, calc(var(--sdr-viewport-height, 100dvh) - var(--map-dialog-safe-top) - var(--sdr-safe-bottom) - var(--map-dialog-toolbar-space) - 12px));
 }
-.app-settings-dialog--tabs .app-settings-scroll { display: flex; flex: 1; overflow: hidden; }
-.app-settings-dialog--tabs [role=tabpanel],
+.app-settings-scroll { display: flex; flex: 1; min-height: 0; overflow: hidden; }
+.app-settings-dialog--navigation [role=tabpanel],
 .app-settings-form,
-.app-settings-dialog--tabs .app-update-body { display: flex; flex-direction: column; flex: 1; min-height: 0; min-width: 0; overflow: hidden; }
-.app-settings-dialog--tabs .app-update-body { padding: 0; }
-.app-settings-dialog--tabs .app-settings-fields { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
-.app-settings-dialog--tabs .app-settings-footer { flex: 0 0 auto; margin: 0; padding: 14px 22px; border-top: 1px solid #e2e9f1; background: #fff; }
-.app-settings-dialog--tabs .app-update-notes { max-height: none; overflow: visible; }
+.app-settings-dialog--navigation .app-update-body { display: flex; flex-direction: column; flex: 1; min-height: 0; min-width: 0; overflow: hidden; }
+.app-settings-dialog--navigation .app-update-body { padding: 0; }
+.app-settings-dialog--navigation .app-settings-fields { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
+.app-settings-dialog--navigation .app-settings-footer { flex: 0 0 auto; margin: 0; padding: 14px 22px; border-top: 1px solid #e2e9f1; background: #fff; }
+.app-settings-dialog--navigation .app-update-notes { max-height: none; overflow: visible; }
 body:has(.app-settings-dialog[open]) #btn-app-settings,
 body:has(.sdr-dialog[open]) #btn-sdr-diagnostics,
 #btn-map-layers[aria-expanded="true"] {
@@ -45,9 +43,21 @@ body:has(.sdr-dialog[open]) #btn-sdr-diagnostics,
 .app-settings-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 18px 22px 0; }
 .app-settings-head h2 { margin: 0; font-size: 20px; letter-spacing: -.6px; }
 .app-settings-close { border: 0; background: #f0f4f8; border-radius: 9px; color: #64768a; width: 36px; height: 36px; font-size: 24px; cursor: pointer; }
-.app-settings-tabs { display: flex; gap: 6px; margin: 14px 22px 0; padding: 0 0 1px; border-bottom: 1px solid #e2e9f1; overflow-x: auto; }
-.app-settings-tab { flex: 0 0 auto; min-height: 40px; padding: 8px 14px; border: 0; border-bottom: 3px solid transparent; background: transparent; color: #78899a; font: 700 13px/1.4 system-ui,sans-serif; white-space: nowrap; cursor: pointer; }
-.app-settings-tab[aria-selected=true] { border-bottom-color: #2365c8; background: #f0f5fd; border-radius: 8px 8px 0 0; color: #2365c8; }
+.app-settings-layout { display: grid; grid-template-columns: clamp(112px, 17%, 156px) clamp(128px, 20%, 184px) minmax(0, 1fr); flex: 1; min-height: 0; }
+.app-settings-categories, .app-settings-subnav { min-width: 0; padding: 12px 8px; border-inline-end: 1px solid #dce6eb; overflow-y: auto; overscroll-behavior: contain; }
+.app-settings-categories { display: flex; flex-direction: column; gap: 4px; background: #edf3f6; }
+.app-settings-subnav { background: #f8fafb; }
+.app-settings-tabs { display: flex; flex-direction: column; gap: 4px; }
+.app-settings-category, .app-settings-tab { width: 100%; min-height: 44px; padding: 8px 10px; border: 1px solid transparent; border-radius: 8px; background: transparent; color: #3b5263; font: 600 13px/1.4 system-ui,sans-serif; text-align: start; overflow-wrap: anywhere; cursor: pointer; }
+.app-settings-category[aria-current=true] { background: #d7e8ed; color: #104c60; font-weight: 750; }
+.app-settings-tab[aria-selected=true] { border-color: #c9dee5; background: #e6f1f4; color: #104c60; font-weight: 750; }
+.app-settings-content { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.app-settings-content-head { display: flex; flex: 0 0 auto; align-items: center; gap: 6px; padding: 14px 22px 6px; }
+.app-settings-section-title { margin: 0; color: #1d3447; font-size: 16px; line-height: 1.35; overflow-wrap: anywhere; }
+.app-settings-back { display: none; }
+@media (hover: hover) {
+  .app-settings-category:hover:not([aria-current=true]), .app-settings-tab:hover:enabled:not([aria-selected=true]) { background: #e4edf1; }
+}
 .app-notification-card { margin-top: 12px; padding: 14px; border: 1px solid #cfddf1; border-radius: 14px; background: #f6f9ff; }
 .app-settings-notification-toggle { display: flex; align-items: center; gap: 12px; min-height: 40px; cursor: pointer; }
 .app-settings-notification-toggle strong { flex: 1; min-width: 0; font-size: 14px; line-height: 1.4; }
@@ -158,3 +168,29 @@ body:has(.sdr-dialog[open]) #btn-sdr-diagnostics,
   font: 24px/1 system-ui, sans-serif;
 }
 .sdr-dialog[data-search-compact="true"] .sdr-header { min-height: 40px; }
+
+.app-settings-dialog--navigation { width: min(920px, calc(100vw - var(--map-dialog-safe-left) - var(--map-dialog-safe-right) - 32px)); }
+@media (max-width: 640px) {
+  .app-settings-dialog--navigation {
+    inset-inline: calc(var(--map-dialog-safe-left) + 8px) calc(var(--map-dialog-safe-right) + 8px);
+    width: calc(100vw - var(--map-dialog-safe-left) - var(--map-dialog-safe-right) - 16px);
+    max-width: none;
+  }
+  .app-settings-layout { grid-template-columns: clamp(78px, 23%, 108px) minmax(0, 1fr); }
+  .app-settings-categories { padding-inline: 5px; }
+  .app-settings-category { padding-inline: 4px; text-align: center; word-break: keep-all; }
+  .app-settings-dialog--navigation[data-settings-view=detail] .app-settings-subnav,
+  .app-settings-dialog--navigation[data-settings-view=items] .app-settings-content { display: none; }
+  .app-settings-subnav { border-inline-end: 0; }
+  .app-settings-content-head { padding: 8px 12px 0; }
+  .app-settings-back { display: inline-grid; place-items: center; flex: 0 0 44px; height: 44px; padding: 0; border: 0; border-radius: 8px; color: #28546a; background: #edf3f6; cursor: pointer; }
+  .app-settings-back span { width: 9px; height: 9px; border-left: 2px solid currentColor; border-bottom: 2px solid currentColor; transform: rotate(45deg); }
+  .app-settings-dialog--navigation .app-settings-fields { padding-inline: 12px; }
+  .app-settings-dialog--navigation .app-settings-footer { padding: 10px 12px; }
+  .app-settings-dialog--navigation .app-settings-footer button { padding-inline: 10px; }
+}
+@media (max-width: 420px) {
+  .app-settings-dialog--navigation .app-settings-team-grid { grid-template-columns: minmax(0, 1fr); }
+  .app-settings-dialog--navigation .app-settings-notification-toggle { flex-wrap: wrap; }
+  .app-settings-dialog--navigation .app-settings-notification-toggle strong { flex-basis: 100%; }
+}

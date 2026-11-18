@@ -3,17 +3,29 @@
   const store = window.BearAppSettingsStore.createStore(window);
   const trigger = document.getElementById("btn-app-settings");
   const dialog = document.createElement("dialog");
-  dialog.className = "app-settings-dialog app-settings-dialog--tabs";
+  dialog.className = "app-settings-dialog app-settings-dialog--navigation";
+  dialog.dataset.settingsView = "detail";
   dialog.setAttribute("aria-labelledby", "app-settings-title");
   dialog.innerHTML = `<div class="app-settings-head"><h2 id="app-settings-title">설정</h2><button type="button" class="app-settings-close" aria-label="설정 닫기">×</button></div>
-    <div class="app-settings-tabs" role="tablist" aria-label="설정 메뉴">
-      <button type="button" class="app-settings-tab" id="app-settings-profile-tab" role="tab" aria-selected="true" aria-controls="app-settings-profile-panel" tabindex="0">담당자·팀</button>
-      <button type="button" class="app-settings-tab" id="app-settings-tracking-tab" role="tab" aria-selected="false" aria-controls="app-settings-tracking-panel" tabindex="-1">이동 기록</button>
-      <button type="button" class="app-settings-tab" id="app-settings-notifications-tab" role="tab" aria-selected="false" aria-controls="app-settings-notifications-panel" tabindex="-1">알림</button>
-      <button type="button" class="app-settings-tab" id="app-settings-version-tab" role="tab" aria-selected="false" aria-controls="app-settings-version-panel" tabindex="-1">앱 버전</button>
-      <button type="button" class="app-settings-tab" id="app-settings-storage-tab" role="tab" aria-selected="false" aria-controls="app-settings-storage-panel" tabindex="-1">저장 공간</button>
-    </div>
-    <div class="app-settings-scroll"><section id="app-settings-profile-panel" role="tabpanel" aria-labelledby="app-settings-profile-tab">
+    <div class="app-settings-layout">
+      <nav class="app-settings-categories" aria-label="설정 대분류">
+        <button type="button" class="app-settings-category" id="app-settings-field-category" aria-current="true" aria-controls="app-settings-field-items">현장 기능</button>
+        <button type="button" class="app-settings-category" id="app-settings-app-category" aria-current="false" aria-controls="app-settings-app-items">앱 관리</button>
+      </nav>
+      <div class="app-settings-subnav">
+        <div class="app-settings-tabs" id="app-settings-field-items" role="tablist" aria-orientation="vertical" aria-labelledby="app-settings-field-category">
+          <button type="button" class="app-settings-tab" id="app-settings-profile-tab" role="tab" aria-selected="true" aria-controls="app-settings-profile-panel" tabindex="0">담당자·팀</button>
+          <button type="button" class="app-settings-tab" id="app-settings-tracking-tab" role="tab" aria-selected="false" aria-controls="app-settings-tracking-panel" tabindex="-1" disabled>이동 기록</button>
+        </div>
+        <div class="app-settings-tabs" id="app-settings-app-items" role="tablist" aria-orientation="vertical" aria-labelledby="app-settings-app-category" hidden>
+          <button type="button" class="app-settings-tab" id="app-settings-notifications-tab" role="tab" aria-selected="false" aria-controls="app-settings-notifications-panel" tabindex="-1">알림</button>
+          <button type="button" class="app-settings-tab" id="app-settings-version-tab" role="tab" aria-selected="false" aria-controls="app-settings-version-panel" tabindex="-1">앱 버전</button>
+          <button type="button" class="app-settings-tab" id="app-settings-storage-tab" role="tab" aria-selected="false" aria-controls="app-settings-storage-panel" tabindex="-1">저장 공간</button>
+        </div>
+      </div>
+      <div class="app-settings-content">
+        <div class="app-settings-content-head"><button type="button" class="app-settings-back" aria-label="세부 설정 목록으로 돌아가기"><span aria-hidden="true"></span></button><h3 class="app-settings-section-title" tabindex="-1">담당자·팀</h3></div>
+        <div class="app-settings-scroll"><section id="app-settings-profile-panel" role="tabpanel" aria-labelledby="app-settings-profile-tab">
     <form class="app-settings-form"><div class="app-settings-body app-settings-fields"><p class="app-settings-intro">담당자 이름과 소속 팀을 설정해주세요.</p>
       <label class="app-settings-field">담당자<input name="owner" required maxlength="100" autocomplete="name" placeholder="이름을 입력해주세요" /></label>
       <fieldset class="app-settings-teams"><legend>소속 팀</legend><div class="app-settings-team-grid"></div></fieldset>
@@ -49,12 +61,14 @@
       </section>
     </section>
       </div>
-    </section><section id="app-settings-version-panel" role="tabpanel" aria-labelledby="app-settings-version-tab" hidden></section></div>`;
+    </section>
+          <section id="app-settings-version-panel" role="tabpanel" aria-labelledby="app-settings-version-tab" hidden></section>
+          <section id="app-settings-storage-panel" role="tabpanel" aria-labelledby="app-settings-storage-tab" hidden></section>
+        </div>
+      </div>
+    </div>`;
   document.body.append(dialog);
-  const storagePanel=document.createElement('section');
-  storagePanel.id='app-settings-storage-panel';storagePanel.hidden=true;
-  storagePanel.setAttribute('role','tabpanel');storagePanel.setAttribute('aria-labelledby','app-settings-storage-tab');
-  dialog.querySelector('.app-settings-scroll').append(storagePanel);
+  const storagePanel = dialog.querySelector("#app-settings-storage-panel");
   window.BearStorageCleanup?.mount(storagePanel);
   window.BearAppUpdates?.mount(dialog.querySelector('#app-settings-version-panel'));
   window.BearNotificationSettings.mount(dialog.querySelector("#app-settings-notifications-panel"), dialog);
@@ -76,31 +90,58 @@
   } else {
     dialog.querySelector('.app-notification-diagnostics').hidden = true;
   }
-  const tabs = [...dialog.querySelectorAll('[role="tab"]')];
-  function selectTab(tab, focus = false) {
-    if (tab.disabled) return;
+  const categories = [...dialog.querySelectorAll(".app-settings-category")];
+  const tabs = [...dialog.querySelectorAll('.app-settings-tab')];
+  const sectionTitle = dialog.querySelector(".app-settings-section-title");
+  const backButton = dialog.querySelector(".app-settings-back");
+  const controlledElement = button => dialog.querySelector("#" + button.getAttribute("aria-controls"));
+  let selectedTab = tabs[0];
+  function selectTab(tab, view) {
+    selectedTab = tab;
     tabs.forEach(item => {
       const active = item === tab;
       item.setAttribute("aria-selected", String(active));
       item.tabIndex = active ? 0 : -1;
-      dialog.querySelector("#" + item.getAttribute("aria-controls")).hidden = !active;
-      if(active&&item.id==='app-settings-storage-tab')storagePanel.dispatchEvent(new Event('storage-refresh'));
+      controlledElement(item).hidden = !active;
     });
-    const fields = dialog.querySelector("#" + tab.getAttribute("aria-controls") + " .app-settings-fields");
+    dialog.dataset.settingsView = view;
+    sectionTitle.textContent = tab.textContent;
+    const panel = controlledElement(tab);
+    if (panel === storagePanel) storagePanel.dispatchEvent(new Event("storage-refresh"));
+    const fields = panel.querySelector(".app-settings-fields");
     if (fields) fields.scrollTop = 0;
-    if (focus) tab.focus();
   }
-  tabs.forEach((tab, index) => {
-    tab.addEventListener("click", () => selectTab(tab));
+  function selectCategory(category, view = "items") {
+    for (const button of categories) {
+      const active = button === category;
+      button.setAttribute("aria-current", String(active));
+      controlledElement(button).hidden = !active;
+    }
+    const items = [...controlledElement(category).querySelectorAll(".app-settings-tab")];
+    selectTab(items.includes(selectedTab) ? selectedTab : items.find(item => !item.disabled), view);
+  }
+  categories.forEach(category => category.addEventListener("click", () => selectCategory(category)));
+  backButton.addEventListener("click", () => {
+    dialog.dataset.settingsView = "items";
+    selectedTab.focus();
+  });
+  tabs.forEach(tab => {
+    tab.addEventListener("click", () => {
+      selectTab(tab, "detail");
+      if (backButton.getClientRects().length) sectionTitle.focus();
+    });
     tab.addEventListener("keydown", event => {
+      const items = [...tab.parentElement.querySelectorAll(".app-settings-tab")].filter(item => !item.disabled);
+      const index = items.indexOf(tab);
       let next;
-      if (event.key === "ArrowRight") next = (index + 1) % tabs.length;
-      else if (event.key === "ArrowLeft") next = (index + tabs.length - 1) % tabs.length;
+      if (event.key === "ArrowDown") next = (index + 1) % items.length;
+      else if (event.key === "ArrowUp") next = (index + items.length - 1) % items.length;
       else if (event.key === "Home") next = 0;
-      else if (event.key === "End") next = tabs.length - 1;
+      else if (event.key === "End") next = items.length - 1;
       else return;
       event.preventDefault();
-      if (!tabs[next].disabled) selectTab(tabs[next], true);
+      selectTab(items[next], "items");
+      items[next].focus();
     });
   });
   const form = dialog.querySelector("form"), grid = dialog.querySelector(".app-settings-team-grid");
@@ -113,7 +154,7 @@
     const options = store.snapshot().tracking;
     trackingForm.elements.interval.value = String(options.interval_seconds);
     trackingMessage.textContent = "";
-    tabs[1].disabled = !loaded;
+    dialog.querySelector("#app-settings-tracking-tab").disabled = !loaded;
   }
   let loaded = false, required = true, saving = false, refreshing = false, selection = "", closing = false, deferred = false;
   function paintCloseButtons() {
@@ -138,7 +179,7 @@
     closing = true;
     try {
       if (required) {
-        const options = { title: "시작 설정", message: "담당자와 소속 팀을 나중에 설정하시겠습니까?", detail: "관측점 등록 시 담당자를 입력하고 팀을 선택할 수 있습니다.", confirmText: "나중에 설정", cancelText: "계속 설정" };
+        const options = { title: "설정", message: "담당자와 소속 팀을 나중에 설정하시겠습니까?", detail: "관측점 등록 시 담당자를 입력하고 팀을 선택할 수 있습니다.", confirmText: "나중에 설정", cancelText: "계속 설정" };
         const accepted = window.__bpShowConfirmDialog ? await window.__bpShowConfirmDialog(options) : window.confirm(options.message);
         if (!accepted) return false;
         deferred = true;
@@ -152,8 +193,8 @@
     message.textContent = "";
     required = !store.snapshot().profile;
     paintCloseButtons();
-    dialog.querySelector("h2").textContent = required ? "시작 설정" : "설정";
-    selectTab(tabs[0]);
+    selectedTab = tabs[0];
+    selectCategory(categories[0], "detail");
     saveButton.textContent = required ? "저장하고 시작" : "저장";
     const profile = store.snapshot().profile;
     form.elements.owner.value = profile?.owner || "";
@@ -180,7 +221,6 @@
       required = !state.profile;
       paintTracking();
       paintCloseButtons();
-      dialog.querySelector("h2").textContent = required ? "시작 설정" : "설정";
       saveButton.textContent = required ? "저장하고 시작" : "저장";
       trigger.dataset.required = String(!state.profile);
       trigger.title = state.profile ? `${state.profile.owner} · ${state.profile.team_name} 설정` : "담당자·팀 설정";
