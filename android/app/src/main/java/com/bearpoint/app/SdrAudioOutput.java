@@ -116,8 +116,8 @@ final class SdrAudioOutput {
         }
     }
 
-    void startDefault() {
-        try { set(true, 1d); }
+    void startListening(boolean enabled, double volume) {
+        try { set(enabled, volume); }
         catch (IllegalStateException unavailable) { stopWithNotice(unavailable.getMessage()); }
     }
 

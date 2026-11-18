@@ -18,6 +18,12 @@ public class SdrSettingsTest {
         assertFalse(SdrSettings.validDemodulation("cw", "vhf", 148241000, 139999999, 1024000, 75));
         assertFalse(SdrSettings.validDemodulation("cw", "vhf", 148241000, 148441000, 250000, 75));
     }
+    @Test public void liveCwAdjustmentStaysNearTheTunedCenterAndInsideTheSampledBand() {
+        assertTrue(SdrSettings.canFineTuneCw(148241000, 12000, 1024000, 148241300));
+        assertTrue(SdrSettings.canFineTuneCw(148241000, 12000, 250000, 148236000));
+        assertFalse(SdrSettings.canFineTuneCw(148241000, 12000, 1024000, 148246010));
+        assertFalse(SdrSettings.canFineTuneCw(148241000, 115000, 250000, 148241300));
+    }
     @Test public void wfmNeedsAnInBandChannelAndEnoughFilterMargin() {
         assertTrue(SdrSettings.validDemodulation("wfm", "fm", 103300000, 103500000, 1024000, 75));
         assertTrue(SdrSettings.validDemodulation("wfm", "fm", 103500000, 103500000, 250000, 50));

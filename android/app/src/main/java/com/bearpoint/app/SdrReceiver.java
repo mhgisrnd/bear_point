@@ -25,7 +25,7 @@ final class SdrReceiver {
     private final SdrCaptureWriter captureWriter;
     private JSObject diagnosticContext = new JSObject();
     final SdrComparison comparison;
-    private SdrComparison.Settings currentSettings;
+    private volatile SdrComparison.Settings currentSettings;
     private boolean comparisonAudioEnabled;
     private double comparisonVolume;
     private int comparisonAudioGain;
@@ -91,7 +91,8 @@ final class SdrReceiver {
     }
     void diagnosticStorage(File files,File cache) { diagnostic.storage(new File(files,"sdr-diagnostics"),cache); }
     void startDiagnostic(File root,JSObject context) {
-        if (!"receiving".equals(state) || !"cw".equals(mode)) throw new IllegalStateException("개별 CW 수신 중에 진단 기록을 시작하세요.");
+        if (!"receiving".equals(state) || !"cw".equals(mode) || !metrics.optBoolean("hasSamples"))
+            throw new IllegalStateException("개별 CW 수신 신호를 확인한 뒤 진단 기록을 시작하세요.");
         if(comparison.active)throw new IllegalStateException("비교 진단이 진행 중입니다.");
         comparison.message="";comparison.phase="idle";
         startDiagnosticInternal(root,context);
@@ -102,7 +103,8 @@ final class SdrReceiver {
         catch (java.io.IOException failure) { throw new IllegalStateException(failure.getMessage(),failure); }
     }
     void startComparison(UsbDeviceConnection connection,File root,JSObject context) {
-        if(!"receiving".equals(state)||!"cw".equals(mode)||currentSettings==null)throw new IllegalStateException("개별 CW 수신 중에 시작하세요.");
+        if (!"receiving".equals(state) || !"cw".equals(mode) || currentSettings == null || !metrics.optBoolean("hasSamples"))
+            throw new IllegalStateException("개별 CW 수신 신호를 확인한 뒤 비교 진단을 시작하세요.");
         if(java.util.Arrays.asList("waiting","recording","packaging").contains(diagnostic.state()))throw new IllegalStateException("진단 기록 완료 후 시작하세요.");
         if(!root.isDirectory()&&!root.mkdirs())throw new IllegalStateException("진단 폴더를 만들지 못했습니다.");
         if(root.getUsableSpace()<600L*1024*1024)throw new IllegalStateException("비교 진단에는 여유 공간 600MB 이상이 필요합니다.");
@@ -130,29 +132,49 @@ final class SdrReceiver {
         cmp.put("step",comparison.index+1);cmp.put("total",comparison.steps==null?0:comparison.steps.size());result.put("comparison",cmp);return result;
     }
 
-    void start(UsbDeviceConnection connection, int hz, int rate, int gain, int ppm, String mode, int listenHz, int deemphasisUs) {
+    void start(UsbDeviceConnection connection, int hz, int rate, int gain, int ppm, String mode, int listenHz,
+               int deemphasisUs, boolean listenAudio, double volume) {
         if(comparison.active)throw new IllegalStateException("비교 진단을 먼저 중단하세요.");
         this.mode=mode;
-        startConfigured(connection,new SdrComparison.Settings(hz,rate,gain,ppm,listenHz,deemphasisUs,12000));
+        startConfigured(connection, new SdrComparison.Settings(hz, rate, gain, ppm, listenHz, deemphasisUs, 12000), listenAudio, volume);
+    }
+    boolean retuneCw(int listenHz) {
+        SdrComparison.Settings settings = currentSettings;
+        if (!"receiving".equals(state) || !"cw".equals(mode) || settings == null)
+            throw new IllegalStateException("개별 CW 수신 중에 주파수를 조정하세요.");
+        if (comparison.active || java.util.Arrays.asList("waiting", "recording", "packaging").contains(diagnostic.state()))
+            throw new IllegalStateException("진단 기록을 마친 뒤 주파수를 조정하세요.");
+        if (listenHz == settings.listen) return true;
+        if (!SdrSettings.canFineTuneCw(settings.hz, settings.offset, settings.rate, listenHz)) return false;
+        currentSettings = new SdrComparison.Settings(settings.hz, settings.rate, settings.gain, settings.ppm,
+            listenHz, settings.deemphasis, settings.offset);
+        tunedFrequencyHz = listenHz;
+        metrics = new JSObject().put("listenFrequencyHz", listenHz).put("mode", mode);
+        changed.run();
+        return true;
     }
     private void startConfigured(UsbDeviceConnection connection,SdrComparison.Settings settings) {
+        startConfigured(connection, settings, true, 1d);
+    }
+    private void startConfigured(UsbDeviceConnection connection, SdrComparison.Settings settings, boolean listenAudio, double volume) {
         if (!state.equals("idle") && !state.equals("error")) throw new IllegalStateException("정지 후 다시 시작하세요.");
         currentSettings=settings;
-        int hz=settings.hz,rate=settings.rate,gain=settings.gain,ppm=settings.ppm,listenHz=settings.listen,deemphasisUs=settings.deemphasis;
         String mode=this.mode;
         int token = generation.incrementAndGet();
         audio.stop(); this.mode = mode;
-        tunedFrequencyHz = hz;
+        tunedFrequencyHz = settings.hz;
         fixedResultAvailable = true;
         state = "starting"; error = ""; metrics = new JSObject();
         if (scanSession == null) scan = new JSObject();
-        worker.execute(() -> receive(token, connection, hz, rate, gain, ppm, mode, listenHz, deemphasisUs, settings.offset));
+        worker.execute(() -> receive(token, connection, settings, mode, listenAudio, volume));
     }
 
-    private void receive(int token, UsbDeviceConnection connection, int hz, int rate, int gain, int ppm, String mode, int listenHz, int deemphasisUs, int offsetHz) {
+    private void receive(int token, UsbDeviceConnection connection, SdrComparison.Settings applied, String mode, boolean listenAudio, double volume) {
         long handle = 0, demodulator = 0;
         try {
             if (generation.get() != token) return;
+            int hz = applied.hz, rate = applied.rate, gain = applied.gain, ppm = applied.ppm;
+            int listenHz = applied.listen, deemphasisUs = applied.deemphasis, offsetHz = applied.offset;
             int hardwareHz = "cw".equals(mode) ? hz - offsetHz : hz;
             handle = SdrNative.open(connection.getFileDescriptor(), hardwareHz, rate, gain, ppm);
             tunerInfo = SdrNative.describeTuner(handle);
@@ -172,10 +194,30 @@ final class SdrReceiver {
             long spectrumUpdated = started - 500;
             String[] tuners = {"Unknown", "E4000", "FC0012", "FC0013", "FC2580", "R820T", "R828D"};
             int appliedAudioGain = Integer.MIN_VALUE;
+            int actualRate = rate, actualCenterHz = hardwareHz;
             JSObject registers = new JSObject();
             long previousLoopEnd = SystemClock.elapsedRealtimeNanos();
             long previousLoopBegan = previousLoopEnd;
             while (generation.get() == token) {
+                SdrComparison.Settings requested = currentSettings;
+                if (requested != applied) {
+                    if (generation.get() != token) break;
+                    listenHz = requested.listen;
+                    long replacement = SdrNative.createDemodulator(mode, actualRate, listenHz - actualCenterHz, deemphasisUs);
+                    if (demodulator != 0) SdrNative.closeDemodulator(demodulator);
+                    demodulator = replacement;
+                    appliedAudioGain = audio.gainDb();
+                    SdrNative.setAudioGain(demodulator, appliedAudioGain);
+                    audio.discontinuity();
+                    cwSpectrum = new SdrCwSpectrum();
+                    cwDetector = new SdrCwDetector(actualRate);
+                    strength = new SdrSignalStrength();
+                    spectrum = new double[0];
+                    bytes = 0; power = 0; clipped = 0;
+                    signalPeak = -1; signalPeakSequence = 0; signalPeakReceivedMs = 0;
+                    updated = SystemClock.elapsedRealtime();
+                    applied = requested;
+                }
                 long loopBegan=SystemClock.elapsedRealtimeNanos();
                 double cycleIntervalMs=(loopBegan-previousLoopBegan)/1e6;previousLoopBegan=loopBegan;
                 double controlReadMs=0;
@@ -199,6 +241,8 @@ final class SdrReceiver {
                 SdrBlock received = SdrNative.read(handle, captureSpectrum, demodulator, pulseSpectrum);
                 long readEnded=SystemClock.elapsedRealtimeNanos();
                 double[] block = received.values;
+                actualRate = (int) block[4]; actualCenterHz = (int) block[6];
+                if (applied != currentSettings) continue;
                 if(received.diagnostic[18]>0){cwSpectrum=new SdrCwSpectrum();cwDetector=new SdrCwDetector((int)block[4]);strength=new SdrSignalStrength();signalPeak=-1;audio.discontinuity();}
                 // Configure from the actual hardware rate, before decoding subsequent blocks.
                 if (demodulator == 0 && ("wfm".equals(mode) || "cw".equals(mode)))
@@ -329,13 +373,14 @@ final class SdrReceiver {
                     result.put("spectrumFrames", spectrumFrames);
                     result.put("spectrumUpdatedSeconds", (spectrumUpdated - started) / 1000.0);
                 }
+                SdrComparison.Settings measured = applied;
                 main.postDelayed(() -> {
-                    if (generation.get() != token) return;
+                    if (generation.get() != token || currentSettings != measured) return;
                     boolean firstReception = "starting".equals(state);
                     result.put("displayPublishedMs",SystemClock.elapsedRealtime());result.put("audioSourceSequenceAtDisplay",audio.playingSequence());
                     state = "receiving"; metrics = result;
                     if (firstReception && ("wfm".equals(mode) || "cw".equals(mode))) {
-                        audio.startDefault();
+                        audio.startListening(listenAudio, volume);
                         if(comparison.active){audio.setGainDb(comparisonAudioGain);audio.set(comparisonAudioEnabled,comparisonVolume);}
                     }
                     changed.run();

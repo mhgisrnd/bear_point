@@ -23,4 +23,10 @@ final class SdrSettings {
             && Math.abs((long) listen - center) + 100000 <= rate * .45
             && (deemphasis == 50 || deemphasis == 75);
     }
+
+    static boolean canFineTuneCw(int requestedCenter, int probeOffset, int rate, int listenHz) {
+        int hardwareCenter = requestedCenter - probeOffset;
+        return Math.abs((long) listenHz - requestedCenter) <= 5000
+            && validDemodulation("cw", "wide", hardwareCenter, listenHz, rate, 75);
+    }
 }

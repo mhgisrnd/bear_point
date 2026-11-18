@@ -27,14 +27,14 @@
           <form data-animal-search-form role="search"><input type="search" data-animal-search aria-label="개체 번호 검색" placeholder="개체 번호 검색" autocomplete="off" enterkeyhint="search"></form>
           <p data-animal-notice class="sdr-note" role="status"></p><div class="sdr-animal-list-tools"><p data-animal-count class="sdr-note" role="status"></p><button type="button" data-animal-favorites-filter aria-pressed="false">☆ 즐겨찾기</button></div><div data-animal-list class="sdr-animal-list" aria-label="개체 검색 결과"></div></div>
         </div>
-      <fieldset data-settings class="sdr-settings" disabled>
-        <div class="sdr-fields">
-        <div class="sdr-wide sdr-scan-fields" data-scan-fields hidden><label>시작 주파수 <span>MHz</span><input data-scan-start type="number" min="0.1" max="999.999" step="0.001" value="148.000" inputmode="decimal"></label><label>끝 주파수 <span>MHz</span><input data-scan-end type="number" min="0.1" max="999.999" step="0.001" value="174.000" inputmode="decimal"></label></div>
         <div class="sdr-wide sdr-frequency-field" data-frequency-field>
           <div class="sdr-frequency-heading"><div><strong>수신 주파수</strong><span data-frequency-range>MHz</span><span data-frequency-animal class="sdr-frequency-animal" aria-live="polite" hidden></span></div><button type="button" data-frequency-edit aria-expanded="false">직접 입력</button></div>
           <div data-frequency-digits class="sdr-frequency-digits" role="group" aria-label="주파수 자릿수 조정">${window.BearSdrFrequency.markup()}</div>
           <label data-frequency-entry hidden>직접 입력<input data-frequency type="number" min="0.1" max="999.99999" step="0.00001" value="150.000" inputmode="decimal" aria-label="수신 주파수 MHz"></label>
         </div>
+      <fieldset data-settings class="sdr-settings" disabled>
+        <div class="sdr-fields">
+        <div class="sdr-wide sdr-scan-fields" data-scan-fields hidden><label>시작 주파수 <span>MHz</span><input data-scan-start type="number" min="0.1" max="999.999" step="0.001" value="148.000" inputmode="decimal"></label><label>끝 주파수 <span>MHz</span><input data-scan-end type="number" min="0.1" max="999.999" step="0.001" value="174.000" inputmode="decimal"></label></div>
         </div>
 
         <details class="sdr-advanced" data-advanced-settings><summary>상세 설정<svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6 4 4 4-4"/></svg></summary>
@@ -150,8 +150,20 @@
     return !!(selectedAnimal && window.BearSdrFrequency.matchesAnimalFrequency(selectedAnimalHz, Math.round(Number(frequency.value) * 1e6)));
   }
   function animalPickerLocked() {
-    return busy || current?.state !== "connected" || task !== "fixed" ||
+    return busy || isDiagnosticActive(current) || current?.state !== "connected" || task !== "fixed" ||
       ["starting", "stopping", "scanning"].includes(current?.receptionState);
+  }
+  function isDiagnosticActive(snapshot) {
+    return !!snapshot?.diagnostic?.comparison?.active ||
+      ["waiting", "recording", "packaging"].includes(snapshot?.diagnostic?.state);
+  }
+  async function restartFixedReception(audio) {
+    restoredFixed = true;
+    const attempt = ++connectionAttempt;
+    await plugin.stopReception();
+    await refresh();
+    if (attempt !== connectionAttempt || !dialog.open || current?.state !== "connected") return;
+    await startFixedReception(audio);
   }
   async function chooseAnimalFrequency(item, hz) {
     if (animalPickerLocked()) return;
@@ -161,16 +173,7 @@
     finishAnimalSearch();
     frequency.value = String(hz / 1e6); setFrequencyEditing(false); updateWindow();
     if (!live || receivedHz === hz) return;
-    restoredFixed = true;
-    await run(async () => {
-      const attempt = ++connectionAttempt;
-      await plugin.stopReception();
-      await refresh();
-      if (attempt !== connectionAttempt || !dialog.open || current?.state !== "connected") {
-        return;
-      }
-      await startFixedReception();
-    });
+    await run(() => restartFixedReception());
   }
   function renderAnimalPicker() {
     // A changed tuning value must not retain the previous registration target.
@@ -399,13 +402,33 @@
   fixedButton.addEventListener("click", () => { if (!settings.disabled) { candidateSelected = false; setTask("fixed"); } });
   const frequencyControls = window.BearSdrFrequency.mount(dialog, {
     frequency,
-    disabled: () => settings.disabled,
+    disabled: () => animalPickerLocked(),
     bounds: () => frequencyBounds,
     format: animalFormat,
     onChange: updateWindow,
-    onCommit: () => true,
+    onCommit: commitUsbFrequency,
     onError: text => { message.textContent = text; }
   });
+  function commitUsbFrequency() {
+    if (current?.receptionState !== "receiving") return true;
+    const hz = Math.round(Number(frequency.value) * 1e6);
+    const appliedHz = current.reception?.listenFrequencyHz || current.reception?.frequencyHz;
+    if (hz === appliedHz) return true;
+    const audio = current.audio;
+    restoredFixed = true;
+    return run(async () => {
+      try {
+        if (typeof plugin.retuneReception === "function" && (await plugin.retuneReception({ frequencyHz: hz })).retuned) return;
+        await restartFixedReception(audio);
+      } catch (error) {
+        if (current?.receptionState === "receiving" && Number.isSafeInteger(appliedHz)) {
+          frequency.value = animalFormat(appliedHz);
+          updateWindow();
+        }
+        throw error;
+      }
+    });
+  }
   function setFrequencyEditing(enabled) {
     frequencyControls.setEditing(enabled);
   }
@@ -659,7 +682,7 @@
     const diagnostic = snapshot.diagnostic || {};
     const comparison = diagnostic.comparison || {};
     const comparing = !!comparison.active;
-    const capturing = comparing || ["waiting", "recording", "packaging"].includes(diagnostic.state);
+    const capturing = isDiagnosticActive(snapshot);
     const records = Array.isArray(diagnostic.records) ? diagnostic.records : [];
     const recordSelect = dialog.querySelector("[data-diagnostic-record]");
     const recordKeys = records.map(record => record.id).join(",");
@@ -681,8 +704,9 @@
     dialog.querySelector(".sdr-listening-level").hidden = task !== "fixed";
     const compareButton = dialog.querySelector("[data-diagnostic-compare]");
     compareButton.textContent = comparing ? "비교 중단" : "수신 비교 진단";
-    compareButton.disabled = busy || (comparing ? ["restoring", "bundling"].includes(comparison.phase) : capturing || snapshot.receptionState !== "receiving" || rf.mode !== "cw" || typeof plugin?.startComparisonDiagnostic !== "function");
-    dialog.querySelector("[data-diagnostic-start]").disabled = busy || capturing || snapshot.receptionState !== "receiving" || rf.mode !== "cw" || typeof plugin?.startDiagnostic !== "function";
+    const canRecord = snapshot.receptionState === "receiving" && rf.mode === "cw" && rf.hasSamples;
+    compareButton.disabled = busy || (comparing ? ["restoring", "bundling"].includes(comparison.phase) : capturing || !canRecord || typeof plugin?.startComparisonDiagnostic !== "function");
+    dialog.querySelector("[data-diagnostic-start]").disabled = busy || capturing || !canRecord || typeof plugin?.startDiagnostic !== "function";
     dialog.querySelector("[data-diagnostic-share]").disabled = busy || capturing || (!records.length && diagnostic.state !== "ready") || typeof plugin?.shareDiagnostic !== "function";
     dialog.querySelector("[data-diagnostic-delete]").disabled = busy || capturing || !records.length || typeof plugin?.deleteDiagnostic !== "function";
     dialog.querySelector("[data-diagnostic-status]").textContent = comparing ? `${comparison.message || "비교 진단"} · 약 2분 · 위치와 안테나 방향을 유지하세요.`
@@ -878,7 +902,7 @@
   }
   trigger.addEventListener("click", openReceiver);
   refreshButton.addEventListener("click", () => run(refresh));
-  async function startFixedReception() {
+  async function startFixedReception(audio) {
     const hz = Number(frequency.value) * 1e6, sampleRate = Number(rate.value);
     const gainDb = Number(gain.value), correction = Number(ppm.value), bounds = frequencyBounds;
     if (![frequency, rate, gain, ppm].every(input => String(input.value).trim() !== "") ||
@@ -889,6 +913,8 @@
     const listenHz = hz;
     const options = { band: "wide", mode: RECEIVE_MODE, frequencyHz: Math.round(hz), listenFrequencyHz: Math.round(listenHz), sampleRate,
       gainTenthsDb: Math.round(gainDb * 10), ppm: correction, deemphasisUs: DEEMPHASIS_US };
+    if (typeof audio?.enabled === "boolean") options.audioEnabled = audio.enabled;
+    if (Number.isFinite(audio?.volume)) options.audioVolume = audio.volume;
     await plugin.startReception(options);
   }
   startButton.addEventListener("click", () => run(async () => {

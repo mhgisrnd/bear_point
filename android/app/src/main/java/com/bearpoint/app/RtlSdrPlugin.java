@@ -357,7 +357,8 @@ public class RtlSdrPlugin extends Plugin {
                 || !SdrSettings.validDemodulation(mode, band, hz, listen, rate, deemphasis)) {
                 call.reject("수신 설정 범위를 확인하세요."); return;
             }
-            sdr.start(runtime.connection, hz, rate, gain, ppm, mode, listen, deemphasis);
+            sdr.start(runtime.connection, hz, rate, gain, ppm, mode, listen, deemphasis,
+                call.getBoolean("audioEnabled", true), call.getDouble("audioVolume", 1d));
             try { SdrScanService.launch(getContext(), "fixed"); }
             catch (RuntimeException failure) { sdr.stop(); throw failure; }
             call.resolve(snapshot()); publish();
@@ -368,6 +369,15 @@ public class RtlSdrPlugin extends Plugin {
         execute(call, () -> {
             SdrScanService.release();
             sdr.stop(() -> call.resolve(snapshot())); publish();
+        });
+    }
+
+    @PluginMethod public void retuneReception(PluginCall call) {
+        execute(call, () -> {
+            if (paused || runtime.connection == null) { call.reject("앱에서 USB 수신 연결을 확인하세요."); return; }
+            int hz = call.getInt("frequencyHz", 0);
+            if (!SdrSettings.validFrequency("wide", hz)) { call.reject("수신 주파수 범위를 확인하세요."); return; }
+            call.resolve(new JSObject().put("retuned", sdr.retuneCw(hz)));
         });
     }
 

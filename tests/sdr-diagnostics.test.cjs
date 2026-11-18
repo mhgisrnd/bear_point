@@ -1437,6 +1437,58 @@ test('five decimal digit tuning preserves 10 Hz steps through editing and CW rec
   assert.match(ui.dialog.querySelector('[data-frequency-readout]').textContent,/148\.24117 MHz/);
 });
 
+test('USB live digit and direct edits retune CW without restarting the stream', async () => {
+  const ui = setup(); ui.device.hasPermission = true;
+  await ui.trigger.click(); await ui.button().click();
+  const node = key => ui.dialog.querySelector(`[data-${key}]`);
+  node('frequency').value = '148.24100';
+  await node('start').click();
+  ui.state.receptionState = 'receiving';
+  ui.state.reception = { mode: 'cw', frequencyHz: 148229000, listenFrequencyHz: 148241000, hasSamples: true, powerDbfs: -55 };
+  ui.emit();
+  const tuned = [];
+  ui.plugin.retuneReception = async ({frequencyHz}) => {
+    tuned.push(frequencyHz);
+    ui.state.reception = { mode: 'cw', listenFrequencyHz: frequencyHz };
+    ui.emit();
+    return { retuned: true };
+  };
+  ui.plugin.stopReception = async () => { assert.fail('Fine tuning should keep the stream open'); };
+  assert.equal(node('settings').disabled, true);
+  assert.equal(node('freq-up="100"').disabled, false);
+  await node('freq-up="100"').click();
+  await node('frequency-edit').click();
+  node('frequency').value = '148.24130';
+  await node('frequency-edit').click();
+  assert.deepEqual(tuned, [148241100, 148241300]);
+  assert.equal(ui.plugin.starts.length, 1);
+  assert.equal(node('register-observation').disabled, true);
+  ui.state.reception = { mode: 'cw', frequencyHz: 148229000, listenFrequencyHz: 148241300, hasSamples: true, powerDbfs: -55 };
+  ui.emit();
+  assert.match(node('frequency-readout').textContent, /148\.2413 MHz · CW · 수신 중/);
+  assert.equal(node('register-observation').disabled, false);
+  ui.state.diagnostic = { state: 'recording' }; ui.emit();
+  assert.equal(node('frequency-edit').disabled, true);
+});
+
+test('a USB adjustment outside the live tuning range resumes automatically with the previous audio setting', async () => {
+  const ui = setup(); ui.device.hasPermission = true;
+  await ui.trigger.click(); await ui.button().click();
+  const node = key => ui.dialog.querySelector(`[data-${key}]`);
+  node('frequency').value = '148.24100';
+  await node('start').click();
+  ui.state.receptionState = 'receiving';
+  ui.state.reception = { mode: 'cw', listenFrequencyHz: 148241000, hasSamples: true, powerDbfs: -55 };
+  ui.state.audio = { enabled: false, volume: 0.5 };
+  ui.emit();
+  ui.plugin.retuneReception = async () => ({ retuned: false });
+  await node('freq-up="10000"').click();
+  assert.equal(ui.plugin.starts.length, 2);
+  assert.equal(ui.plugin.starts[1].frequencyHz, 148251000);
+  assert.equal(ui.plugin.starts[1].audioEnabled, false);
+  assert.equal(ui.plugin.starts[1].audioVolume, 0.5);
+});
+
 
 test('nearby tuning keeps explicit selection and range badges show overlapping codes without auto-selecting',async()=>{
   const catalog={formatHz:hz=>String(hz/1e6),load:async()=>({notice:'',items:[
