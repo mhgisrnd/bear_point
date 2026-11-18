@@ -8,13 +8,13 @@
   <script src="js/native-plugin-compat.js"></script>
 
   <link rel="stylesheet" href="vendor/ol/ol.css" />
-  <link rel="stylesheet" href="css/styles.css?v=20261118-map-scale" />
-  <link rel="stylesheet" href="css/panel.css?v=20261118-owner-resize" />
+  <link rel="stylesheet" href="css/styles.css?v=20261118-legend-aligned" />
+  <link rel="stylesheet" href="css/panel.css?v=20261118-map-legend" />
   <link rel="stylesheet" href="css/observation-sharing.css" />
   <link rel="stylesheet" href="css/sdr-diagnostics.css?v=20261118-frequency-entry" />
   <link rel="stylesheet" href="css/app-settings.css?v=20261118-receiver-overview" />
   <link rel="stylesheet" href="css/gps-tracking.css" />
-  <link rel="stylesheet" href="css/mobile-map-dock.css" />
+  <link rel="stylesheet" href="css/mobile-map-dock.css?v=20261118-map-disclosure" />
   <link rel="stylesheet" href="css/list-search.css?v=20261118-bear-filter-color" />
   <link rel="stylesheet" href="css/estimate-history.css" />
   <link rel="stylesheet" href="css/analysis-mobile-sheet.css" />
@@ -368,6 +368,19 @@
   <div id="map">
     <button id="btn-sdr-diagnostics" type="button" aria-label="탐색" title="탐색">탐색</button>
     <button id="btn-app-settings" type="button" aria-label="설정" title="설정"><span class="app-settings-icon" aria-hidden="true"></span></button>
+    <details class="map-legend-disclosure" id="map-legend-disclosure">
+      <summary id="btn-map-legend" aria-label="지도 범례" aria-controls="map-marker-legend">범례</summary>
+      <div class="map-marker-legend" id="map-marker-legend">
+        <div class="map-marker-legend__category">
+          <h3 id="bear-legend-title">개체 추적 <small>사용 관측점 수</small></h3>
+          <ul id="bear-marker-legend-items" aria-labelledby="bear-legend-title"></ul>
+        </div>
+        <div class="map-marker-legend__category">
+          <h3><span id="observation-legend-title">관측점</span> <small id="observation-legend-caption">팀 색상</small></h3>
+          <ul id="observation-legend-items" aria-labelledby="observation-legend-title observation-legend-caption"></ul>
+        </div>
+      </div>
+    </details>
   </div>
   <!-- 관측점 등록 중 기기가 바라보는 방향 (지도 나침반과 별개, 등록창이 열리고 센서가 동작할 때만 표시) -->
   <div id="heading-dial" role="img" aria-label="기기가 바라보는 방향">
@@ -392,7 +405,7 @@
   <script src="runtime-config.js"></script>
   <script src="js/analysis/bear-position-analysis.js"></script>
   <script src="js/realtime/realtimeList.js"></script>
-  <script src="js/realtime/bear-estimate-store.js"></script>
+  <script src="js/realtime/bear-estimate-store.js?v=20261118-bear-observations"></script>
   <script src="js/realtime/estimate-history-model.js"></script>
   <script src="js/realtime/estimate-history-markers.js"></script>
   <script src="js/realtime/estimate-history-tiles.js"></script>
@@ -411,7 +424,7 @@
   <script src="js/mobile-map-dock.js"></script>
   <script src="js/settings/app-updates.js"></script>
   <script src="js/realtime/push-navigation.js"></script>
-  <script src="js/client-ol.js?v=20261118-compass-settle"></script>
+  <script src="js/client-ol.js?v=20261118-observation-labels"></script>
   <script src="js/sdr/spectrum.js"></script>
   <script src="js/sdr/animal-catalog.js"></script>
   <script src="js/sdr/frequency-controls.js?v=20261118-frequency-entry"></script>

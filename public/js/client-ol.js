@@ -132,6 +132,10 @@
         shared_at: it && it.shared_at,
         estimation_method: it && it.estimation_method,
         source_observations: it && it.source_observations,
+        source_observations_json: it && it.source_observations_json,
+        source_observation_ids: it && it.source_observation_ids,
+        analysis_rays: it && it.analysis_rays,
+        analysis_options: it && it.analysis_options,
         bear_code: isRealtime ? (it && (it.bearCode || it.bear_code)) : (it && (it.bear_code || it.bearCode)),
         owner: it && it.owner,
         team_id: it && it.team_id,
@@ -2434,7 +2438,8 @@
   const MY_HEADING_ICON_SIZE = 48;
   const myHeadingIconSrc = createMyLocationIconDataUri(MY_HEADING_ICON_SIZE);
   const OBSERVATION_HEADING_ICON_SIZE = 40;
-  const observationHeadingIconSrc = createHeadingIconDataUri(OBSERVATION_HEADING_ICON_SIZE, "#ea580c", 5.5);
+  const OBSERVATION_NO_TEAM_COLOR = "#7e90a2";
+  const observationHeadingIconSrc = createHeadingIconDataUri(OBSERVATION_HEADING_ICON_SIZE, OBSERVATION_NO_TEAM_COLOR, 5.5);
   const observationHeadingEditIconSrc = createHeadingIconDataUri(OBSERVATION_HEADING_ICON_SIZE, "#16a34a", 5.5);
   let currentEditingObservationId = null;
   let focusedObservationId = null;
@@ -3067,6 +3072,7 @@
     const mapX = Array.isArray(tmCoord) && Number.isFinite(tmCoord[0]) ? tmCoord[0].toFixed(3) : "-";
     const mapY = Array.isArray(tmCoord) && Number.isFinite(tmCoord[1]) ? tmCoord[1].toFixed(3) : "-";
     const createdAt = formatKstDateTimeLabel(item && (item.created_at || item.createdAt || item.ts));
+    const observationCount = getBearObservationCount(item);
 
     const row = (label, value, mono = false) => {
       const text = escapeHtml(value == null || value === "" ? "-" : value);
@@ -3080,6 +3086,7 @@
           <table class="obs-detail-table" aria-label="개체 추적위치 상세 정보"><tbody>
             ${row("지명", placeName)}
             <tr><th scope="row">추정 방식</th><td>${buildEstimationMethodHtml(item)}</td></tr>
+            ${row("사용 관측점", observationCount === null ? "미기록" : observationCount + "개")}
             <tr><th scope="row">등록자</th><td><div class="obs-detail-registrar"><span class="obs-detail-registrar-name">${escapeHtml(ownerName)}</span><span class="obs-detail-team-badge" title="${escapeHtml(teamName)}" aria-label="소속 팀 ${escapeHtml(teamName)}" style="--team-color:${teamColor};--team-background:${teamColor}18;--team-border:${teamColor}55"><i aria-hidden="true"></i><span>${escapeHtml(teamName)}</span></span></div></td></tr>
             ${row("위치", item && (item.admin_region || item.adminRegion) || "미지정")}
           </tbody></table>
@@ -3122,19 +3129,20 @@
       if (kind === "pulse") {
         const pulseRadius = 16 + analysisPulseStrength * 8;
         const pulseOpacity = 0.5 - analysisPulseStrength * 0.28;
+        const markerColor = feature.get("markerColor");
         return [
           new ol.style.Style({
             image: new ol.style.Circle({
               radius: pulseRadius,
-              fill: new ol.style.Fill({ color: `rgba(239,68,68,${Math.max(0.08, pulseOpacity).toFixed(3)})` }),
-              stroke: new ol.style.Stroke({ color: "rgba(220,38,38,0.95)", width: 2 })
+              fill: new ol.style.Fill({ color: bearMarkerTint(markerColor, Math.max(0.08, pulseOpacity)) }),
+              stroke: new ol.style.Stroke({ color: bearMarkerTint(markerColor, 0.95), width: 2 })
             })
           }),
           new ol.style.Style({
             image: new ol.style.Circle({
               radius: 6,
               fill: new ol.style.Fill({ color: "rgba(255,255,255,0.96)" }),
-              stroke: new ol.style.Stroke({ color: "rgba(220,38,38,1)", width: 2 })
+              stroke: new ol.style.Stroke({ color: markerColor, width: 2 })
             })
           })
         ];
@@ -4180,13 +4188,54 @@
     return Number.isFinite(headingDeg) ? headingDeg : null;
   }
 
+  function getObservationTeamColor(observation) {
+    const color = observation?.team_color;
+    return /^#[0-9a-f]{6}$/i.test(String(color || "")) ? color : null;
+  }
+
+  function createObservationLabelStyle(text, color, borderColor, borderWidth) {
+    const image = document.createElement("canvas");
+    const ctx = image.getContext("2d");
+    const font = "700 11px sans-serif";
+    ctx.font = font;
+    const width = Math.ceil(ctx.measureText(text).width) + 16;
+    const height = 22;
+    image.width = width * 2;
+    image.height = height * 2;
+    ctx.scale(2, 2);
+    ctx.beginPath();
+    const inset = borderWidth / 2;
+    const right = width - inset, bottom = height - inset;
+    const radius = 9;
+    ctx.moveTo(inset + radius, inset);
+    ctx.arcTo(right, inset, right, bottom, radius);
+    ctx.arcTo(right, bottom, inset, bottom, radius);
+    ctx.arcTo(inset, bottom, inset, inset, radius);
+    ctx.arcTo(inset, inset, right, inset, radius);
+    ctx.closePath();
+    ctx.fillStyle = color;
+    ctx.fill();
+    ctx.strokeStyle = borderColor;
+    ctx.lineWidth = borderWidth;
+    ctx.stroke();
+    ctx.font = font;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = "#fff";
+    ctx.fillText(text, width / 2, height / 2);
+    return new ol.style.Style({
+      image: new ol.style.Icon({ img: image, width, height, displacement: [0, -29] })
+    });
+  }
+
   function createObservationStyleFromMarker(marker) {
     const obsData = marker && marker.obsData ? marker.obsData : null;
     const labelText = getObservationMarkerText(obsData);
-    const teamColor = /^#[0-9a-f]{6}$/i.test(String(obsData?.team_color || "")) ? obsData.team_color : null;
+    const teamColor = getObservationTeamColor(obsData);
     const headingIconSrc = teamColor
       ? createHeadingIconDataUri(OBSERVATION_HEADING_ICON_SIZE, teamColor, 5.5)
       : observationHeadingIconSrc;
+    let labelStyle, labelStyleKey;
 
     return function() {
       const headingDeg = getObservationHeadingDeg(obsData);
@@ -4247,38 +4296,33 @@
         }));
       }
 
-      
       const baseHeadingIconSrc = isEditingTarget ? observationHeadingEditIconSrc : headingIconSrc;
       styles.push(new ol.style.Style({
-          image: new ol.style.Icon({
-            src: baseHeadingIconSrc,
-            width: OBSERVATION_HEADING_ICON_SIZE,
-            height: OBSERVATION_HEADING_ICON_SIZE,
-            anchor: [0.5, 0.5],
-            anchorXUnits: "fraction",
-            anchorYUnits: "fraction",
-            rotateWithView: true,
-            rotation: rotation,
-            opacity: 1
-          }),
-          text: new ol.style.Text({
-            text: obsData?.showLabel === false ? '' : labelText,
-            offsetY: -22,
-            padding: [4, 8, 4, 8],
-            font: "700 11px sans-serif",
-            fill: new ol.style.Fill({ color: "rgba(255,255,255,0.95)" }),
-            backgroundFill: new ol.style.Fill({
-              color: isEditingTarget
-                ? "rgba(22,163,74,0.9)"
-                : (teamColor ? teamColor + (isSelected ? "e6" : "c7") : (isSelected ? "rgba(194,65,12,0.84)" : "rgba(194,65,12,0.58)"))
-            }),
-            backgroundStroke: new ol.style.Stroke({
-              color: isSelected ? "rgba(255,255,255,0.92)" : "rgba(255,255,255,0.55)",
-              width: isFocused ? 2.5 : isSelected ? 1.6 : 1.25
-            })
-          })
-        }));
-
+        image: new ol.style.Icon({
+          src: baseHeadingIconSrc,
+          width: OBSERVATION_HEADING_ICON_SIZE,
+          height: OBSERVATION_HEADING_ICON_SIZE,
+          anchor: [0.5, 0.5],
+          anchorXUnits: "fraction",
+          anchorYUnits: "fraction",
+          rotateWithView: true,
+          rotation,
+          opacity: 1
+        })
+      }));
+      if (labelText && obsData?.showLabel !== false) {
+        const color = isEditingTarget
+          ? "rgba(22,163,74,0.9)"
+          : (teamColor || OBSERVATION_NO_TEAM_COLOR) + (isSelected ? "e6" : "c7");
+        const borderColor = isSelected ? "rgba(255,255,255,0.92)" : "rgba(255,255,255,0.55)";
+        const borderWidth = isFocused ? 2.5 : isSelected ? 1.6 : 1.25;
+        const key = `${color}|${borderColor}|${borderWidth}`;
+        if (key !== labelStyleKey) {
+          labelStyle = createObservationLabelStyle(labelText, color, borderColor, borderWidth);
+          labelStyleKey = key;
+        }
+        styles.push(labelStyle);
+      }
 
       return styles;
     };
@@ -4550,7 +4594,7 @@
   document.addEventListener("click", function dismissDetailForMapTool(event) {
     const target = event.target;
     if (!target?.closest || target.closest('.map-detail-popup')) return;
-    if (target.closest('#btn-gps-record-toggle, #btn-sdr-diagnostics, #btn-app-settings, #btn-map-layers, #map-layer-options, .map-right-controls, #compass, #btn-sidebar-toggle')) {
+    if (target.closest('#btn-gps-record-toggle, #btn-sdr-diagnostics, #btn-app-settings, #btn-map-layers, #map-layer-options, #btn-map-legend, #map-marker-legend, .map-right-controls, #compass, #btn-sidebar-toggle')) {
       closeObservationPopup();
     }
   }, true);
@@ -5387,6 +5431,17 @@
     }
   }
 
+  function getBearObservationCount(item) {
+    for (const value of [
+      item?.source_observations, item?.source_observations_json, item?.source_observation_ids, item?.analysis_rays
+    ]) {
+      const observations = parseBearEstimateJson(value, "array");
+      if (observations?.length) return observations.length;
+    }
+    const method = item?.estimation_method || normalizeAnalysisOptions(item?.analysis_options)?.estimationMethod;
+    return method === "single" ? 1 : null;
+  }
+
   // 기존 자료는 원본 관측 개수로 판별한다.
   function getEstimationMethodLabel(item) {
     if (item?.estimation_method === "single") return "\uB2E8\uC77C \uAD00\uCE21";
@@ -5879,10 +5934,97 @@
     btnBearsDeleteUnsharedEl.addEventListener("click", () => { void deleteSelectedUnsharedBearEstimates(); });
   }
 
-  function bearTeamColor(item) {
-    return /^#[0-9a-f]{6}$/i.test(String(item?.team_color || "")) ? item.team_color : "#7e90a2";
+  const BEAR_MARKER_PALETTE = [
+    { label: "미기록", color: "#526174" },
+    { label: "1개", color: "#B91C1C" },
+    { label: "2개", color: "#C24A00" },
+    { label: "3개", color: "#1D4ED8" },
+    { label: "4개", color: "#11724B" },
+    { label: "5개 이상", color: "#6D28D9" }
+  ];
+  const BEAR_MARKER_ICON = "css/svg/bear_marker_point.svg";
+
+  function bearMarkerColor(item) {
+    const count = getBearObservationCount(item);
+    return BEAR_MARKER_PALETTE[Math.min(count ?? 0, 5)].color;
   }
-  function bearTeamTint(color, opacity) {
+
+  function getObservationLegendTeams() {
+    const defaults = window.BearAppSettingsStore?.DEFAULT_TEAMS || [];
+    const configured = window.BearAppSettings?.store?.snapshot()?.items || [];
+    const teams = new Map();
+    for (const team of [...defaults, ...configured]) {
+      const color = getObservationTeamColor({ team_color: team.color });
+      if (color) teams.set(team.id, { label: team.name, color });
+    }
+    return [...teams.values(), { label: "미지정", color: OBSERVATION_NO_TEAM_COLOR }];
+  }
+
+  function initializeMapMarkerLegend() {
+    const toggle = document.getElementById("btn-map-legend");
+    const disclosure = document.getElementById("map-legend-disclosure");
+    const bearItems = document.getElementById("bear-marker-legend-items");
+    const teamItems = document.getElementById("observation-legend-items");
+    const layerToggle = document.getElementById("btn-map-layers");
+    map.getOverlayContainerStopEvent().appendChild(disclosure);
+    const makeItem = ({ label, color }, iconSource, isBear) => {
+      const item = document.createElement("li");
+      item.style.setProperty("--map-legend-swatch", color);
+      const marker = document.createElement("span");
+      marker.className = isBear ? "map-legend-marker map-legend-marker--bear" : "map-legend-marker";
+      marker.setAttribute("aria-hidden", "true");
+      const icon = document.createElement("img");
+      icon.setAttribute("src", iconSource);
+      icon.setAttribute("alt", "");
+      marker.appendChild(icon);
+      const text = document.createElement("span");
+      text.textContent = label;
+      item.appendChild(marker);
+      item.appendChild(text);
+      return item;
+    };
+    const [unknown, ...known] = BEAR_MARKER_PALETTE;
+    bearItems.replaceChildren(...[...known, unknown].map(entry => makeItem(entry, BEAR_MARKER_ICON, true)));
+    let lastTeams = "", unregisterBack;
+
+    function renderTeams() {
+      const teams = getObservationLegendTeams();
+      const signature = JSON.stringify(teams);
+      if (signature === lastTeams) return;
+      lastTeams = signature;
+      teamItems.replaceChildren(...teams.map(team =>
+        makeItem(team, createHeadingIconDataUri(OBSERVATION_HEADING_ICON_SIZE, team.color, 5.5), false)));
+    }
+    function refreshOpenLegend() {
+      if (disclosure.open) renderTeams();
+    }
+    function closeLegend() {
+      disclosure.open = false;
+      unregisterBack?.();
+      unregisterBack = null;
+    }
+    disclosure.addEventListener("toggle", () => {
+      if (disclosure.open) {
+        renderTeams();
+        unregisterBack ??= registerBackClosableOverlay(disclosure, closeLegend);
+      } else {
+        closeLegend();
+      }
+    });
+    layerToggle?.addEventListener("click", closeLegend);
+    document.addEventListener("pointerdown", event => {
+      if (disclosure.open && !disclosure.contains(event.target)) closeLegend();
+    }, true);
+    disclosure.addEventListener("keydown", event => {
+      if (event.key !== "Escape" || !disclosure.open) return;
+      event.preventDefault();
+      closeLegend();
+      toggle.focus();
+    });
+    window.addEventListener("bearpoint:teams-changed", refreshOpenLegend);
+    window.addEventListener("bearpoint:profile-changed", refreshOpenLegend);
+  }
+  function bearMarkerTint(color, opacity) {
     return `rgba(${parseInt(color.slice(1,3),16)},${parseInt(color.slice(3,5),16)},${parseInt(color.slice(5,7),16)},${opacity})`;
   }
   // 저장된 곰 추적위치 목록을 지도 마커로 렌더링하고, 클릭용 상세 팝업 HTML도 함께 싣는다.
@@ -5900,8 +6042,8 @@
       const shouldAnimate = isRealtimeMarker || !!(it && it.shared_at);
       if (shouldAnimate) hasAnimatedMarker = true;
       const markerText = String(it && (it.bear_code || it.bearCode || it.id) || "-");
-      const teamColor = bearTeamColor(it);
-      const labelColor = bearTeamTint(teamColor,0.95);
+      const markerColor = bearMarkerColor(it);
+      const labelColor = bearMarkerTint(markerColor, 0.95);
 
       const feature = new ol.Feature({
         geometry: new ol.geom.Point(mapCoordFromWgs84(it.lat, it.lng))
@@ -5912,7 +6054,7 @@
 
       const markerIconStyle = new ol.style.Style({
         image: new ol.style.Icon({
-          src: "css/svg/bear_marker_point.svg",
+          src: BEAR_MARKER_ICON,
           anchor: [0.5, 1],
           width: 34,
           height: 34
@@ -5931,8 +6073,8 @@
         const pulseOuterStyle = new ol.style.Style({
           image: new ol.style.Circle({
             radius: 17,
-            fill: new ol.style.Fill({ color: bearTeamTint(teamColor,0.08) }),
-            stroke: new ol.style.Stroke({ color: bearTeamTint(teamColor,0.32), width: 2 })
+            fill: new ol.style.Fill({ color: bearMarkerTint(markerColor, 0.08) }),
+            stroke: new ol.style.Stroke({ color: bearMarkerTint(markerColor, 0.32), width: 2 })
           })
         });
 
@@ -5940,15 +6082,15 @@
           image: new ol.style.Circle({
             radius: 12,
             fill: new ol.style.Fill({ color: "rgba(255,255,255,0.18)" }),
-            stroke: new ol.style.Stroke({ color: bearTeamTint(teamColor,0.8), width: 2.5 })
+            stroke: new ol.style.Stroke({ color: bearMarkerTint(markerColor, 0.8), width: 2.5 })
           })
         });
 
         feature.setStyle(function () {
           pulseOuterStyle.setImage(new ol.style.Circle({
             radius: 17 + realtimeBearMarkerPulse * 8,
-            fill: new ol.style.Fill({ color: bearTeamTint(teamColor,0.08 + realtimeBearMarkerPulse * 0.16) }),
-            stroke: new ol.style.Stroke({ color: bearTeamTint(teamColor,0.32 + realtimeBearMarkerPulse * 0.28), width: 2 })
+            fill: new ol.style.Fill({ color: bearMarkerTint(markerColor, 0.08 + realtimeBearMarkerPulse * 0.16) }),
+            stroke: new ol.style.Stroke({ color: bearMarkerTint(markerColor, 0.32 + realtimeBearMarkerPulse * 0.28), width: 2 })
           }));
 
           return [pulseOuterStyle, pulseInnerStyle, markerIconStyle];
@@ -6667,12 +6809,6 @@
       });
     }
 
-    const pulseFeature = new ol.Feature({
-      geometry: new ol.geom.Point(estimateCoord)
-    });
-    pulseFeature.set("kind", "pulse");
-    analysisGuideSource.addFeature(pulseFeature);
-
     const feature = new ol.Feature({
       geometry: new ol.geom.Point(estimateCoord)
     });
@@ -6685,6 +6821,8 @@
       team_id: analysisProfile?.team_id || null,
       team_name: analysisTeam?.name || analysisProfile?.team_name || null,
       team_color: analysisTeam?.color || analysisProfile?.team_color || null,
+      source_observations: point.sourceObservations,
+      estimation_method: point.analysisOptions?.estimationMethod || point.options?.estimationMethod || null,
       place: resolveDefaultAnalysisPlace(point),
       lat: point.lat,
       lng: point.lng,
@@ -6693,10 +6831,18 @@
     };
     feature.set("popupHtml", buildBearEstimatePopupHtml(_analysisItem));
     feature.set("bearEstimateData", _analysisItem);
+    const markerColor = bearMarkerColor(_analysisItem);
+
+    const pulseFeature = new ol.Feature({
+      geometry: new ol.geom.Point(estimateCoord)
+    });
+    pulseFeature.set("kind", "pulse");
+    pulseFeature.set("markerColor", markerColor);
+    analysisGuideSource.addFeature(pulseFeature);
 
     feature.setStyle(new ol.style.Style({
       image: new ol.style.Icon({
-        src: "css/svg/bear_marker_point.svg",
+        src: BEAR_MARKER_ICON,
         anchor: [0.5, 1],
         width: 40,
         height: 40
@@ -6706,7 +6852,7 @@
         offsetY: ESTIMATE_LABEL_OFFSET_Y,
         font: "700 12px sans-serif",
         fill: new ol.style.Fill({ color: "#ffffff" }),
-        backgroundFill: new ol.style.Fill({ color: bearTeamTint(bearTeamColor(_analysisItem),0.96) }),
+        backgroundFill: new ol.style.Fill({ color: bearMarkerTint(markerColor, 0.96) }),
         padding: [3, 6, 3, 6]
       })
     }));
@@ -7464,7 +7610,7 @@
           // 구버전 DB(도분초 컬럼 미생성)에서도 목록이 보이도록 하위호환 조회
           result = await sqlite.query({
             database: dbName,
-            statement: "SELECT id, bear_code, lat, lng, intersections_count, created_at FROM bear_estimates ORDER BY created_at DESC",
+            statement: "SELECT id, bear_code, lat, lng, intersections_count, source_observation_ids, created_at FROM bear_estimates ORDER BY created_at DESC",
             values: [],
             readonly: false
           });
@@ -7507,6 +7653,7 @@
               lng_dms: row.lng_dms || null,
               estimation_method: row.estimation_method || null,
               intersections_count: row.intersections_count,
+              source_observation_ids: row.source_observation_ids || null,
               source_observations: parseBearEstimateJson(row.source_observations_json, "array"),
               analysis_options: normalizeAnalysisOptions(row.analysis_options_json),
               analysis_rays: parseBearEstimateJson(row.analysis_rays_json, "array"),
@@ -7726,6 +7873,7 @@
       bootWithSQLiteGate();
     });
   }
+  initializeMapMarkerLegend();
   bootWithSQLiteGate();
   void window.BearStartupReady.then(() => refreshUnifiedBearList({ silent: true }));
   if (isNativeCapacitorPlatform()) {

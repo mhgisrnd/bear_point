@@ -17,6 +17,9 @@
       const previous = result.get(key);
       const payload = decode(row.payload) || {};
       const remoteOnly = !previous?.local_id;
+      const sourceObservations = [row.source_observations, previous?.source_observations,
+        payload.source_observations_json, payload.source_observations]
+        .map(decode).find(value => Array.isArray(value) && value.length);
       result.set(key, {
         ...payload, ...previous,
         id: origin || "remote:" + row.id, local_id: previous?.local_id || null,
@@ -32,7 +35,8 @@
         created_at: row.source_created_at || payload.created_at || previous?.created_at || row.uploaded_at,
         shared_at: row.uploaded_at || previous?.shared_at || "shared",
         remoteOnly, isRealtime: remoteOnly,
-        source_observations: decode(row.source_observations) || previous?.source_observations || decode(payload.source_observations_json) || payload.source_observations || [],
+        source_observation_ids: row.source_observation_ids ?? payload.source_observation_ids ?? previous?.source_observation_ids ?? null,
+        source_observations: sourceObservations || [],
         analysis_options: decode(row.analysis_options) || previous?.analysis_options || decode(payload.analysis_options_json) || payload.analysis_options || {},
         analysis_rays: decode(row.analysis_rays) || previous?.analysis_rays || decode(payload.analysis_rays_json) || payload.analysis_rays || [],
         analysis_intersections: decode(row.analysis_intersections) || previous?.analysis_intersections || decode(payload.intersections_json) || payload.analysis_intersections || [],

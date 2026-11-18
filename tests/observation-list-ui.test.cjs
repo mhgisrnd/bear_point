@@ -30,11 +30,12 @@ test("animal detail uses compact full-width rows and retains export/delete permi
   vm.runInContext(clientSource.slice(start, end), context);
   const item = { bear_code: "005", owner: '긴 등록자 <script>', place: "긴 지명", admin_region: "전라남도 구례군 토지면",
     team_name: '광역팀 <test>', team_color: '#9333EA',
-    lat: 35.2324, lng: 127.6597, created_at: "2026-10-29 10:00:00" };
+    lat: 35.2324, lng: 127.6597, created_at: "2026-10-29 10:00:00", source_observation_ids: '["1","2","3"]' };
   const html = context.buildBearEstimatePopupHtml(item);
   assert.match(html, /obs-popup-card--estimate/);
   assert.match(html, /광역팀 &lt;test&gt;/);
   assert.match(html, /--team-color:#9333EA/);
+  assert.match(html, /사용 관측점<\/th><td>.*3개/);
   assert.doesNotMatch(html.split('<details')[0], /<th scope="row">위경도/);
   assert.match(html.split('<details')[1], /<th scope="row">위경도/);
   assert.doesNotMatch(html, /obs-popup-card__grid/);

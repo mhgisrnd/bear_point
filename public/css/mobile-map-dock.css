@@ -77,7 +77,8 @@ body.bp-map-dock #mobile-map-dock.is-filtering .gps-track-content { overflow-y: 
 body.bp-map-dock #mobile-map-dock.is-filtering .gps-track-history { min-height: 104px; }
 body.bp-map-dock #mobile-map-dock.is-registering .mobile-dock-nav { opacity: .5; pointer-events: none; }
 body.bp-mobile-dock .map-right-controls { bottom: calc(var(--mobile-dock-height) + 10px) !important; max-height: max(80px,calc(100dvh - var(--mobile-dock-height) - 90px)); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; }
-body.bp-mobile-dock:has(#mobile-map-dock.is-full) .map-right-controls { visibility: hidden; pointer-events: none; }
+body.bp-mobile-dock .map-legend-disclosure { --map-legend-bottom: calc(var(--mobile-dock-height) + 10px); }
+body.bp-mobile-dock:has(#mobile-map-dock.is-full) :is(.map-right-controls, .map-legend-disclosure) { visibility: hidden; pointer-events: none; }
 @media (max-height: 480px) { body.bp-mobile-dock #heading-dial { transform: scale(0.72); } }
 /* The tablet uses the same views and menu styling in its fixed left sidebar. */
 body.bp-tablet-dock #mobile-map-dock {
