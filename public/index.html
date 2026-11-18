@@ -9,7 +9,7 @@
 
   <link rel="stylesheet" href="vendor/ol/ol.css" />
   <link rel="stylesheet" href="css/styles.css" />
-  <link rel="stylesheet" href="css/panel.css" />
+  <link rel="stylesheet" href="css/panel.css?v=20261118-owner-resize" />
   <link rel="stylesheet" href="css/observation-sharing.css" />
   <link rel="stylesheet" href="css/sdr-diagnostics.css?v=20261118-r30-meter" />
   <link rel="stylesheet" href="css/app-settings.css?v=20261118-display-size" />
@@ -18,7 +18,7 @@
   <link rel="stylesheet" href="css/list-search.css" />
   <link rel="stylesheet" href="css/estimate-history.css" />
   <link rel="stylesheet" href="css/analysis-mobile-sheet.css" />
-  <link rel="stylesheet" href="css/display-size.css?v=20261118-display-size" />
+  <link rel="stylesheet" href="css/display-size.css?v=20261118-owner-resize" />
   <script src="js/analysis-mobile-sheet.js"></script>
   <script src="js/analysis/analysis-viewport.js"></script>
   <script src="js/analysis/press-repeat.js"></script>
@@ -220,13 +220,11 @@
           </div>
         </div>
 
-        <!-- 등록 / 취소 버튼 -->
-        <div class="obs-reg-footer">
-          <button class="obs-reg-btn obs-reg-btn--submit" id="btn-reg-submit" type="button">등록</button>
-          <button class="obs-reg-btn obs-reg-btn--cancel" id="btn-reg-cancel" type="button">취소</button>
-        </div>
-
       </form>
+    </div>
+    <div class="obs-reg-footer">
+      <button class="obs-reg-btn obs-reg-btn--submit" id="btn-reg-submit" type="button" form="obs-reg-form">등록</button>
+      <button class="obs-reg-btn obs-reg-btn--cancel" id="btn-reg-cancel" type="button" form="obs-reg-form">취소</button>
     </div>
   </div>
 
@@ -403,7 +401,7 @@
   <script src="js/obs/obsList.js"></script>
   <script src="js/obs/observation-filters.js"></script>
   <script src="js/obs/observation-sync.js"></script>
-  <script src="js/obs/obsRegister.js"></script>
+  <script src="js/obs/obsRegister.js?v=20261118-owner-resize"></script>
   <script src="js/map/ol-map-controls.js"></script>
   <script src="js/tracking/gps-track-filters.js"></script>
   <script src="js/tracking/gps-track-store.js"></script>
@@ -421,6 +419,6 @@
   <script src="js/sdr/diagnostics.js"></script>
   <script src="js/settings/app-settings-store.js?v=20261118-display-size"></script>
   <script src="js/settings/notification-settings.js"></script>
-  <script src="js/settings/app-settings-ui.js?v=20261118-display-size"></script>
+  <script src="js/settings/app-settings-ui.js?v=20261118-owner-resize"></script>
 </body>
 </html>

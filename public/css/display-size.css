@@ -28,12 +28,26 @@
 :root[data-display-size="large"] .app-settings-notification-toggle input:checked + span::after { transform: translateX(22px); }
 :root[data-display-size="large"] .bp-confirm-dialog button { min-height: 48px; font-size: var(--bp-large-text); }
 :root[data-display-size="large"] .bp-confirm-dialog .bp-confirm-close { min-width: 48px; }
-:root[data-display-size="large"] :is(.obs-register-popup, .bear-picker, .estimate-history) :is(button, input:not([type=checkbox]):not([type=radio]), select, textarea) { min-height: 48px; }
+:root[data-display-size="large"] .obs-register-popup { --obs-register-input-height: 48px; }
+:root[data-display-size="large"] :is(.obs-register-popup, .bear-picker, .estimate-history) :is(button, input:not([type=checkbox]):not([type=radio]), select, textarea) { min-height: var(--obs-register-input-height, 48px); }
 :root[data-display-size="large"] :is(.obs-reg-label, .obs-reg-identity-label, .obs-reg-lock-label, .obs-reg-input, .obs-reg-select, .obs-reg-identity textarea, .obs-reg-identity input, .obs-reg-identity select, .obs-reg-btn, .obs-reg-bear-find, .obs-reg-det-toggle, .bear-picker__item, .bear-picker__footer button, .estimate-history button) { font-size: var(--bp-large-text); }
 :root[data-display-size="large"] .obs-reg-label { flex-basis: auto; width: auto; min-width: max-content; }
 :root[data-display-size="large"] .obs-reg-heading-wrap .obs-reg-lock-label { min-height: 44px; }
 :root[data-display-size="large"] :is(.obs-reg-lock-label, .obs-table, .gps-track-history-table, .bears-select-all, .app-settings-dialog) input:is([type=checkbox], [type=radio]):not([role=switch]) { width: 20px; height: 20px; }
 :root[data-display-size="large"] .obs-reg-identity textarea { line-height: 1.35; }
+:root[data-display-size="large"] #register-box .obs-reg-identity { --obs-identity-label-width: 58px; }
+:root[data-display-size="large"] #register-box .obs-reg-identity:not(.is-manual) .obs-reg-identity-team-input { min-height: 0; }
+:root[data-display-size="large"] #register-box .obs-reg-identity-team { flex-basis: 122px; }
+:root[data-display-size="large"] #register-box .obs-reg-team-badge { height: auto; min-height: 30px; }
+:root[data-display-size="large"] #register-box .obs-reg-identity:not(.is-manual) .obs-reg-identity-team-input { height: 30px; }
+:root[data-display-size="large"] #register-box .obs-reg-identity.is-manual .obs-reg-team-select { min-height: 0; height: 46px; }
+
+@media (min-width: 900px) and (orientation: landscape) {
+  :root[data-display-size="large"] #register-box {
+    max-height: min(520px, calc(100dvh - var(--safe-top, 0px) - var(--safe-bottom, 0px) - 16px));
+  }
+  :root[data-display-size="large"] #register-box .obs-register-body { max-height: none; }
+}
 
 /* Preserve usable search and list columns as the text grows. */
 :root[data-display-size="large"] .list-search-row input.list-search-input { min-height: 48px; font-size: var(--bp-large-text); }

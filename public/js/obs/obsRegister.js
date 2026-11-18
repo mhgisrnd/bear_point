@@ -711,9 +711,15 @@ window.createObsRegisterModule = function createObsRegisterModule({
   function fitFixedOwnerField() {
     if (!regOwnerEl || regOwnerEl.tagName !== "TEXTAREA") return;
     regOwnerEl.style.height = "auto";
-    regOwnerEl.style.height = Math.max(22, regOwnerEl.scrollHeight) + "px";
+    if (regOwnerEl.offsetHeight) {
+      var borderHeight = regOwnerEl.offsetHeight - regOwnerEl.clientHeight;
+      if (regOwnerEl.scrollHeight > regOwnerEl.clientHeight) {
+        regOwnerEl.style.height = (regOwnerEl.scrollHeight + borderHeight) + "px";
+      }
+    }
   }
   window.addEventListener("resize", fitFixedOwnerField);
+  window.addEventListener("bearpoint:display-size-changed", fitFixedOwnerField);
 
   // GPS가 꺼져 있으면(등록/수정 공통) 수동 입력을 허용한다.
   function isManualEntryEnabled() {

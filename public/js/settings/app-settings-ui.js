@@ -177,7 +177,11 @@
   let loaded = false, required = true, saving = false, refreshing = false, selection = "", closing = false, deferred = false;
   function paintDisplaySize() {
     const size = store.snapshot().displaySize;
-    document.documentElement.dataset.displaySize = size;
+    const display = document.documentElement.dataset;
+    if (display.displaySize !== size) {
+      display.displaySize = size;
+      window.dispatchEvent(new Event("bearpoint:display-size-changed"));
+    }
     displayChoices.forEach(choice => { choice.checked = choice.value === size; });
     displayOptions.disabled = !loaded;
   }
