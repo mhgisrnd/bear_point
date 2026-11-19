@@ -56,7 +56,16 @@
           <div data-bt-meter class="sdr-strength-bars" role="meter" aria-label="IC-R30 S-Meter 원시값" aria-valuemin="0" aria-valuemax="255">${Array.from({ length: 10 }, (_, i) => `<span data-bt-bar="${i}" style="height:${8 + i * 3}px"></span>`).join("")}</div>
           <p class="sdr-note">0–255 원시값 · dBm, S1–S9 또는 USB 신호 세기와 직접 비교할 수 없습니다.</p>
         </div>
-        <p class="sdr-note">소리는 IC-R30에서 직접 확인하세요. Bluetooth는 오디오·I/Q를 전달하지 않습니다.</p>
+        <div class="sdr-strength">
+          <div class="sdr-strength-heading"><strong>USB 오디오 입력</strong><button type="button" data-bt-audio-toggle class="sdr-secondary" aria-pressed="false">입력 시작</button></div>
+          <p data-bt-audio-status class="sdr-note" role="status">IH389(RX)를 사운드카드의 마이크 입력에 연결하세요.</p>
+          <svg data-bt-audio-wave class="sdr-bt-test-chart" viewBox="0 0 300 90" role="img" aria-label="최근 20밀리초 USB 오디오 파형" hidden>
+            <line x1="0" y1="45" x2="300" y2="45" stroke="currentColor" opacity=".25" />
+            <path data-bt-audio-path fill="none" stroke="currentColor" stroke-width="1.5" />
+          </svg>
+          <p data-bt-audio-level class="sdr-note" hidden></p>
+          <p data-bt-audio-tone class="sdr-note" role="status" hidden></p>
+        </div>
         </div>
       <div class="sdr-diagnostics-pane">
       <details class="sdr-reception-diagnostic sdr-bt-test" aria-label="Bluetooth 수신 진단 로그">
@@ -70,7 +79,7 @@
         <p data-bt-test-range class="sdr-note"></p>
         <p class="sdr-note">R30에서 희미한 삡이 들릴 때 표시 버튼을 누르세요. 표시는 사람의 반응 지연이 포함된 참고 시점입니다. 수신기에서도 주파수·모드를 바꾸지 마세요. 홈 화면·화면 잠금 중에도 네이티브 기록을 계속하지만 앱 강제 종료는 보장하지 않습니다.</p>
       </details>
-      <details class="sdr-help"><summary>연결 유지 · 지원 기능 안내</summary><p>SPP에는 오디오·I/Q가 없어 앱 청취, 스펙트럼, 자동 CW 검출, 대역 탐색은 지원하지 않습니다. 홈 화면·다른 앱·화면 잠금에서도 알림을 표시하며 연결을 유지합니다. 앱이나 알림의 연결 해제로 종료하세요.</p></details>
+      <details class="sdr-help"><summary>연결 유지 · 지원 기능 안내</summary><p>SPP는 주파수·모드 제어와 S-Meter 조회에 사용합니다. 오디오 파형과 CW 후보는 별도 USB 사운드카드 입력에서 분석합니다. 앱이 백그라운드로 가면 오디오 입력이 종료됩니다. Bluetooth 데이터 연결은 앱이나 알림에서 해제할 수 있습니다.</p></details>
       </div>`;
     const node = key => (key === "target" || key === "register" ? footer : panel).querySelector(`[data-bt-${key}]`);
     const meterBars = Array.from({ length: 10 }, (_, i) => panel.querySelector(`[data-bt-bar="${i}"]`));
@@ -81,6 +90,7 @@
     let animals = [], target = null, deviceKey = "", animalKey = "", catalogNotice = "";
     let draftFrequency = false, draftMode = false, localError = "", recordsKey = "";
     let updating = false, lastReading = null, animalCards = [];
+    let audioSession = 0, audioTimer, audioState = { state: "idle" };
     const matchesFrequency = root.BearSdrFrequency.matchesAnimalFrequency;
     const frequencyControls = root.BearSdrFrequency.mount(panel, {
       prefix: "bt-", wholeDigits: 4, frequency: node("frequency"),
@@ -112,6 +122,7 @@
     }
     function applySnapshot(value) {
       snapshot = value;
+      if (!connected() && audioState.state !== "idle") stopAudio();
       if (!connected() || snapshot.error) lastReading = null;
       else if (validReading()) lastReading = snapshot.measurement;
       if (target && (!connected() || (validReading() && !matchesFrequency(target.hz, snapshot.measurement.frequencyHz)))) target = null;
@@ -219,6 +230,7 @@
     }
     function render() {
       updateUsb();
+      renderAudio();
       panel.dataset.updating = String(updating);
       node("fields").setAttribute("aria-busy", String(updating));
       node("status").textContent = snapshot.state === "connecting" ? "IC-R30 연결 및 CI-V 응답 확인 중…"
@@ -265,7 +277,7 @@
       const canRegister = !busy && !testing() && !draftFrequency && !draftMode && !frequencyControls.editing() && !localError &&
         liveReading;
       node("measurement-status").textContent = updating ? "수신기 설정 적용 중 · 마지막 측정을 유지하며 새 응답을 기다립니다."
-        : reading ? "자동 측정 중 · 연결하면 S-Meter 측정이 바로 시작됩니다. 소리는 IC-R30에서 확인하세요."
+        : reading ? "S-Meter 자동 측정 중"
         : "측정값 대기 · 수신기 응답을 확인하고 있습니다.";
       const reason = updating ? "설정 적용 중 · 확인 후 등록할 수 있습니다."
         : testing() ? "로그 기록 종료 후 등록할 수 있습니다."
@@ -330,6 +342,74 @@
         }
       }
       if (!listener) listener = await plugin.addListener("receiverStateChanged", applySnapshot);
+    }
+    function audioRunning() { return audioState.state === "active" || audioState.state === "starting"; }
+    function renderAudio() {
+      const active = audioState.state === "active";
+      const running = audioRunning();
+      const button = node("audio-toggle");
+      button.disabled = !connected() || typeof plugin?.startUsbAudio !== "function";
+      const label = running ? "입력 중지" : "입력 시작";
+      if (button.textContent !== label) button.textContent = label;
+      button.setAttribute("aria-pressed", String(running));
+      const status = node("audio-status");
+      const message = active ? "입력 중 · " + audioState.message : audioState.message ||
+        (button.disabled && connected() ? "USB 오디오 입력을 사용하려면 최신 APK를 설치하세요." :
+          "IH389(RX)를 사운드카드의 마이크 입력에 연결하세요.");
+      if (status.textContent !== message) status.textContent = message;
+      node("audio-wave").hidden = node("audio-level").hidden = node("audio-tone").hidden = !active;
+    }
+    function showAudio(value) {
+      audioState = value;
+      renderAudio();
+      if (value.state !== "active") return;
+      const peak = Math.max(0, ...value.high, ...value.low.map(sample => -sample));
+      const scale = 42 / Math.max(512, peak);
+      const path = value.low.map((low, i) => {
+        const x = ((i + .5) * 300 / value.low.length).toFixed(1);
+        const y = sample => (45 - sample * scale).toFixed(1);
+        return "M" + x + " " + y(low) + "V" + y(value.high[i]);
+      });
+      node("audio-path").setAttribute("d", path.join(" "));
+      node("audio-level").textContent = peak ? "입력 피크 " + (20 * Math.log10(peak / 32768)).toFixed(1) + " dBFS" : "입력 신호 없음";
+      const tone = node("audio-tone");
+      let detection = "CW 후보 대기 · 감지 " + value.count + "회";
+      if (!value.ready) detection = "CW 배경 잡음 측정 중…";
+      else if (value.tracked) {
+        const label = value.confidence >= 2 ? "반복 CW 후보" : "CW 후보";
+        detection = label + " · " + value.toneHz + " Hz · SNR " + value.snrDb.toFixed(1) + " dB · " + value.count + "회";
+      }
+      if (tone.textContent !== detection) tone.textContent = detection;
+    }
+    async function pollAudio(session) {
+      try {
+        const value = await plugin.getUsbAudioStatus();
+        if (audioSession !== session) return;
+        showAudio(value);
+        if (audioRunning()) audioTimer = root.setTimeout(() => pollAudio(session), 125);
+      } catch (error) {
+        if (audioSession === session) stopAudio({ state: "error", message: error.message || String(error) });
+      }
+    }
+    function stopAudio(value = { state: "idle" }) {
+      ++audioSession;
+      if (audioTimer !== undefined) root.clearTimeout(audioTimer);
+      audioTimer = undefined;
+      const running = audioRunning();
+      showAudio(value);
+      if (running) void plugin.stopUsbAudio().catch(error => console.warn("IC-R30 USB audio stop:", error));
+    }
+    async function toggleAudio() {
+      if (audioRunning()) { stopAudio(); return; }
+      if (!connected()) return;
+      const session = ++audioSession;
+      showAudio({ state: "starting", message: "USB 오디오 입력 확인 중…" });
+      try {
+        await plugin.startUsbAudio();
+        if (audioSession === session) await pollAudio(session);
+      } catch (error) {
+        if (audioSession === session) stopAudio({ state: "error", message: error.message || String(error) });
+      }
     }
     async function run(action, setting = false) {
       if (busy) return;
@@ -409,6 +489,8 @@
     }
     btButton.addEventListener("click", () => select(true));
     usbButton.addEventListener("click", () => select(false));
+    node("audio-toggle").addEventListener("click", toggleAudio);
+    dialog.addEventListener("close", () => { if (!dialog.open) stopAudio(); });
     node("refresh").addEventListener("click", () => run(refreshDevices));
     node("settings").addEventListener("click", () => run(() => plugin.openSettings()));
     node("disconnect").addEventListener("click", async () => {

@@ -60,4 +60,23 @@ public class SdrCwDetectorTest {
         }d.observe(iq,b,(b+1)*32);}
         assertEquals(0,d.pulseCount());assertEquals(0,d.level());
     }
+
+    @Test public void detectsRealAudioPulsesWithDigitallyMutedGaps() {
+        for (int tone : new int[]{700, 1600}) {
+            IcR30AudioAnalysis analysis = new IcR30AudioAnalysis();
+            short[] audio = new short[IcR30AudioAnalysis.BLOCK];
+            for (int block = 0; block < 230; block++) {
+                boolean pulse = block >= 50 && (block - 50) % 50 < 3;
+                for (int i = 0; i < audio.length; i++) {
+                    double seconds = (block * audio.length + i) / (double) IcR30AudioAnalysis.RATE;
+                    audio[i] = pulse ? (short) (4000 * Math.cos(2 * Math.PI * tone * seconds)) : 0;
+                }
+                analysis.observe(audio, (block + 1) * 20L);
+            }
+            assertTrue(analysis.detector.ready());
+            assertEquals(4, analysis.detector.pulseCount());
+            assertEquals(tone, IcR30AudioAnalysis.CENTER_HZ + analysis.detector.offsetHz(), 30);
+            assertEquals(2, analysis.detector.confidence());
+        }
+    }
 }

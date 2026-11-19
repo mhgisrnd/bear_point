@@ -8,6 +8,7 @@ import android.bluetooth.BluetoothManager;
 import android.bluetooth.BluetoothSocket;
 import android.content.Context;
 import android.content.Intent;
+import android.media.AudioManager;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
@@ -29,6 +30,7 @@ import com.getcapacitor.annotation.PermissionCallback;
 import java.io.IOException;
 import java.io.File;
 import java.util.UUID;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
@@ -36,6 +38,7 @@ import java.util.concurrent.TimeUnit;
 
 @CapacitorPlugin(name = "IcR30", permissions = {
     @Permission(strings = {Manifest.permission.BLUETOOTH_CONNECT}, alias = "bluetooth"),
+    @Permission(strings = {Manifest.permission.RECORD_AUDIO}, alias = "usbAudio"),
     @Permission(strings = {Manifest.permission.POST_NOTIFICATIONS}, alias = "notifications")
 })
 public final class IcR30Plugin extends Plugin {
@@ -47,12 +50,16 @@ public final class IcR30Plugin extends Plugin {
     private static final long TEST_METADATA_INTERVAL_MS = 2000;
     private final Handler main = new Handler(Looper.getMainLooper());
     private final ScheduledExecutorService io = Executors.newSingleThreadScheduledExecutor();
+    private final ExecutorService audioIo = Executors.newSingleThreadExecutor(task -> new Thread(task, "ic-r30-usb-audio"));
     private BluetoothSocket socket;
     private IcR30Civ client;
     private ScheduledFuture<?> poll;
     private PluginCall connectingCall;
     private PluginCall settingCall;
     private PluginCall permissionCall;
+    private PluginCall audioPermissionCall;
+    private boolean audioPermissionCancelled;
+    private IcR30UsbAudio usbAudio;
     private volatile int generation;
     private volatile boolean stopped;
     private String state = "idle", deviceId = "", deviceName = "", lastError = "";
@@ -125,6 +132,59 @@ public final class IcR30Plugin extends Plugin {
         return result;
     }
     private void publish() { notifyListeners("receiverStateChanged", snapshot()); }
+
+    @PluginMethod public void startUsbAudio(PluginCall call) {
+        main.post(() -> {
+            if (audioPermissionCall != null) { call.reject("마이크 권한 요청이 진행 중입니다."); return; }
+            if (!canCaptureAudio(call)) return;
+            if (getPermissionState("usbAudio") == PermissionState.GRANTED) openUsbAudio(call);
+            else {
+                audioPermissionCall = call;
+                audioPermissionCancelled = false;
+                requestPermissionForAlias("usbAudio", call, "usbAudioPermissionResult");
+            }
+        });
+    }
+
+    @PermissionCallback private void usbAudioPermissionResult(PluginCall call) {
+        main.post(() -> {
+            audioPermissionCall = null;
+            if (audioPermissionCancelled) { call.reject("USB 오디오 입력 시작이 취소되었습니다."); return; }
+            if (getPermissionState("usbAudio") != PermissionState.GRANTED) {
+                call.reject("USB 오디오를 받으려면 마이크 권한을 허용하세요."); return;
+            }
+            openUsbAudio(call);
+        });
+    }
+
+    private boolean canCaptureAudio(PluginCall call) {
+        if (!stopped && "connected".equals(state)) return true;
+        call.reject("수신기 화면에서 IC-R30을 먼저 연결하세요.");
+        return false;
+    }
+
+    private void openUsbAudio(PluginCall call) {
+        if (!canCaptureAudio(call)) return;
+        if (usbAudio == null || "error".equals(usbAudio.snapshot().getString("state"))) {
+            AudioManager manager = (AudioManager) getContext().getSystemService(Context.AUDIO_SERVICE);
+            usbAudio = new IcR30UsbAudio(manager);
+            audioIo.execute(usbAudio);
+        }
+        call.resolve(usbAudio.snapshot());
+    }
+
+    @PluginMethod public void getUsbAudioStatus(PluginCall call) {
+        main.post(() -> call.resolve(usbAudio == null ? IcR30UsbAudio.state("idle", "") : usbAudio.snapshot()));
+    }
+
+    @PluginMethod public void stopUsbAudio(PluginCall call) {
+        main.post(() -> { closeUsbAudio(); call.resolve(); });
+    }
+
+    private void closeUsbAudio() {
+        audioPermissionCancelled = true;
+        if (usbAudio != null) { usbAudio.stop(); usbAudio = null; }
+    }
 
     @PluginMethod public void getStatus(PluginCall call) {
         main.post(() -> {
@@ -345,6 +405,9 @@ public final class IcR30Plugin extends Plugin {
         poll = null;
         if (!pollingAllowed()) return;
         if (reading != null) {
+            if (usbAudio != null && measurement != null &&
+                    (measurement.optLong("frequencyHz") != reading.optLong("frequencyHz") ||
+                    !measurement.optString("mode").equals(reading.optString("mode")))) usbAudio.resetDetection();
             measurement = reading;
             lastError = "";
             publish();
@@ -503,6 +566,7 @@ public final class IcR30Plugin extends Plugin {
                         if (token != generation) return;
                         settingCall = null;
                         IcR30Service.keepAwakeForOperation(false);
+                        if (usbAudio != null) usbAudio.resetDetection();
                         measurement = reading;
                         publish();
                         call.resolve(snapshot());
@@ -522,6 +586,7 @@ public final class IcR30Plugin extends Plugin {
         });
     }
     private IOException closeSession(String reason) {
+        closeUsbAudio();
         IcR30Service.release();
         ++generation;
         if (poll != null) { poll.cancel(false); poll = null; }
@@ -573,6 +638,7 @@ public final class IcR30Plugin extends Plugin {
     @Override protected void handleOnStop() {
         main.post(() -> {
             stopped = true;
+            closeUsbAudio();
             if (!test.active() && measurement != null) {
                 measurement = null;
                 publish();
@@ -583,6 +649,7 @@ public final class IcR30Plugin extends Plugin {
         main.post(() -> {
             closeSession("앱 종료로 IC-R30 연결을 해제했습니다.");
             io.shutdownNow();
+            audioIo.shutdownNow();
         });
     }
 }

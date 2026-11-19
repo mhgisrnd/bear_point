@@ -16,6 +16,7 @@ final class SdrCwDetector {
     static final double MIN_PULSE_MS = 8, MAX_PULSE_MS = 450;
     static final long HOLD_MS = 350, TRACK_MS = 5000;
     private static final int CENTERS = 39, CANDIDATES = CENTERS * 2, HISTORY = 256;
+    private static final double AUDIO_NOISE_FLOOR = 1e-9;
     private final double[] ringI = new double[SIZE], ringQ = new double[SIZE];
     private final long[] sourceSequences = new long[SIZE];
     private final double[] real = new double[SIZE], imag = new double[SIZE], window = new double[SIZE];
@@ -26,7 +27,7 @@ final class SdrCwDetector {
     private final double[] candidateNoise = new double[CANDIDATES];
     private final double[][] history = new double[CANDIDATES][HISTORY];
     private final double[] sort = new double[256], neighbors = new double[64], broadbandHistory = new double[HISTORY];
-    private final double normalization;
+    private final double normalization, minimumNoise;
     private int position, filled, hop, frames, historyPosition, historyCount;
     private boolean active, blocked;
     private boolean runAssisted,lastAssisted;
@@ -42,7 +43,11 @@ final class SdrCwDetector {
     private double analyzedTime, frameBestSnr = Double.NaN, frameBestOffset;
     private double frameStartMs, frameEndMs;
 
-    SdrCwDetector(int inputRate) {
+    SdrCwDetector(int inputRate) { this(inputRate, true); }
+
+    static SdrCwDetector forAudio() { return new SdrCwDetector(RATE, false); }
+
+    private SdrCwDetector(int inputRate, boolean correctRfFilter) {
         double sum = 0;
         double alpha = 1 - Math.exp(-2 * Math.PI * 2500 / inputRate), pole = 1 - alpha;
         for (int i = 0; i < SIZE; i++) {
@@ -52,9 +57,11 @@ final class SdrCwDetector {
             double f = signed(i) * RATE / (double) SIZE;
             // Known channel response only: this restores power convention, not lost RF SNR.
             double d = 1 + pole * pole - 2 * pole * Math.cos(2 * Math.PI * f / inputRate);
-            correction[i] = Math.pow(d / (alpha * alpha), 4);
+            correction[i] = correctRfFilter ? Math.pow(d / (alpha * alpha), 4) : 1;
         }
         normalization = 2 * SIZE * sum; // Integrated mean(|I+jQ|^2)/2 convention.
+        // Some audio receivers mute to exact digital zero between pulses.
+        minimumNoise = correctRfFilter ? 0 : AUDIO_NOISE_FLOOR;
         for (int i = 0; i < SIZE / 2; i++) {
             cos[i] = Math.cos(-2 * Math.PI * i / SIZE); sin[i] = Math.sin(-2 * Math.PI * i / SIZE);
         }
@@ -114,7 +121,7 @@ final class SdrCwDetector {
         // Median is refreshed about every 53 ms; histories cover ~1.37 seconds.
         if (historyCount >= 96 && frames % 10 == 0) for (int c = 0; c < CANDIDATES; c++) {
             System.arraycopy(history[c], 0, sort, 0, historyCount); Arrays.sort(sort, 0, historyCount);
-            floors[c] = sort[historyCount / 2];
+            floors[c] = Math.max(minimumNoise, sort[historyCount / 2]);
         }
         for (int c = 0; c < CANDIDATES; c += 2) {
             int mid = center(c), used = 0;

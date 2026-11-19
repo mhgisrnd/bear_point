@@ -93,6 +93,7 @@ function setup(native = true) {
   };
   const window = {
     confirm: () => true,
+    setTimeout, clearTimeout,
     Capacitor: { getPlatform: () => native ? 'android' : 'web', Plugins: { IcR30: plugin } },
     BearSdrAnimals: { formatHz: hz => String(hz / 1e6), load: async () => ({ notice: '', items: [
       { code: 'KF-110', frequencies: [{ slot: 'A', hz: 148241500 }] },
@@ -128,6 +129,30 @@ function setup(native = true) {
     registration: () => registered, back: () => returned?.(),
     setRegistrationResult(value) { registrationResult = value; } };
 }
+
+test('Bluetooth USB audio renders waveform and tone independently of CI-V and stops when the dialog closes', async () => {
+  const ui = setup();
+  ui.plugin.startUsbAudio = async () => ui.calls.push(['startUsbAudio']);
+  ui.plugin.getUsbAudioStatus = async () => ({
+    state: 'active', message: 'USB Audio Device', low: [-200, 20], high: [-30, 600],
+    ready: true, tracked: true, confidence: 2, toneHz: 700, snrDb: 12.5, count: 3
+  });
+  ui.plugin.stopUsbAudio = async () => ui.calls.push(['stopUsbAudio']);
+  await ui.connect();
+  try {
+    await ui.node('audio-toggle').click();
+    assert.equal(ui.node('audio-wave').hidden, false);
+    assert.match(ui.node('audio-path').attributes.d, /M.*V.*M.*V/);
+    assert.match(ui.node('audio-tone').textContent, /반복 CW 후보 · 700 Hz.*3회/);
+    assert.equal(ui.controller.status().state, 'connected');
+  } finally {
+    ui.dialog.close();
+    ui.dialog.events.close();
+  }
+  assert.equal(ui.node('audio-wave').hidden, true);
+  assert.deepEqual(ui.calls.slice(-2), [['startUsbAudio'], ['stopUsbAudio']]);
+  assert.equal(ui.controller.status().state, 'connected');
+});
 
 test('Bluetooth choice is previewable on the web but hardware actions are Android-only', async () => {
   const ui = setup(false);
