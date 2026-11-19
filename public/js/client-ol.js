@@ -4438,6 +4438,7 @@
     const rect = map.getViewport().getBoundingClientRect();
     let pixel = map.getPixelFromCoordinate(coordinate);
     if (!pixel) return;
+    const previousScrollTop = observationPopupContentEl.scrollTop;
     const visual = window.visualViewport;
     const safe = window.getComputedStyle(document.documentElement);
     const screenLeft = Math.max(parseCssPx(safe.getPropertyValue("--safe-left")), (visual ? visual.offsetLeft : 0) - rect.left);
@@ -4484,12 +4485,19 @@
         if (spaces.length) ({ left, right, top, bottom } = spaces[0]);
       }
     }
+    const boundsKey = [left, right, top, bottom].map(Math.round).join(',');
+    const availableHeight = bottom - top;
+    const pinSpace = Math.min(140, Math.max(80, availableHeight * 0.28));
+    const bottomLayoutHeight = Math.min(availableHeight, Math.max(120, availableHeight - pinSpace - 16));
+    const keepBottomLayout = isCompactDetail && !!window.BearMobileDock?.isMobile?.() && observationPopupEl._detailBottomBounds === boundsKey;
     observationPopupEl.style.boxSizing = "border-box";
     observationPopupEl.style.padding = isCompactDetail ? "9px 10px" : "12px 14px";
     observationPopupEl.style.width = `${Math.min(popupWidth, Math.max(0, right - left))}px`;
     observationPopupEl.style.minWidth = "0";
     observationPopupEl.style.maxWidth = `${popupWidth}px`;
-    observationPopupEl.style.maxHeight = `${Math.max(0, bottom - top)}px`;
+    // Do not expand a scrollable card just to measure it on every map frame.
+    // Browsers clamp scrollTop during that expansion and lose the last rows.
+    observationPopupEl.style.maxHeight = `${keepBottomLayout ? bottomLayoutHeight : Math.max(0, availableHeight)}px`;
     let card = observationPopupEl.getBoundingClientRect();
     const clamp = (value, min, max) => Math.max(min, Math.min(value, Math.max(min, max)));
     const sideY = clamp(pixel[1] - card.height / 2, top, bottom - card.height);
@@ -4505,16 +4513,13 @@
     // Only compact mobile details need a shared vertical layout for the pin and card.
     // Keep ordinary placements, zoom, list state and desktop behavior unchanged.
     const mobileDetail = isCompactDetail && !!window.BearMobileDock?.isMobile?.();
-    const boundsKey = [left, right, top, bottom].map(Math.round).join(',');
     const layoutChanged = observationPopupEl._detailStableBounds !== boundsKey;
     const layoutMoving = panel?.classList?.contains('is-sliding') || panel?.classList?.contains('is-dragging');
     const markerOutside = pixel[0] < left + 24 || pixel[0] > right - 24 || pixel[1] < top + 52 || pixel[1] > bottom - 24;
     if (mobileDetail && (!position || observationPopupEl._detailBottomBounds === boundsKey ||
         (markerOutside && (allowMapAdjustment || layoutChanged)))) {
-      const availableHeight = bottom - top;
-      const pinSpace = Math.min(140, Math.max(80, availableHeight * 0.28));
       // Leave room for the marker and its label; the existing content area scrolls.
-      observationPopupEl.style.maxHeight = `${Math.max(72, availableHeight - pinSpace - 16)}px`;
+      observationPopupEl.style.maxHeight = `${bottomLayoutHeight}px`;
       card = observationPopupEl.getBoundingClientRect();
       position = [clamp((left + right - card.width) / 2, left, right - card.width), bottom - card.height];
       observationPopupEl._detailBottomBounds = boundsKey;
@@ -4540,6 +4545,7 @@
     observationPopupOverlay.setOffset([position[0] - pixel[0], position[1] - pixel[1]]);
     observationPopupEl.style.overflow = "hidden";
     observationPopupEl.style.overscrollBehavior = "contain";
+    if (Number.isFinite(previousScrollTop)) observationPopupContentEl.scrollTop = previousScrollTop;
   }
 
   observationPopupContentEl.addEventListener("toggle", function () {
@@ -4568,6 +4574,10 @@
     observationPopupEl._detailBottomBounds = null;
     syncObservationPopupPlacement(coordinate, true);
     observationPopupEl.style.visibility = "visible";
+    const observation = observationPopupEl._observationData;
+    const estimate = observationPopupEl._bearEstimateData;
+    if (observation && typeof obsListModule !== 'undefined') obsListModule?.revealItem?.(observation._obsKey || observation.id);
+    if (estimate && typeof bearListPages !== 'undefined') bearListPages.reveal(estimate.id);
   }
 
   let bearListFocusVersion = 0;
@@ -4603,7 +4613,9 @@
     closeObservationPopup();
     const focusVersion = bearListFocusVersion;
     view.cancelAnimations();
-    flyToLatLng(latlng, 16, function (completed) {
+    const currentZoom = view.getZoom();
+    const focusZoom = Number.isFinite(currentZoom) ? Math.max(16, currentZoom) : 16;
+    flyToLatLng(latlng, focusZoom, function (completed) {
       if (completed && focusVersion === bearListFocusVersion) {
         openBearListItemPopup(id, isRealtime);
       }
@@ -4875,6 +4887,7 @@
     let clickedPopupFeature = false;
 
     map.forEachFeatureAtPixel(event.pixel, function (feature, layer) {
+      if (gpsTrackUi.revealFeature?.(feature)) { closeObservationPopup(); clickedPopupFeature = true; return feature; }
       if (layer !== observationMarkerLayer && layer !== bearMarkerLayer && layer !== analysisEstimateLayer) {
         return undefined;
       }
@@ -7566,6 +7579,7 @@
       }
 
       bearsListEl.appendChild(el);
+      return el;
     });
 
     updateBearEstimateToolbar(items);

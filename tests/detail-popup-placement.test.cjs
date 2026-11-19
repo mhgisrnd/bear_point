@@ -49,6 +49,30 @@ test('detail reflows after resize, while roomy layouts keep the existing marker 
   assert.equal(desktop.moves(),0,'desktop behavior stays unchanged');
 });
 
+test('map frames preserve the bottom scroll position and do not temporarily expand the mobile detail',()=>{
+  const f=mobileFixture(390,844);
+  const content=f.context.observationPopupContentEl;
+  content.scrollTop=0;
+  let limit;
+  Object.defineProperty(f.popup.style,'maxHeight',{
+    get:()=>limit,
+    set:value=>{
+      limit=value;
+      // Simulate Chromium clamping scrollTop when the scroll viewport expands.
+      const viewport=Math.max(0,parseFloat(value)-60);
+      content.scrollTop=Math.min(content.scrollTop,Math.max(0,340-viewport));
+    }
+  });
+  f.context.syncObservationPopupPlacement(undefined,true);
+  const initialHeight=limit;
+  content.scrollTop=340-Math.max(0,parseFloat(limit)-60);
+  const bottom=content.scrollTop;
+  assert.ok(bottom>0);
+  for(let frame=0;frame<10;frame++)f.context.syncObservationPopupPlacement();
+  assert.equal(limit,initialHeight);
+  assert.equal(content.scrollTop,bottom,'registration rows and the edit button must remain reachable');
+});
+
 test('detail bounds reserve visible top and right tools',()=>{
   const style={};let offset;
   const controls=[

@@ -2,6 +2,32 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { create } = require('../public/js/progressive-list.js');
 
+test('revealing a map item loads its row and scrolls only its list; later refresh preserves that position',()=>{
+  const scroller={scrollTop:0,clientHeight:100,scrollHeight:3000,addEventListener(){},getBoundingClientRect:()=>({top:0})};
+  const pager=create({scroller,key:item=>item.id});
+  let rendered=0;
+  const render=item=>{rendered++;return {parentElement:scroller,getClientRects:()=>[1],getBoundingClientRect:()=>({top:item.id*30-scroller.scrollTop,bottom:item.id*30+30-scroller.scrollTop})};};
+  const rows=Array.from({length:100},(_,id)=>({id}));
+  pager.render(rows,render);assert.equal(rendered,30);
+  assert.equal(pager.reveal(80),true);assert.equal(rendered,81);assert.equal(scroller.scrollTop,2330);
+  pager.beforeClear();pager.render(rows,render);assert.equal(scroller.scrollTop,2330);
+  assert.equal(pager.reveal(1),true);assert.equal(scroller.scrollTop,30);
+  assert.equal(pager.reveal('filtered-out'),false);assert.equal(scroller.scrollTop,30);
+});
+
+test('hidden lists defer requested scrolling until opened without changing menu state',()=>{
+  const previous=global.ResizeObserver;let resized;
+  global.ResizeObserver=class{constructor(fn){resized=fn;}observe(){}};
+  try{
+    const scroller={scrollTop:0,clientHeight:0,scrollHeight:1000,addEventListener(){},getBoundingClientRect:()=>({top:0})};
+    const pager=create({scroller,key:item=>item.id});
+    pager.render([{id:'target'}],()=>({parentElement:scroller,getClientRects:()=>scroller.clientHeight?[1]:[],getBoundingClientRect:()=>({top:400-scroller.scrollTop,bottom:430-scroller.scrollTop})}));
+    pager.reveal('target');assert.equal(scroller.scrollTop,0);
+    scroller.clientHeight=100;resized();assert.equal(scroller.scrollTop,330);
+    scroller.scrollTop=20;resized();assert.equal(scroller.scrollTop,20,'later size changes must not replay completed scrolling');
+  }finally{global.ResizeObserver=previous;}
+});
+
 function fixture(scope) {
   let scroll;
   const scroller = { scrollTop: 0, clientHeight: 200, scrollHeight: 1500,
