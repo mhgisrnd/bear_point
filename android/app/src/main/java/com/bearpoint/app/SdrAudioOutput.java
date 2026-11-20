@@ -15,6 +15,7 @@ import android.os.Process;
 import com.getcapacitor.JSObject;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.ArrayDeque;
 
 /** Media playback is isolated from USB reads. Main thread owns focus and UI state. */
@@ -23,7 +24,7 @@ final class SdrAudioOutput {
     private final Handler main;
     private final Runnable changed;
     private final SdrAudioInterruption interruptions;
-    private final boolean speakerOnly;
+    private final boolean localOrBluetooth;
     private final CallModeMonitor callModeMonitor;
     private final AudioAttributes attributes = new AudioAttributes.Builder()
         .setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build();
@@ -52,9 +53,14 @@ final class SdrAudioOutput {
     };
     private void onFocusChanged(int change) { interruptions.focusChanged(change); changed.run(); }
     private final AudioDeviceCallback devices = new AudioDeviceCallback() {
+        @Override public void onAudioDevicesAdded(AudioDeviceInfo[] added) {
+            Playback active = playback;
+            if (localOrBluetooth && active != null) active.routeRefresh.set(true);
+        }
         @Override public void onAudioDevicesRemoved(AudioDeviceInfo[] removed) {
             Playback active = playback;
             if (active == null) return;
+            if (localOrBluetooth) { active.routeRefresh.set(true); return; }
             for (AudioDeviceInfo device : removed) if (device.getId() == active.externalRouteId) {
                 stopWithNotice("출력 장치가 분리되어 음소거되었습니다. 출력 장치를 확인하고 다시 켜주세요.");
                 break;
@@ -66,10 +72,10 @@ final class SdrAudioOutput {
         this(context, main, changed, interruptions, false);
     }
 
-    SdrAudioOutput(Context context, Handler main, Runnable changed, SdrAudioInterruption interruptions, boolean speakerOnly) {
+    SdrAudioOutput(Context context, Handler main, Runnable changed, SdrAudioInterruption interruptions, boolean localOrBluetooth) {
         this.main = main; this.changed = changed;
         this.interruptions = interruptions;
-        this.speakerOnly = speakerOnly;
+        this.localOrBluetooth = localOrBluetooth;
         manager = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
         manager.registerAudioDeviceCallback(devices, main);
         callModeMonitor = Build.VERSION.SDK_INT >= 31 ? new CallModeMonitor(manager, main, interruptions) : null;
@@ -90,6 +96,7 @@ final class SdrAudioOutput {
     void interruptionNotice(String reason) { notice = reason; }
     boolean enabled() { return playback != null; }
     String notice() { return notice; }
+    String output() { return output; }
 
     void set(Boolean enabled, Double requestedVolume) {
         if (requestedVolume != null) {
@@ -117,6 +124,7 @@ final class SdrAudioOutput {
                 throw new IllegalStateException("오디오 출력을 사용할 수 없습니다. 다른 앱의 재생을 확인하세요.");
             }
             notice = "";
+            output = "Android 미디어 출력";
             ducked = false;
             Playback active = new Playback();
             playback = active;
@@ -187,18 +195,22 @@ final class SdrAudioOutput {
 
     void shutdown() { stop(); manager.unregisterAudioDeviceCallback(devices); if(callModeMonitor!=null)callModeMonitor.close(); }
 
+    static boolean isBluetoothMedia(int type) {
+        return type == AudioDeviceInfo.TYPE_BLUETOOTH_A2DP || type == AudioDeviceInfo.TYPE_BLE_HEADSET
+                || type == AudioDeviceInfo.TYPE_BLE_SPEAKER || type == AudioDeviceInfo.TYPE_HEARING_AID;
+    }
+
     private void updateRoute(Playback active, AudioTrack track) {
         if (playback != active) return;
         AudioDeviceInfo device;
         try { device = track.getRoutedDevice(); }
         catch (IllegalStateException released) { return; }
         if (device == null) return;
-        if (speakerOnly && device.getType() != AudioDeviceInfo.TYPE_BUILTIN_SPEAKER) {
-            active.speakerRouted = false;
-            stopWithNotice("태블릿 스피커로 소리를 보낼 수 없습니다.");
-            return;
+        if (localOrBluetooth) {
+            active.outputRouted = active.bluetoothPreferred ? isBluetoothMedia(device.getType())
+                    : device.getType() == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER;
+            if (!active.outputRouted) return;
         }
-        active.speakerRouted = true;
         // Removal callbacks may arrive after Android has already rerouted to the speaker.
         // Retain the external ID so that this ordering still causes a mute.
         if (device.getType() != AudioDeviceInfo.TYPE_BUILTIN_SPEAKER
@@ -207,6 +219,7 @@ final class SdrAudioOutput {
         switch (device.getType()) {
             case AudioDeviceInfo.TYPE_BLUETOOTH_A2DP:
             case AudioDeviceInfo.TYPE_BLE_HEADSET:
+            case AudioDeviceInfo.TYPE_HEARING_AID:
             case AudioDeviceInfo.TYPE_BLE_SPEAKER: output = "블루투스 미디어 출력"; break;
             case AudioDeviceInfo.TYPE_WIRED_HEADSET:
             case AudioDeviceInfo.TYPE_WIRED_HEADPHONES: output = "유선 이어폰"; break;
@@ -221,9 +234,12 @@ final class SdrAudioOutput {
     private final class Playback implements Runnable {
         final SdrPlaybackBuffer queue = new SdrPlaybackBuffer();
         final AtomicInteger dropped = new AtomicInteger();
+        final AtomicBoolean routeRefresh = new AtomicBoolean();
         final Thread thread = new Thread(this, "sdr-audio");
         volatile boolean running = true;
-        volatile boolean speakerRouted;
+        volatile boolean outputRouted;
+        volatile boolean bluetoothPreferred;
+        private int preferredId = -1;
         volatile int externalRouteId = -1;
         volatile boolean resetRequested;
         volatile double hardwareQueuedMs,sourceToOutputMs;
@@ -237,7 +253,29 @@ final class SdrAudioOutput {
         }
         int lastUnderruns;
         private float trackVolume() {
-            return speakerOnly && !speakerRouted ? 0 : volume * (ducked ? .2f : 1f);
+            return localOrBluetooth && !outputRouted ? 0 : volume * (ducked ? .2f : 1f);
+        }
+
+        private boolean chooseLocalOutput(AudioTrack track) {
+            AudioDeviceInfo bluetooth = null, speaker = null;
+            AudioDeviceInfo routed = track.getRoutedDevice();
+            for (AudioDeviceInfo device : manager.getDevices(AudioManager.GET_DEVICES_OUTPUTS)) {
+                int type = device.getType();
+                if (type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER) speaker = device;
+                if (isBluetoothMedia(type) && (bluetooth == null || (routed != null && device.getId() == routed.getId()))) {
+                    bluetooth = device;
+                }
+            }
+            AudioDeviceInfo preferred = bluetooth != null ? bluetooth : speaker;
+            if (preferred == null) throw new IllegalStateException("기기 스피커나 블루투스 오디오를 찾지 못했습니다.");
+            if (preferred.getId() == preferredId) return false;
+            outputRouted = false;
+            bluetoothPreferred = bluetooth != null;
+            output = "출력 전환 중";
+            track.setVolume(0);
+            if (!track.setPreferredDevice(preferred)) throw new IllegalStateException("오디오 출력 장치를 선택하지 못했습니다.");
+            preferredId = preferred.getId();
+            return true;
         }
         @Override public void run() {
             AudioTrack track = null;
@@ -249,14 +287,7 @@ final class SdrAudioOutput {
                     .setAudioFormat(new AudioFormat.Builder().setSampleRate(48000)
                         .setChannelMask(AudioFormat.CHANNEL_OUT_MONO).setEncoding(AudioFormat.ENCODING_PCM_16BIT).build())
                     .setTransferMode(AudioTrack.MODE_STREAM).setBufferSizeInBytes(Math.max(minimum, 4800)).build();
-                if (speakerOnly) {
-                    AudioDeviceInfo speaker = null;
-                    for (AudioDeviceInfo device : manager.getDevices(AudioManager.GET_DEVICES_OUTPUTS)) {
-                        if (device.getType() == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER) { speaker = device; break; }
-                    }
-                    if (speaker == null || !track.setPreferredDevice(speaker))
-                        throw new IllegalStateException("태블릿 스피커를 선택할 수 없습니다.");
-                }
+                if (localOrBluetooth) chooseLocalOutput(track);
                 AudioTrack routedTrack = track;
                 track.addOnRoutingChangedListener(ignored -> updateRoute(this, routedTrack), main);
                 track.setVolume(trackVolume());
@@ -264,9 +295,14 @@ final class SdrAudioOutput {
                 boolean playing=false;long prefillDeadline=SystemClock.elapsedRealtime()+120,writtenFrames=0,headWrap=0,previousHead=0;
                 long routeCheckStarted = 0;
                 while (running) {
-                    if (speakerOnly && !speakerRouted && routeCheckStarted != 0 &&
-                            SystemClock.elapsedRealtime() - routeCheckStarted >= 1000)
-                        throw new IllegalStateException("태블릿 스피커를 확인하지 못했습니다.");
+                    if (localOrBluetooth && routeRefresh.getAndSet(false) && chooseLocalOutput(track)) {
+                        routeCheckStarted = playing ? SystemClock.elapsedRealtime() : 0;
+                        main.post(() -> updateRoute(this, routedTrack));
+                    }
+                    if (localOrBluetooth && playing && !outputRouted && routeCheckStarted != 0 &&
+                            SystemClock.elapsedRealtime() - routeCheckStarted >= 3000)
+                        throw new IllegalStateException(bluetoothPreferred ? "블루투스 미디어 출력을 확인하지 못했습니다."
+                                : "기기 스피커 출력을 확인하지 못했습니다.");
                     if(resetRequested){
                         track.pause();long head=track.getPlaybackHeadPosition()&0xffffffffL;if(head<previousHead)headWrap+=1L<<32;
                         flushedSamples.addAndGet(Math.max(0,writtenFrames-head-headWrap));track.flush();
@@ -295,7 +331,7 @@ final class SdrAudioOutput {
                         if (written > 0 && !playing) {
                             track.play();
                             playing = true;
-                            if (speakerOnly && routeCheckStarted == 0) {
+                            if (localOrBluetooth && !outputRouted) {
                                 routeCheckStarted = SystemClock.elapsedRealtime();
                                 main.post(() -> updateRoute(this, routedTrack));
                             }

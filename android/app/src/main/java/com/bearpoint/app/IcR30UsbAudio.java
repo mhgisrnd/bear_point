@@ -47,7 +47,7 @@ final class IcR30UsbAudio implements Runnable {
     boolean speakerEnabled() { return speaker.enabled(); }
     private void muteInterrupted() {
         speaker.stop();
-        speaker.interruptionNotice("다른 오디오 사용으로 스피커 재생이 중단되었습니다.");
+        speaker.interruptionNotice("다른 오디오 사용으로 수신음 재생이 중단되었습니다.");
         changed.run();
     }
     private void closeSpeaker() {
@@ -81,7 +81,7 @@ final class IcR30UsbAudio implements Runnable {
             result.put(key, capture.opt(key));
         }
         return result.put("speakerEnabled", speaker.enabled()).put("speakerNotice", muted ? "" : speaker.notice())
-                .put("filterLevel", filterLevel);
+                .put("playbackOutput", speaker.output()).put("filterLevel", filterLevel);
     }
 
     static JSObject state(String state, String message) {

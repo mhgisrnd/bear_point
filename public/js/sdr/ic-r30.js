@@ -382,7 +382,7 @@
       if (notice.textContent !== speakerNotice) notice.textContent = speakerNotice;
       notice.hidden = !active || !speakerNotice;
       const status = node("audio-status");
-      const message = active ? "입력 중 · " + audioState.message + (audioState.speakerEnabled ? " · 스피커 재생" : "")
+      const message = active ? "입력 중 · " + audioState.message + (playing ? ` · ${audioState.playbackOutput || "소리 재생"}` : "")
         : audioState.message || "USB 오디오 연결 대기 중";
       if (status.textContent !== message) status.textContent = message;
       node("audio-level").hidden = node("audio-tone").hidden = !active;

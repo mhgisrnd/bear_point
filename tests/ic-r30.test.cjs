@@ -148,7 +148,8 @@ test('Bluetooth USB audio follows attachment and closing the dialog only stops U
   const audio = {
     state: 'active', message: 'USB Audio Device', peakSample: 600,
     spectrumDbfs, spectrumCenterHz: 1200, spectrumSpanHz: 1875,
-    ready: true, tracked: true, confidence: 2, toneHz: 700, snrDb: 12.5, count: 3, speakerEnabled: true
+    ready: true, tracked: true, confidence: 2, toneHz: 700, snrDb: 12.5, count: 3, speakerEnabled: true,
+    playbackOutput: '기기 스피커'
   };
   let attached = false;
   ui.plugin.getUsbAudioStatus = async () => attached ? audio : { state: 'waiting' };
@@ -166,7 +167,13 @@ test('Bluetooth USB audio follows attachment and closing the dialog only stops U
     assert.match(ui.node('audio-level').textContent, /입력 피크 -34\.7 dBFS/);
     assert.match(ui.node('audio-tone').textContent, /반복 CW 후보 · 700 Hz.*3회/);
     assert.match(ui.node('audio-peak').textContent, /최대 피크 708 Hz.*CW 후보 700 Hz/);
-    assert.match(ui.node('audio-status').textContent, /스피커 재생/);
+    assert.match(ui.node('audio-status').textContent, /기기 스피커/);
+    audio.playbackOutput = '블루투스 미디어 출력';
+    await ui.pollAudio();
+    assert.match(ui.node('audio-status').textContent, /블루투스 미디어 출력/);
+    audio.playbackOutput = '기기 스피커';
+    await ui.pollAudio();
+    assert.match(ui.node('audio-status').textContent, /기기 스피커/);
     ui.node('audio-filter').value = '3';
     await ui.node('audio-filter').events.change();
     assert.equal(ui.node('audio-filter').value, '3');
