@@ -10,20 +10,8 @@
   const headingDialDegEl = document.getElementById("heading-dial-deg");
   const headingDialDirEl = document.getElementById("heading-dial-dir");
   // 갤럭시 엣지 나침반처럼 카드(132×200)보다 넓은 눈금판(중심 66,100 · 반지름 94)이 돌고, 좌우는 잘려 위아래 호만 보인다.
-  const DIAL_CENTER = "66 100";
-  if (headingDialRingEl) {
-    let dialMarkup = "";
-    for (let deg = 0; deg < 360; deg += 2) {
-      const cardinal = deg % 90 === 0, major = deg % 30 === 0;
-      const cls = cardinal ? "is-cardinal" : major ? "is-major" : "";
-      dialMarkup += '<line x1="66" y1="6" x2="66" y2="' + (cardinal ? 19 : major ? 15 : 11) + '" transform="rotate(' + deg + " " + DIAL_CENTER + ')"' + (cls ? ' class="' + cls + '"' : "") + "/>";
-      if (major) dialMarkup += '<text x="66" y="25" transform="rotate(' + deg + " " + DIAL_CENTER + ')">' + deg + "</text>";
-    }
-    [["N", 0, "is-north"], ["E", 90, ""], ["S", 180, "is-south"], ["W", 270, ""]].forEach(function (c) {
-      dialMarkup += '<text x="66" y="37" transform="rotate(' + c[1] + " " + DIAL_CENTER + ')" class="is-letter ' + c[2] + '">' + c[0] + "</text>";
-    });
-    headingDialRingEl.innerHTML = dialMarkup;
-  }
+  const headingDial = window.BearHeadingDial;
+  if (headingDialRingEl && headingDial) headingDialRingEl.innerHTML = headingDial.markup();
   const panelEl = document.getElementById("panel");
   const btnPanelToggle = document.getElementById("btn-panel-toggle");
   const btnObsList = document.getElementById("btn-obs-list");
@@ -3975,8 +3963,8 @@
       });
     }
 
-    if (headingDialRingEl) {
-      headingDialRingEl.setAttribute("transform", "rotate(" + (-effectiveDeg).toFixed(1) + " " + DIAL_CENTER + ")");
+    if (headingDialRingEl && headingDial) {
+      headingDialRingEl.setAttribute("transform", headingDial.rotation(-effectiveDeg));
       headingDialDegEl.textContent = Math.round(norm360(effectiveDeg)) % 360 + "°";
       headingDialDirEl.textContent = headingDirectionLabel(effectiveDeg);
       headingDialEl.classList.toggle("is-locked", effectiveDeg !== deg);
@@ -4170,7 +4158,7 @@
 
     if (headingDialEl) {
       headingDialEl.classList.remove("is-live");
-      headingDialRingEl.setAttribute("transform", "rotate(0 " + DIAL_CENTER + ")");
+      if (headingDial) headingDialRingEl.setAttribute("transform", headingDial.rotation(0));
       headingDialEl.classList.remove("is-locked");
       headingDialDegEl.textContent = "--°";
       headingDialDirEl.textContent = "";

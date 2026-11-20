@@ -80,6 +80,11 @@ final class IcR30UsbAudio implements Runnable {
             String key = keys.next();
             result.put(key, capture.opt(key));
         }
+        double pulseTime = capture.optDouble("cwPulseTimeMs", Double.NaN);
+        if (Double.isFinite(pulseTime)) {
+            double age = Math.max(0, SystemClock.elapsedRealtime() - pulseTime);
+            result.put("cwDetectionAgeMs", age).put("cwPulseWallTimeMs", System.currentTimeMillis() - age);
+        }
         return result.put("speakerEnabled", speaker.enabled()).put("speakerNotice", muted ? "" : speaker.notice())
                 .put("playbackOutput", speaker.output()).put("filterLevel", filterLevel);
     }
@@ -192,12 +197,18 @@ final class IcR30UsbAudio implements Runnable {
         for (double dbfs : detector.audioSpectrumDbfs()) spectrum.put((Object) dbfs);
         int peakSample = 0;
         for (short sample : samples) peakSample = Math.max(peakSample, Math.abs(sample));
-        return state("active", device).put("peakSample", peakSample)
+        JSObject result = state("active", device).put("peakSample", peakSample)
                 .put("spectrumDbfs", spectrum).put("spectrumCenterHz", IcR30AudioAnalysis.CENTER_HZ)
                 .put("spectrumSpanHz", SdrCwDetector.AUDIO_SPECTRUM_BINS * RATE / (double) SdrCwDetector.SIZE)
                 .put("ready", detector.ready()).put("count", detector.pulseCount())
                 .put("tracked", detector.tracked()).put("confidence", detector.confidence())
                 .put("toneHz", Math.round(IcR30AudioAnalysis.CENTER_HZ + detector.offsetHz()))
                 .put("snrDb", detector.snrDb());
+        if (detector.pulseCount() > 0 && Double.isFinite(detector.directionDbfs())) {
+            result.put("cwDirectionDbfs", detector.directionDbfs());
+            result.put("cwPulseTimeMs", detector.pulseTimeMs());
+            result.put("cwToneHz", IcR30AudioAnalysis.CENTER_HZ + detector.offsetHz());
+        }
+        return result;
     }
 }

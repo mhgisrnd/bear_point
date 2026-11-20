@@ -425,6 +425,7 @@
         const value = await plugin.getUsbAudioStatus({ requestPermission });
         if (audioSession !== session) return;
         showAudio(value);
+        options.onAudioFrame?.(value);
       } catch (error) {
         if (audioSession === session) showAudio({ state: "error", message: error.message || String(error) });
       }
@@ -599,6 +600,7 @@
       updateUsb,
       refreshFavorites: renderAnimals,
       canMonitor: () => validReading() || !!lastReading,
+      audioActive: () => audioState.state === "active",
       hasSavedLogs: () => !!snapshot.test?.records?.length || !!snapshot.test?.available,
       cancelFrequencyEditing() {
         if (!frequencyControls.editing()) return false;
