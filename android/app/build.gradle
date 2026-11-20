@@ -13,8 +13,8 @@ android {
         applicationId "com.bearpoint.app"
         minSdkVersion (arDirectionTest ? Math.max(24, rootProject.ext.minSdkVersion) : rootProject.ext.minSdkVersion)
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 20
-        versionName "26.0.0.15"
+        versionCode 21
+        versionName "26.0.0.16"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
