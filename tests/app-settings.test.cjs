@@ -23,6 +23,21 @@ function environment(native) {
   return {win,db,web};
 }
 for (const native of [false,true]) {
+  test(`${native?'SQLite':'web'}: declination defaults, validates and persists independently of observations`,async t=>{
+    const {win,db}=environment(native);t.after(()=>db.close());
+    const store=createStore(win);await store.load();
+    assert.equal(store.snapshot().declinationDeg,-7);
+    await store.saveDeclination('0');
+    assert.equal((await createStore(win).load()).declinationDeg,0);
+    await store.saveDeclination('-6.5');
+    assert.equal((await createStore(win).load()).declinationDeg,-6.5);
+    for(const value of ['',null,true,181,-181,'bad'])await assert.rejects(()=>store.saveDeclination(value));
+    assert.equal(store.snapshot().declinationDeg,-6.5);
+    if(native)win.Capacitor.Plugins.CapacitorSQLite.run=async()=>{throw new Error('disk full');};
+    else win.localStorage.setItem=()=>{throw new Error('quota full');};
+    await assert.rejects(()=>store.saveDeclination(4),/full/);
+    assert.equal(store.snapshot().declinationDeg,-6.5);
+  });
   test(`${native?'SQLite':'web'}: manual observation identity validates team metadata without creating a fixed profile`,async t=>{
     const {win,db}=environment(native);t.after(()=>db.close());
     const store=createStore(win);await store.load();

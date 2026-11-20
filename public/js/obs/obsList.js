@@ -1267,6 +1267,7 @@ window.createObsListModule = function createObsListModule({
     for (const [label, text] of [
       ['단일 관측', '방향각에 편각을 더한 방향으로, 지정한 거리만큼 이동한 위치를 추정합니다.'],
       ['교차 분석', '관측점들의 방향이 만나는 위치를 추정합니다. 교차점이 여러 개면 평균 위치를 사용합니다.'],
+      ['방위각 보정', '설정 → 현장 기능 → 방위각 보정에 저장한 편각을 사용합니다. 관측점에 저장된 방향각은 변경하지 않습니다.'],
       ['분석 조건', '평행한 방향, 뒤쪽 교차, 거리 제한 초과 등으로 관측 결과가 일치하지 않으면 분석할 수 없습니다.']
     ]) {
       const item = document.createElement('li');
@@ -1294,7 +1295,7 @@ window.createObsListModule = function createObsListModule({
     distanceInput.step = "1";
     distanceInput.min = "1";
     distanceInput.inputMode = "decimal";
-    distanceInput.enterKeyHint = "next";
+    distanceInput.enterKeyHint = "done";
     distanceInput.style.height = "56px";
     distanceInput.style.border = "1px solid rgba(255,255,255,0.3)";
     distanceInput.style.borderRadius = "8px";
@@ -1304,115 +1305,7 @@ window.createObsListModule = function createObsListModule({
     distanceInput.style.boxSizing = "border-box";
     distanceInput.style.width = "100%";
     distanceWrap.appendChild(distanceInput);
-
-    const declinationWrap = document.createElement("div");
-    declinationWrap.className = "analysis-input-label";
-    declinationWrap.style.display = "flex";
-    declinationWrap.style.flexDirection = "column";
-    declinationWrap.style.gap = "6px";
-    declinationWrap.style.fontSize = "12px";
-    declinationWrap.style.fontWeight = "700";
-    declinationWrap.style.color = "rgba(255,255,255,0.94)";
-
-    const declinationLabel = document.createElement("label");
-    declinationLabel.htmlFor = "analysis-declination-input";
-    declinationLabel.textContent = "편각 (도)";
-    declinationWrap.appendChild(declinationLabel);
-
-    const declinationInput = document.createElement("input");
-    declinationInput.id = "analysis-declination-input";
-    declinationInput.className = "analysis-input";
-    declinationInput.type = "number";
-    declinationInput.step = "any";
-    declinationInput.inputMode = "decimal";
-    declinationInput.enterKeyHint = "done";
-    declinationInput.setAttribute("autocapitalize", "off");
-    declinationInput.setAttribute("autocomplete", "off");
-    declinationInput.setAttribute("autocorrect", "off");
-    declinationInput.setAttribute("spellcheck", "false");
-    declinationInput.style.height = "56px";
-    declinationInput.style.border = "1px solid rgba(255,255,255,0.3)";
-    declinationInput.style.borderRadius = "8px";
-    declinationInput.style.background = "rgba(255,255,255,0.96)";
-    declinationInput.style.padding = "0 10px 0 43px";
-    declinationInput.style.fontSize = "14px";
-    declinationInput.style.boxSizing = "border-box";
-    declinationInput.style.width = "100%";
-    declinationInput.style.minWidth = "0";
-
-    const declinationControl = document.createElement("div");
-    declinationControl.className = "analysis-declination-control";
-    declinationControl.style.display = "flex";
-    declinationControl.style.alignItems = "center";
-    declinationControl.style.gap = "4px";
-    declinationControl.style.width = "100%";
-
-    const declinationInputBox = document.createElement("div");
-    declinationInputBox.style.position = "relative";
-    declinationInputBox.style.flex = "1 1 auto";
-    declinationInputBox.style.minWidth = "0";
-
-    const declinationSignBtn = document.createElement("button");
-    declinationSignBtn.type = "button";
-    declinationSignBtn.textContent = "±";
-    declinationSignBtn.setAttribute("aria-label", "편각 부호 전환");
-    declinationSignBtn.style.position = "absolute";
-    declinationSignBtn.style.left = "5px";
-    declinationSignBtn.style.top = "50%";
-    declinationSignBtn.style.transform = "translateY(-50%)";
-    declinationSignBtn.style.width = "32px";
-    declinationSignBtn.style.height = "36px";
-    declinationSignBtn.style.padding = "0";
-    declinationSignBtn.style.border = "1px solid #cbd5e1";
-    declinationSignBtn.style.borderRadius = "5px";
-    declinationSignBtn.style.background = "#f1f5f9";
-    declinationSignBtn.style.color = "#0f172a";
-    declinationSignBtn.style.fontSize = "18px";
-    declinationSignBtn.style.fontWeight = "700";
-    declinationSignBtn.style.cursor = "pointer";
-    declinationInputBox.appendChild(declinationInput);
-    declinationInputBox.appendChild(declinationSignBtn);
-
-    const declinationSteps = document.createElement("div");
-    declinationSteps.className = "analysis-declination-steps";
-    declinationSteps.style.display = "flex";
-    declinationSteps.style.flexDirection = "column";
-    declinationSteps.style.gap = "2px";
-    declinationSteps.style.flex = "0 0 34px";
-
-    function createDeclinationStepButton(label, ariaLabel) {
-      const button = document.createElement("button");
-      button.type = "button";
-      button.className = "analysis-declination-step";
-      button.innerHTML = `<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true" focusable="false"><path d="${label === '▲' ? 'M2 8 6 4 10 8' : 'M2 4 6 8 10 4'}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
-      button.style.display = "flex";
-      button.style.alignItems = "center";
-      button.style.justifyContent = "center";
-      button.style.boxSizing = "border-box";
-      button.style.minHeight = "0";
-      button.style.lineHeight = "1";
-      button.style.overflow = "hidden";
-      button.setAttribute("aria-label", ariaLabel);
-      button.style.width = "34px";
-      button.style.height = "27px";
-      button.style.padding = "0";
-      button.style.border = "1px solid rgba(255,255,255,0.4)";
-      button.style.borderRadius = "5px";
-      button.style.background = "rgba(255,255,255,0.2)";
-      button.style.color = "#ffffff";
-      button.style.fontSize = "12px";
-      button.style.fontWeight = "700";
-      button.style.cursor = "pointer";
-      return button;
-    }
-
-    const declinationUpBtn = createDeclinationStepButton("▲", "편각 1도 증가");
-    const declinationDownBtn = createDeclinationStepButton("▼", "편각 1도 감소");
-    declinationSteps.appendChild(declinationUpBtn);
-    declinationSteps.appendChild(declinationDownBtn);
-    declinationControl.appendChild(declinationInputBox);
-    declinationControl.appendChild(declinationSteps);
-    declinationWrap.appendChild(declinationControl);
+    distanceWrap.style.gridColumn = '1 / -1';
 
     const errorEl = document.createElement("div");
     errorEl.id = "analysis-dialog-error";
@@ -1466,7 +1359,6 @@ window.createObsListModule = function createObsListModule({
     actions.appendChild(cancelBtn);
 
     body.appendChild(distanceWrap);
-    body.appendChild(declinationWrap);
     body.appendChild(actions);
 
     panel.appendChild(header);
@@ -1483,10 +1375,6 @@ window.createObsListModule = function createObsListModule({
       body,
       desc,
       distanceInput,
-      declinationInput,
-      declinationSignBtn,
-      declinationUpBtn,
-      declinationDownBtn,
       errorEl,
       cancelBtn,
       applyBtn,
@@ -1521,8 +1409,6 @@ window.createObsListModule = function createObsListModule({
     const resolver = dialog.resolve;
     if (!value) window.__bpTriggerHapticImpact?.("LIGHT");
     dialog.resolve = null;
-    dialog.stopRepeating?.();
-    dialog.stopRepeating = null;
     dialog.overlay.style.display = "none";
     window.BearAnalysisSheet?.closeStage('analysis');
     if (dialog.panel.contains(document.activeElement)) document.activeElement?.blur?.();
@@ -1556,6 +1442,14 @@ window.createObsListModule = function createObsListModule({
     return ok;
   }
 
+  window.addEventListener('bearpoint:declination-changed', () => {
+    if (analysisOptionsDialogState?.resolve) analysisOptionsDialogState.refreshPreview?.();
+  });
+
+  function getAnalysisDeclinationDeg() {
+    return window.BearAppSettings?.getDeclinationDeg?.() ?? -7;
+  }
+
   function openAnalysisOptionsDialog(defaultValues, selectedItems, onApplyAnalysis) {
     // 이전 분석 결과(추정 위치 마커/원)를 클리어한다.
     if (typeof onClearAnalysisEstimate === "function") onClearAnalysisEstimate();
@@ -1581,41 +1475,13 @@ window.createObsListModule = function createObsListModule({
       return { ok: true, value: parsed };
     }
 
-    function parseDeclinationValue(rawValue) {
-      const raw = String(rawValue == null ? "" : rawValue).trim();
-      if (!raw) {
-        return { ok: false, code: "EMPTY", message: "편각을 입력하세요." };
-      }
-
-      const signCount = (raw.match(/[+-]/g) || []).length;
-      if (signCount > 1 || (signCount === 1 && !/^[+-]/.test(raw))) {
-        return { ok: false, code: "SIGN_TYPO", message: "편각의 부호(+/-) 위치가 올바르지 않습니다." };
-      }
-
-      if (/[a-zA-Z가-힣]/.test(raw)) {
-        return { ok: false, code: "TEXT_INPUT", message: "편각은 숫자만 입력하세요." };
-      }
-
-      if (!/^[+-]?\d+(?:\.\d+)?$/.test(raw)) {
-        return { ok: false, code: "INVALID_FORMAT", message: "편각 형식이 올바르지 않습니다." };
-      }
-
-      const parsed = Number(raw);
-      if (!Number.isFinite(parsed)) {
-        return { ok: false, code: "NAN", message: "편각은 유효한 숫자여야 합니다." };
-      }
-
-      return { ok: true, value: parsed };
-    }
-
     function buildPreviewPayload() {
-      // 프리뷰는 거리만 유효해도 반경을 유지하고, 편각이 유효할 때만 방향선을 표시한다.
+      // 지도 프리뷰와 분석은 현장 기능에 저장된 편각을 공통으로 적용한다.
       const distanceValidation = parseDistanceValue(dialog.distanceInput.value);
-      const declinationValidation = parseDeclinationValue(dialog.declinationInput.value);
       if (!distanceValidation.ok) return null;
 
       const distanceLimitM = distanceValidation.value;
-      const declinationDeg = declinationValidation.ok ? declinationValidation.value : null;
+      const declinationDeg = getAnalysisDeclinationDeg();
 
       return {
         distanceLimitM,
@@ -1632,7 +1498,6 @@ window.createObsListModule = function createObsListModule({
     }
 
     dialog.distanceInput.value = String(defaults.distanceLimitM ?? 3000);//반경 기본값 설정
-    dialog.declinationInput.value = String(defaults.declinationDeg ?? 0);//편각 기본값 설정
     dialog.errorEl.textContent = "";
     dialog.body.style.removeProperty("grid-template-columns");
     dialog.overlay.style.display = "flex";
@@ -1647,6 +1512,7 @@ window.createObsListModule = function createObsListModule({
       fitToPoints(previewItems.map(function (it) { return { lat: it.lat, lng: it.lng }; }), { padding: 80, maxZoom: 17 });
     }
 
+    dialog.refreshPreview = () => emitAnalysisPreview(buildPreviewPayload());
     emitAnalysisPreview(buildPreviewPayload());
 
     return new Promise((resolve) => {
@@ -1659,28 +1525,6 @@ window.createObsListModule = function createObsListModule({
       dialog.distanceInput.oninput = function () {
         dialog.errorEl.textContent = "";
         emitAnalysisPreview(buildPreviewPayload());
-      };
-
-      dialog.declinationInput.oninput = function () {
-        dialog.errorEl.textContent = "";
-        emitAnalysisPreview(buildPreviewPayload());
-      };
-
-      function adjustDeclination(step) {
-        const current = parseDeclinationValue(dialog.declinationInput.value);
-        const value = current.ok ? current.value : 0;
-        dialog.declinationInput.value = String(Number((value + step).toFixed(6)));
-        dialog.declinationInput.dispatchEvent(new Event("input", { bubbles: true }));
-      }
-
-      dialog.stopRepeating?.();
-      const stopUp = window.BearPressRepeat.bind(dialog.declinationUpBtn, () => adjustDeclination(1));
-      const stopDown = window.BearPressRepeat.bind(dialog.declinationDownBtn, () => adjustDeclination(-1));
-      dialog.stopRepeating = () => { stopUp(); stopDown(); };
-      dialog.declinationSignBtn.onclick = function () {
-        const current = parseDeclinationValue(dialog.declinationInput.value);
-        dialog.declinationInput.value = String(current.ok ? -current.value : 0);
-        dialog.declinationInput.dispatchEvent(new Event("input", { bubbles: true }));
       };
 
       dialog.cancelBtn.onclick = function () {
@@ -1696,16 +1540,8 @@ window.createObsListModule = function createObsListModule({
           return;
         }
 
-        const declinationValidation = parseDeclinationValue(dialog.declinationInput.value);
-        if (!declinationValidation.ok) {
-          dialog.errorEl.textContent = declinationValidation.message;
-          triggerLightErrorVibration();
-          dialog.declinationInput.focus();
-          return;
-        }
-
         const distanceLimitM = distanceValidation.value;
-        const declinationDeg = declinationValidation.value;
+        const declinationDeg = getAnalysisDeclinationDeg();
         let analysisResult = null;
         if (typeof onApplyAnalysis === "function") {
           analysisResult = onApplyAnalysis({ distanceLimitM, declinationDeg });
@@ -1735,17 +1571,8 @@ window.createObsListModule = function createObsListModule({
           return;
         }
         if (event.key === "Enter") {
-          if (event.target === dialog.declinationSignBtn || event.target === dialog.declinationUpBtn || event.target === dialog.declinationDownBtn) return;
           event.preventDefault();
-          if (event.target === dialog.distanceInput) {
-            dialog.declinationInput.focus();
-            dialog.declinationInput.select();
-            return;
-          }
-          if (event.target === dialog.declinationInput) {
-            dialog.declinationInput.blur();
-            return;
-          }
+          dialog.distanceInput.blur();
         }
       };
 
@@ -1788,8 +1615,7 @@ window.createObsListModule = function createObsListModule({
     }
 
     const optionInput = await openAnalysisOptionsDialog({
-      distanceLimitM: 8000, //거리 제한 기본값
-      declinationDeg: -7 //편각 기본값
+      distanceLimitM: 8000 //거리 제한 기본값
     }, selectedItems, function (values) {
       return analysisModule.analyzePosition(selectedItems, {
         distanceLimitM: values.distanceLimitM,

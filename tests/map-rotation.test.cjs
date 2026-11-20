@@ -101,13 +101,13 @@ test('a pending compass jump is discarded on backgrounding or when the compass s
 
 test('manual heading handle hit area follows the rendered handle at every map rotation',()=>{
   for(const rotation of [0,Math.PI/2,-Math.PI/2,Math.PI]){
-    const context={Number,Math,Array,lastLatLng:[35,127],lastHeadingDeg:0,
+    const context={Number,Math,Array,window:{},lastLatLng:[35,127],lastHeadingDeg:0,
       MAP_HEADING_HANDLE_LENGTH_PX:60,MAP_COORD_DRAG_HIT_RADIUS_PX:46,MAP_HEADING_DRAG_HIT_HANDLE_RADIUS_PX:34,MAP_HEADING_DRAG_HIT_LINE_HALF_WIDTH_PX:18,
       view:{getResolution:()=>2},mapCoordFromWgs84:()=>[1000,2000],
       controlsManager:null,obsRegisterModule:{isManualMapControlEnabled:()=>true},
       map:{getPixelFromCoordinate(c){const x=(c[0]-1000)/2,y=-(c[1]-2000)/2;return [400+x*Math.cos(rotation)-y*Math.sin(rotation),300+x*Math.sin(rotation)+y*Math.cos(rotation)];}}};
     vm.createContext(context);
-    for(const name of ['getHeadingHandleCoordinate','getManualMarkerCenterPixel','pointToSegmentDistancePx','getManualHitType'])vm.runInContext(extract(name),context);
+    for(const name of ['getObservationDeclinationDeg','getObservationMapHeading','getHeadingHandleCoordinate','getManualMarkerCenterPixel','pointToSegmentDistancePx','getManualHitType'])vm.runInContext(extract(name),context);
     for(const heading of [0,90,225]){
       context.lastHeadingDeg=heading;
       const handle=context.getHeadingHandleCoordinate([1000,2000],heading);

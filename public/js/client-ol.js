@@ -2651,10 +2651,22 @@
     editOriginPulseFrameId = window.requestAnimationFrame(tick);
   }
 
+  function getObservationDeclinationDeg() {
+    return window.BearAppSettings?.getDeclinationDeg?.() ?? -7;
+  }
+
+  function getObservationMapHeading(headingDeg) {
+    return ((headingDeg + getObservationDeclinationDeg()) % 360 + 360) % 360;
+  }
+
+  function getObservationInputHeading(mapHeadingDeg) {
+    return ((mapHeadingDeg - getObservationDeclinationDeg()) % 360 + 360) % 360;
+  }
+
   function getHeadingHandleCoordinate(centerCoord, headingDeg) {
     const resolution = Number(view && view.getResolution && view.getResolution()) || 1;
     const lengthMapUnits = MAP_HEADING_HANDLE_LENGTH_PX * resolution;
-    const headingRad = (headingDeg * Math.PI) / 180;
+    const headingRad = (getObservationMapHeading(headingDeg) * Math.PI) / 180;
     return [
       centerCoord[0] + Math.sin(headingRad) * lengthMapUnits,
       centerCoord[1] + Math.cos(headingRad) * lengthMapUnits
@@ -2699,8 +2711,10 @@
       }
 
       const headingDeg = feature ? feature.get("headingDeg") : null;
-      const rotation = Number.isFinite(headingDeg) ? (headingDeg * Math.PI) / 180 : 0;
       const showHeadingHandle = !!(feature && feature.get("showHeadingHandle"));
+      const registrationVisible = showHeadingHandle || obsRegisterModule?.isOpen?.();
+      const displayHeading = registrationVisible ? getObservationMapHeading(headingDeg) : headingDeg;
+      const rotation = Number.isFinite(headingDeg) ? (displayHeading * Math.PI) / 180 : 0;
       const styles = [];
 
       if (showHeadingHandle && Number.isFinite(headingDeg) && Array.isArray(centerCoord)) {
@@ -4269,7 +4283,7 @@
       const isSaveFlashActive = flashRemainingMs > 0;
       const flashElapsedMs = isSaveFlashActive ? (flashDurationMs - flashRemainingMs) : 0;
       const flashProgress = isSaveFlashActive ? clamp01(flashElapsedMs / flashDurationMs) : 1;
-      const rotation = Number.isFinite(headingDeg) ? (headingDeg * Math.PI) / 180 : 0;
+      const rotation = Number.isFinite(headingDeg) ? (getObservationMapHeading(headingDeg) * Math.PI) / 180 : 0;
 
       const styles = [];
 
@@ -4860,7 +4874,8 @@
       }
       const headingDeg = computeBearingFromLatLng(lastLatLng, [dragWgs84.lat, dragWgs84.lng]);
       if (!Number.isFinite(headingDeg)) return;
-      applied = obsRegisterModule.applyMapHeadingDegrees(headingDeg);
+      // The dragged bearing is already a map bearing; convert it back to the stored input basis.
+      applied = obsRegisterModule.applyMapHeadingDegrees(getObservationInputHeading(headingDeg));
     } else if (mapGestureMode === "coord-drag") {
       if (typeof obsRegisterModule.applyMapClickCoordinate !== "function") {
         stopManualMapGesture();
@@ -6001,24 +6016,9 @@
 
   const BEAR_MARKER_PALETTE = [
     { label: "교차 분석", color: "#1D4ED8" },
-    { label: "단일 관측", color: "#C24A00" }
+    { label: "단일 관측", color: "#DC2626" }
   ];
-  const bearMarkerIconCache = new Map();
-  function createBearMarkerIconDataUri(color) {
-    const fill = /^#[0-9a-f]{6}$/i.test(String(color || '')) ? color : '#526174';
-    if (!bearMarkerIconCache.has(fill)) {
-      const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="64" height="72" viewBox="0 0 64 72">
-        <defs><clipPath id="bear"><circle cx="32" cy="32" r="27"/></clipPath></defs>
-        <path d="M32 2C15.4 2 2 15.4 2 32c0 14.5 10.3 26.5 23.5 29L32 70l6.5-9C51.7 58.5 62 46.5 62 32 62 15.4 48.6 2 32 2Z" fill="${fill}" stroke="#fff" stroke-width="3" stroke-linejoin="round"/>
-        <g clip-path="url(#bear)">
-          <path d="M9 58c1-10 4-16 10-21l-1-8c-5-3-5-11 0-14 4-3 8-1 10 2a26 26 0 0 1 8 0c2-3 7-5 11-2 5 3 5 11 0 14l-1 8c6 5 9 11 10 21Z" fill="#242827" stroke="#fff" stroke-width="1.3" stroke-linejoin="round"/>
-          <path d="M19 39q13 8 26 0c-3 8-7 12-13 12S22 47 19 39Z" fill="#fff"/>
-        </g>
-      </svg>`;
-      bearMarkerIconCache.set(fill, 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg));
-    }
-    return bearMarkerIconCache.get(fill);
-  }
+  const BEAR_MARKER_ICON = "css/svg/bear_marker_point.svg";
 
   function bearMarkerColor(item) {
     const method = getEstimationMethodLabel(item);
@@ -6059,7 +6059,7 @@
       item.appendChild(text);
       return item;
     };
-    bearItems.replaceChildren(...BEAR_MARKER_PALETTE.map(entry => makeItem(entry, createBearMarkerIconDataUri(entry.color), true)));
+    bearItems.replaceChildren(...BEAR_MARKER_PALETTE.map(entry => makeItem(entry, BEAR_MARKER_ICON, true)));
     let lastTeams = "", unregisterBack;
 
     function renderTeams() {
@@ -6098,6 +6098,70 @@
     });
     window.addEventListener("bearpoint:teams-changed", refreshOpenLegend);
     window.addEventListener("bearpoint:profile-changed", refreshOpenLegend);
+    initializeMapLegendLayout(disclosure);
+  }
+  function initializeMapLegendLayout(disclosure) {
+    if (typeof ResizeObserver !== 'function') return;
+    const summary = disclosure.querySelector('summary');
+    const legend = disclosure.querySelector('.map-marker-legend');
+    const mapElement = document.getElementById('map');
+    if (!summary || !mapElement) return;
+    const selectors = '#register-box, #analysis-dialog-overlay, #analysis-save-sheet, .map-detail-popup, #mobile-map-dock';
+    const watched = new Set();
+    let lift = 0, frame = null;
+    function schedule() {
+      if (frame !== null) return;
+      frame = window.requestAnimationFrame(() => { frame = null; sync(); });
+    }
+    function sync() {
+      const anchor = summary.getBoundingClientRect();
+      const mapRect = mapElement.getBoundingClientRect();
+      const viewport = window.visualViewport;
+      const top = Math.max(mapRect.top, viewport?.offsetTop || 0) + 78;
+      let targetBottom = anchor.bottom + lift;
+      const left = anchor.left, right = disclosure.open ? disclosure.getBoundingClientRect().right : anchor.right;
+      const obstacles = [];
+      for (const element of watched) {
+        if (!element.isConnected || !element.getClientRects().length) continue;
+        const style = window.getComputedStyle(element);
+        if (style.visibility === 'hidden' || style.display === 'none' || element.hidden) continue;
+        // Desktop analysis overlays fill the screen; reserve their card, not the transparent backdrop.
+        const panel = element.querySelector('#analysis-dialog-panel, .analysis-save-card') || element;
+        const rect = panel.getBoundingClientRect();
+        if (rect.right <= left || rect.left >= right || rect.bottom <= top) continue;
+        obstacles.push(rect);
+      }
+      for (const rect of obstacles.sort((a, b) => b.top - a.top)) {
+        if (rect.top < targetBottom + 10 && rect.bottom > targetBottom - anchor.height) targetBottom = rect.top - 10;
+      }
+      const nextLift = Math.max(0, Math.ceil(anchor.bottom + lift - targetBottom));
+      if (nextLift !== lift) {
+        lift = nextLift;
+        disclosure.style.setProperty('--map-legend-avoidance', lift + 'px');
+      }
+      disclosure.dataset.obscured = String(targetBottom - anchor.height < top);
+      const contentTop = Math.max(top, ...obstacles.filter(rect => rect.bottom <= targetBottom - anchor.height).map(rect => rect.bottom + 10));
+      const space = Math.max(0, Math.floor(targetBottom - anchor.height - contentTop - 4));
+      if (legend) disclosure.style.setProperty('--map-legend-available-height', space + 'px');
+    }
+    const resize = new ResizeObserver(schedule);
+    const changes = new MutationObserver(schedule);
+    function discover() {
+      document.querySelectorAll(selectors).forEach(element => {
+        if (watched.has(element)) return;
+        watched.add(element); resize.observe(element);
+        changes.observe(element, { attributes: true, attributeFilter: ['style', 'class', 'hidden'] });
+      });
+      schedule();
+    }
+    resize.observe(summary); resize.observe(mapElement);
+    new MutationObserver(discover).observe(document.body, { childList: true });
+    changes.observe(document.body, { attributes: true, attributeFilter: ['class'] });
+    disclosure.addEventListener('toggle', schedule);
+    for (const event of ['resize', 'bearpoint:analysis-sheet-layout', 'bearpoint:mobile-dock-layout']) window.addEventListener(event, schedule);
+    window.visualViewport?.addEventListener('resize', schedule);
+    window.visualViewport?.addEventListener('scroll', schedule);
+    discover();
   }
   function bearMarkerTint(color, opacity) {
     return `rgba(${parseInt(color.slice(1,3),16)},${parseInt(color.slice(3,5),16)},${parseInt(color.slice(5,7),16)},${opacity})`;
@@ -6129,10 +6193,10 @@
 
       const markerIconStyle = new ol.style.Style({
         image: new ol.style.Icon({
-          src: createBearMarkerIconDataUri(markerColor),
+          src: BEAR_MARKER_ICON,
           anchor: [0.5, 1],
-          width: 36,
-          height: 40.5
+          width: 34,
+          height: 34
         }),
         text: new ol.style.Text({
           text: markerText,
@@ -6917,10 +6981,10 @@
 
     feature.setStyle(new ol.style.Style({
       image: new ol.style.Icon({
-        src: createBearMarkerIconDataUri(markerColor),
+        src: BEAR_MARKER_ICON,
         anchor: [0.5, 1],
         width: 40,
-        height: 45
+        height: 40
       }),
       text: new ol.style.Text({
         text: String(point.bearCode || "추정"),
@@ -7967,6 +8031,10 @@
     });
   }
   initializeMapMarkerLegend();
+  window.addEventListener('bearpoint:declination-changed', () => {
+    observationMarkerSource.changed();
+    myLocationLayer.changed();
+  });
   window.addEventListener('bearpoint:teams-changed', () => {
     repaintUnifiedBearList();
     observationMarkerSource.changed();

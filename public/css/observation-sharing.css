@@ -128,6 +128,12 @@
 
 /* Observation details use full-width label/value rows instead of small tiles. */
 .map-detail-popup { flex-direction: column; }
+.obs-reg-heading-field { flex:1; min-width:0; display:flex; flex-direction:column; gap:4px; }
+.obs-reg-row.obs-reg-heading-row { align-items:flex-start; }
+.obs-reg-heading-row > .obs-reg-label { padding-top:6px; }
+.obs-reg-heading-correction { display:flex; align-items:center; gap:5px; margin:0; color:#64748b; font-size:11px; font-weight:400; line-height:1.5; }
+.obs-reg-heading-correction span { color:#426180; font-weight:600; font-variant-numeric:tabular-nums; }
+:root[data-display-size="large"] .obs-reg-heading-correction { font-size:13px; }
 .map-detail-popup-content { flex: 1 1 auto; min-height: 0; overflow: auto; overscroll-behavior: contain; }
 .map-detail-footer { flex: 0 0 auto; min-width: 0; background: #fff; }
 .map-detail-footer[hidden] { display: none; }

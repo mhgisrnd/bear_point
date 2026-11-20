@@ -53,6 +53,14 @@ window.createObsRegisterModule = function createObsRegisterModule({
   var regTeamSelectEl = document.getElementById("reg-team-select");
   var regCoordEl = document.getElementById("reg-coord");
   var regHeadingEl = document.getElementById("reg-heading");
+  var regHeadingCorrectionEl = document.getElementById('reg-heading-correction-value');
+  function updateHeadingCorrectionHint() {
+    if (!regHeadingCorrectionEl) return;
+    var degrees = window.BearAppSettings?.getDeclinationDeg?.() ?? -7;
+    regHeadingCorrectionEl.textContent = degrees === 0 ? '없음' : (degrees > 0 ? '+' : '−') + Math.abs(degrees) + '°';
+  }
+  updateHeadingCorrectionHint();
+  window.addEventListener('bearpoint:declination-changed', updateHeadingCorrectionHint);
   var regBearEl = document.getElementById("reg-bear");
   var btnBearFind = document.getElementById("btn-bear-find");
   var bearPickerEl = document.getElementById("bear-picker");
