@@ -129,6 +129,9 @@
 /* Observation details use full-width label/value rows instead of small tiles. */
 .map-detail-popup { flex-direction: column; }
 .map-detail-popup-content { flex: 1 1 auto; min-height: 0; overflow: auto; overscroll-behavior: contain; }
+.map-detail-footer { flex: 0 0 auto; min-width: 0; background: #fff; }
+.map-detail-footer[hidden] { display: none; }
+.map-detail-popup .map-detail-footer .obs-popup-card__actions { position: static; margin: 0; padding: 8px 0 0; bottom: auto; }
 .map-detail-popup .obs-popup-card__actions { position: static; bottom: auto; }
 .map-detail-popup .obs-popup-card__eyebrow { position: sticky; top: 0; z-index: 2; background: #fff; }
 .map-detail-popup .obs-detail-table th, .map-detail-popup .obs-detail-table td { height: auto; line-height: 1.5; }

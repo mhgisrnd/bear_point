@@ -385,30 +385,13 @@ a.leaflet-control-locate-btn.is-active svg{
 }
 .map-legend-marker--bear { height: 31px; }
 .map-legend-marker--bear img {
-  width: auto;
-  height: 26px;
+  width: 27px;
+  height: 30.375px;
   top: 0;
-  /* Match the square dimensions used by the OpenLayers bear marker. */
-  transform: scaleX(calc(1010 / 778));
+  transform: none;
 }
-.map-legend-marker--bear::before {
-  content: "";
-  position: absolute;
-  bottom: 3px;
-  width: 14px;
-  height: 14px;
-  border: 1px solid var(--map-legend-swatch);
-  border-radius: 50%;
-}
-.map-legend-marker--bear::after {
-  content: "";
-  position: absolute;
-  bottom: 0;
-  width: 20px;
-  height: 4px;
-  border-radius: 2px;
-  background: var(--map-legend-swatch);
-}
+.map-legend-marker--bear::before,
+.map-legend-marker--bear::after { content:none; }
 :root[data-display-size="large"] .map-legend-disclosure { font-size: var(--bp-large-text); }
 :root[data-display-size="large"] #btn-map-legend { min-height: 32px; font-size: 14px; }
 .map-layer-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }

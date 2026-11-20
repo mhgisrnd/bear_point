@@ -119,7 +119,16 @@ test('the map legend keeps all catalogue teams and unassigned visible across men
   assert.deepEqual(list.querySelectorAll('li').map(item => item.textContent), ['\uAD50\uCC28 \uBD84\uC11D', '\uB2E8\uC77C \uAD00\uCE21']);
   assert.deepEqual(list.querySelectorAll('li').map(item => item.getAttribute('style')),
     ['intersection','single'].map(estimation_method => '--map-legend-swatch:' + context.bearMarkerColor({ estimation_method })));
-  assert.deepEqual(list.querySelectorAll('img').map(icon => icon.getAttribute('src')), Array(2).fill('css/svg/bear_marker_point.svg'));
+  assert.deepEqual(list.querySelectorAll('img').map(icon => icon.getAttribute('src')),
+    ['#1D4ED8','#C24A00'].map(color=>context.createBearMarkerIconDataUri(color)));
+  for(const color of ['#1D4ED8','#C24A00']){
+    const uri=context.createBearMarkerIconDataUri(color);
+    const svg=decodeURIComponent(uri.split(',')[1]);
+    assert.ok(svg.includes('fill="'+color+'"'));
+    assert.match(svg,/fill="#242827"/);
+    assert.doesNotMatch(svg,/<image|base64/);
+    assert.equal(context.createBearMarkerIconDataUri(color),uri);
+  }
   const setOpen = value => { disclosure.open = value; disclosure.on.toggle(); };
   setOpen(true);
   assert.equal(disclosure.open, true);

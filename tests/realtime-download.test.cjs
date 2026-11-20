@@ -248,6 +248,35 @@ test('web local and realtime XLS open a preview before generating a download', a
   }
 });
 
+test('history XLS previews historical coordinates and metadata before web or native saving',async()=>{
+  const start=client.indexOf('  async function downloadAllBearEstimatesXls(');
+  for(const native of [false,true]){
+    let preview,rows,saved=0,loads=0;
+    const context=vm.createContext({
+      console,normalizeOwnerName:value=>value,normalizePlaceName:value=>value,
+      formatKstDateTimeLabel:value=>value,decimalToDMS:()=> 'DMS',legacyTmCoordFromWgs84:()=>[1,2],
+      isNativeCapacitorPlatform:()=>native,statusEl:{},
+      buildXlsPreviewHtml:value=>{rows=value;return '<table></table>';},
+      showSavedXlsPreviewPopup:async options=>{preview=options;},
+      saveXlsToNativeDocuments:async()=>{saved++;return {savedUri:'file://history',relativePath:'history.xlsx'};},
+      shareSavedXlsFile:async()=>{},loadSheetJS:async()=>{loads++;throw new Error('save invoked');}
+    });
+    vm.runInContext(client.slice(start,client.indexOf('  if (bearsSelectAllEl)',start)),context);
+    const host={},old={bear_code:'KF-83',lat:35.12345678,lng:127.98765432,method:'single',team_name:'광역팀',created_at:'2026-11-09 12:00:00'};
+    await context.downloadAllBearEstimatesXls([old],{history:true,host});
+    assert.equal(preview.host,host);assert.match(preview.fileName,/^bear_estimate_history_KF-83_.*\.xlsx$/);
+    assert.equal(rows[1][rows[0].indexOf('개체코드')],'KF-83');
+    assert.equal(rows[1][rows[0].indexOf('추정방식')],'단일 관측');
+    assert.equal(rows[1][rows[0].indexOf('소속팀')],'광역팀');
+    assert.equal(rows[1][rows[0].indexOf('추적위치(위도)')],old.lat);
+    assert.equal(rows[1][rows[0].indexOf('추적위치(경도)')],old.lng);
+    assert.equal(rows[1][rows[0].indexOf('등록일자')],old.created_at);
+    assert.equal(saved,0);assert.equal(loads,0);
+    if(native){await preview.onSave();assert.equal(saved,1);assert.equal(typeof preview.onShare,'function');}
+    else{await assert.rejects(preview.onSave,/save invoked/);assert.equal(loads,1);}
+  }
+});
+
 test('web local and realtime TXT open a preview before downloading', async () => {
   const start = client.indexOf('  async function downloadBearEstimateTxt(');
   const end = client.indexOf('  function loadSheetJS(', start);
