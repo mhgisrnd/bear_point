@@ -38,6 +38,24 @@ test('small mobile screens reserve visible space for the pin above a scrollable 
   }
 });
 
+test('landscape details stay left-aligned and follow the expanded menu without following the marker',()=>{
+  const f=mobileFixture(1180,820,false);let expanded=true;
+  Object.assign(f.bounds,{left:8,right:412,top:0,width:404,height:820});
+  f.context.document.getElementById=()=>({classList:{contains:name=>name==='is-expanded'&&expanded},getClientRects:()=>[1],getBoundingClientRect:()=>f.bounds});
+  f.context.observationPopupContentEl.scrollTop=75;
+  f.context.syncObservationPopupPlacement(undefined,true);
+  assert.equal(f.card().x,424);assert.equal(f.card().y,18);
+  f.setPixel([900,600]);f.context.syncObservationPopupPlacement();
+  assert.equal(f.card().x,424);assert.equal(f.card().y,18);
+  expanded=false;Object.assign(f.bounds,{top:756,height:64});
+  f.context.syncObservationPopupPlacement();assert.equal(f.card().x,18);
+  assert.ok(f.card().y+f.card().height<756);
+  expanded=true;Object.assign(f.bounds,{top:0,height:820});
+  f.context.syncObservationPopupPlacement();assert.equal(f.card().x,424);
+  assert.equal(f.context.observationPopupContentEl.scrollTop,75);
+  assert.equal(f.moves(),0);
+});
+
 test('detail reflows after resize, while roomy layouts keep the existing marker placement',()=>{
   const f=mobileFixture(390,844);f.context.syncObservationPopupPlacement(undefined,true);
   f.size[1]=640;f.context.window.innerHeight=640;f.bounds.top=440;

@@ -119,12 +119,13 @@
       if(mobile===null||!panels[name])return;
       if(registration&&!registration.classList.contains('hidden'))return;
       const previousHeight=captureHeight();
+      const previousMenu=active;
       if(active!==name||!expanded)full=false;
       if(active!==name)filtering=false;
       active=name;expanded=open;
       dock.classList.remove('is-detail');
       if(!mobile)setSidebarCollapsed?.(false);
-      onBeforeOpen?.();
+      onBeforeOpen?.({previousMenu,menu:name});
       if(name!=='tracking')gps.close();
       if(activate){
         if(name==='observations'){
@@ -247,7 +248,7 @@
       openSettings(panel){
         if(active==='settings')return;
         settingsReturn={active,expanded,full,filtering,detail:dock.classList.contains('is-detail'),sidebarCollapsed:document.body.classList.contains('bp-sidebar-collapsed')};
-        stopSlide();onBeforeOpen?.();
+        stopSlide();onBeforeOpen?.({previousMenu:active,menu:'settings'});
         active='settings';expanded=true;full=!!mobile;filtering=false;
         if(!mobile)setSidebarCollapsed?.(false);
         dock.classList.remove('is-detail');panel.hidden=false;paint();measure();

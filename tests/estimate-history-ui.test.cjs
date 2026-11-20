@@ -22,7 +22,7 @@ Object.defineProperties(HTMLElement.prototype,{
   value:{get(){return this.getAttribute('value')??this.querySelector('option')?.getAttribute('value')??'';},set(value){this.setAttribute('value',value);}},
   dataset:{get(){return new Proxy({},{get:(_,key)=>this.getAttribute('data-'+key),set:(_,key,value)=>{this.setAttribute('data-'+key,value);return true;}});}}
 });
-async function setup(loadItems,baseLayers=[]){
+async function setup(loadItems,baseLayers=[],onExport){
   const modules=await Promise.all(['ol/Feature.js','ol/geom/Point.js','ol/geom/LineString.js','ol/source/Vector.js','ol/style/Style.js','ol/style/Stroke.js','ol/style/Fill.js','ol/style/Circle.js','ol/style/RegularShape.js','ol/style/Text.js'].map(path=>import(path).then(module=>module.default)));
   const [Feature,Point,LineString,Vector,Style,Stroke,Fill,Circle,RegularShape,Text]=modules;
   const XYZ=(await import('ol/source/XYZ.js')).default;
@@ -48,11 +48,46 @@ async function setup(loadItems,baseLayers=[]){
   vm.runInNewContext(fs.readFileSync('public/js/realtime/estimate-history-ui.js','utf8'),{window:root,document,AbortController,Date});
   const api=root.createEstimateHistoryUi({ol:{Map:MapMock,View:class{constructor(options){Object.assign(this,options);}},Feature,geom:{Point,LineString},source:{Vector,XYZ},layer:{Tile:Layer,Vector:Layer},
     proj:{transform:coords=>coords},style:{Style,Stroke,Fill,Circle,RegularShape,Text,Icon},control:{defaults:{defaults:()=>[]}}},
-    projection:'EPSG:4326',getBaseLayers:()=>baseLayers,loadItems,registerBack(_dialog,fn){back=fn;return()=>unregistered++;}});
+    projection:'EPSG:4326',getBaseLayers:()=>baseLayers,loadItems,onExport,registerBack(_dialog,fn){back=fn;return()=>unregistered++;}});
   return {api,body,dialog:body.querySelector('dialog'),map:()=>instance,back:()=>back(),unregistered:()=>unregistered,document,documentEvents,motion,frames,
     frame(timestamp){const next=frames.entries().next().value;if(next){frames.delete(next[0]);next[1](timestamp);}}};
 }
 const row=(id,day)=>({id,bear_code:'MH-001',lat:35,lng:127+day/100,created_at:`2026-11-${String(day).padStart(2,'0')} 12:00:00`,estimation_method:'intersection'});
+test('history export includes all period results beyond lazy rows and blocks duplicate previews',async()=>{
+  const rows=Array.from({length:75},(_,i)=>({...row(String(i),1),created_at:new Date(Date.UTC(2026,10,1)+i*60000).toISOString()}));
+  let loaded,finish,calls=[];
+  const e=await setup(()=>new Promise(resolve=>loaded=resolve),[],(items,options)=>{
+    calls.push({items,options});return new Promise(resolve=>finish=resolve);
+  });
+  const opening=e.api.open(rows.at(-1)),button=e.dialog.querySelector('[data-export]');
+  assert.equal(button.disabled,true);button.fire('click');assert.equal(calls.length,0);
+  loaded({items:rows});await opening;
+  assert.equal(button.disabled,false);assert.equal(e.dialog.querySelectorAll('[data-record]').length,30);
+  button.fire('click');button.fire('click');
+  assert.equal(calls.length,1);assert.equal(calls[0].items.length,75);
+  assert.equal(calls[0].items[0].id,'74');assert.equal(calls[0].options.host,e.dialog);
+  assert.equal(button.disabled,true);finish();await new Promise(setImmediate);
+  assert.equal(button.disabled,false);
+  const form=e.dialog.querySelector('form');form.elements.period.value='day';form.elements.day.value='2026-11-02';form.fire('change');
+  assert.equal(button.disabled,true);
+  form.elements.day.value='2026-11-01';form.fire('change');button.fire('click');
+  assert.equal(calls.length,2);assert.equal(calls[1].items.length,75);finish();await new Promise(setImmediate);
+  e.api.close();
+});
+
+test('each history row and selected card show that record’s WGS 84 latitude and longitude',async()=>{
+  const current={...row('current',10),lat:35.12345678,lng:127.98765432};
+  const old={...row('old',9),lat:'36.234567',lng:'128.345678'};
+  const e=await setup(async()=>({items:[old,current]}));await e.api.open(current);
+  const label=selector=>e.dialog.querySelector(selector+' .estimate-history-coordinates').textContent;
+  assert.equal(label('[data-record="current"]'),'위도 35.123457 · 경도 127.987654');
+  assert.equal(label('[data-record="old"]'),'위도 36.234567 · 경도 128.345678');
+  assert.equal(label('[data-card]'),label('[data-record="current"]'));
+  e.dialog.querySelector('[data-record="old"]').fire('click');
+  assert.equal(label('[data-card]'),label('[data-record="old"]'));
+  e.api.close();
+});
+
 test('history starts with the clicked point selected, filters dates, expands its list and closes cleanly',async()=>{
   const seed=row('current',10),old=row('old',9);
   const e=await setup(async()=>({items:[seed,old]}));await e.api.open(seed);

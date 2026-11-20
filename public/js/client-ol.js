@@ -985,7 +985,8 @@
   function showSavedFileOpenDialog(options) {
     return new Promise(function (resolve) {
       const filePathText = options && options.filePathText ? String(options.filePathText) : "Documents/BearMap";
-      const overlay = document.createElement("div");
+      const overlay = document.createElement(options && options.host ? 'dialog' : 'div');
+      if (options && options.host) Object.assign(overlay.style, { margin: '0', width: '100%', maxWidth: 'none', height: '100dvh', maxHeight: 'none', border: '0', boxSizing: 'border-box' });
       overlay.style.position = "fixed";
       overlay.style.inset = "0";
       overlay.style.zIndex = "23100";
@@ -1066,6 +1067,7 @@
       overlay.addEventListener("click", function (event) {
         if (event.target === overlay) closeWith("close");
       });
+      overlay.addEventListener('cancel', function (event) { event.preventDefault(); closeWith('close'); });
       closeBtn.addEventListener("click", function () { closeWith("close"); });
       openBtn.addEventListener("click", function () { closeWith("open"); });
 
@@ -1077,6 +1079,7 @@
       card.appendChild(footer);
       overlay.appendChild(card);
       document.body.appendChild(overlay);
+      if (options && options.host) overlay.showModal();
     });
   }
 
@@ -1879,7 +1882,8 @@
       const onSave = options && typeof options.onSave === "function" ? options.onSave : null;
       const onShare = options && typeof options.onShare === "function" ? options.onShare : null;
 
-      const overlay = document.createElement("div");
+      const overlay = document.createElement(options && options.host ? 'dialog' : 'div');
+      if (options && options.host) Object.assign(overlay.style, { margin: '0', width: '100%', maxWidth: 'none', height: '100dvh', maxHeight: 'none', border: '0', boxSizing: 'border-box' });
       overlay.style.position = "fixed";
       overlay.style.inset = "0";
       overlay.style.zIndex = "23060";
@@ -2009,6 +2013,7 @@
       overlay.addEventListener("click", function (event) {
         if (event.target === overlay) closeWith(null);
       });
+      overlay.addEventListener('cancel', function (event) { event.preventDefault(); closeWith(null); });
       closeBtn.addEventListener("click", function () { closeWith(null); });
       doneBtn.addEventListener("click", function () { closeWith(null); });
       previewSaveBtn.addEventListener("click", async function () {
@@ -2024,6 +2029,7 @@
               ? saveResult.relativePath
               : ("BearMap/" + fileName);
             const nextAction = await showSavedFileOpenDialog({
+              host: options && options.host ? overlay : null,
               filePathText: "Documents/" + savePath
             });
             if (nextAction === "open") {
@@ -2071,6 +2077,7 @@
       card.appendChild(footer);
       overlay.appendChild(card);
       document.body.appendChild(overlay);
+      if (options && options.host) overlay.showModal();
     });
   }
 
@@ -4365,6 +4372,14 @@
 
   const observationPopupContentEl = document.createElement("div");
   observationPopupContentEl.className = "map-detail-popup-content";
+  const observationPopupFooterEl = document.createElement('div');
+  observationPopupFooterEl.className = 'map-detail-footer';
+  observationPopupFooterEl.hidden = true;
+  function syncObservationPopupFooter() {
+    const actions = observationPopupContentEl.querySelector('.obs-popup-card__actions');
+    observationPopupFooterEl.replaceChildren(...(actions ? [actions] : []));
+    observationPopupFooterEl.hidden = !actions;
+  }
   const observationPopupHistoryEl = document.createElement('button');
   observationPopupHistoryEl.type = 'button';
   observationPopupHistoryEl.className = 'map-detail-history-button';
@@ -4389,9 +4404,10 @@
   observationPopupHeaderEl.append(observationPopupTitleEl, observationPopupHeaderActionsEl);
   observationPopupEl.appendChild(observationPopupHeaderEl);
   observationPopupEl.appendChild(observationPopupContentEl);
+  observationPopupEl.appendChild(observationPopupFooterEl);
 
   // 상세 팝업의 관측점 수정 및 개체 추적 파일 버튼을 처리한다.
-  observationPopupContentEl.addEventListener("click", function (event) {
+  observationPopupEl.addEventListener("click", function (event) {
     const obsActionButton = event && event.target && typeof event.target.closest === "function"
       ? event.target.closest("[data-observation-action]")
       : null;
@@ -4451,6 +4467,7 @@
     let pixel = map.getPixelFromCoordinate(coordinate);
     if (!pixel) return;
     const previousScrollTop = observationPopupContentEl.scrollTop;
+    const isLandscape = window.innerWidth > window.innerHeight;
     const visual = window.visualViewport;
     const safe = window.getComputedStyle(document.documentElement);
     const screenLeft = Math.max(parseCssPx(safe.getPropertyValue("--safe-left")), (visual ? visual.offsetLeft : 0) - rect.left);
@@ -4467,7 +4484,7 @@
       if (control.matches('.map-right-controls, #compass')) {
         const rail = control.querySelector('.map-ctl-compass');
         right = Math.min(right, (rail?.getBoundingClientRect().left ?? bounds.left) - rect.left - 12);
-      } else {
+      } else if (!isLandscape) {
         top = Math.max(top, bounds.bottom - rect.top + 12);
       }
     }
@@ -4483,18 +4500,31 @@
       const panelTop = panelRect.top - rect.top;
       const panelBottom = panelTop + panelRect.height;
       if (panelRect.width > 0 && panelRect.height > 0 && panelLeft < right && panelRight > left && panelTop < bottom && panelBottom > top) {
-        const spaces = [
-          { ...visible, bottom: Math.min(bottom, panelTop - 18) },
-          { ...visible, left: Math.max(left, panelRight + 18) },
-          { ...visible, right: Math.min(right, panelLeft - 18) },
-          { ...visible, top: Math.max(top, panelBottom + 18) }
-        ].filter(space => space.right - space.left >= Math.min(180, visible.right - visible.left) &&
-          space.bottom - space.top >= Math.min(160, visible.bottom - visible.top));
-        spaces.sort((a, b) => Math.min(popupWidth, b.right - b.left) * (b.bottom - b.top) -
-          Math.min(popupWidth, a.right - a.left) * (a.bottom - a.top));
-        // A full-height/transitioning panel must never turn the popup into a zero-height strip.
-        // When no readable space remains beside it, use the visible map and scroll the popup body.
-        if (spaces.length) ({ left, right, top, bottom } = spaces[0]);
+        if (isLandscape) {
+          const expanded = panel.classList?.contains('is-expanded') ?? panelRect.height > 120;
+          if (expanded && right - panelRight - 12 >= 180 && panelRect.width < rect.width * 0.75) left = Math.max(left, panelRight + 12);
+          else if (panelTop > top) bottom = Math.min(bottom, panelTop - 12);
+        } else {
+          const spaces = [
+            { ...visible, bottom: Math.min(bottom, panelTop - 18) },
+            { ...visible, left: Math.max(left, panelRight + 18) },
+            { ...visible, right: Math.min(right, panelLeft - 18) },
+            { ...visible, top: Math.max(top, panelBottom + 18) }
+          ].filter(space => space.right - space.left >= Math.min(180, visible.right - visible.left) &&
+            space.bottom - space.top >= Math.min(160, visible.bottom - visible.top));
+          spaces.sort((a, b) => Math.min(popupWidth, b.right - b.left) * (b.bottom - b.top) -
+            Math.min(popupWidth, a.right - a.left) * (a.bottom - a.top));
+          // A full-height/transitioning panel must never turn the popup into a zero-height strip.
+          // When no readable space remains beside it, use the visible map and scroll the popup body.
+          if (spaces.length) ({ left, right, top, bottom } = spaces[0]);
+        }
+      }
+    }
+    if (isLandscape) {
+      for (const control of document.querySelectorAll?.('#btn-gps-record-toggle, #btn-sdr-diagnostics, #btn-map-layers') || []) {
+        if (!control.getClientRects().length) continue;
+        const bounds = control.getBoundingClientRect();
+        if (bounds.left - rect.left < left + popupWidth && bounds.left + bounds.width - rect.left > left) top = Math.max(top, bounds.bottom - rect.top + 12);
       }
     }
     const boundsKey = [left, right, top, bottom].map(Math.round).join(',');
@@ -4520,11 +4550,11 @@
       [centerX, pixel[1] - card.height - 58],
       [centerX, pixel[1] + 38]
     ];
-    let position = candidates.find(([x, y]) => x >= left && x + card.width <= right &&
+    let position = isLandscape ? [left, top] : candidates.find(([x, y]) => x >= left && x + card.width <= right &&
       y >= top && y + card.height <= bottom);
     // Only compact mobile details need a shared vertical layout for the pin and card.
     // Keep ordinary placements, zoom, list state and desktop behavior unchanged.
-    const mobileDetail = isCompactDetail && !!window.BearMobileDock?.isMobile?.();
+    const mobileDetail = !isLandscape && isCompactDetail && !!window.BearMobileDock?.isMobile?.();
     const layoutChanged = observationPopupEl._detailStableBounds !== boundsKey;
     const layoutMoving = panel?.classList?.contains('is-sliding') || panel?.classList?.contains('is-dragging');
     const markerOutside = pixel[0] < left + 24 || pixel[0] > right - 24 || pixel[1] < top + 52 || pixel[1] > bottom - 24;
@@ -4575,6 +4605,7 @@
     observationPopupEl._bearEstimateData = feature ? (feature.get("bearEstimateData") || null) : null;
     observationPopupHistoryEl.hidden = !observationPopupEl._bearEstimateData || !!observationPopupEl._bearEstimateData._unsaved;
     observationPopupContentEl.innerHTML = popupHtml;
+    syncObservationPopupFooter();
     const detailTitle = observationPopupContentEl.querySelector('.obs-popup-card__eyebrow')?.textContent || '상세정보';
     observationPopupTitleEl.textContent = detailTitle;
     observationPopupTitleEl.title = detailTitle;
@@ -5692,7 +5723,7 @@
     }
   }
 
-  async function downloadAllBearEstimatesXls(items) {
+  async function downloadAllBearEstimatesXls(items, options = {}) {
     const list = (Array.isArray(items) ? items : []).filter(function (it) {
       return it && Number.isFinite(Number(it.lat)) && Number.isFinite(Number(it.lng));
     });
@@ -5703,6 +5734,7 @@
     }
 
     const xlsRows = [["등록일자", "지명", "위치", "위치추적담당자", "X좌표(TM)", "Y좌표(TM)", "추적위치(위도 DMS)", "추적위치(경도 DMS)", "추적위치(위도)", "추적위치(경도)"]];
+    if (options.history) xlsRows[0].unshift('개체코드', '추정방식', '소속팀');
 
     list.forEach(function (it) {
       const lat = Number(it.lat);
@@ -5712,11 +5744,13 @@
       const legacyProjected = legacyTmCoordFromWgs84(lat, lng);
       const mapX = Array.isArray(legacyProjected) && Number.isFinite(legacyProjected[0]) ? legacyProjected[0].toFixed(3) : "-";
       const mapY = Array.isArray(legacyProjected) && Number.isFinite(legacyProjected[1]) ? legacyProjected[1].toFixed(3) : "-";
-      const timeLabel = formatKstDateTimeLabel(it.created_at || it.ts);
+      const timeLabel = formatKstDateTimeLabel(options.history ? (it.iso || it.created_at || it.ts) : (it.created_at || it.ts));
       const ownerName = normalizeOwnerName(it.owner) || "미지정";
       const placeName = normalizePlaceName(it.place) || "미지정";
 
-      xlsRows.push([timeLabel, placeName, it.admin_region || it.adminRegion || "", ownerName, mapX, mapY, latDms, lngDms, lat, lng]);
+      const row = [timeLabel, placeName, it.admin_region || it.adminRegion || "", ownerName, mapX, mapY, latDms, lngDms, lat, lng];
+      if (options.history) row.unshift(it.bear_code || it.bearCode || '', it.method === 'single' ? '단일 관측' : it.method === 'intersection' ? '교차 분석' : '방식 미상', it.team_name || '팀 미지정');
+      xlsRows.push(row);
     });
 
     const nowParts = new Intl.DateTimeFormat("en-CA", {
@@ -5734,7 +5768,8 @@
       if (p && p.type && p.type !== "literal") timeMap[p.type] = p.value;
     });
     const safeTime = [timeMap.year, timeMap.month, timeMap.day].join("-") + "_" + [timeMap.hour, timeMap.minute, timeMap.second].join("-");
-    const fileName = "bear_estimates_all_" + safeTime + ".xlsx";
+    const code = String(list[0].bear_code || list[0].bearCode || '').replace(/[^\w가-힣-]/g, '_');
+    const fileName = (options.history ? 'bear_estimate_history_' + code + '_' : 'bear_estimates_all_') + safeTime + '.xlsx';
 
     if (isNativeCapacitorPlatform()) {
       let savedFile = null;
@@ -5747,6 +5782,7 @@
 
       try {
         await showSavedXlsPreviewPopup({
+          host: options.host,
           fileName: fileName,
           previewHtml: buildXlsPreviewHtml(xlsRows),
           onSave: async function () {
@@ -5760,6 +5796,7 @@
           }
         });
       } catch (error) {
+        if (options.history) throw error;
         console.error("일괄 XLS 저장/공유 오류:", error);
         if (statusEl) {
           statusEl.textContent = "🔴 일괄 XLS 처리 실패: " + (error && error.message ? error.message : String(error));
@@ -5788,11 +5825,13 @@
 
     try {
       await showSavedXlsPreviewPopup({
+        host: options.host,
         fileName: fileName,
         previewHtml: buildXlsPreviewHtml(xlsRows),
         onSave: saveWebXls
       });
     } catch (error) {
+      if (options.history) throw error;
       console.error("일괄 XLS 생성 오류:", error);
       if (statusEl) {
         statusEl.textContent = "🔴 일괄 XLS 생성 실패: " + (error && error.message ? error.message : String(error));
@@ -5964,7 +6003,22 @@
     { label: "교차 분석", color: "#1D4ED8" },
     { label: "단일 관측", color: "#C24A00" }
   ];
-  const BEAR_MARKER_ICON = "css/svg/bear_marker_point.svg";
+  const bearMarkerIconCache = new Map();
+  function createBearMarkerIconDataUri(color) {
+    const fill = /^#[0-9a-f]{6}$/i.test(String(color || '')) ? color : '#526174';
+    if (!bearMarkerIconCache.has(fill)) {
+      const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="64" height="72" viewBox="0 0 64 72">
+        <defs><clipPath id="bear"><circle cx="32" cy="32" r="27"/></clipPath></defs>
+        <path d="M32 2C15.4 2 2 15.4 2 32c0 14.5 10.3 26.5 23.5 29L32 70l6.5-9C51.7 58.5 62 46.5 62 32 62 15.4 48.6 2 32 2Z" fill="${fill}" stroke="#fff" stroke-width="3" stroke-linejoin="round"/>
+        <g clip-path="url(#bear)">
+          <path d="M9 58c1-10 4-16 10-21l-1-8c-5-3-5-11 0-14 4-3 8-1 10 2a26 26 0 0 1 8 0c2-3 7-5 11-2 5 3 5 11 0 14l-1 8c6 5 9 11 10 21Z" fill="#242827" stroke="#fff" stroke-width="1.3" stroke-linejoin="round"/>
+          <path d="M19 39q13 8 26 0c-3 8-7 12-13 12S22 47 19 39Z" fill="#fff"/>
+        </g>
+      </svg>`;
+      bearMarkerIconCache.set(fill, 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg));
+    }
+    return bearMarkerIconCache.get(fill);
+  }
 
   function bearMarkerColor(item) {
     const method = getEstimationMethodLabel(item);
@@ -6005,7 +6059,7 @@
       item.appendChild(text);
       return item;
     };
-    bearItems.replaceChildren(...BEAR_MARKER_PALETTE.map(entry => makeItem(entry, BEAR_MARKER_ICON, true)));
+    bearItems.replaceChildren(...BEAR_MARKER_PALETTE.map(entry => makeItem(entry, createBearMarkerIconDataUri(entry.color), true)));
     let lastTeams = "", unregisterBack;
 
     function renderTeams() {
@@ -6075,10 +6129,10 @@
 
       const markerIconStyle = new ol.style.Style({
         image: new ol.style.Icon({
-          src: BEAR_MARKER_ICON,
+          src: createBearMarkerIconDataUri(markerColor),
           anchor: [0.5, 1],
-          width: 34,
-          height: 34
+          width: 36,
+          height: 40.5
         }),
         text: new ol.style.Text({
           text: markerText,
@@ -6863,10 +6917,10 @@
 
     feature.setStyle(new ol.style.Style({
       image: new ol.style.Icon({
-        src: BEAR_MARKER_ICON,
+        src: createBearMarkerIconDataUri(markerColor),
         anchor: [0.5, 1],
         width: 40,
-        height: 40
+        height: 45
       }),
       text: new ol.style.Text({
         text: String(point.bearCode || "추정"),
@@ -7290,14 +7344,14 @@
       previewHtml += '</colgroup>';
       previewHtml += '<thead style="background:#1e293b;"><tr>';
       headers.forEach(function (header) {
-        previewHtml += '<th style="border:1px solid #475569; padding:3px; text-align:left; color:#cbd5e1;">' + header + '</th>';
+        previewHtml += '<th style="border:1px solid #475569; padding:3px; text-align:left; color:#cbd5e1;">' + escapeHtml(header) + '</th>';
       });
       previewHtml += '</tr></thead>';
       previewHtml += '<tbody>';
       bodyRows.forEach(function (row) {
         previewHtml += '<tr>';
         headers.forEach(function (_, colIdx) {
-          previewHtml += '<td style="border:1px solid #475569; padding:3px; color:#e2e8f0;">' + String(row[colIdx] == null ? "" : row[colIdx]) + '</td>';
+          previewHtml += '<td style="border:1px solid #475569; padding:3px; color:#e2e8f0;">' + escapeHtml(String(row[colIdx] == null ? "" : row[colIdx])) + '</td>';
         });
         previewHtml += '</tr>';
       });
@@ -7876,11 +7930,21 @@
   updateRegistrationPreview();
   if (obsListModule) obsListModule.initialize();
   window.createMobileMapDock({ observations: obsListModule, gps: gpsTrackUi, expandBears: expandBearEstimatePanel, setSidebarCollapsed: setTabletSidebarCollapsed,
-    onBeforeOpen: function () { view.cancelAnimations(); closeObservationPopup(); controlsManager?.deactivateMeasure?.('menu'); } });
+    onBeforeOpen: function (navigation = {}) {
+      view.cancelAnimations();
+      if (window.innerWidth <= window.innerHeight || (navigation.previousMenu && navigation.previousMenu !== navigation.menu)) closeObservationPopup();
+      controlsManager?.deactivateMeasure?.('menu');
+    } });
+  if (typeof ResizeObserver === 'function') {
+    new ResizeObserver(() => {
+      if (observationPopupEl.style.display !== 'none') syncObservationPopupPlacement();
+    }).observe(document.getElementById('mobile-map-dock'));
+  }
   const estimateHistoryUi = window.createEstimateHistoryUi({
     ol, projection: view.getProjection(), resolutions: view.getResolutions(),
     getBaseLayers: () => [osmBase, englishBase, largeBase, satelliteBase, mbtilesLayer, hillshadeOverlay].filter(layer => layer.getVisible()),
     registerBack: registerBackClosableOverlay,
+    onExport: (items, options) => downloadAllBearEstimatesXls(items, { ...options, history: true }),
     async loadItems(item, signal) {
       const code = String(item.bear_code || item.bearCode || '').trim();
       const sameCode = row => String(row.bear_code || row.bearCode || '').trim().toUpperCase() === code.toUpperCase();
@@ -7913,6 +7977,7 @@
     if (html) {
       const scrollTop = observationPopupContentEl.scrollTop;
       observationPopupContentEl.innerHTML = html;
+      syncObservationPopupFooter();
       observationPopupContentEl.scrollTop = scrollTop;
     }
   });

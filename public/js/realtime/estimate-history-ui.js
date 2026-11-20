@@ -1,9 +1,9 @@
 (function(root){
   'use strict';
-  root.createEstimateHistoryUi=function({ol,projection,resolutions,getBaseLayers,loadItems,registerBack}){
+  root.createEstimateHistoryUi=function({ol,projection,resolutions,getBaseLayers,loadItems,registerBack,onExport}){
     const dialog=document.createElement('dialog');dialog.className='estimate-history';
     dialog.setAttribute('aria-labelledby','estimate-history-title');
-    dialog.innerHTML=`<header class="estimate-history-head"><button type="button" data-back aria-label="상세정보로 돌아가기"><svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="m12 4-6 6 6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button><h2 id="estimate-history-title"></h2></header>
+    dialog.innerHTML=`<header class="estimate-history-head"><button type="button" data-back aria-label="상세정보로 돌아가기"><svg viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path d="m12 4-6 6 6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button><h2 id="estimate-history-title"></h2><button type="button" data-export disabled>엑셀 다운로드</button></header>
       <form class="estimate-history-filter" aria-label="추정 위치 이력 기간 필터">
         <label for="estimate-history-period">등록 기간</label><select id="estimate-history-period" name="period"><option value="all" selected>전체 기간</option><option value="day">일별</option><option value="month">월별</option><option value="year">년별</option><option value="range">기간 지정</option></select>
         <input type="date" name="day" aria-label="조회 날짜" hidden><input type="month" name="month" aria-label="조회 월" hidden><input type="number" min="1900" max="9999" name="year" aria-label="조회 연도" hidden>
@@ -17,12 +17,14 @@
     document.body.appendChild(dialog);
     const node=selector=>dialog.querySelector(selector),form=node('form'),notice=node('.estimate-history-notice');
     const list=node('.estimate-history-list'),card=node('[data-card]'),toggle=node('[data-toggle]'),mapTarget=node('.estimate-history-map');
+    node('[data-export]').title='선택한 기간의 전체 이력을 미리보기 후 다운로드합니다.';
     const filters=root.BearObservationFilters,model=root.BearEstimateHistoryModel;
     const today=filters.dateKey(new Date());
     form.elements.period.value='all';
     for(const [key,value]of Object.entries({day:today,month:today.slice(0,7),year:today.slice(0,4),start:today,end:today}))form.elements[key].value=value;
     let map=null,source=null,layers=[],records=[],visible=[],selected=null,seed=null,controller=null,version=0,unregister=null,showCount=30,loadNotice='';
     let overlapIds=null,currentId=null;
+    let loading=false,exporting=false;
     let baseSources=[],tileNotice='';
     const wide=root.matchMedia('(min-width:900px) and (orientation:landscape)');
     const reducedMotion=root.matchMedia('(prefers-reduced-motion: reduce)');
@@ -58,6 +60,11 @@
       line.appendChild(method(row));return line;
     }
     function details(row){return (row.owner||'담당자 미지정')+' · '+(row.team_name||'팀 미지정');}
+    function coordinateLabel(row){
+      const line=document.createElement('p');line.className='estimate-history-coordinates';
+      line.textContent='위도 '+row.lat.toFixed(6)+' · 경도 '+row.lng.toFixed(6);
+      return line;
+    }
     function setExpanded(expanded,refit=true){
       dialog.classList.toggle('is-expanded',expanded);list.hidden=!expanded;card.hidden=expanded;
       const label=expanded?'이력 목록 접기':'이력 목록 펼치기';toggle.setAttribute('aria-label',label);toggle.title=label;toggle.setAttribute('aria-expanded',String(expanded));
@@ -70,6 +77,7 @@
       if(!row){const text=document.createElement('p');text.textContent='선택한 기간에 추정 위치가 없습니다.';card.appendChild(text);return;}
       card.appendChild(title(row,index));
       for(const value of [details(row),row.admin_region||row.place||'위치 미지정']){const text=document.createElement('p');text.textContent=value;card.appendChild(text);}
+      card.appendChild(coordinateLabel(row));
     }
     function paintList(){
       list.replaceChildren();
@@ -79,6 +87,7 @@
         button.dataset.current=String(row.id===currentId);
         button.appendChild(title(row,visible.indexOf(row)));
         const text=document.createElement('small');text.textContent=details(row)+' · '+(row.admin_region||row.place||'위치 미지정');button.appendChild(text);
+        button.appendChild(coordinateLabel(row));
         button.addEventListener('click',()=>select(row.id,true));list.appendChild(button);
       }
       if(!rows.length){const empty=document.createElement('p');empty.className='estimate-history-empty';empty.textContent='조회 기간에 이력이 없습니다.';list.appendChild(empty);}
@@ -102,6 +111,7 @@
       node('[data-count]').textContent=overlapIds?'겹친 이력 '+overlapIds.size+'건':('추정 위치 '+visible.length+'건'+(period().period!=='all'?' (전체 '+records.length+'건)':''));
       node('[data-clear-group]').hidden=!overlapIds;
       node('[data-reset]').disabled=period().period==='all'&&!overlapIds;
+      node('[data-export]').disabled=loading||exporting||!visible.length||typeof onExport!=='function';
     }
     function openGroup(ids){
       overlapIds=new Set(ids);showCount=Math.max(30,ids.length);
@@ -207,18 +217,26 @@
       for(const tiles of ownedSources)tiles.dispose();
     }
     async function open(item){
-      if(dialog.open)close();seed=item;selected=String(item.id);currentId=String(item.id);showCount=30;overlapIds=null;tileNotice='';loadNotice='이력을 불러오는 중입니다.';
+      if(dialog.open)close();seed=item;selected=String(item.id);currentId=String(item.id);showCount=30;overlapIds=null;tileNotice='';loadNotice='이력을 불러오는 중입니다.';loading=true;exporting=false;
       records=model.normalize([item]);periodFields();dialog.querySelector('h2').textContent=item.bear_code||item.bearCode;
       dialog.showModal();unregister=registerBack?.(dialog,close);createMap();setExpanded(wide.matches);render();
       const current=++version;controller=new AbortController();
       try{
         const result=await loadItems(item,controller.signal);
         if(current!==version)return;
-        records=model.normalize(result.items);loadNotice=result.notice||'';
+        records=model.normalize(result.items);loadNotice=result.notice||'';loading=false;
         currentId=records.filter(row=>row.active===true).at(-1)?.id||String(seed.id);
         selected=String(seed.id);render();
-      }catch(error){if(current!==version)return;records=[];loadNotice=(error.message||'이력을 불러오지 못했습니다.')+' 창을 닫고 다시 시도해주세요.';render();}
+      }catch(error){if(current!==version)return;loading=false;records=[];loadNotice=(error.message||'이력을 불러오지 못했습니다.')+' 창을 닫고 다시 시도해주세요.';render();}
     }
+    node('[data-export]').addEventListener('click',async()=>{
+      if(loading||exporting||!visible.length||typeof onExport!=='function')return;
+      const current=version;
+      exporting=true;paintCount();
+      try{await onExport([...visible].reverse(),{host:dialog});}
+      catch(error){if(current===version){notice.textContent='엑셀 미리보기를 열지 못했습니다. '+(error.message||error);notice.hidden=false;}}
+      finally{if(current===version){exporting=false;paintCount();}}
+    });
     node('[data-back]').addEventListener('click',close);
     dialog.addEventListener('cancel',event=>{event.preventDefault();close();});
     toggle.addEventListener('click',()=>setExpanded(!dialog.classList.contains('is-expanded')));node('[data-fit]').addEventListener('click',fit);
