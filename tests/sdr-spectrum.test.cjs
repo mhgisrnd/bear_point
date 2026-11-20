@@ -73,3 +73,19 @@ test('compact spectrum uses its displayed height and keeps axis labels within th
   assert.ok(labels.every(label=>label.x>=0&&label.x<=260&&label.y>=0&&label.y<128));
   assert.ok(labels.some(label=>label.text==='MHz'));
 });
+
+test('USB audio spectrum maps its peak and CW marker to the same Hz axis', () => {
+  const plot = setup(), labels = [], peaks = [];
+  const ctx = { setTransform() {}, fillRect() {}, beginPath() {}, moveTo() {}, lineTo() {},
+    stroke() {}, fillText(text, x) { labels.push([text, x]); }, setLineDash() {}, closePath() {}, fill() {},
+    arc(x) { peaks.push(x); } };
+  const canvas = { clientWidth: 280, clientHeight: 160, getContext: () => ctx };
+  const bins = Array(80).fill(-120);
+  bins[19] = -31;
+  const data = plot.describe(bins, 1200, 1875, { audio: true });
+  assert.equal(data.peakHz, 707.8125);
+  plot.draw(canvas, data, 1200, 1875, 'active', null, data.peakHz, { audio: true });
+  assert.ok(labels.some(([text, x]) => text === 'CW' && x === peaks[0]));
+  assert.ok(labels.some(([text]) => text === 'Hz'));
+  assert.ok(!labels.some(([text]) => text === 'MHz'));
+});

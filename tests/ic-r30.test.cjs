@@ -91,9 +91,12 @@ function setup(native = true) {
     calls.push(['deleteTest', options]);
     return emit({ ...state, test: { ...state.test, records: [] } });
   };
+  const timers = new Map();
+  let nextTimer = 0;
   const window = {
     confirm: () => true,
-    setTimeout, clearTimeout,
+    setTimeout(fn) { timers.set(++nextTimer, fn); return nextTimer; },
+    clearTimeout(id) { timers.delete(id); },
     Capacitor: { getPlatform: () => native ? 'android' : 'web', Plugins: { IcR30: plugin } },
     BearSdrAnimals: { formatHz: hz => String(hz / 1e6), load: async () => ({ notice: '', items: [
       { code: 'KF-110', frequencies: [{ slot: 'A', hz: 148241500 }] },
@@ -102,6 +105,7 @@ function setup(native = true) {
     BearSdrRegistration: { open(context, back) { registered = context; returned = back; return registrationResult; } }
   };
   vm.runInNewContext(fs.readFileSync('public/js/sdr/frequency-controls.js', 'utf8') + '\n' +
+    fs.readFileSync('public/js/sdr/spectrum.js', 'utf8') + '\n' +
     fs.readFileSync('public/js/sdr/ic-r30.js', 'utf8'), { window, document: { createElement: () => new Element() } });
   const favorites = new Set(); let revision = 0, favoritesOnly = false;
   const controller = window.BearIcR30.mount(dialog, {
@@ -123,6 +127,11 @@ function setup(native = true) {
     await node('devices').children[0].children[2].click();
   }
   return { dialog, panel, footer, node, tab, plugin, controller, calls, emit, connect, reading,
+    async pollAudio() {
+      const [id, fn] = timers.entries().next().value;
+      timers.delete(id);
+      await fn();
+    },
     setFavoritesOnly(value) { favoritesOnly = value; controller.refreshFavorites(); },
     favoritesOnly: () => favoritesOnly,
     setUsbLocked(value) { usbLocked = value; controller.updateUsb(); },
@@ -130,28 +139,84 @@ function setup(native = true) {
     setRegistrationResult(value) { registrationResult = value; } };
 }
 
-test('Bluetooth USB audio renders waveform and tone independently of CI-V and stops when the dialog closes', async () => {
+test('Bluetooth USB audio follows attachment and closing the dialog only stops UI polling', async () => {
   const ui = setup();
-  ui.plugin.startUsbAudio = async () => ui.calls.push(['startUsbAudio']);
-  ui.plugin.getUsbAudioStatus = async () => ({
+  const spectrumDbfs = Array(80).fill(-100);
+  spectrumDbfs[19] = -31;
+  const audio = {
     state: 'active', message: 'USB Audio Device', low: [-200, 20], high: [-30, 600],
-    ready: true, tracked: true, confidence: 2, toneHz: 700, snrDb: 12.5, count: 3
-  });
-  ui.plugin.stopUsbAudio = async () => ui.calls.push(['stopUsbAudio']);
+    spectrumDbfs, spectrumCenterHz: 1200, spectrumSpanHz: 1875,
+    ready: true, tracked: true, confidence: 2, toneHz: 700, snrDb: 12.5, count: 3, speakerEnabled: true
+  };
+  let attached = false;
+  ui.plugin.getUsbAudioStatus = async () => attached ? audio : { state: 'waiting' };
+  ui.plugin.setUsbAudioPlayback = async settings => {
+    if ("muted" in settings) audio.speakerEnabled = !settings.muted;
+    if ("filterLevel" in settings) audio.filterLevel = settings.filterLevel;
+    return audio;
+  };
   await ui.connect();
+  assert.match(ui.node('audio-peak').textContent, /USB 오디오가 연결되면/);
   try {
-    await ui.node('audio-toggle').click();
+    attached = true;
+    await ui.pollAudio();
     assert.equal(ui.node('audio-wave').hidden, false);
     assert.match(ui.node('audio-path').attributes.d, /M.*V.*M.*V/);
     assert.match(ui.node('audio-tone').textContent, /반복 CW 후보 · 700 Hz.*3회/);
+    assert.match(ui.node('audio-peak').textContent, /최대 피크 708 Hz.*CW 후보 700 Hz/);
+    assert.match(ui.node('audio-status').textContent, /스피커 재생/);
+    ui.node('audio-filter').value = '3';
+    await ui.node('audio-filter').events.change();
+    assert.equal(ui.node('audio-filter').value, '3');
+    await ui.node('audio-mute').click();
+    assert.equal(ui.node('audio-mute').textContent, '소리 켜기');
+    assert.match(ui.node('audio-peak').textContent, /CW 후보 700 Hz/);
+    await ui.node('audio-mute').click();
+    assert.equal(ui.node('audio-mute').textContent, '음소거');
+    attached = false;
+    await ui.pollAudio();
+    assert.equal(ui.node('audio-wave').hidden, true);
+    assert.match(ui.node('audio-status').textContent, /연결 대기/);
     assert.equal(ui.controller.status().state, 'connected');
+    attached = true;
+    await ui.pollAudio();
+    assert.match(ui.node('audio-peak').textContent, /CW 후보 700 Hz/);
   } finally {
     ui.dialog.close();
     ui.dialog.events.close();
   }
   assert.equal(ui.node('audio-wave').hidden, true);
-  assert.deepEqual(ui.calls.slice(-2), [['startUsbAudio'], ['stopUsbAudio']]);
+  assert.match(ui.node('audio-peak').textContent, /USB 오디오가 연결되면/);
+  assert.equal(ui.calls.some(([method]) => method === 'disconnect'), false);
   assert.equal(ui.controller.status().state, 'connected');
+});
+
+test('Bluetooth USB audio exposes a permission action only when Android needs it', async () => {
+  const ui = setup();
+  const permissionRequests = [];
+  ui.plugin.getUsbAudioStatus = async ({ requestPermission }) => {
+    permissionRequests.push(requestPermission);
+    return requestPermission ? { state: 'starting' } : { state: 'permission' };
+  };
+  await ui.connect();
+  assert.equal(ui.node('audio-permission').hidden, false);
+  await ui.pollAudio();
+  assert.deepEqual(permissionRequests, [false, false]);
+  await ui.node('audio-permission').click();
+  assert.deepEqual(permissionRequests, [false, false, true]);
+  assert.equal(ui.node('audio-permission').hidden, true);
+});
+
+test('Bluetooth connection progress identifies SPP and CI-V without treating either as a confirmed measurement', async () => {
+  const ui = setup();
+  await ui.tab('bt').click();
+  await tick();
+  for (const message of ['Bluetooth 데이터 연결 재시도 중…', 'Bluetooth 데이터 연결됨 · CI-V 응답 재확인 중…']) {
+    ui.emit({ state: 'connecting', connectionProgress: message, measurement: null });
+    assert.equal(ui.node('status').textContent, message);
+    assert.equal(ui.node('signal').hidden, true);
+    assert.equal(ui.node('disconnect').hidden, false);
+  }
 });
 
 test('Bluetooth choice is previewable on the web but hardware actions are Android-only', async () => {

@@ -8,7 +8,7 @@ import android.bluetooth.BluetoothManager;
 import android.bluetooth.BluetoothSocket;
 import android.content.Context;
 import android.content.Intent;
-import android.media.AudioManager;
+import android.media.AudioDeviceInfo;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
@@ -45,6 +45,9 @@ public final class IcR30Plugin extends Plugin {
     private static final String TAG = "IcR30";
     private static final UUID SPP = UUID.fromString("00001101-0000-1000-8000-00805f9b34fb");
     private static final long CIV_STARTUP_DELAY_MS = 1500;
+    private static final long SPP_ATTEMPT_TIMEOUT_MS = 9000;
+    private static final long SPP_RETRY_DELAY_MS = 800;
+    private static final long CONNECTION_TIMEOUT_MS = 30000;
     private static final long METER_POLL_DELAY_MS = 50;
     private static final long LIVE_METADATA_INTERVAL_MS = 500;
     private static final long TEST_METADATA_INTERVAL_MS = 2000;
@@ -59,10 +62,13 @@ public final class IcR30Plugin extends Plugin {
     private PluginCall permissionCall;
     private PluginCall audioPermissionCall;
     private boolean audioPermissionCancelled;
+    private boolean usbAudioMuted;
     private IcR30UsbAudio usbAudio;
     private volatile int generation;
     private volatile boolean stopped;
     private String state = "idle", deviceId = "", deviceName = "", lastError = "";
+    private String connectionProgress = "";
+    private Runnable connectionDeadline;
     private JSObject measurement;
     private final IcR30TestRecording test = new IcR30TestRecording();
     private long metadataAt;
@@ -127,63 +133,117 @@ public final class IcR30Plugin extends Plugin {
         result.put("deviceId", deviceId);
         result.put("deviceName", deviceName);
         result.put("error", lastError);
+        result.put("connectionProgress", connectionProgress);
         result.put("measurement", measurement == null ? JSObject.NULL : measurement);
         result.put("test", testSnapshot());
         return result;
     }
     private void publish() { notifyListeners("receiverStateChanged", snapshot()); }
 
-    @PluginMethod public void startUsbAudio(PluginCall call) {
-        main.post(() -> {
-            if (audioPermissionCall != null) { call.reject("마이크 권한 요청이 진행 중입니다."); return; }
-            if (!canCaptureAudio(call)) return;
-            if (getPermissionState("usbAudio") == PermissionState.GRANTED) openUsbAudio(call);
-            else {
-                audioPermissionCall = call;
-                audioPermissionCancelled = false;
-                requestPermissionForAlias("usbAudio", call, "usbAudioPermissionResult");
-            }
-        });
+    @PluginMethod public void getUsbAudioStatus(PluginCall call) {
+        main.post(() -> syncUsbAudio(call, call.getBoolean("requestPermission", false)));
     }
 
     @PermissionCallback private void usbAudioPermissionResult(PluginCall call) {
         main.post(() -> {
             audioPermissionCall = null;
-            if (audioPermissionCancelled) { call.reject("USB 오디오 입력 시작이 취소되었습니다."); return; }
-            if (getPermissionState("usbAudio") != PermissionState.GRANTED) {
-                call.reject("USB 오디오를 받으려면 마이크 권한을 허용하세요."); return;
-            }
-            openUsbAudio(call);
+            if (audioPermissionCancelled) call.resolve(IcR30UsbAudio.state("idle", ""));
+            else if (getPermissionState("usbAudio") == PermissionState.GRANTED) syncUsbAudio(call, false);
+            else call.resolve(usbAudioPermissionNeeded());
         });
     }
 
-    private boolean canCaptureAudio(PluginCall call) {
-        if (!stopped && "connected".equals(state)) return true;
-        call.reject("수신기 화면에서 IC-R30을 먼저 연결하세요.");
-        return false;
+    private JSObject usbAudioPermissionNeeded() {
+        return IcR30UsbAudio.state("permission", "USB 오디오를 사용하려면 Android 마이크 권한을 허용하세요.");
     }
 
-    private void openUsbAudio(PluginCall call) {
-        if (!canCaptureAudio(call)) return;
-        if (usbAudio == null || "error".equals(usbAudio.snapshot().getString("state"))) {
-            AudioManager manager = (AudioManager) getContext().getSystemService(Context.AUDIO_SERVICE);
-            usbAudio = new IcR30UsbAudio(manager);
+    private void syncUsbAudio(PluginCall call, boolean requestPermission) {
+        if (stopped || !"connected".equals(state)) {
+            call.resolve(IcR30UsbAudio.state("idle", ""));
+            return;
+        }
+        if (usbAudio != null && !usbAudio.failed()) {
+            call.resolve(usbAudio.snapshot());
+            return;
+        }
+        AudioDeviceInfo input = IcR30UsbAudio.findInput(getContext());
+        if (input == null) {
+            closeUsbAudio();
+            call.resolve(IcR30UsbAudio.state("waiting", "USB 오디오 연결 대기 중"));
+            return;
+        }
+        if (usbAudio != null && !usbAudio.usesInput(input)) closeUsbAudio();
+        PermissionState permission = getPermissionState("usbAudio");
+        if (permission != PermissionState.GRANTED) {
+            if (audioPermissionCall != null) {
+                call.resolve(IcR30UsbAudio.state("starting", "Android 마이크 권한 확인 중…"));
+            } else if (requestPermission && permission == PermissionState.DENIED) {
+                try {
+                    getActivity().startActivity(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                            Uri.fromParts("package", getContext().getPackageName(), null)));
+                    call.resolve(usbAudioPermissionNeeded());
+                } catch (android.content.ActivityNotFoundException error) {
+                    call.resolve(IcR30UsbAudio.state("permission", "Android 앱 설정에서 마이크 권한을 허용하세요."));
+                }
+            } else if (requestPermission || permission == PermissionState.PROMPT) {
+                audioPermissionCall = call;
+                audioPermissionCancelled = false;
+                requestPermissionForAlias("usbAudio", call, "usbAudioPermissionResult");
+            } else call.resolve(usbAudioPermissionNeeded());
+            return;
+        }
+        if (usbAudio == null) {
+            if (!IcR30Service.beginAudio(this::setUsbAudioMuted)) {
+                call.resolve(IcR30UsbAudio.state("waiting", "백그라운드 오디오 서비스 시작 대기 중"));
+                return;
+            }
+            int filterLevel = getContext().getSharedPreferences("ic_r30_audio", Context.MODE_PRIVATE).getInt("filterLevel", 0);
+            usbAudio = new IcR30UsbAudio(getContext(), main, input, usbAudioMuted, filterLevel, this::updateAudioNotification);
             audioIo.execute(usbAudio);
         }
         call.resolve(usbAudio.snapshot());
     }
 
-    @PluginMethod public void getUsbAudioStatus(PluginCall call) {
-        main.post(() -> call.resolve(usbAudio == null ? IcR30UsbAudio.state("idle", "") : usbAudio.snapshot()));
+    @PluginMethod public void setUsbAudioPlayback(PluginCall call) {
+        main.post(() -> {
+            if (usbAudio == null || usbAudio.failed()) { call.reject("USB 오디오가 연결되어 있지 않습니다."); return; }
+            Object filter = call.getData().opt("filterLevel");
+            Object muted = call.getData().opt("muted");
+            if (filter != null && (!(filter instanceof Number) ||
+                    ((Number) filter).doubleValue() != ((Number) filter).intValue() ||
+                    ((Number) filter).intValue() < 0 || ((Number) filter).intValue() > 3)) {
+                call.reject("필터 강도는 원음, 약, 중, 강 중에서 선택하세요.");
+                return;
+            }
+            if (muted != null && !(muted instanceof Boolean)) { call.reject("음소거 상태가 올바르지 않습니다."); return; }
+            if (filter != null) {
+                int level = ((Number) filter).intValue();
+                usbAudio.setFilterLevel(level);
+                getContext().getSharedPreferences("ic_r30_audio", Context.MODE_PRIVATE).edit().putInt("filterLevel", level).apply();
+            }
+            if (muted != null) {
+                setUsbAudioMuted((Boolean) muted);
+            }
+            call.resolve(usbAudio.snapshot());
+        });
     }
 
-    @PluginMethod public void stopUsbAudio(PluginCall call) {
-        main.post(() -> { closeUsbAudio(); call.resolve(); });
+    private void setUsbAudioMuted(boolean muted) {
+        if (usbAudio == null || usbAudio.failed()) return;
+        usbAudioMuted = muted;
+        usbAudio.setMuted(muted);
+        updateAudioNotification();
+    }
+
+    private void updateAudioNotification() {
+        if (usbAudio == null || usbAudio.failed()) IcR30Service.endAudio();
+        else IcR30Service.audioChanged(usbAudio.ready(), usbAudio.speakerEnabled(), usbAudioMuted);
     }
 
     private void closeUsbAudio() {
         audioPermissionCancelled = true;
         if (usbAudio != null) { usbAudio.stop(); usbAudio = null; }
+        IcR30Service.endAudio();
     }
 
     @PluginMethod public void getStatus(PluginCall call) {
@@ -279,8 +339,6 @@ public final class IcR30Plugin extends Plugin {
                     if (device.getAddress().equals(address)) selected = device;
                 }
                 if (selected == null) throw new IllegalArgumentException("페어링된 IC-R30을 선택해주세요.");
-                BluetoothSocket opened = selected.createRfcommSocketToServiceRecord(SPP);
-                socket = opened;
                 deviceId = address;
                 deviceName = selected.getName() == null ? "IC-R30" : selected.getName();
                 connectingCall = call;
@@ -289,64 +347,139 @@ public final class IcR30Plugin extends Plugin {
                 measurement = null;
                 int token = ++generation;
                 IcR30Service.launch(getContext(), () -> fail("IC-R30 연결 유지가 종료되었습니다."));
-                publish();
-                Runnable timeout = () -> {
-                    if (token == generation && connectingCall != null) fail("Bluetooth 연결 시간이 초과되었습니다. IC-R30 SPP 설정과 다른 앱의 연결을 확인하세요.");
+                connectionDeadline = () -> {
+                    if (token == generation && connectingCall != null) fail(connectionProgress + " · 연결 시간이 초과되었습니다.");
                 };
-                main.postDelayed(timeout, 20000);
-                io.execute(() -> {
-                    IcR30Civ pendingClient = null;
-                    try {
-                        opened.connect();
-                        Log.d(TAG, "SPP connected; waiting for IC-R30 CI-V startup");
-                        boolean debug = (getContext().getApplicationInfo().flags & android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0;
-                        IcR30Civ civ = new IcR30Civ(opened.getInputStream(), opened.getOutputStream(), 3000,
-                            message -> { if (debug) Log.d(TAG, message); },
-                            error -> main.post(() -> {
-                                if (token == generation && !test.active()) fail(error.getMessage());
-                            }));
-                        pendingClient = civ;
-                        // The IC-R30 accepts RFCOMM before its CI-V endpoint is ready; early requests get no reply.
-                        try { Thread.sleep(CIV_STARTUP_DELAY_MS); }
-                        catch (InterruptedException error) {
-                            Thread.currentThread().interrupt();
-                            throw new IOException("CI-V 연결 확인이 취소되었습니다.", error);
-                        }
-                        if (token != generation) throw new IOException("CI-V 연결 확인이 취소되었습니다.");
-                        JSObject reading = read(civ);
-                        main.post(() -> {
-                            main.removeCallbacks(timeout);
-                            if (token != generation) {
-                                try { civ.close(); }
-                                catch (IOException error) { Log.w(TAG, "Cancelled CI-V reader cleanup failed", error); }
-                                return;
-                            }
-                            client = civ;
-                            state = "connected";
-                            measurement = reading;
-                            connectingCall = null;
-                            IcR30Service.keepAwakeForOperation(false);
-                            publish();
-                            call.resolve(snapshot());
-                            schedulePoll(token, civ);
-                        });
-                    } catch (IOException | SecurityException error) {
-                        if (pendingClient != null) {
-                            try { pendingClient.close(); }
-                            catch (IOException closeError) { error.addSuppressed(closeError); }
-                        }
-                        main.post(() -> {
-                            main.removeCallbacks(timeout);
-                            if (token == generation) fail(error.getMessage());
-                        });
-                    }
-                });
-            } catch (IOException | RuntimeException error) {
+                main.postDelayed(connectionDeadline, CONNECTION_TIMEOUT_MS);
+                connectSpp(selected, token, false);
+            } catch (RuntimeException error) {
                 lastError = error.getMessage();
-                if (connectingCall == call) closeSession(lastError);
+                if (connectingCall == call) fail(lastError);
                 else call.reject(lastError, error);
             }
         });
+    }
+
+    private void setConnectionProgress(int token, String progress) {
+        if (token != generation || connectingCall == null) return;
+        connectionProgress = progress;
+        publish();
+    }
+
+    @android.annotation.SuppressLint("MissingPermission") // connectPermitted checks BLUETOOTH_CONNECT.
+    private void connectSpp(BluetoothDevice device, int token, boolean retry) {
+        if (token != generation || connectingCall == null) return;
+        setConnectionProgress(token, retry ? "Bluetooth 데이터 연결 재시도 중…" : "Bluetooth 데이터 연결 중…");
+        BluetoothSocket opened;
+        try {
+            opened = device.createRfcommSocketToServiceRecord(SPP);
+        } catch (IOException error) {
+            onSppFailure(device, token, retry, error);
+            return;
+        } catch (SecurityException error) {
+            fail("Bluetooth 권한을 확인해주세요.");
+            return;
+        }
+        socket = opened;
+        Runnable timeout = () -> {
+            if (token == generation && socket == opened && !opened.isConnected()) closePendingSocket(opened);
+        };
+        main.postDelayed(timeout, SPP_ATTEMPT_TIMEOUT_MS);
+        io.execute(() -> {
+            if (token != generation) return;
+            IcR30Civ pending = null;
+            boolean sppConnected = false;
+            try {
+                opened.connect();
+                sppConnected = true;
+                main.removeCallbacks(timeout);
+                Log.d(TAG, "SPP connected; waiting for IC-R30 CI-V startup");
+                main.post(() -> setConnectionProgress(token, "Bluetooth 데이터 연결됨 · CI-V 응답 확인 중…"));
+                boolean debug = (getContext().getApplicationInfo().flags & android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0;
+                IcR30Civ civ = new IcR30Civ(opened.getInputStream(), opened.getOutputStream(), 3000,
+                        message -> { if (debug) Log.d(TAG, message); },
+                        error -> main.post(() -> {
+                            if (token == generation && connectingCall == null && !test.active()) fail(error.getMessage());
+                        }));
+                pending = civ;
+                Thread.sleep(CIV_STARTUP_DELAY_MS);
+                if (token != generation) throw new IOException("CI-V 연결 확인이 취소되었습니다.");
+                JSObject reading = readInitialCiv(civ, token);
+                main.post(() -> finishConnection(token, civ, reading));
+            } catch (InterruptedException cancelled) {
+                Thread.currentThread().interrupt();
+                closePendingClient(pending);
+                main.post(() -> { if (token == generation) fail("Bluetooth 연결이 취소되었습니다."); });
+            } catch (IOException | SecurityException error) {
+                closePendingClient(pending);
+                boolean connected = sppConnected;
+                main.post(() -> {
+                    if (token != generation) return;
+                    if (error instanceof SecurityException) fail("Bluetooth 권한을 확인해주세요.");
+                    else if (connected) fail("Bluetooth 데이터는 연결됐지만 CI-V 초기 확인에 실패했습니다. " + error.getMessage());
+                    else onSppFailure(device, token, retry, error);
+                });
+            } finally {
+                main.removeCallbacks(timeout);
+            }
+        });
+    }
+
+    private void onSppFailure(BluetoothDevice device, int token, boolean retry, Exception error) {
+        Log.w(TAG, "Bluetooth SPP connection attempt failed", error);
+        closePendingSocket(socket);
+        socket = null;
+        if (retry) {
+            fail("Bluetooth 데이터 연결(SPP)에 실패했습니다. IC-R30의 데이터 장치 연결과 다른 앱의 연결을 확인하세요.");
+            return;
+        }
+        setConnectionProgress(token, "Bluetooth 데이터 연결 재시도 대기 중…");
+        main.postDelayed(() -> connectSpp(device, token, true), SPP_RETRY_DELAY_MS);
+    }
+
+    private static void closePendingSocket(BluetoothSocket socket) {
+        if (socket == null) return;
+        try { socket.close(); }
+        catch (IOException error) { Log.w(TAG, "Pending SPP socket close failed", error); }
+    }
+
+    private static void closePendingClient(IcR30Civ civ) {
+        if (civ == null) return;
+        try { civ.close(); }
+        catch (IOException error) { Log.w(TAG, "Pending CI-V reader close failed", error); }
+    }
+
+    private JSObject readInitialCiv(IcR30Civ civ, int token) throws IOException {
+        try { return read(civ); }
+        catch (IcR30Civ.ResponseTimeout timeout) {
+            if (token != generation) throw timeout;
+            Log.w(TAG, "Initial CI-V response timed out; retrying on SPP", timeout);
+            main.post(() -> setConnectionProgress(token, "Bluetooth 데이터 연결됨 · CI-V 응답 재확인 중…"));
+            return read(civ);
+        }
+    }
+
+    private void finishConnection(int token, IcR30Civ civ, JSObject reading) {
+        if (token != generation || connectingCall == null) {
+            closePendingClient(civ);
+            return;
+        }
+        clearConnectionProgress();
+        client = civ;
+        state = "connected";
+        measurement = reading;
+        PluginCall call = connectingCall;
+        connectingCall = null;
+        IcR30Service.keepAwakeForOperation(false);
+        publish();
+        call.resolve(snapshot());
+        schedulePoll(token, civ);
+    }
+
+    private void clearConnectionProgress() {
+        if (connectionDeadline != null) main.removeCallbacks(connectionDeadline);
+        connectionDeadline = null;
+        connectionProgress = "";
     }
     private JSObject read(IcR30Civ civ) throws IOException { return read(civ, null, 0); }
     private static long requiredLong(JSObject value, String key) throws IOException {
@@ -586,6 +719,7 @@ public final class IcR30Plugin extends Plugin {
         });
     }
     private IOException closeSession(String reason) {
+        clearConnectionProgress();
         closeUsbAudio();
         IcR30Service.release();
         ++generation;
@@ -632,13 +766,14 @@ public final class IcR30Plugin extends Plugin {
     @Override protected void handleOnStart() {
         main.post(() -> {
             stopped = false;
+            IcR30Service.setBackground(false);
             if (client != null) schedulePoll(generation, client, 0);
         });
     }
     @Override protected void handleOnStop() {
         main.post(() -> {
             stopped = true;
-            closeUsbAudio();
+            IcR30Service.setBackground(true);
             if (!test.active() && measurement != null) {
                 measurement = null;
                 publish();

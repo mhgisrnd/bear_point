@@ -17,12 +17,15 @@ final class SdrCwDetector {
     static final long HOLD_MS = 350, TRACK_MS = 5000;
     private static final int CENTERS = 39, CANDIDATES = CENTERS * 2, HISTORY = 256;
     private static final double AUDIO_NOISE_FLOOR = 1e-9;
+    static final int AUDIO_SPECTRUM_BINS = 80;
+    private static final double AUDIO_PEAK_DECAY = Math.pow(10, -3.0 * HOP / RATE);
     private final double[] ringI = new double[SIZE], ringQ = new double[SIZE];
     private final long[] sourceSequences = new long[SIZE];
     private final double[] real = new double[SIZE], imag = new double[SIZE], window = new double[SIZE];
     private final double[] cos = new double[SIZE / 2], sin = new double[SIZE / 2];
     private final int[] reverse = new int[SIZE];
     private final double[] powers = new double[SIZE], correction = new double[SIZE];
+    private final double[] audioPeaks;
     private final double[] floors = new double[CANDIDATES], bands = new double[CANDIDATES];
     private final double[] candidateNoise = new double[CANDIDATES];
     private final double[][] history = new double[CANDIDATES][HISTORY];
@@ -62,6 +65,7 @@ final class SdrCwDetector {
         normalization = 2 * SIZE * sum; // Integrated mean(|I+jQ|^2)/2 convention.
         // Some audio receivers mute to exact digital zero between pulses.
         minimumNoise = correctRfFilter ? 0 : AUDIO_NOISE_FLOOR;
+        audioPeaks = correctRfFilter ? null : new double[AUDIO_SPECTRUM_BINS];
         for (int i = 0; i < SIZE / 2; i++) {
             cos[i] = Math.cos(-2 * Math.PI * i / SIZE); sin[i] = Math.sin(-2 * Math.PI * i / SIZE);
         }
@@ -105,6 +109,11 @@ final class SdrCwDetector {
             }
         }
         for (int i = 0; i < SIZE; i++) powers[i] = (real[i] * real[i] + imag[i] * imag[i]) / normalization * correction[i];
+        if (audioPeaks != null) for (int i = 0; i < audioPeaks.length; i++) {
+            // The positive-frequency copy contains one quarter of the PCM mean-square power.
+            double power = 4 * powers[bin(i - audioPeaks.length / 2)];
+            audioPeaks[i] = Math.max(power, audioPeaks[i] * AUDIO_PEAK_DECAY);
+        }
         int broadbandBins = 0;
         for(int j=-85;j<=85;j++) sort[broadbandBins++]=powers[bin(j)];
         Arrays.sort(sort,0,broadbandBins);double broadband=sort[broadbandBins/2];
@@ -220,6 +229,11 @@ final class SdrCwDetector {
     }
 
     boolean ready() { return floors[0] > 0; }
+    double[] audioSpectrumDbfs() {
+        double[] spectrum = new double[audioPeaks.length];
+        for (int i = 0; i < spectrum.length; i++) spectrum[i] = Math.max(-120, db(audioPeaks[i]));
+        return spectrum;
+    }
     int pulseCount() { return pulseCount; }
     boolean recent() { return analyzedTime - lastPulseTime <= HOLD_MS; }
     boolean tracked() { return analyzedTime - lastPulseTime <= TRACK_MS; }

@@ -37,6 +37,9 @@ final class IcR30Civ implements Closeable {
     private final long timeoutMillis;
     interface Trace { void log(String message); }
     interface InputFailure { void report(IOException error); }
+    static final class ResponseTimeout extends IOException {
+        ResponseTimeout(String message) { super(message); }
+    }
     private final Trace trace;
     private final ArrayBlockingQueue<Integer> receivedBytes = new ArrayBlockingQueue<>(4096);
     private final Thread reader;
@@ -212,7 +215,7 @@ final class IcR30Civ implements Closeable {
             }
         }
         trace.log("Timeout command=" + hex(command) + " received=" + received + " partial=" + hex(buffer.toByteArray()));
-        throw new IOException("CI-V 응답 시간 초과 (명령 " + hex(command) + ", 수신 " + received +
+        throw new ResponseTimeout("CI-V 응답 시간 초과 (명령 " + hex(command) + ", 수신 " + received +
             "바이트). Serialport Function=CI-V (Echo Back OFF), 주소 9C를 확인하고 다시 연결하세요.");
     }
 }

@@ -114,7 +114,7 @@ public class IcR30CivTest {
         Transport refused = new Transport(bytes(0xfe, 0xfe, 0xe0, 0x9c, 0xfa, 0xfd), 100);
         assertTrue(assertThrows(IOException.class, () -> refused.civ.setMode("CW")).getMessage().contains("FA"));
         Transport echoOnly = new Transport(bytes(0xfe, 0xfe, 0x9c, 0xe0, 6, 3, 1, 0xfd), 10);
-        assertThrows(IOException.class, () -> echoOnly.civ.setMode("CW"));
+        assertThrows(IcR30Civ.ResponseTimeout.class, () -> echoOnly.civ.setMode("CW"));
     }
     @Test public void modeCodesAreAllowlistedAndValidated() throws Exception {
         assertArrayEquals(bytes(6, 3, 1), IcR30Civ.modeCommand("CW"));
@@ -139,7 +139,7 @@ public class IcR30CivTest {
     }
     @Test public void timeoutDoesNotReturnOldMeasurement() {
         Transport empty = new Transport(new byte[0], 10);
-        String message = assertThrows(IOException.class, empty.civ::frequency).getMessage();
+        String message = assertThrows(IcR30Civ.ResponseTimeout.class, empty.civ::frequency).getMessage();
         assertTrue(message.contains("시간 초과"));
         assertTrue(message.contains("명령 03"));
         assertTrue(message.contains("수신 0바이트"));

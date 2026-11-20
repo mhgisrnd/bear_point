@@ -77,6 +77,13 @@ public class SdrCwDetectorTest {
             assertEquals(4, analysis.detector.pulseCount());
             assertEquals(tone, IcR30AudioAnalysis.CENTER_HZ + analysis.detector.offsetHz(), 30);
             assertEquals(2, analysis.detector.confidence());
+            double[] spectrum = analysis.detector.audioSpectrumDbfs();
+            int peak = 0;
+            for (int i = 1; i < spectrum.length; i++) if (spectrum[i] > spectrum[peak]) peak = i;
+            double peakHz = IcR30AudioAnalysis.CENTER_HZ +
+                    (peak - spectrum.length / 2) * SdrCwDetector.RATE / (double) SdrCwDetector.SIZE;
+            assertEquals(tone, peakHz, 12);
+            assertTrue("short pulse remains visible across the UI refresh", spectrum[peak] > -60);
         }
     }
 }

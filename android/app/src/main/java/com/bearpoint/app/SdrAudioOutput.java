@@ -23,6 +23,7 @@ final class SdrAudioOutput {
     private final Handler main;
     private final Runnable changed;
     private final SdrAudioInterruption interruptions;
+    private final boolean speakerOnly;
     private final CallModeMonitor callModeMonitor;
     private final AudioAttributes attributes = new AudioAttributes.Builder()
         .setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build();
@@ -62,8 +63,13 @@ final class SdrAudioOutput {
     };
 
     SdrAudioOutput(Context context, Handler main, Runnable changed, SdrAudioInterruption interruptions) {
+        this(context, main, changed, interruptions, false);
+    }
+
+    SdrAudioOutput(Context context, Handler main, Runnable changed, SdrAudioInterruption interruptions, boolean speakerOnly) {
         this.main = main; this.changed = changed;
         this.interruptions = interruptions;
+        this.speakerOnly = speakerOnly;
         manager = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
         manager.registerAudioDeviceCallback(devices, main);
         callModeMonitor = Build.VERSION.SDK_INT >= 31 ? new CallModeMonitor(manager, main, interruptions) : null;
@@ -82,6 +88,8 @@ final class SdrAudioOutput {
     }
 
     void interruptionNotice(String reason) { notice = reason; }
+    boolean enabled() { return playback != null; }
+    String notice() { return notice; }
 
     void set(Boolean enabled, Double requestedVolume) {
         if (requestedVolume != null) {
@@ -185,6 +193,12 @@ final class SdrAudioOutput {
         try { device = track.getRoutedDevice(); }
         catch (IllegalStateException released) { return; }
         if (device == null) return;
+        if (speakerOnly && device.getType() != AudioDeviceInfo.TYPE_BUILTIN_SPEAKER) {
+            active.speakerRouted = false;
+            stopWithNotice("태블릿 스피커로 소리를 보낼 수 없습니다.");
+            return;
+        }
+        active.speakerRouted = true;
         // Removal callbacks may arrive after Android has already rerouted to the speaker.
         // Retain the external ID so that this ordering still causes a mute.
         if (device.getType() != AudioDeviceInfo.TYPE_BUILTIN_SPEAKER
@@ -209,6 +223,7 @@ final class SdrAudioOutput {
         final AtomicInteger dropped = new AtomicInteger();
         final Thread thread = new Thread(this, "sdr-audio");
         volatile boolean running = true;
+        volatile boolean speakerRouted;
         volatile int externalRouteId = -1;
         volatile boolean resetRequested;
         volatile double hardwareQueuedMs,sourceToOutputMs;
@@ -221,6 +236,9 @@ final class SdrAudioOutput {
             playingSequence=sourceFrames.isEmpty()?0:sourceFrames.peekFirst()[2];
         }
         int lastUnderruns;
+        private float trackVolume() {
+            return speakerOnly && !speakerRouted ? 0 : volume * (ducked ? .2f : 1f);
+        }
         @Override public void run() {
             AudioTrack track = null;
             try {
@@ -231,12 +249,24 @@ final class SdrAudioOutput {
                     .setAudioFormat(new AudioFormat.Builder().setSampleRate(48000)
                         .setChannelMask(AudioFormat.CHANNEL_OUT_MONO).setEncoding(AudioFormat.ENCODING_PCM_16BIT).build())
                     .setTransferMode(AudioTrack.MODE_STREAM).setBufferSizeInBytes(Math.max(minimum, 4800)).build();
+                if (speakerOnly) {
+                    AudioDeviceInfo speaker = null;
+                    for (AudioDeviceInfo device : manager.getDevices(AudioManager.GET_DEVICES_OUTPUTS)) {
+                        if (device.getType() == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER) { speaker = device; break; }
+                    }
+                    if (speaker == null || !track.setPreferredDevice(speaker))
+                        throw new IllegalStateException("태블릿 스피커를 선택할 수 없습니다.");
+                }
                 AudioTrack routedTrack = track;
                 track.addOnRoutingChangedListener(ignored -> updateRoute(this, routedTrack), main);
-                track.setVolume(volume*(ducked?.2f:1f));
+                track.setVolume(trackVolume());
                 main.post(() -> updateRoute(this, routedTrack));
                 boolean playing=false;long prefillDeadline=SystemClock.elapsedRealtime()+120,writtenFrames=0,headWrap=0,previousHead=0;
+                long routeCheckStarted = 0;
                 while (running) {
+                    if (speakerOnly && !speakerRouted && routeCheckStarted != 0 &&
+                            SystemClock.elapsedRealtime() - routeCheckStarted >= 1000)
+                        throw new IllegalStateException("태블릿 스피커를 확인하지 못했습니다.");
                     if(resetRequested){
                         track.pause();long head=track.getPlaybackHeadPosition()&0xffffffffL;if(head<previousHead)headWrap+=1L<<32;
                         flushedSamples.addAndGet(Math.max(0,writtenFrames-head-headWrap));track.flush();
@@ -256,13 +286,20 @@ final class SdrAudioOutput {
                         continue;
                     }
                     short[] block=packet.samples;
-                    track.setVolume(volume*(ducked?.2f:1f));
+                    track.setVolume(trackVolume());
                     int offset = 0;
                     long sourceStartFrame=writtenFrames;
                     while (running && !resetRequested && offset < block.length) {
                         int written = track.write(block, offset, block.length - offset, AudioTrack.WRITE_NON_BLOCKING);
                         if (written < 0) throw new IllegalStateException("오디오 출력 오류: " + written);
-                        if(written>0&&!playing){track.play();playing=true;}
+                        if (written > 0 && !playing) {
+                            track.play();
+                            playing = true;
+                            if (speakerOnly && routeCheckStarted == 0) {
+                                routeCheckStarted = SystemClock.elapsedRealtime();
+                                main.post(() -> updateRoute(this, routedTrack));
+                            }
+                        }
                         if (written == 0) Thread.sleep(2);
                         offset += written;
                         writtenSamples.addAndGet(written);

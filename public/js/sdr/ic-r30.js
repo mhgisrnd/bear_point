@@ -57,14 +57,30 @@
           <p class="sdr-note">0–255 원시값 · dBm, S1–S9 또는 USB 신호 세기와 직접 비교할 수 없습니다.</p>
         </div>
         <div class="sdr-strength">
-          <div class="sdr-strength-heading"><strong>USB 오디오 입력</strong><button type="button" data-bt-audio-toggle class="sdr-secondary" aria-pressed="false">입력 시작</button></div>
-          <p data-bt-audio-status class="sdr-note" role="status">IH389(RX)를 사운드카드의 마이크 입력에 연결하세요.</p>
-          <svg data-bt-audio-wave class="sdr-bt-test-chart" viewBox="0 0 300 90" role="img" aria-label="최근 20밀리초 USB 오디오 파형" hidden>
-            <line x1="0" y1="45" x2="300" y2="45" stroke="currentColor" opacity=".25" />
-            <path data-bt-audio-path fill="none" stroke="currentColor" stroke-width="1.5" />
-          </svg>
+          <div class="sdr-strength-heading"><strong>USB 오디오 입력</strong>
+            <button type="button" data-bt-audio-permission class="sdr-secondary" hidden>마이크 권한 허용</button>
+          </div>
+          <p data-bt-audio-status class="sdr-note" role="status">USB 오디오 연결 대기 중</p>
+          <p data-bt-audio-speaker-notice class="sdr-note" role="status" hidden></p>
+          <div data-bt-audio-playback class="sdr-log-actions" hidden>
+            <button type="button" data-bt-audio-mute aria-pressed="false" class="sdr-secondary">음소거</button>
+            <label class="sdr-listening-level">청취 필터 <select data-bt-audio-filter>
+              <option value="0">원음</option><option value="1">약</option><option value="2">중</option><option value="3">강</option>
+            </select></label>
+          </div>
+          <figure class="sdr-spectrum">
+            <figcaption>오디오 스펙트럼</figcaption>
+            <canvas data-bt-audio-spectrum role="img" aria-label="오디오 입력 대기"></canvas>
+            <p data-bt-audio-peak class="sdr-note">USB 오디오가 연결되면 주파수별 피크가 표시됩니다.</p>
+          </figure>
           <p data-bt-audio-level class="sdr-note" hidden></p>
           <p data-bt-audio-tone class="sdr-note" role="status" hidden></p>
+          <details data-bt-audio-waveform class="sdr-help" hidden><summary>시간 파형</summary>
+            <svg data-bt-audio-wave class="sdr-bt-test-chart" viewBox="0 0 300 90" role="img" aria-label="최근 20밀리초 USB 오디오 파형" hidden>
+              <line x1="0" y1="45" x2="300" y2="45" stroke="currentColor" opacity=".25" />
+              <path data-bt-audio-path fill="none" stroke="currentColor" stroke-width="1.5" />
+            </svg>
+          </details>
         </div>
         </div>
       <div class="sdr-diagnostics-pane">
@@ -79,7 +95,7 @@
         <p data-bt-test-range class="sdr-note"></p>
         <p class="sdr-note">R30에서 희미한 삡이 들릴 때 표시 버튼을 누르세요. 표시는 사람의 반응 지연이 포함된 참고 시점입니다. 수신기에서도 주파수·모드를 바꾸지 마세요. 홈 화면·화면 잠금 중에도 네이티브 기록을 계속하지만 앱 강제 종료는 보장하지 않습니다.</p>
       </details>
-      <details class="sdr-help"><summary>연결 유지 · 지원 기능 안내</summary><p>SPP는 주파수·모드 제어와 S-Meter 조회에 사용합니다. 오디오 파형과 CW 후보는 별도 USB 사운드카드 입력에서 분석합니다. 앱이 백그라운드로 가면 오디오 입력이 종료됩니다. Bluetooth 데이터 연결은 앱이나 알림에서 해제할 수 있습니다.</p></details>
+      <details class="sdr-help"><summary>연결 유지 · 지원 기능 안내</summary><p>SPP는 주파수·모드 제어와 S-Meter 조회에 사용합니다. 연결된 USB 오디오의 재생과 필터는 화면을 꺼도 유지됩니다. 알림에서 소리를 끄거나 Bluetooth 연결을 해제할 수 있습니다.</p></details>
       </div>`;
     const node = key => (key === "target" || key === "register" ? footer : panel).querySelector(`[data-bt-${key}]`);
     const meterBars = Array.from({ length: 10 }, (_, i) => panel.querySelector(`[data-bt-bar="${i}"]`));
@@ -90,7 +106,7 @@
     let animals = [], target = null, deviceKey = "", animalKey = "", catalogNotice = "";
     let draftFrequency = false, draftMode = false, localError = "", recordsKey = "";
     let updating = false, lastReading = null, animalCards = [];
-    let audioSession = 0, audioTimer, audioState = { state: "idle" };
+    let audioSession = 0, audioTimer, audioState = { state: "idle" }, audioWatching = false, playbackPending = false;
     const matchesFrequency = root.BearSdrFrequency.matchesAnimalFrequency;
     const frequencyControls = root.BearSdrFrequency.mount(panel, {
       prefix: "bt-", wholeDigits: 4, frequency: node("frequency"),
@@ -121,12 +137,14 @@
         Number.isInteger(value.smeter) && value.smeter >= 0 && value.smeter <= 255 && MODES.includes(value.mode);
     }
     function applySnapshot(value) {
+      const wasConnected = connected();
       snapshot = value;
-      if (!connected() && audioState.state !== "idle") stopAudio();
       if (!connected() || snapshot.error) lastReading = null;
       else if (validReading()) lastReading = snapshot.measurement;
       if (target && (!connected() || (validReading() && !matchesFrequency(target.hz, snapshot.measurement.frequencyHz)))) target = null;
       render();
+      if (connected() && !wasConnected) renderAudioSpectrum();
+      syncAudio();
       options.onChange();
     }
     function renderAnimalStates() {
@@ -233,7 +251,7 @@
       renderAudio();
       panel.dataset.updating = String(updating);
       node("fields").setAttribute("aria-busy", String(updating));
-      node("status").textContent = snapshot.state === "connecting" ? "IC-R30 연결 및 CI-V 응답 확인 중…"
+      node("status").textContent = snapshot.state === "connecting" ? snapshot.connectionProgress || "IC-R30 연결 및 CI-V 응답 확인 중…"
         : connected() ? `${snapshot.deviceName || "IC-R30"} · Bluetooth 연결됨` : "Bluetooth 연결 대기";
       node("error").textContent = localError || snapshot.error || "";
       node("connection").dataset.connected = String(connected());
@@ -346,22 +364,46 @@
     function audioRunning() { return audioState.state === "active" || audioState.state === "starting"; }
     function renderAudio() {
       const active = audioState.state === "active";
-      const running = audioRunning();
-      const button = node("audio-toggle");
-      button.disabled = !connected() || typeof plugin?.startUsbAudio !== "function";
-      const label = running ? "입력 중지" : "입력 시작";
-      if (button.textContent !== label) button.textContent = label;
-      button.setAttribute("aria-pressed", String(running));
+      node("audio-permission").hidden = audioState.state !== "permission";
+      node("audio-playback").hidden = !active || typeof plugin?.setUsbAudioPlayback !== "function";
+      const mute = node("audio-mute");
+      const playing = audioState.speakerEnabled === true;
+      const label = playing ? "음소거" : "소리 켜기";
+      if (mute.textContent !== label) mute.textContent = label;
+      mute.setAttribute("aria-pressed", String(!playing));
+      mute.disabled = node("audio-filter").disabled = playbackPending;
+      if (!playbackPending) node("audio-filter").value = String(audioState.filterLevel ?? 0);
+      const notice = node("audio-speaker-notice");
+      const speakerNotice = audioState.speakerNotice || "";
+      if (notice.textContent !== speakerNotice) notice.textContent = speakerNotice;
+      notice.hidden = !active || !speakerNotice;
       const status = node("audio-status");
-      const message = active ? "입력 중 · " + audioState.message : audioState.message ||
-        (button.disabled && connected() ? "USB 오디오 입력을 사용하려면 최신 APK를 설치하세요." :
-          "IH389(RX)를 사운드카드의 마이크 입력에 연결하세요.");
+      const message = active ? "입력 중 · " + audioState.message + (audioState.speakerEnabled ? " · 스피커 재생" : "")
+        : audioState.message || "USB 오디오 연결 대기 중";
       if (status.textContent !== message) status.textContent = message;
-      node("audio-wave").hidden = node("audio-level").hidden = node("audio-tone").hidden = !active;
+      node("audio-waveform").hidden = node("audio-wave").hidden = node("audio-level").hidden = node("audio-tone").hidden = !active;
+    }
+    function renderAudioSpectrum() {
+      const plot = root.SdrSpectrumPlot;
+      if (!plot) return;
+      const { state, spectrumDbfs, spectrumCenterHz, spectrumSpanHz, tracked, toneHz } = audioState;
+      const canvas = node("audio-spectrum");
+      const data = plot.describe(spectrumDbfs, spectrumCenterHz, spectrumSpanHz, { audio: true });
+      const candidate = tracked && Number.isFinite(toneHz) ? toneHz : null;
+      plot.draw(canvas, data, spectrumCenterHz, spectrumSpanHz, state, null, candidate, { audio: true });
+      let summary = "USB 오디오가 연결되면 주파수별 피크가 표시됩니다.";
+      if (data) summary = data.peakDbfs > -120
+        ? "최대 피크 " + Math.round(data.peakHz) + " Hz · " + data.peakDbfs.toFixed(1) + " dBFS/bin"
+        : "입력 신호 없음";
+      else if (audioRunning()) summary = "오디오 분석 준비 중…";
+      if (candidate !== null) summary += " · CW 후보 " + candidate + " Hz";
+      node("audio-peak").textContent = summary;
+      canvas.setAttribute("aria-label", summary);
     }
     function showAudio(value) {
       audioState = value;
       renderAudio();
+      renderAudioSpectrum();
       if (value.state !== "active") return;
       const peak = Math.max(0, ...value.high, ...value.low.map(sample => -sample));
       const scale = 42 / Math.max(512, peak);
@@ -381,34 +423,43 @@
       }
       if (tone.textContent !== detection) tone.textContent = detection;
     }
-    async function pollAudio(session) {
+    async function pollAudio(session, requestPermission = false) {
       try {
-        const value = await plugin.getUsbAudioStatus();
+        const value = await plugin.getUsbAudioStatus({ requestPermission });
         if (audioSession !== session) return;
         showAudio(value);
-        if (audioRunning()) audioTimer = root.setTimeout(() => pollAudio(session), 125);
       } catch (error) {
-        if (audioSession === session) stopAudio({ state: "error", message: error.message || String(error) });
+        if (audioSession === session) showAudio({ state: "error", message: error.message || String(error) });
       }
+      if (audioSession === session) audioTimer = root.setTimeout(() => pollAudio(session), audioRunning() ? 125 : 750);
     }
-    function stopAudio(value = { state: "idle" }) {
+    function stopAudio() {
+      if (!audioWatching) return;
+      audioWatching = false;
       ++audioSession;
-      if (audioTimer !== undefined) root.clearTimeout(audioTimer);
+      root.clearTimeout(audioTimer);
       audioTimer = undefined;
-      const running = audioRunning();
-      showAudio(value);
-      if (running) void plugin.stopUsbAudio().catch(error => console.warn("IC-R30 USB audio stop:", error));
+      showAudio({ state: "idle" });
     }
-    async function toggleAudio() {
-      if (audioRunning()) { stopAudio(); return; }
-      if (!connected()) return;
-      const session = ++audioSession;
-      showAudio({ state: "starting", message: "USB 오디오 입력 확인 중…" });
+    function syncAudio() {
+      if (!dialog.open || !selected || !connected()) { stopAudio(); return; }
+      if (audioWatching || typeof plugin?.getUsbAudioStatus !== "function") return;
+      audioWatching = true;
+      void pollAudio(++audioSession);
+    }
+    async function setAudioPlayback(settings) {
+      if (audioState.state !== "active" || playbackPending) return;
+      const session = audioSession;
+      playbackPending = true;
+      renderAudio();
       try {
-        await plugin.startUsbAudio();
-        if (audioSession === session) await pollAudio(session);
+        const value = await plugin.setUsbAudioPlayback(settings);
+        if (session === audioSession) showAudio(value);
       } catch (error) {
-        if (audioSession === session) stopAudio({ state: "error", message: error.message || String(error) });
+        if (session === audioSession) showAudio({ ...audioState, speakerNotice: error.message || String(error) });
+      } finally {
+        playbackPending = false;
+        renderAudio();
       }
     }
     async function run(action, setting = false) {
@@ -489,8 +540,18 @@
     }
     btButton.addEventListener("click", () => select(true));
     usbButton.addEventListener("click", () => select(false));
-    node("audio-toggle").addEventListener("click", toggleAudio);
+    node("audio-permission").addEventListener("click", () => {
+      if (!audioWatching || audioState.state !== "permission") return;
+      root.clearTimeout(audioTimer);
+      showAudio({ state: "starting", message: "Android 마이크 권한 확인 중…" });
+      return pollAudio(++audioSession, true);
+    });
+    node("audio-mute").addEventListener("click", () => setAudioPlayback({ muted: audioState.speakerEnabled === true }));
+    node("audio-filter").addEventListener("change", () => setAudioPlayback({ filterLevel: Number(node("audio-filter").value) }));
     dialog.addEventListener("close", () => { if (!dialog.open) stopAudio(); });
+    root.addEventListener?.("resize", () => {
+      if (dialog.open && selected && connected()) renderAudioSpectrum();
+    });
     node("refresh").addEventListener("click", () => run(refreshDevices));
     node("settings").addEventListener("click", () => run(() => plugin.openSettings()));
     node("disconnect").addEventListener("click", async () => {
@@ -529,7 +590,7 @@
       if (!validReading() || draftFrequency || draftMode || testing() || frequencyControls.editing()) throw new Error("수신기의 적용 주파수와 현재 수신을 확인하세요.");
       if (typeof root.BearSdrRegistration?.open !== "function") throw new Error("관측점 등록 화면을 준비하지 못했습니다.");
       const context = { bearCode: target?.code || "", frequencyHz: snapshot.measurement.frequencyHz, receiver: "IC-R30", mode: snapshot.measurement.mode };
-      const back = () => { if (!dialog.open) dialog.showModal(); render(); };
+      const back = () => { if (!dialog.open) dialog.showModal(); render(); syncAudio(); };
       dialog.close();
       try {
         if (root.BearSdrRegistration.open(context, back) === false) throw new Error("관측점 저장 또는 수정을 완료한 뒤 다시 시도해주세요.");
@@ -549,7 +610,7 @@
       busy: () => busy,
       status: () => snapshot,
       onOpen() {
-        if (selected) void run(async () => { applySnapshot(await plugin.getStatus()); });
+        if (selected) void run(async () => { applySnapshot(await plugin.getStatus()); renderAudioSpectrum(); });
       },
       async exit() {
         if (plugin) applySnapshot(await plugin.disconnect());

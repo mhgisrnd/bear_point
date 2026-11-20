@@ -6,10 +6,11 @@
   }
 
   function describe(bins, centerHz, rateHz, options = {}) {
-    const narrow = options.narrow === true;
-    if (!Array.isArray(bins) || bins.length !== (narrow ? 128 : 1024) || !bins.every(Number.isFinite) ||
+    const audio = options.audio === true;
+    const narrow = audio || options.narrow === true;
+    if (!Array.isArray(bins) || (audio ? bins.length < 2 : bins.length !== (narrow ? 128 : 1024)) || !bins.every(Number.isFinite) ||
         !Number.isFinite(centerHz) || !Number.isFinite(rateHz) || rateHz <= 0) return null;
-    const edge = Math.ceil(bins.length * 0.05), middle = bins.length / 2;
+    const edge = audio ? 0 : Math.ceil(bins.length * 0.05), middle = bins.length / 2;
     let peak = -1;
     for (let i = edge; i < bins.length - edge; i++) {
       // Avoid labelling the hardware's DC spike or filter edges as the largest feature.
@@ -21,7 +22,7 @@
       peakHz: centerHz + (peak - middle) * rateHz / bins.length, peakDbfs: bins[peak] };
   }
 
-  function draw(canvas, data, centerHz, rateHz, state, listenHz, candidateHz) {
+  function draw(canvas, data, centerHz, rateHz, state, listenHz, candidateHz, { audio = false } = {}) {
     const ctx = typeof canvas.getContext === "function" ? canvas.getContext("2d") : null;
     if (!ctx) return;
     const width = Math.max(240, canvas.clientWidth || 500), height = Math.max(120, canvas.clientHeight || 240);
@@ -32,9 +33,9 @@
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.fillStyle = "#f8fafc"; ctx.fillRect(0, 0, width, height);
     const { left, right, top, bottom } = geometry(width, height);
-    const narrow = !!data?.narrow;
+    const narrow = audio || !!data?.narrow;
     // Stable 10 dB scale steps keep weak local features readable without inventing gain.
-    const topDb = narrow ? Math.min(0, Math.max(-60, Math.ceil((data.peakDbfs + 10) / 10) * 10)) : 0;
+    const topDb = narrow ? Math.min(0, Math.max(-60, Math.ceil(((data?.peakDbfs ?? -120) + 10) / 10) * 10)) : 0;
     const rangeDb = narrow ? 60 : 120, bottomDb = topDb - rangeDb;
     const span = right - left, y = db => top + Math.max(0, Math.min(rangeDb, topDb - db)) / rangeDb * (bottom - top);
     ctx.font = "11px system-ui, sans-serif";
@@ -51,11 +52,12 @@
       if (Number.isFinite(centerHz) && Number.isFinite(rateHz) && rateHz > 0) {
         ctx.textAlign = i === 0 ? "left" : i === ticks ? "right" : "center";
         const hz = centerHz - rateHz / 2 + rateHz * i / ticks;
-        const label = narrow ? (hz / 1e6).toFixed(5).replace(/0+$/, "").replace(/\.$/, "") : (hz / 1e6).toFixed(3);
+        const label = audio ? String(Math.round(hz))
+          : narrow ? (hz / 1e6).toFixed(5).replace(/0+$/, "").replace(/\.$/, "") : (hz / 1e6).toFixed(3);
         ctx.fillText(label, x, bottom + 19);
       }
     }
-    ctx.textAlign = "right"; ctx.fillText("MHz", right, height - 1);
+    ctx.textAlign = "right"; ctx.fillText(audio ? "Hz" : "MHz", right, height - 1);
     if (!narrow) {
       ctx.setLineDash([4, 4]); ctx.strokeStyle = "#9aaab7";
       ctx.beginPath(); ctx.moveTo(left + span / 2, top); ctx.lineTo(left + span / 2, bottom); ctx.stroke(); ctx.setLineDash([]);
@@ -68,7 +70,9 @@
     }
     if (!data) {
       ctx.fillStyle = "#526477"; ctx.textAlign = "center";
-      ctx.fillText(state === "starting" ? "수신 준비 중" : "수신 대기", left + span / 2, (top + bottom) / 2);
+      const waiting = audio ? (state === "active" || state === "starting" ? "오디오 분석 준비 중" : "오디오 입력 대기")
+        : state === "starting" ? "수신 준비 중" : "수신 대기";
+      ctx.fillText(waiting, left + span / 2, (top + bottom) / 2);
       return;
     }
     ctx.beginPath();
@@ -80,7 +84,9 @@
     ctx.lineTo(right, bottom); ctx.lineTo(left, bottom); ctx.closePath();
     ctx.fillStyle = "#087b9118"; ctx.fill();
     const peakX = left + span * data.peakIndex / data.bins.length;
-    ctx.beginPath(); ctx.arc(peakX, y(data.peakDbfs), 3, 0, Math.PI * 2); ctx.fillStyle = "#b45309"; ctx.fill();
+    if (!audio || data.peakDbfs > -120) {
+      ctx.beginPath(); ctx.arc(peakX, y(data.peakDbfs), 3, 0, Math.PI * 2); ctx.fillStyle = "#b45309"; ctx.fill();
+    }
     if (Number.isFinite(candidateHz) && Math.abs(candidateHz - centerHz) < rateHz / 2) {
       const x = left + span * (.5 + (candidateHz - centerHz) / rateHz);
       ctx.setLineDash([3, 3]); ctx.strokeStyle = "#15803d";
