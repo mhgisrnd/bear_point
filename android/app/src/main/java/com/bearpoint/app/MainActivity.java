@@ -11,7 +11,7 @@ import com.google.firebase.appcheck.playintegrity.PlayIntegrityAppCheckProviderF
 public class MainActivity extends BridgeActivity {
 	private static final String TAG = "BearPointMain";
 	private static final long LAUNCH_SPLASH_MIN_DURATION_MS = 1500L;
-	static final String WEB_ASSET_REVISION = "1.0.4-ui185";
+	static final String WEB_ASSET_REVISION = "1.0.4-ui201";
 
 	@Override
 	protected void load() {
@@ -35,6 +35,13 @@ public class MainActivity extends BridgeActivity {
 		registerPlugin(NativeTxtSharePlugin.class);
 		registerPlugin(RtlSdrPlugin.class);
 		registerPlugin(IcR30Plugin.class);
+		if ((getApplicationInfo().flags & android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
+			try {
+				registerPlugin(Class.forName("com.bearpoint.app.BearArDirectionPlugin").asSubclass(com.getcapacitor.Plugin.class));
+			} catch (ClassNotFoundException ignored) {
+				// Only the opt-in AR direction test build bundles this plugin.
+			}
+		}
 		registerPlugin(GpsTrackingPlugin.class);
 		registerPlugin(BearPushPlugin.class);
 		registerPlugin(AppUpdatePlugin.class);

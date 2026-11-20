@@ -15,6 +15,7 @@ import android.net.Uri;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.Build;
+import android.os.SystemClock;
 import androidx.core.content.ContextCompat;
 import androidx.core.content.FileProvider;
 import com.getcapacitor.annotation.Permission;
@@ -156,7 +157,12 @@ public class RtlSdrPlugin extends Plugin {
         result.put("rfReady", "receiving".equals(sdr.state));
         result.put("receptionState", sdr.state);
         result.put("fixedResultAvailable", sdr.fixedResultAvailable);
-        result.put("reception", sdr.metrics);
+        JSObject reception = sdr.metrics;
+        result.put("reception", reception);
+        double pulseTime = reception.optDouble("cwPulseTimeMs", Double.NaN);
+        if (Double.isFinite(pulseTime)) {
+            result.put("cwPulseWallTimeMs", System.currentTimeMillis() - (SystemClock.elapsedRealtime() - pulseTime));
+        }
         result.put("scan", sdr.scan);
         result.put("scanResumeAvailable", sdr.hasScanSession());
         result.put("receptionError", runtime.serviceError.isEmpty() ? sdr.error : runtime.serviceError);

@@ -1,5 +1,7 @@
 apply plugin: 'com.android.application'
 
+def arDirectionTest = providers.gradleProperty('bearArDirectionTest').isPresent()
+
 android {
     ndkVersion "26.1.10909125"
     externalNativeBuild { cmake { path file('src/main/cpp/CMakeLists.txt'); version '3.22.1' } }
@@ -9,7 +11,7 @@ android {
         externalNativeBuild { cmake { arguments '-DANDROID_STL=c++_static' } }
         ndk { abiFilters 'arm64-v8a', 'armeabi-v7a', 'x86_64' }
         applicationId "com.bearpoint.app"
-        minSdkVersion rootProject.ext.minSdkVersion
+        minSdkVersion (arDirectionTest ? Math.max(24, rootProject.ext.minSdkVersion) : rootProject.ext.minSdkVersion)
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 20
         versionName "26.0.0.15"
@@ -19,6 +21,9 @@ android {
              // Default: https://android.googlesource.com/platform/frameworks/base/+/282e181b58cf72b6ca770dc7ca5f91f135444502/tools/aapt/AaptAssets.cpp#61
             ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
+    }
+    if (arDirectionTest) {
+        sourceSets.main.java.srcDir 'src/arTest/java'
     }
     buildTypes {
         release {
@@ -43,6 +48,7 @@ repositories {
 }
 
 dependencies {
+    if (arDirectionTest) implementation 'com.google.ar:core:1.57.0'
     // Messaging 26.x requires Android API 24; this app still supports API 23.
     implementation 'com.google.firebase:firebase-messaging:25.0.1'
     implementation 'com.google.firebase:firebase-appcheck-playintegrity:19.0.1'

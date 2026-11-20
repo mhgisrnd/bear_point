@@ -51,6 +51,7 @@ public final class IcR30Plugin extends Plugin {
     private static final long METER_POLL_DELAY_MS = 50;
     private static final long LIVE_METADATA_INTERVAL_MS = 500;
     private static final long TEST_METADATA_INTERVAL_MS = 2000;
+    private static final int CONNECTION_VOLUME = 20;
     private final Handler main = new Handler(Looper.getMainLooper());
     private final ScheduledExecutorService io = Executors.newSingleThreadScheduledExecutor();
     private final ExecutorService audioIo = Executors.newSingleThreadExecutor(task -> new Thread(task, "ic-r30-usb-audio"));
@@ -70,6 +71,8 @@ public final class IcR30Plugin extends Plugin {
     private String connectionProgress = "";
     private Runnable connectionDeadline;
     private JSObject measurement;
+    private int volumeLevel = -1;
+    private String volumeNotice = "";
     private final IcR30TestRecording test = new IcR30TestRecording();
     private long metadataAt;
     private Runnable testDeadline;
@@ -135,6 +138,7 @@ public final class IcR30Plugin extends Plugin {
         result.put("error", lastError);
         result.put("connectionProgress", connectionProgress);
         result.put("measurement", measurement == null ? JSObject.NULL : measurement);
+        result.put("volume", new JSObject().put("current", volumeLevel).put("default", CONNECTION_VOLUME).put("notice", volumeNotice));
         result.put("test", testSnapshot());
         return result;
     }
@@ -405,7 +409,20 @@ public final class IcR30Plugin extends Plugin {
                 Thread.sleep(CIV_STARTUP_DELAY_MS);
                 if (token != generation) throw new IOException("CI-V 연결 확인이 취소되었습니다.");
                 JSObject reading = readInitialCiv(civ, token);
-                main.post(() -> finishConnection(token, civ, reading));
+                int level = -1;
+                String volumeWarning = "";
+                try {
+                    if (token != generation) throw new IOException("CI-V 연결 확인이 취소되었습니다.");
+                    civ.setVolume(CONNECTION_VOLUME);
+                    level = civ.volume();
+                    if (level != CONNECTION_VOLUME) volumeWarning = "R30 볼륨을 20으로 맞추지 못했어요. 확인된 값은 " + level + "이에요.";
+                } catch (IOException error) {
+                    Log.w(TAG, "Failed to initialize receiver volume", error);
+                    volumeWarning = "연결 시 R30 볼륨 20 적용을 확인하지 못했어요.";
+                }
+                int initialVolume = level;
+                String initialNotice = volumeWarning;
+                main.post(() -> finishConnection(token, civ, reading, initialVolume, initialNotice));
             } catch (InterruptedException cancelled) {
                 Thread.currentThread().interrupt();
                 closePendingClient(pending);
@@ -459,7 +476,7 @@ public final class IcR30Plugin extends Plugin {
         }
     }
 
-    private void finishConnection(int token, IcR30Civ civ, JSObject reading) {
+    private void finishConnection(int token, IcR30Civ civ, JSObject reading, int initialVolume, String initialNotice) {
         if (token != generation || connectingCall == null) {
             closePendingClient(civ);
             return;
@@ -468,6 +485,8 @@ public final class IcR30Plugin extends Plugin {
         client = civ;
         state = "connected";
         measurement = reading;
+        volumeLevel = initialVolume;
+        volumeNotice = initialNotice;
         PluginCall call = connectingCall;
         connectingCall = null;
         IcR30Service.keepAwakeForOperation(false);
@@ -667,6 +686,43 @@ public final class IcR30Plugin extends Plugin {
     }
     @PluginMethod public void setFrequency(PluginCall call) { set(call, true); }
     @PluginMethod public void setMode(PluginCall call) { set(call, false); }
+
+    @PluginMethod public void setVolume(PluginCall call) {
+        main.post(() -> {
+            Integer level = call.getInt("level");
+            if (level == null || level < 0 || level > 39) { call.reject("R30 볼륨은 0–39 범위여야 합니다."); return; }
+            if (!"connected".equals(state) || client == null) { call.reject("IC-R30을 먼저 연결하세요."); return; }
+            if (settingCall != null || test.active()) { call.reject("수신기 설정 또는 진단 기록이 진행 중입니다."); return; }
+            int token = generation;
+            IcR30Civ civ = client;
+            settingCall = call;
+            IcR30Service.keepAwakeForOperation(true);
+            if (poll != null) { poll.cancel(false); poll = null; }
+            io.execute(() -> {
+                if (token != generation) return;
+                try {
+                    civ.setVolume(level);
+                    int applied = civ.volume();
+                    main.post(() -> finishVolumeChange(token, civ, call, level, applied));
+                } catch (IOException error) {
+                    Log.w(TAG, "Failed to set receiver volume", error);
+                    main.post(() -> finishVolumeChange(token, civ, call, level, -1));
+                }
+            });
+        });
+    }
+
+    private void finishVolumeChange(int token, IcR30Civ civ, PluginCall call, int requested, int applied) {
+        if (token != generation) return;
+        settingCall = null;
+        IcR30Service.keepAwakeForOperation(false);
+        volumeLevel = applied;
+        volumeNotice = applied == requested ? "" : "R30 볼륨 변경을 확인하지 못했어요.";
+        publish();
+        call.resolve(snapshot());
+        schedulePoll(token, civ);
+    }
+
     private void set(PluginCall call, boolean frequency) {
         main.post(() -> {
             if (!"connected".equals(state) || client == null) { call.reject("IC-R30을 먼저 연결하세요."); return; }
@@ -730,6 +786,8 @@ public final class IcR30Plugin extends Plugin {
         client = null;
         state = "idle";
         measurement = null;
+        volumeLevel = -1;
+        volumeNotice = "";
         deviceId = deviceName = "";
         if (connectingCall != null) { connectingCall.reject(reason); connectingCall = null; }
         if (settingCall != null) { settingCall.reject(reason); settingCall = null; }

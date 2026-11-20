@@ -99,6 +99,20 @@ public class IcR30CivTest {
         assertEquals(153, transport.civ.smeter());
         assertArrayEquals(bytes(0xfe, 0xfe, 0x9c, 0xe0, 0x15, 2, 0xfd), transport.sent.toByteArray());
     }
+
+    @Test public void readsAndWritesFrontPanelVolumeUsingAfGain() throws Exception {
+        Transport receiver = new Transport(bytes(0xfe, 0xfe, 0xe0, 0x9c, 0x14, 1, 1, 0x33, 0xfd), 100);
+        assertEquals(20, receiver.civ.volume());
+        assertArrayEquals(bytes(0xfe, 0xfe, 0x9c, 0xe0, 0x14, 1, 0xfd), receiver.sent.toByteArray());
+        Transport accepted = new Transport(bytes(0xfe, 0xfe, 0xe0, 0x9c, 0xfb, 0xfd), 100);
+        accepted.civ.setVolume(39);
+        assertArrayEquals(bytes(0xfe, 0xfe, 0x9c, 0xe0, 0x14, 1, 2, 0x50, 0xfd), accepted.sent.toByteArray());
+        assertArrayEquals(bytes(0x14, 1, 0, 0), IcR30Civ.volumeCommand(0));
+        assertArrayEquals(bytes(0x14, 1, 1, 0x28), IcR30Civ.volumeCommand(20));
+        assertEquals(39, IcR30Civ.decodeVolume(bytes(2, 0x55)));
+        assertThrows(IllegalArgumentException.class, () -> IcR30Civ.volumeCommand(-1));
+        assertThrows(IllegalArgumentException.class, () -> IcR30Civ.volumeCommand(40));
+    }
     @Test public void ignoresEchoNoiseOtherAddressesAndCommands() throws Exception {
         Transport transport = new Transport(bytes(
             1, 2, 0xfd, 0xfe, 0xfe, 0x9c, 0xe0, 3, 0xfd,

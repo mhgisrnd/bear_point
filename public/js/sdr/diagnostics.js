@@ -11,9 +11,54 @@
       <button type="button" data-sdr-stage="connection"><span>1</span>연결</button>
       <button type="button" data-sdr-stage="setup"><span>2</span>개체·주파수</button>
       <button type="button" data-sdr-stage="monitor"><span>3</span>수신</button>
+      <button type="button" data-sdr-stage="direction" hidden><span>4</span>방향 실험</button>
     </nav>
     <div class="sdr-body">
     <div data-receiver-selector class="sdr-operation" role="group" aria-label="수신기 연결 방식"></div>
+    <section class="sdr-section sdr-direction" data-direction-panel hidden>
+      <div class="sdr-direction-ar-target" data-direction-ar-target hidden></div>
+      <h3 class="sdr-stage-heading">안테나 방향 측정 <small>실험</small></h3>
+      <div class="sdr-direction-layout">
+        <figure class="sdr-direction-visual">
+          <svg class="sdr-direction-dial" viewBox="-100 -66 332 332" role="img" aria-label="나침반과 방향별 삡 신호 세기">
+            <circle class="sdr-direction-face" cx="66" cy="100" r="95"/>
+            <circle class="sdr-direction-guide" cx="66" cy="100" r="106"/>
+            <circle class="sdr-direction-guide" cx="66" cy="100" r="145"/>
+            <g data-direction-rotate><g data-direction-sector></g><g data-direction-ring class="heading-dial__ring"></g><g data-direction-chart></g><g data-direction-marker></g></g>
+            <path data-direction-index class="heading-dial__index" d="M60 8H72L66 18Z" hidden/>
+            <text data-direction-heading x="66" y="99" class="sdr-direction-bearing">—°</text>
+            <text data-direction-caption x="66" y="120" class="sdr-direction-caption">안테나 방향</text>
+          </svg>
+          <figcaption class="sdr-note">막대 길이는 이번에 잡힌 신호끼리의 상대 비교예요.<span data-direction-scale hidden></span></figcaption>
+        </figure>
+        <div class="sdr-direction-content">
+          <ol class="sdr-direction-steps" aria-label="방향 측정 단계"><li data-direction-coarse-step aria-current="step">360° 탐색</li><li data-direction-fine-step>90° 정밀 측정</li></ol>
+          <p data-direction-guide class="sdr-note">안테나와 태블릿 화면 위쪽을 맞춘 채, 같은 자리에서 수평을 유지하며 40~60초에 걸쳐 한 바퀴 도세요.</p>
+          <div class="sdr-direction-actions">
+            <button type="button" class="sdr-primary" data-direction-start disabled>360° 탐색 시작</button>
+            <button type="button" class="sdr-primary" data-direction-refine hidden>후보 방향 정밀 측정</button>
+            <button type="button" class="sdr-secondary" data-direction-direct disabled>90° 직접 탐색</button>
+            <button type="button" data-direction-finish hidden disabled>측정 중단</button>
+            <button type="button" class="sdr-quiet" data-direction-reset disabled>초기화</button>
+          </div>
+          <progress data-direction-progress max="360" value="0" aria-label="회전 진행도"></progress>
+          <p data-direction-status class="sdr-note"></p>
+          <p class="sdr-direction-target" data-direction-target-guide hidden></p>
+          <div class="sdr-direction-camera">
+            <button type="button" class="sdr-secondary" data-direction-camera-button hidden>카메라 보정 켜기</button>
+            <video data-direction-camera-video hidden autoplay muted playsinline aria-label="카메라 보정에 사용하는 후면 영상"></video>
+            <p data-direction-camera-status class="sdr-note" hidden></p>
+            <button type="button" class="sdr-secondary" data-direction-ar-button hidden disabled>ARCore 테스트</button>
+            <button type="button" data-direction-ar-exit hidden>AR 화면 닫기</button>
+            <p data-direction-ar-status class="sdr-note" hidden></p>
+            <p data-direction-ar-input class="sdr-note" hidden></p>
+          </div>
+          <div data-direction-report hidden aria-live="polite">
+            <strong data-direction-result></strong><p data-direction-detail class="sdr-note"></p><p data-direction-coverage class="sdr-note"></p>
+          </div>
+        </div>
+      </div>
+    </section>
     <section data-bluetooth class="sdr-workspace" hidden aria-label="Bluetooth IC-R30 수신기"></section>
     <div data-usb-content class="sdr-workspace">
     <p class="sdr-message sdr-workflow-error" role="alert"></p>
@@ -114,12 +159,35 @@
   let busy = false;
   let current = null;
   let bluetooth = null;
+  const directionExperimentEnabled = false;
+  const directionPanel = dialog.querySelector("[data-direction-panel]");
+  const direction = directionExperimentEnabled ? window.BearDirectionScan?.mount(directionPanel) : null;
   const workflowStages = { usb: null, bluetooth: null };
   const workflowConnections = { usb: false, bluetooth: false };
-  const workflowButtons = ["connection", "setup", "monitor"].map(stage => ({
+  const workflowButtons = ["connection", "setup", "monitor", "direction"].map(stage => ({
     stage, button: dialog.querySelector(`[data-sdr-stage="${stage}"]`)
   }));
   function workflowTransport() { return bluetooth?.selected() ? "bluetooth" : "usb"; }
+  function directionSource() {
+    if (workflowTransport() === "bluetooth") {
+      const reading = bluetooth.status().measurement;
+      return bluetooth.audioActive?.() && reading ? `bluetooth:${reading.frequencyHz}:${reading.mode}` : null;
+    }
+    const rf = current?.reception;
+    return current?.receptionState === "receiving" && rf?.mode === "cw" && Number.isFinite(rf.listenFrequencyHz)
+      ? `usb:${rf.listenFrequencyHz}` : null;
+  }
+  function updateDirection(audioFrame) {
+    if (!direction || dialog.dataset.receiverStage !== "direction") return;
+    const source = directionSource();
+    direction.update(dialog.open && !document.hidden, source);
+    const pulse = audioFrame || current?.reception;
+    if (source && pulse && (audioFrame || source.startsWith("usb:"))) {
+      direction.push(source, pulse.cwPulseTimeMs, pulse.cwDetectionAgeMs, pulse.cwDirectionDbfs,
+        audioFrame ? pulse.cwToneHz : pulse.cwCandidateOffsetHz,
+        audioFrame ? pulse.cwPulseWallTimeMs : current.cwPulseWallTimeMs);
+    }
+  }
   function goToStage(stage) {
     const transport = workflowTransport();
     workflowStages[transport] = stage;
@@ -133,18 +201,25 @@
     const canSetup = connected && (usingBluetooth || !settingsSection.hidden);
     const hasLogs = usingBluetooth ? bluetooth.hasSavedLogs?.() : !!current?.diagnostic?.records?.length;
     const canMonitor = hasLogs || (connected && (usingBluetooth ? bluetooth.canMonitor?.() !== false : !resultSection.hidden));
+    const canExperiment = !!direction && connected && (usingBluetooth || current?.receptionState === "receiving");
     if (workflowConnections[transport] && !connected) workflowStages[transport] = null;
     workflowConnections[transport] = connected;
     if (!connected && !(hasLogs && workflowStages[transport] === "monitor")) workflowStages[transport] = null;
     else if (connected && !workflowStages[transport]) workflowStages[transport] = live ? "monitor" : "setup";
     else if (workflowStages[transport] === "monitor" && !canMonitor && !usingBluetooth) workflowStages.usb = "setup";
+    else if (workflowStages[transport] === "direction" && !canExperiment) workflowStages[transport] = connected ? "setup" : null;
     const stage = workflowStages[transport] || "connection";
     if (dialog.dataset.receiverStage !== stage) dialog.querySelector(".sdr-body").scrollTop = 0;
     dialog.dataset.receiverStage = stage;
     dialog.dataset.receiverLive = String(live);
+    dialog.dataset.directionAvailable = String(!!direction);
+    directionPanel.hidden = stage !== "direction";
+    if (stage === "direction") updateDirection();
+    else direction?.update(false, null);
     for (const item of workflowButtons) {
       item.button.setAttribute("aria-current", item.stage === stage ? "step" : "false");
-      item.button.disabled = item.stage === "setup" ? !canSetup : item.stage === "monitor" ? !canMonitor : false;
+      if (item.stage === "direction") item.button.hidden = !direction;
+      item.button.disabled = item.stage === "setup" ? !canSetup : item.stage === "monitor" ? !canMonitor : item.stage === "direction" ? !canExperiment : false;
     }
   }
   for (const item of workflowButtons) item.button.addEventListener("click", () => goToStage(item.stage));
@@ -1098,6 +1173,7 @@
     if (appExitPending) return true;
     if (!dialog.open) return false;
     if (busy || bluetooth?.busy()) return true;
+    if (dialog.dataset.receiverStage === "direction") { goToStage("monitor"); return true; }
     if (bluetooth?.selected() && bluetooth.cancelFrequencyEditing()) {
       return true;
     } else if (frequencyControls.editing()) {
@@ -1126,9 +1202,11 @@
     },
     onChange: () => { renderMapStatus(current); renderWorkflow(); },
     onTuned: () => goToStage("monitor"),
+    onAudioFrame: updateDirection,
     revealSignal
   }) || null;
   renderWorkflow();
+  if (direction) document.addEventListener("visibilitychange", () => updateDirection());
   dialog.addEventListener("cancel", event => { event.preventDefault(); handleBackNavigation(); });
 
   function updateDialogViewport(snapshot = current) {
@@ -1152,6 +1230,7 @@
   });
   dialog.querySelector("[data-close]").addEventListener("click", () => dialog.close());
   dialog.addEventListener("close", async function () {
+    direction?.update(false, null);
     finishAnimalSearch();
     if (frequencyControls.editing()) frequencyControls.cancel();
     bluetooth?.cancelFrequencyEditing();

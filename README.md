@@ -52,6 +52,12 @@ IC-R30 Bluetooth 수신기 (Android)
 - 자동 검증: `node --test tests/ic-r30.test.cjs tests/sdr-diagnostics.test.cjs tests/sdr-registration.test.cjs`. Android 프로토콜·기록·저장소 테스트는 `android`에서 `.\gradlew.bat :app:testDebugUnitTest --tests com.bearpoint.app.IcR30CivTest --tests com.bearpoint.app.IcR30TestRecordingTest --tests com.bearpoint.app.IcR30LogStoreTest`로 실행한다. 실제 Bluetooth 페어링·Android 권한·수신기 응답은 실기 확인이 필요하다.
 - 고속 기록 실기 확인: 100ms 대기 설정에서 약 53초 동안 331개를 기록했고 실제 평균 간격은 약 160ms(최대 361ms)였다. 홈 화면·화면 꺼짐 중에도 기록이 이어지고 수동 종료 후 일반 조회로 복귀했다. 이는 해당 기기의 통신·기록 확인이며 약신호 발신기 검출 성능을 입증한 결과는 아니다.
 
+## 수신기 방향 실험 (숨김)
+
+- USB RTL-SDR과 Bluetooth IC-R30의 `4 방향 실험` 단계는 기본 숨김 상태다. 360° 탐색과 90° 정밀·직접 탐색 코드는 보관한다.
+- 다시 표시하려면 [수신기 화면 코드](public/js/sdr/diagnostics.js)의 `directionExperimentEnabled`를 `true`로 바꾼다. Android에서는 `npx cap copy android`로 웹 자산을 동기화하고 `MainActivity.WEB_ASSET_REVISION`을 올린 뒤 앱을 다시 빌드한다. ARCore까지 시험하려면 지원 기기에 `-PbearArDirectionTest` 옵션으로 빌드한 테스트 앱을 설치한다.
+- [방향 측정 로직](public/js/sdr/direction-scan.js), [카메라 보정](public/js/sdr/direction-vision.js), [공용 나침반 표시](public/js/heading-dial.js), [Android ARCore 코드](android/app/src/arTest/java/com/bearpoint/app)를 참고한다. 자동 테스트는 `node --test tests/sdr-direction-scan.test.cjs tests/sdr-direction-vision.test.cjs`로 실행한다.
+
 오프라인 행정경계망 표시
 - 추후 적용을 위해 표시용 소스는 보관하지만, 현재 앱에서는 스크립트 로드·레이어 생성·메뉴 연결을 제외한다.
 - 기존 `AdminBoundary.db`와 좌표 기반 행정구역명 자동 조회는 계속 사용한다.
