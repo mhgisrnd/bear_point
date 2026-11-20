@@ -143,6 +143,20 @@
       else summary.textContent='기록을 시작하면 이동 경로가 지도에 표시됩니다.';
       place();
     }
+    let pendingHistoryRow=null;
+    function revealHistoryRow(id) {
+      pendingHistoryRow=id;
+      const row=[...history.querySelectorAll('[data-track-id]')].find(row=>row.dataset.trackId===String(id));
+      if(root.BearProgressiveList?.scrollRow(row,panel.querySelector('.gps-track-history-frame')))pendingHistoryRow=null;
+    }
+    if(typeof root.ResizeObserver==='function')new root.ResizeObserver(()=>{
+      if(pendingHistoryRow!==null)revealHistoryRow(pendingHistoryRow);
+    }).observe(panel.querySelector('.gps-track-history-frame'));
+    function revealFeature(feature) {
+      if(!displayed||!source.hasFeature(feature))return false;
+      revealHistoryRow(displayed.id);
+      return true;
+    }
     function draw(track,fit) {
       displayed=track; source.clear();
       history.querySelectorAll('[data-track-id]').forEach(row=>row.classList.toggle('is-selected',row.dataset.trackId===String(track.id)));
@@ -162,6 +176,7 @@
       });
       if(fit&&points.length){
         root.BearMobileDock?.prepareDetail();
+        revealHistoryRow(track.id);
         map.getView().fit(source.getExtent(),{padding:root.BearMobileDock?.getMapPadding()||[70,70,100,70],maxZoom:16,duration:450});
       }
       paint();
@@ -219,6 +234,7 @@
         });
         historyOffset+=rows.length;more.hidden=historyOffset>=Number(result.total||0);
         if(frame)frame.scrollTop=scrollTop;
+        if(pendingHistoryRow!==null)revealHistoryRow(pendingHistoryRow);
         historyScope=nextScope;
       } finally {if(version===historyVersion){more.disabled=false;place();}}
     }
@@ -376,6 +392,6 @@
       if(!panel.hidden)await loadHistory(true,Math.max(30,historyOffset));
       return result;
     });
-    void poll();return {open,close,panel,refreshPlacement:paint,isOpen:()=>!panel.hidden,updateInterval,setMapVisible:visible=>layer.setVisible(visible)};
+    void poll();return {open,close,panel,refreshPlacement:paint,isOpen:()=>!panel.hidden,updateInterval,revealFeature,setMapVisible:visible=>layer.setVisible(visible)};
   };
 })(window);

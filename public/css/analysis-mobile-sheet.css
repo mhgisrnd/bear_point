@@ -3,11 +3,11 @@
 #analysis-dialog-desc .analysis-help { display: grid; gap: 8px; margin: 6px 0 0; padding: 0 0 0 16px; white-space: normal; line-height: 1.6; }
 #analysis-dialog-desc .analysis-help li { display: grid; gap: 2px; }
 @media (max-width: 899px), (orientation: portrait) {
-  body.analysis-mobile-active #mobile-map-dock {
+  body.analysis-mobile-active #mobile-map-dock:not([data-menu="settings"]) {
     visibility: hidden;
     pointer-events: none;
   }
-  body.analysis-mobile-active #mobile-map-dock * { pointer-events: none !important; }
+  body.analysis-mobile-active #mobile-map-dock:not([data-menu="settings"]) * { pointer-events: none !important; }
   body.analysis-mobile-active :is(#analysis-dialog-overlay, #analysis-save-sheet) {
     position: fixed !important;
     inset: auto 8px calc(var(--analysis-keyboard-bottom, 0px) + var(--safe-bottom, 0px) + 8px) !important;

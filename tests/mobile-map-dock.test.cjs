@@ -43,10 +43,10 @@ function environment(tabletMode=false){
   function dispatch(element,type,properties={}){for(const fn of listeners.get(element)?.[type]||[])fn({pointerId:1,button:0,isPrimary:true,cancelable:true,preventDefault(){},...properties});}
   return {api,root,document,mq,calls,track,trigger,dispatch,originalObsParent,originalBearsParent};
 }
-test('mobile uses one bounded dock with three menus and preserves the existing list nodes on switches',()=>{
+test('mobile uses one bounded dock with four menus and preserves the existing list nodes on switches',()=>{
   const env=environment(),doc=env.document,dock=doc.getElementById('mobile-map-dock');
   const obs=doc.getElementById('obs-sheet'),bears=doc.getElementById('panel');
-  assert.equal(dock.querySelectorAll('[data-menu]').length,3);
+  assert.equal(dock.querySelectorAll('[data-menu]').length,4);
   assert.equal(env.api.isMobile(),true);assert.equal(dock.classList.contains('is-expanded'),false);
   env.api.select('observations');assert.equal(env.calls.open,1);assert.equal(obs.parentNode.id,'mobile-dock-content');
   assert.equal(obs.classList.contains('mobile-dock-inactive'),false);assert.equal(bears.classList.contains('mobile-dock-inactive'),true);
@@ -70,6 +70,74 @@ test('detail selection reduces the list and upward dragging restores it without 
   env.dispatch(fold,'pointerup',{clientY:350});
   assert.equal(dock.classList.contains('is-detail'),false);
   assert.equal(dock.classList.contains('is-full'),true);
+});
+
+test('settings reuses the existing gear trigger and restores the previous menu without touching its list state',()=>{
+  for(const tablet of [false,true]){
+    const env=environment(tablet),doc=env.document,dock=doc.getElementById('mobile-map-dock');
+    const button=doc.getElementById('btn-app-settings');
+    assert.equal(button.parentNode.className,'mobile-dock-nav');
+    assert.equal(doc.body.querySelectorAll('#btn-app-settings').length,1);
+    assert.ok(button.querySelector('.app-settings-icon'));
+    assert.equal([...dock.querySelectorAll('[data-menu]')].at(-1),button);
+    env.api.select('observations');
+    const expanded=dock.classList.contains('is-expanded');
+    const list=doc.getElementById('obs-list-body')||doc.querySelector('.obs-table tbody');
+    list.scrollTop=230;
+    const before={...env.calls};
+    const settings=doc.createElement('section');settings.hidden=true;env.api.attachSettings(settings);
+    let opens=0;button.addEventListener('click',()=>{opens++;env.api.openSettings(settings);});
+    button.click();
+    assert.equal(opens,1);assert.equal(env.api.getActive(),'settings');
+    assert.equal(settings.parentNode.id,'mobile-dock-content');
+    assert.equal(dock.classList.contains('is-full'),true);
+    assert.equal(button.classList.contains('is-active'),true);
+    assert.equal(dock.querySelector('[data-menu="observations"]').classList.contains('is-active'),false);
+    assert.equal(list.scrollTop,230);assert.equal(dock.classList.contains('is-expanded'),true);
+    assert.equal(env.calls.open,before.open);assert.equal(env.calls.gpsClose,before.gpsClose);
+    settings.hidden=true;env.api.closeSettings();
+    assert.equal(button.classList.contains('is-active'),false);
+    assert.equal(dock.querySelector('[data-menu="observations"]').classList.contains('is-active'),false);
+    assert.equal(list.scrollTop,230);
+    assert.equal(dock.classList.contains('is-expanded'),false);
+  }
+});
+
+test('settings X closes to a clean dock without selecting another tab',()=>{
+  const env=environment(),doc=env.document,dock=doc.getElementById('mobile-map-dock');
+  env.api.select('observations');
+  const settings=doc.createElement('section');env.api.attachSettings(settings);env.api.openSettings(settings);
+  settings.scrollTop=120;
+  env.root.BearAppSettings={close(){settings.hidden=true;env.api.closeSettings();return true;}};
+  const fold=dock.querySelector('.mobile-dock-fold');
+  assert.equal(fold.disabled,true);
+  fold.click();assert.equal(env.api.getActive(),'settings');assert.equal(dock.classList.contains('is-expanded'),true);
+  fold.click();assert.equal(env.api.getActive(),'settings');assert.equal(dock.classList.contains('is-full'),true);
+  dock.querySelector('.mobile-dock-settings-close').click();
+  assert.equal(dock.classList.contains('is-expanded'),false);
+  assert.equal(dock.querySelectorAll('.mobile-dock-nav .is-active').length,0);
+  assert.equal(settings.scrollTop,120);
+});
+
+test('full settings restores a folded list and tab switching respects a cancelled settings close',async()=>{
+  const env=environment(),doc=env.document,dock=doc.getElementById('mobile-map-dock');
+  env.api.select('observations');env.api.collapse();
+  const settings=doc.createElement('section');env.api.attachSettings(settings);env.api.openSettings(settings);
+  env.root.BearAppSettings={close:async()=>false};
+  dock.querySelector('[data-menu="bears"]').click();await new Promise(setImmediate);
+  assert.equal(env.api.getActive(),'settings');assert.equal(dock.classList.contains('is-full'),true);
+  env.root.BearAppSettings.close=async()=>{settings.hidden=true;env.api.closeSettings();return true;};
+  dock.querySelector('[data-menu="observations"]').click();await new Promise(setImmediate);
+  assert.equal(env.api.getActive(),'observations');assert.equal(dock.classList.contains('is-expanded'),true);
+  assert.equal(dock.classList.contains('is-full'),false);
+});
+
+test('required settings remains usable when opened from an active analysis',()=>{
+  const env=environment(),dock=env.document.getElementById('mobile-map-dock');
+  env.document.body.classList.add('analysis-mobile-active');
+  const panel=env.document.createElement('section');env.api.attachSettings(panel);
+  env.api.openSettings(panel);assert.equal(dock.hasAttribute('inert'),false);
+  env.api.closeSettings();assert.equal(dock.hasAttribute('inert'),true);
 });
 
 test('search completion releases focus except during IME composition; details also release search focus',()=>{
@@ -142,13 +210,15 @@ test('tablet and phone share the same views and actions while rotation preserves
   assert.equal(doc.getElementById('btn-obs-add-inline').closest('.mobile-dock-actions')!==null,true);
   assert.equal(doc.getElementById('mobile-map-dock').hidden,false);assert.equal(env.api.getActive(),'observations');
 });
-test('tablet menus share one sidebar and its existing collapse control hides observation markers',()=>{
+test('tablet menus close to navigation only while retaining observation markers',()=>{
   const env=environment(true),doc=env.document,dock=doc.getElementById('mobile-map-dock');
   env.api.select('observations');assert.equal(env.calls.mapVisible,true);assert.equal(env.calls.sidebarCollapsed,false);
   assert.ok(dock.querySelector('.mobile-dock-actions .obs-header-actions'));
   dock.querySelector('[data-menu="observations"]').click();assert.equal(env.calls.sidebarCollapsed,false);
-  env.api.collapse();env.trigger(doc.body);assert.equal(env.calls.mapVisible,false);assert.equal(env.calls.sidebarCollapsed,true);
-  assert.equal(dock.hasAttribute('inert'),true);
+  assert.equal(dock.classList.contains('is-expanded'),false);
+  assert.equal(dock.querySelectorAll('.mobile-dock-nav .is-active').length,0);
+  env.api.collapse();env.trigger(doc.body);assert.equal(env.calls.mapVisible,true);assert.equal(env.calls.sidebarCollapsed,false);
+  assert.equal(dock.hasAttribute('inert'),false);
   env.api.select('tracking');assert.equal(env.calls.sidebarCollapsed,false);assert.equal(env.calls.mapVisible,false);
   assert.equal(dock.hasAttribute('inert'),false);
   assert.ok(dock.querySelector('.mobile-dock-actions .gps-track-header-actions'));

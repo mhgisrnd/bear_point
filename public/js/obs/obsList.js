@@ -744,6 +744,7 @@ window.createObsListModule = function createObsListModule({
     if (!item) return;
     const focusVersion = ++observationFocusVersion;
     const currentZoom = map && typeof map.getZoom === "function" ? map.getZoom() : undefined;
+    const focusZoom = Number.isFinite(currentZoom) ? Math.max(16, currentZoom) : 16;
 
     if (row && row.classList) {
       row.classList.remove("is-flashing");
@@ -760,7 +761,7 @@ window.createObsListModule = function createObsListModule({
     const feature = marker && marker._feature;
     onItemHaptic();
     if (window.BearMobileDock?.isMobile?.()) window.BearMobileDock.collapse();
-    flyToLatLng([item.lat, item.lng], currentZoom, function (completed) {
+    flyToLatLng([item.lat, item.lng], focusZoom, function (completed) {
       if (completed === false || focusVersion !== observationFocusVersion) return;
       if (marker && typeof marker.openPopup === "function") marker.openPopup();
       const triggerFlash = window.__bpTriggerObservationSaveFlash;
@@ -837,6 +838,7 @@ window.createObsListModule = function createObsListModule({
       });
 
       obsListBodyEl.appendChild(row);
+      return row;
     });
 
     syncChkAll(items);
@@ -2181,6 +2183,7 @@ window.createObsListModule = function createObsListModule({
       if (!observationSamples.length) await loadObservationSamples();
       renderObservationMarkers(getFilteredItems());
     },
-    refreshObservationList: refreshObservationData
+    refreshObservationList: refreshObservationData,
+    revealItem: id => observationListPages.reveal(id)
   };
 };
