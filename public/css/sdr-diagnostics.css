@@ -336,6 +336,10 @@
 .sdr-bt-signal-summary { min-width: 0; }
 .sdr-bt-signal-summary .sdr-stage-heading { margin-bottom: 4px; }
 .sdr-bt-signal-summary .sdr-note { margin: 4px 0 0; }
+.sdr-bt-volume { display: grid; grid-template-columns: minmax(0, 1fr) 44px 2ch 44px; align-items: center; gap: 6px; margin-top: 6px; color: #244759; font-size: 13px; font-weight: 700; }
+.sdr-dialog .sdr-bt-volume button { padding: 0; font-size: 18px; }
+.sdr-bt-volume output { text-align: center; font-size: 15px; font-variant-numeric: tabular-nums; }
+.sdr-bt-volume-status { margin: 4px 0 0; overflow-wrap: anywhere; }
 .sdr-bt-audio { min-width: 0; margin: 0; background: #f4f9fa; }
 .sdr-bt-audio .sdr-audio-head { flex-wrap: wrap; gap: 6px 10px; }
 .sdr-bt-audio .sdr-audio-head > .sdr-listening-controls:not([hidden]) { display: flex; flex: 0 1 auto; align-items: center; flex-wrap: wrap; gap: 6px; margin-inline-start: auto; }

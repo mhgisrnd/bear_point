@@ -106,10 +106,23 @@ final class IcR30Civ implements Closeable {
     }
 
     static int decodeSmeter(byte[] data) throws IOException {
-        if (data.length != 2) throw new IOException("CI-V S-Meter 응답 길이가 올바르지 않습니다.");
+        return decodeLevel(data, "S-Meter");
+    }
+
+    private static int decodeLevel(byte[] data, String name) throws IOException {
+        if (data.length != 2) throw new IOException("CI-V " + name + " 응답 길이가 올바르지 않습니다.");
         long value = decodeBcd(data);
-        if (value > 255) throw new IOException("CI-V S-Meter 값이 0–255 범위를 벗어났습니다.");
+        if (value > 255) throw new IOException("CI-V " + name + " 값이 0–255 범위를 벗어났습니다.");
         return (int) value;
+    }
+
+    // The manual groups the 256 CI-V AF values into 40 front-panel VOL steps.
+    static int decodeVolume(byte[] data) throws IOException { return decodeLevel(data, "AF gain") * 40 / 256; }
+
+    static byte[] volumeCommand(int level) {
+        if (level < 0 || level > 39) throw new IllegalArgumentException("R30 볼륨은 0–39 범위여야 합니다.");
+        int raw = (level * 32 + 4) / 5;
+        return new byte[]{0x14, 0x01, (byte) (raw / 100), (byte) (((raw / 10) % 10 << 4) | raw % 10)};
     }
 
     static byte[] frequencyCommand(long hz) {
@@ -132,6 +145,7 @@ final class IcR30Civ implements Closeable {
 
     long frequency() throws IOException { return decodeFrequency(exchange(new byte[]{0x03}, false)); }
     int smeter() throws IOException { return decodeSmeter(exchange(new byte[]{0x15, 0x02}, false)); }
+    int volume() throws IOException { return decodeVolume(exchange(new byte[]{0x14, 0x01}, false)); }
     int rfGain() throws IOException { return decodeSmeter(exchange(new byte[]{0x14,0x02},false)); }
     int squelch() throws IOException { return decodeSmeter(exchange(new byte[]{0x14,0x03},false)); }
     int attenuator() throws IOException {
@@ -151,6 +165,7 @@ final class IcR30Civ implements Closeable {
     }
     void setFrequency(long hz) throws IOException { exchange(frequencyCommand(hz), true); }
     void setMode(String mode) throws IOException { exchange(modeCommand(mode), true); }
+    void setVolume(int level) throws IOException { exchange(volumeCommand(level), true); }
 
     private static String hex(byte[] data) {
         StringBuilder text = new StringBuilder();

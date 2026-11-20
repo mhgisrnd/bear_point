@@ -41,11 +41,22 @@
             <div data-bt-frequency-digits class="sdr-frequency-digits sdr-frequency-four" role="group" aria-label="주파수 자릿수 조정">${root.BearSdrFrequency.markup("bt-", 4)}</div>
             <input data-bt-frequency type="hidden" />
           </div>
+        </fieldset>
+          <div data-bt-volume-settings hidden>
+            <div class="sdr-bt-volume" role="group" aria-labelledby="sdr-bt-volume-label">
+              <span id="sdr-bt-volume-label">R30 볼륨</span>
+              <button type="button" data-bt-volume-down class="sdr-secondary" aria-label="R30 볼륨 줄이기">−</button>
+              <output data-bt-volume aria-label="R30 볼륨 단계">—</output>
+              <button type="button" data-bt-volume-up class="sdr-secondary" aria-label="R30 볼륨 높이기">+</button>
+            </div>
+            <p class="sdr-note sdr-bt-volume-status" data-bt-volume-status role="status" hidden></p>
+          </div>
           <details data-bt-advanced-settings class="sdr-advanced"><summary>상세 설정<svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6 4 4 4-4"/></svg></summary>
+          <fieldset data-bt-mode-fields class="sdr-settings">
           <div class="sdr-bt-mode"><label for="sdr-bt-mode">수신 모드</label><select id="sdr-bt-mode" data-bt-mode aria-label="IC-R30 수신 모드">${MODES.map(mode => `<option>${mode}</option>`).join("")}</select><button type="button" data-bt-apply-mode class="sdr-secondary">적용</button></div>
+          </fieldset>
           <p class="sdr-note">USB의 Gain·PPM은 RTL-SDR 전용 설정이며 감지 기준은 I/Q 분석용입니다. IC-R30의 RF GAIN·ATT는 수신기에서 조정하세요. 현재 앱에서는 해당 제어를 제공하지 않습니다.</p>
           </details>
-        </fieldset>
         </div>
       </section>
         <div class="sdr-section sdr-signal-pane" data-bt-signal hidden>
@@ -100,6 +111,7 @@
     let snapshot = { state: "idle", measurement: null, error: "" };
     let animals = [], target = null, deviceKey = "", animalKey = "", catalogNotice = "";
     let draftFrequency = false, draftMode = false, localError = "", recordsKey = "";
+    let requestedVolume = null, volumeError = "";
     let updating = false, lastReading = null, animalCards = [];
     let audioSession = 0, audioTimer, audioState = { state: "idle" }, audioWatching = false, playbackPending = false;
     const matchesFrequency = root.BearSdrFrequency.matchesAnimalFrequency;
@@ -251,6 +263,7 @@
     function render() {
       updateUsb();
       renderAudio();
+      renderVolume();
       panel.dataset.updating = String(updating);
       node("fields").setAttribute("aria-busy", String(updating));
       node("status").textContent = snapshot.state === "connecting" ? snapshot.connectionProgress || "IC-R30 연결 및 CI-V 응답 확인 중…"
@@ -271,7 +284,7 @@
       node("other-devices").hidden = node("devices").hidden || !node("other-device-list").children.length;
       node("service-help").hidden = connected();
       node("controls").hidden = node("signal").hidden = !connected();
-      node("fields").disabled = busy || !connected() || testing();
+      node("fields").disabled = node("mode-fields").disabled = busy || !connected() || testing();
       node("catalog-refresh").disabled = busy || loadingCatalog;
       node("clear").disabled = busy || !target || testing();
       node("catalog-notice").textContent = catalogNotice;
@@ -310,6 +323,47 @@
       frequencyControls.render();
       renderTest();
       renderAnimals();
+    }
+
+    function renderVolume() {
+      const volume = connected() ? snapshot.volume : null;
+      node("volume-settings").hidden = !volume;
+      if (!volume) { requestedVolume = null; volumeError = ""; return; }
+      const level = requestedVolume ?? volume.current;
+      node("volume").textContent = level >= 0 ? String(level) : "—";
+      const disabled = (busy && requestedVolume === null) || testing();
+      node("volume-down").disabled = disabled || level === 0;
+      node("volume-up").disabled = disabled || level === 39;
+      const message = requestedVolume === null ? volumeError || volume.notice || "" : "";
+      const status = node("volume-status");
+      status.hidden = !message;
+      if (status.textContent !== message) status.textContent = message;
+    }
+
+    function adjustVolume(step) {
+      const volume = snapshot.volume;
+      if (!connected() || !volume || testing() || (busy && requestedVolume === null)) return;
+      const pending = requestedVolume !== null;
+      const level = requestedVolume ?? (volume.current >= 0 ? volume.current : volume.default);
+      const next = Math.max(0, Math.min(39, level + step));
+      if (next === level) return;
+      requestedVolume = next;
+      volumeError = "";
+      renderVolume();
+      if (pending) return;
+      const deviceId = snapshot.deviceId;
+      return run(async () => {
+        try {
+          while (requestedVolume !== null && connected() && snapshot.deviceId === deviceId) {
+            const sent = requestedVolume;
+            const result = await plugin.setVolume({ level: sent });
+            if (result.volume?.current !== sent || result.volume?.notice || requestedVolume === sent) requestedVolume = null;
+            applySnapshot(result);
+          }
+        } catch (error) {
+          volumeError = error.message || String(error);
+        }
+      }).finally(() => { requestedVolume = null; renderVolume(); });
     }
     function renderTest() {
       const test = snapshot.test || {};
@@ -545,6 +599,8 @@
     });
     node("audio-mute").addEventListener("click", () => setAudioPlayback({ muted: audioState.speakerEnabled === true }));
     node("audio-filter").addEventListener("change", () => setAudioPlayback({ filterLevel: Number(node("audio-filter").value) }));
+    node("volume-down").addEventListener("click", () => adjustVolume(-1));
+    node("volume-up").addEventListener("click", () => adjustVolume(1));
     dialog.addEventListener("close", () => { if (!dialog.open) stopAudio(); });
     root.addEventListener?.("resize", () => {
       if (dialog.open && selected && connected()) renderAudioSpectrum();

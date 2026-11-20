@@ -141,6 +141,41 @@ function setup(native = true) {
     setRegistrationResult(value) { registrationResult = value; } };
 }
 
+test('R30 volume buttons apply immediately, combine rapid taps, and reset after reconnect', async () => {
+  const ui = setup();
+  const connected = { state: 'connected', deviceId: '01:02:03:04:05:06', measurement: ui.reading(145520000) };
+  ui.plugin.connect = async () => ui.emit({ ...connected, volume: { current: 20, default: 20 } });
+  let acknowledgeFirst;
+  const requested = [];
+  ui.plugin.setVolume = async ({ level }) => {
+    requested.push(level);
+    if (requested.length === 1) await new Promise(resolve => { acknowledgeFirst = resolve; });
+    return ui.emit({ ...connected, volume: { current: level, default: 20 } });
+  };
+  await ui.connect();
+  assert.equal(ui.node('volume-settings').hidden, false);
+  assert.equal(ui.node('volume').textContent, '20');
+  const firstPress = ui.node('volume-up').click();
+  assert.equal(ui.node('volume').textContent, '21');
+  await tick();
+  assert.deepEqual(requested, [21]);
+  await ui.node('volume-up').click();
+  await ui.node('volume-up').click();
+  ui.emit({ ...connected, volume: { current: 20, default: 20 } });
+  assert.equal(ui.node('volume').textContent, '23');
+  acknowledgeFirst();
+  await firstPress;
+  assert.deepEqual(requested, [21, 23]);
+  assert.equal(ui.node('volume-status').hidden, true);
+  await ui.node('volume-down').click();
+  assert.deepEqual(requested, [21, 23, 22]);
+  assert.equal(ui.node('volume').textContent, '22');
+  await ui.node('disconnect').click();
+  assert.equal(ui.node('volume-settings').hidden, true);
+  await ui.connect();
+  assert.equal(ui.node('volume').textContent, '20');
+});
+
 test('Bluetooth USB audio follows attachment and closing the dialog only stops UI polling', async () => {
   const ui = setup();
   const spectrumDbfs = Array(80).fill(-100);
