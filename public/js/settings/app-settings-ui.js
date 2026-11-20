@@ -250,19 +250,27 @@
     if (!loaded) await initialize();
     else void refresh();
   }
-  async function refresh() {
+  async function refresh(options = {}) {
     if (refreshing || saving) return;
     if (!loaded) { await initialize(); return; }
-    refreshing = true; refreshButton.disabled = true; message.textContent = ""; paintTeams();
-    try { await store.refresh(); window.dispatchEvent(new Event("bearpoint:teams-changed")); }
-    catch (_) { message.textContent = "팀 목록을 갱신하지 못했습니다. 보관된 목록으로 설정할 수 있습니다."; }
-    finally { refreshing = false; refreshButton.disabled = saving; if (!saving) paintTeams(); }
+    refreshing = true; refreshButton.disabled = true;
+    if (!options.silent) { message.textContent = ""; paintTeams(); }
+    try {
+      const previous = JSON.stringify(store.snapshot().items);
+      await store.refresh();
+      const profile = store.snapshot().profile;
+      if (profile) trigger.title = `${profile.owner} · ${profile.team_name} 설정`;
+      if (previous !== JSON.stringify(store.snapshot().items)) window.dispatchEvent(new Event("bearpoint:teams-changed"));
+    }
+    catch (_) { if (!options.silent) message.textContent = "팀 목록을 갱신하지 못했습니다. 보관된 목록으로 설정할 수 있습니다."; }
+    finally { refreshing = false; refreshButton.disabled = saving; if (!saving && (!options.silent || !dialog.hidden)) paintTeams(); }
   }
   async function initialize() {
     try {
       await store.load(); loaded = true;
       refreshButton.textContent = "새로고침";
       const state = store.snapshot();
+      window.dispatchEvent(new Event("bearpoint:teams-changed"));
       required = !state.profile;
       paintTracking();
       paintDisplaySize();
@@ -337,7 +345,11 @@
   dialog.addEventListener("cancel", event => { event.preventDefault(); close(); });
   trigger.addEventListener("click", open);
   refreshButton.addEventListener("click", refresh);
-  window.addEventListener("online", () => { if (!dialog.hidden) void refresh(); });
+  const refreshWhenVisible = () => { if (!document.hidden && window.navigator.onLine !== false) void refresh({silent:true}); };
+  window.addEventListener("online", refreshWhenVisible);
+  document.addEventListener("visibilitychange", refreshWhenVisible);
+  const teamRefreshTimer = window.setInterval(refreshWhenVisible, 30000);
+  window.addEventListener("pagehide", () => window.clearInterval(teamRefreshTimer), {once:true});
   window.BearAppSettings = { store, open, close, isOpen: () => !dialog.hidden, handleBack, getProfile: () => store.snapshot().profile,
     requireIdentity: async () => { try { return await store.identity(); } catch (error) { void open(); throw error; } } };
   void initialize();

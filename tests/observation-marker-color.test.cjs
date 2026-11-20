@@ -90,4 +90,14 @@ test('observation marker and label use each saved team color, retaining selectio
   const hidden=context.createObservationStyleFromMarker({obsData:{id:'hidden',place:'name',showLabel:false,team_color:'#9333EA',isSelected:true}})();
   assert.equal(hidden.at(-1).image.src,'icon:#9333EA');
   assert.equal(hidden.length,2,'selection highlight remains when labels are hidden');
+  let catalog=[{id:'gurye',name:'Updated team',color:'#123456'}];
+  const {resolve}=require('../public/js/settings/team-display');
+  context.window={BearTeamDisplay:{resolve:item=>resolve(item,catalog)}};
+  const recorded={id:'existing',place:'existing',team_id:'gurye',team_color:'#16A34A'};
+  const latest=context.createObservationStyleFromMarker({obsData:recorded})();
+  assert.equal(latest[0].image.src,'icon:#123456');
+  assert.equal(latest[1].image.img.operations.background,'#123456c7');
+  catalog=[{id:'gurye',name:'Changed again',color:'#ABCDEF'}];
+  assert.equal(context.createObservationStyleFromMarker({obsData:recorded})()[0].image.src,'icon:#ABCDEF');
+  assert.equal(recorded.team_color,'#16A34A');
 });

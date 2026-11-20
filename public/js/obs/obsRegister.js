@@ -87,6 +87,7 @@ window.createObsRegisterModule = function createObsRegisterModule({
   };
   var formMode = "create";
   var editingObservationId = null;
+  var editingTeamRecord = null;
   var editingRevision = null;
   var suppressCloseCallback = false;
   var DETECTOR_STRENGTH_OPTIONS = ["미약", "감1", "감2", "감3", "P1", "P2", "P3", "P4", "P5", "P6", "P7", "P8", "P9", "P10"];
@@ -658,7 +659,11 @@ window.createObsRegisterModule = function createObsRegisterModule({
 
   function applyLastOwnerDefault() {
     if (!regOwnerEl) return;
-    if (formMode !== "create") return;
+    if (formMode !== "create") {
+      var editTeam = window.BearTeamDisplay?.resolve(editingTeamRecord) || editingTeamRecord;
+      if (editTeam) updateTeamLabel(editTeam.team_name || "미지정", editTeam.team_color);
+      return;
+    }
     var profile = window.BearAppSettings?.getProfile();
     regOwnerEl.readOnly = !!profile;
     if (profile) regOwnerEl.value = profile.owner || "";
@@ -1592,7 +1597,9 @@ window.createObsRegisterModule = function createObsRegisterModule({
     if (regTeamEl) regTeamEl.hidden = false;
     regOwnerEl?.closest(".obs-reg-identity")?.classList.remove("is-manual");
     fitFixedOwnerField();
-    updateTeamLabel(target.team_name || "미지정", target.team_color);
+    editingTeamRecord = target;
+    var currentTeam = window.BearTeamDisplay?.resolve(target) || target;
+    updateTeamLabel(currentTeam.team_name || "미지정", currentTeam.team_color);
     if (regBearEl) regBearEl.value = String(target.bearCode || target.bear_code || "").trim();
 
     latestLive.lat = Number(target.lat);

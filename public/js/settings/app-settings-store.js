@@ -68,7 +68,11 @@
       })().catch(error => { loading = null; throw error; });
       return loading.then(() => snapshot());
     }
-    function snapshot() { return clone({ profile, ...catalog, tracking, displaySize }); }
+    function snapshot() {
+      const team = catalog.items.find(item => item.id === profile?.team_id);
+      const currentProfile = profile && team ? {...profile, team_name:team.name, team_color:team.color} : profile;
+      return clone({ profile:currentProfile, ...catalog, tracking, displaySize });
+    }
     function saveTracking(value) {
       return enqueue(async () => {
         await load(); const next = normalizeTracking(value);

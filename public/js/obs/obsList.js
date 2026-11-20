@@ -402,6 +402,7 @@ window.createObsListModule = function createObsListModule({
   }
 
   function buildObservationPopupHtml(item) {
+    item = globalThis.window?.BearTeamDisplay?.resolve(item) || item;
     const title = escapeHtml(getObservationLabel(item) || "관측점");
     const teamName = escapeHtml(item && item.team_name || "팀 미지정");
     const rawTeamColor = item && item.team_color;
@@ -431,6 +432,7 @@ window.createObsListModule = function createObsListModule({
 
   // SQLite row/더미 JSON row를 공통 관측점 모델 형태로 정규화한다.
   function mapObservationRow(row) {
+    row = globalThis.window?.BearTeamDisplay?.resolve(row) || row;
     if (!row) return null;
 
     const id = String(row.id || "").trim();
@@ -809,6 +811,7 @@ window.createObsListModule = function createObsListModule({
     }
 
     observationListPages.render(items, item => {
+      item = globalThis.window?.BearTeamDisplay?.resolve(item) || item;
       const row = document.createElement("tr");
       row.setAttribute('data-observation-key', String(item._obsKey));
       if (String(item._obsKey) === focusedObservationKey) {
@@ -1936,6 +1939,11 @@ window.createObsListModule = function createObsListModule({
       void sendItems(observationSamples.filter(item => selectedObsIds.has(item._obsKey)));
     });
     window.addEventListener("observations-changed", () => { void refreshObservationData({ localOnly: true, background: true }); });
+    window.addEventListener("bearpoint:teams-changed", () => {
+      observationSamples = observationSamples.map(item => globalThis.window?.BearTeamDisplay?.resolve(item) || item);
+      applySearch();
+      renderObservationMarkers(getFilteredItems());
+    });
     const refreshWhenVisible = (forceRetry = false) => {
       if (document.hidden || navigator.onLine === false) return;
       const retry = forceRetry || Date.now() - lastObservationRetry >= 30000;
@@ -2194,6 +2202,7 @@ window.createObsListModule = function createObsListModule({
       });
     },
     renderObservationMarkers,
+    buildPopupHtml: buildObservationPopupHtml,
     setMapVisible: visible => observationMarkersLayer.setVisible(visible),
     prepareRegistrationMap: async () => {
       if (!observationSamples.length) await loadObservationSamples();

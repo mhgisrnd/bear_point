@@ -4,7 +4,7 @@ const fs=require('node:fs');
 const vm=require('node:vm');
 const {merge}=require('../public/js/realtime/bear-estimate-store');
 
-test('local and shared bear markers use the source observation count for labels and pulse rings',async()=>{
+test('local and shared bear markers use the estimation method for labels and pulse rings',async()=>{
   const [Feature,Point,Vector,Style,Icon,Text,Fill,Stroke,Circle]=await Promise.all([
     'ol/Feature.js','ol/geom/Point.js','ol/source/Vector.js','ol/style/Style.js','ol/style/Icon.js',
     'ol/style/Text.js','ol/style/Fill.js','ol/style/Stroke.js','ol/style/Circle.js'
@@ -21,16 +21,16 @@ test('local and shared bear markers use the source observation count for labels 
   vm.runInContext(source.slice(start,end),context);
   const mapping=source.indexOf('  function mapBearMarkerItems(');
   vm.runInContext(source.slice(mapping,source.indexOf('  function readBearPeriodFilter(',mapping)),context);
-  const colors=['#B91C1C','#C24A00','#1D4ED8','#11724B','#6D28D9'];
-  for(const count of [1,2,3,4,5,8]){
-    const color=colors[Math.min(count,5)-1];
+  const colors=['#C24A00','#1D4ED8'];
+  for(const [count,method] of [[1,null],[2,null],[3,null],[4,null],[5,null],[8,null],[3,'single'],[1,'intersection']]){
+    const color=colors[(method==='single'||(!method&&count===1))?0:1];
     const observations=Array.from({length:count},(_,index)=>({id:String(index)}));
     const rows=merge([
-      {id:'local',bear_code:'KF-58',lat:35,lng:127,team_color:'#000000',source_observations:observations},
-      {id:'local-shared',bear_code:'KF-59',lat:35,lng:127.5,team_color:'#FFFFFF',source_observation_ids:JSON.stringify(observations.map(obs=>obs.id))}
+      {id:'local',bear_code:'KF-58',lat:35,lng:127,team_color:'#000000',estimation_method:method,source_observations:observations},
+      {id:'local-shared',bear_code:'KF-59',lat:35,lng:127.5,team_color:'#FFFFFF',estimation_method:method,source_observation_ids:JSON.stringify(observations.map(obs=>obs.id))}
     ],[
       {id:'remote-1',bear_estimate_id:'shared',bear_code:'KF-47',lat:35,lng:128,team_color:'#DEDEDE',
-        source_observations:[],payload:{source_observations_json:JSON.stringify(observations)}},
+        source_observations:[],payload:{estimation_method:method,source_observations_json:JSON.stringify(observations)}},
       {id:'remote-2',bear_estimate_id:'local-shared',bear_code:'KF-59',lat:35,lng:127.5,source_observations:[]}
     ]);
     context.renderBearMarkers(context.mapBearMarkerItems(rows,false));
@@ -51,8 +51,12 @@ test('local and shared bear markers use the source observation count for labels 
   }
   assert.equal(context.bearMarkerColor({estimation_method:'single'}),colors[0]);
   assert.equal(context.bearMarkerColor({source_observations:[],source_observations_json:'[{},{}]'}),colors[1]);
-  assert.equal(context.bearMarkerColor({source_observation_ids:'bad json',analysis_rays:[{},{},{}]}),colors[2]);
-  assert.equal(context.bearMarkerColor({intersections_count:3,team_color:'#DEDEDE'}),'#526174');
+  assert.equal(context.bearMarkerColor({source_observation_ids:'bad json',analysis_rays:[{},{},{}]}),colors[1]);
+  assert.equal(context.bearMarkerColor({intersections_count:3,team_color:'#DEDEDE'}),colors[1]);
+  assert.equal(context.bearMarkerColor({}), '#526174');
+  assert.equal(context.bearMarkerColor({estimation_method:'single',source_observations:[{},{}]}),colors[0]);
+  assert.equal(context.bearMarkerColor({estimation_method:'intersection',source_observations:[{}]}),colors[1]);
+  assert.equal(context.bearMarkerColor({analysis_options_json:JSON.stringify({estimationMethod:'single'}),source_observations:[{},{}]}),colors[0]);
 });
 
 test('the map legend keeps all catalogue teams and unassigned visible across menu and selection changes', () => {
@@ -102,7 +106,7 @@ test('the map legend keeps all catalogue teams and unassigned visible across men
     map:{getOverlayContainerStopEvent:()=>({appendChild:element=>assert.equal(element,disclosure)})},
     observationMarkerLayer:{on:()=>assert.fail('The legend should not track layer visibility')},
     observationMarkerSource:{on:()=>assert.fail('The legend should not track observation selection')},
-    getBearObservationCount: item => item.count,
+    getEstimationMethodLabel: item => item.estimation_method === 'single' ? '\uB2E8\uC77C \uAD00\uCE21' : '\uAD50\uCC28 \uBD84\uC11D',
     OBSERVATION_NO_TEAM_COLOR:'#7e90a2',
     OBSERVATION_HEADING_ICON_SIZE:40,
     registerBackClosableOverlay:(_,callback)=>{back=callback;return ()=>{back=null;};}
@@ -112,10 +116,10 @@ test('the map legend keeps all catalogue teams and unassigned visible across men
   vm.runInContext(source.slice(source.indexOf('  function getObservationTeamColor('), source.indexOf('  function createObservationStyleFromMarker(')), context);
   vm.runInContext(source.slice(source.indexOf('  const BEAR_MARKER_PALETTE'), source.indexOf('  function bearMarkerTint')), context);
   context.initializeMapMarkerLegend();
-  assert.deepEqual(list.querySelectorAll('li').map(item => item.textContent), ['1개', '2개', '3개', '4개', '5개 이상', '미기록']);
+  assert.deepEqual(list.querySelectorAll('li').map(item => item.textContent), ['\uAD50\uCC28 \uBD84\uC11D', '\uB2E8\uC77C \uAD00\uCE21']);
   assert.deepEqual(list.querySelectorAll('li').map(item => item.getAttribute('style')),
-    [1, 2, 3, 4, 5, null].map(count => '--map-legend-swatch:' + context.bearMarkerColor({ count })));
-  assert.deepEqual(list.querySelectorAll('img').map(icon => icon.getAttribute('src')), Array(6).fill('css/svg/bear_marker_point.svg'));
+    ['intersection','single'].map(estimation_method => '--map-legend-swatch:' + context.bearMarkerColor({ estimation_method })));
+  assert.deepEqual(list.querySelectorAll('img').map(icon => icon.getAttribute('src')), Array(2).fill('css/svg/bear_marker_point.svg'));
   const setOpen = value => { disclosure.open = value; disclosure.on.toggle(); };
   setOpen(true);
   assert.equal(disclosure.open, true);

@@ -83,7 +83,7 @@
     }
     function paintTeams(items){
       const teams=new Map((items||[]).map(team=>[team.id,team]));
-      for(const team of root.BearAppSettings?.store?.snapshot()?.items||[])if(!teams.has(team.id))teams.set(team.id,team);
+      for(const team of root.BearAppSettings?.store?.snapshot()?.items||[])teams.set(team.id,team);
       if(teamId&&!teams.has(teamId))teams.set(teamId,{id:teamId,name:teamSelect.selectedOptions[0]?.textContent||teamId});
       teamSelect.replaceChildren();
       for(const team of [{id:'',name:'전체 팀'},...teams.values()]){
@@ -128,6 +128,7 @@
       panel.style.top=Math.max(8,Math.min(r.top-panel.offsetHeight-8,innerHeight-panel.offsetHeight-8))+'px';
     }
     function paint() {
+      const currentTeam = root.BearTeamDisplay?.resolve(active) || active;
       quickRecord.render({active,busy,ready:!initial,pending:recordingTarget});
       button.classList.toggle('is-recording',!!active);
       button.textContent=active?'● 기록 중 · '+elapsed(active):'이동 기록';
@@ -139,7 +140,7 @@
       summary.dataset.state=active?'recording':displayed?'selected':'guide';
       teamSelect.disabled=busy;search.elements.period.disabled=busy;paintMine();paintFilterState();
       for(const name of ['day','month','year','rangeStart','rangeEnd'])search.elements[name].disabled=busy||search.elements[name].hidden;
-      if(active) summary.textContent=`${active.owner} · ${active.team_name} / ${elapsed(active)} · ${km(active.distance)}${active.point_count ? '' : ' · GPS 수신 대기'}`;
+      if(active) summary.textContent=`${active.owner} · ${currentTeam.team_name} / ${elapsed(active)} · ${km(active.distance)}${active.point_count ? '' : ' · GPS 수신 대기'}`;
       else if(displayed) summary.textContent=`${date(displayed.started_at)} · ${elapsed(displayed)} · ${km(displayed.distance)}${displayed.status==='interrupted'?' · 중단된 기록':''}`;
       else summary.textContent='목록에서 기록을 선택하면 지도에 이동 경로가 표시됩니다.';
       place();
@@ -214,6 +215,7 @@
         historyLoaded=true;count.textContent=Number(result.total||0)+'건';if(reset)paintTeams(result.teams);
         if(reset&&!rows.length){const empty=document.createElement('tr'),cell=document.createElement('td');cell.colSpan=5;cell.className='gps-history-empty';cell.textContent=appliedQuery.owner||appliedQuery.team_id||appliedQuery.from!=null?'검색 결과가 없습니다.':'저장된 기록이 없습니다.';empty.append(cell);history.append(empty);}
         historyRows.forEach(track=>{
+          const teamInfo=root.BearTeamDisplay?.resolve(track)||track;
           const row=document.createElement('tr');row.dataset.trackId=String(track.id);
           row.classList.toggle('is-selected',String(displayed?.id)===String(track.id));
           function cell(text,className=''){
@@ -229,8 +231,8 @@
           }
           open.append(day,time);open.title=date(track.started_at);dateCell.append(open);row.append(dateCell);
           cell(track.owner||'미지정');
-          const team=cell(track.team_name||'미지정','gps-history-team');
-          const dot=document.createElement('i');dot.setAttribute('aria-hidden','true');dot.style.background=/^#[0-9a-f]{6}$/i.test(track.team_color||'')?track.team_color:'#7e90a2';team.prepend(dot);
+          const team=cell(teamInfo.team_name||'미지정','gps-history-team');
+          const dot=document.createElement('i');dot.setAttribute('aria-hidden','true');dot.style.background=/^#[0-9a-f]{6}$/i.test(teamInfo.team_color||'')?teamInfo.team_color:'#7e90a2';team.prepend(dot);
           cell(elapsed(track),'gps-history-number');cell((Number(track.distance||0)/1000).toFixed(2),'gps-history-number');
           row.addEventListener('click',()=>{onItemHaptic();row.classList.remove('is-flashing');void row.offsetWidth;row.classList.add('is-flashing');root.setTimeout(()=>row.classList.remove('is-flashing'),900);void action(async()=>{message.textContent='';await show(track.id,true,track.sharedOnly);});});history.append(row);
         });
@@ -370,6 +372,19 @@
       search.elements.owner.value=search.elements.owner.value.trim()===owner?'':owner;filterInput();
     });
     root.addEventListener('bearpoint:profile-changed',paintMine);
+    root.addEventListener('bearpoint:teams-changed',()=>{
+      paintTeams();
+      for(const row of history.querySelectorAll('[data-track-id]')) {
+        const track=historyRows.find(item=>String(item.id)===row.dataset.trackId);
+        const team=root.BearTeamDisplay?.resolve(track)||track;
+        const cell=row.querySelector('.gps-history-team');
+        if(!team||!cell)continue;
+        const text=cell.querySelector('span'),dot=cell.querySelector('i');
+        if(text){text.textContent=team.team_name||'미지정';text.title=text.textContent;}
+        if(dot)dot.style.background=/^#[0-9a-f]{6}$/i.test(team.team_color||'')?team.team_color:'#7e90a2';
+      }
+      if(displayed)draw(displayed,false);else paint();
+    });
     panel.querySelector('[data-reset]').addEventListener('click',()=>void action(async()=>{
       displayed=null;++viewVersion;source.clear();pendingHistoryRow=null;
       search.elements.owner.value='';teamId='';teamSelect.value='';period='all';periodFields();paintMine();

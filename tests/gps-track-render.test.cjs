@@ -4,7 +4,7 @@ const fs=require('node:fs');
 const vm=require('node:vm');
 
 test('the existing summary shows selection guidance until a route is chosen',()=>{
-  const context=vm.createContext({active:null,displayed:null,busy:false,initial:false,recordingTarget:null,native:false,
+  const context=vm.createContext({root:{},active:null,displayed:null,busy:false,initial:false,recordingTarget:null,native:false,
     quickRecord:{render(){}},button:{classList:{toggle(){}},setAttribute(){}},start:{},stop:{},refreshButton:{},summary:{hidden:true,dataset:{}},
     panel:{hidden:false},teamSelect:{},search:{elements:Object.fromEntries(['period','day','month','year','rangeStart','rangeEnd'].map(name=>[name,{}]))},
     paintMine(){},paintFilterState(){},place(){},elapsed:()=> '85분',km:()=> '7.98km',date:()=> '11. 12.'});
@@ -22,7 +22,7 @@ test('history renders newest first across loaded pages and refresh resets previo
   function element(){return {dataset:{},children:[],classList:{toggle(){}},style:{},append(...children){this.children.push(...children);},replaceChildren(){this.children=[];},prepend(){},setAttribute(){},addEventListener(){}};}
   const history=element(),requests=[],frame={scrollTop:0};
   let response={items:[{id:'old',started_at:100},{id:'new',started_at:300}],total:4};
-  const context={history,panel:{querySelector:()=>frame},historyVersion:0,historyOffset:0,historyLoaded:false,more:{},count:{},appliedQuery:{},displayed:null,
+  const context={root:{},history,panel:{querySelector:()=>frame},historyVersion:0,historyOffset:0,historyLoaded:false,more:{},count:{},appliedQuery:{},displayed:null,
     filters:require('../public/js/tracking/gps-track-filters'),document:{createElement:element},date:String,elapsed:()=>'',paintTeams(){},place(){},pendingHistoryRow:null,
     syncClient:{list:async query=>{requests.push(query.offset);return response;}}};
   vm.createContext(context);

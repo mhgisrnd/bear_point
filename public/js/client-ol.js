@@ -3068,6 +3068,7 @@
 
   // 곰 추정위치 마커/분석 결과 마커에 공통으로 사용하는 상세 팝업 카드 HTML을 만든다.
   function buildBearEstimatePopupHtml(item) {
+    item = globalThis.window?.BearTeamDisplay?.resolve(item) || item;
     const lat = Number(item && item.lat);
     const lng = Number(item && item.lng);
     const placeName = normalizePlaceName(item && item.place) || "미지정";
@@ -4199,6 +4200,7 @@
   }
 
   function getObservationTeamColor(observation) {
+    observation = globalThis.window?.BearTeamDisplay?.resolve(observation) || observation;
     const color = observation?.team_color;
     return /^#[0-9a-f]{6}$/i.test(String(color || "")) ? color : null;
   }
@@ -5456,7 +5458,7 @@
 
   function getBearObservationCount(item) {
     for (const value of [
-      item?.source_observations, item?.source_observations_json, item?.source_observation_ids, item?.analysis_rays
+      item?.source_observations, item?.source_observations_json, item?.sourceObservations, item?.source_observation_ids, item?.analysis_rays
     ]) {
       const observations = parseBearEstimateJson(value, "array");
       if (observations?.length) return observations.length;
@@ -5472,9 +5474,9 @@
     const options = normalizeAnalysisOptions(item && (item.analysis_options || item.analysis_options_json || item.analysisOptions || item.options));
     if (options?.estimationMethod === "single") return "단일 관측";
     if (options?.estimationMethod === "intersection") return "교차 분석";
-    const sources = parseBearEstimateJson(item && (item.source_observations || item.source_observations_json || item.sourceObservations), "array");
-    if (sources?.length === 1) return "단일 관측";
-    if (sources?.length > 1 || Number(item?.intersections_count) > 0) return "교차 분석";
+    const count = getBearObservationCount(item);
+    if (count === 1) return "단일 관측";
+    if (count > 1 || Number(item?.intersections_count) > 0) return "교차 분석";
     return "미기록";
   }
 
@@ -5838,7 +5840,8 @@
     syncBearMineShortcut();
     const teams = new Map();
     for (const item of currentBearEstimateItems) {
-      teams.set(String(item.team_id || item.team_name || "미지정"), String(item.team_name || item.team_id || "미지정"));
+      const team = globalThis.window?.BearTeamDisplay?.resolve(item) || item;
+      teams.set(String(team.team_id || team.team_name || "미지정"), String(team.team_name || team.team_id || "미지정"));
     }
     for (const [select, options, label] of [[bearTeamFilterEl, teams, "전체 팀"]]) {
       if (!select) continue;
@@ -5958,18 +5961,14 @@
   }
 
   const BEAR_MARKER_PALETTE = [
-    { label: "미기록", color: "#526174" },
-    { label: "1개", color: "#B91C1C" },
-    { label: "2개", color: "#C24A00" },
-    { label: "3개", color: "#1D4ED8" },
-    { label: "4개", color: "#11724B" },
-    { label: "5개 이상", color: "#6D28D9" }
+    { label: "교차 분석", color: "#1D4ED8" },
+    { label: "단일 관측", color: "#C24A00" }
   ];
   const BEAR_MARKER_ICON = "css/svg/bear_marker_point.svg";
 
   function bearMarkerColor(item) {
-    const count = getBearObservationCount(item);
-    return BEAR_MARKER_PALETTE[Math.min(count ?? 0, 5)].color;
+    const method = getEstimationMethodLabel(item);
+    return BEAR_MARKER_PALETTE.find(entry => entry.label === method)?.color || "#526174";
   }
 
   function getObservationLegendTeams() {
@@ -6006,8 +6005,7 @@
       item.appendChild(text);
       return item;
     };
-    const [unknown, ...known] = BEAR_MARKER_PALETTE;
-    bearItems.replaceChildren(...[...known, unknown].map(entry => makeItem(entry, BEAR_MARKER_ICON, true)));
+    bearItems.replaceChildren(...BEAR_MARKER_PALETTE.map(entry => makeItem(entry, BEAR_MARKER_ICON, true)));
     let lastTeams = "", unregisterBack;
 
     function renderTeams() {
@@ -7517,6 +7515,7 @@
     }
 
     bearListPages.render(items, function (it) {
+      it = globalThis.window?.BearTeamDisplay?.resolve(it) || it;
       const itemId = String(it.id);
       const isSelected = selectedBearEstimateIds.has(itemId);
       const el = document.createElement("div");
@@ -7904,6 +7903,19 @@
     });
   }
   initializeMapMarkerLegend();
+  window.addEventListener('bearpoint:teams-changed', () => {
+    repaintUnifiedBearList();
+    observationMarkerSource.changed();
+    if (observationPopupEl.style.display === 'none') return;
+    const observation = observationPopupEl._observationData;
+    const estimate = observationPopupEl._bearEstimateData;
+    const html = observation ? obsListModule?.buildPopupHtml?.(observation) : estimate ? buildBearEstimatePopupHtml(estimate) : null;
+    if (html) {
+      const scrollTop = observationPopupContentEl.scrollTop;
+      observationPopupContentEl.innerHTML = html;
+      observationPopupContentEl.scrollTop = scrollTop;
+    }
+  });
   bootWithSQLiteGate();
   void window.BearStartupReady.then(() => refreshUnifiedBearList({ silent: true }));
   if (isNativeCapacitorPlatform()) {

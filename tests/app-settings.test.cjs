@@ -102,6 +102,20 @@ for (const native of [false,true]) {
 test('invalid and duplicate team catalog cannot erase valid cache',()=>{
   for(const value of [null,{},[{id:'gurye',name:'Team',color:'red'}],[{id:'a',name:'A',color:'#123456'},{id:'a',name:'B',color:'#123456'}]])assert.throws(()=>normalizeTeams(value));
 });
+for(const native of [false,true])test(`${native?'SQLite':'web'}: team changes refresh the profile and survive offline restart`,async t=>{
+  const {win,db}=environment(native);t.after(()=>db.close());
+  const store=createStore(win);await store.load();await store.save('Tester','gurye');
+  win.fetch=async()=>({ok:true,json:async()=>({ok:true,items:[{id:'gurye',name:'Renamed team',color:'#123456'}]})});
+  await store.refresh();
+  assert.equal(store.snapshot().profile.team_name,'Renamed team');
+  assert.equal(store.snapshot().profile.team_color,'#123456');
+  assert.equal((await store.identity()).team_color,'#123456');
+  win.fetch=async()=>{throw Error('offline');};
+  const reboot=createStore(win);await reboot.load();await assert.rejects(reboot.refresh());
+  assert.equal(reboot.snapshot().profile.team_color,'#123456');
+  assert.equal(reboot.snapshot().profile.team_name,'Renamed team');
+});
+
 test('settings migration leaves existing observation and estimate records unchanged',()=>{
   const db=new Database(':memory:');
   try {
