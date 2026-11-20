@@ -2,11 +2,15 @@
   "use strict";
   const store = window.BearAppSettingsStore.createStore(window);
   const trigger = document.getElementById("btn-app-settings");
-  const dialog = document.createElement("dialog");
-  dialog.className = "app-settings-dialog app-settings-dialog--navigation";
+  trigger.setAttribute("aria-expanded", "false");
+  const dialog = document.createElement("section");
+  dialog.className = "app-settings-dialog app-settings-dialog--navigation app-settings-panel";
+  dialog.id = "app-settings-panel-host";
+  dialog.hidden = true;
+  dialog.setAttribute("role", "region");
   dialog.dataset.settingsView = "detail";
   dialog.setAttribute("aria-labelledby", "app-settings-title");
-  dialog.innerHTML = `<div class="app-settings-head"><h2 id="app-settings-title">설정</h2><button type="button" class="app-settings-close" aria-label="설정 닫기">×</button></div>
+  dialog.innerHTML = `<div class="app-settings-head"><button type="button" class="app-settings-close" aria-label="이전 메뉴로 돌아가기">‹</button><h2 id="app-settings-title">설정</h2></div>
     <div class="app-settings-layout">
       <nav class="app-settings-categories" aria-label="설정 대분류">
         <button type="button" class="app-settings-category" id="app-settings-field-category" aria-current="true" aria-controls="app-settings-field-items">현장 기능</button>
@@ -83,6 +87,17 @@
       </div>
     </div>`;
   document.body.append(dialog);
+  window.BearMobileDock?.attachSettings(dialog);
+  function showSettings() {
+    dialog.hidden = false;
+    window.BearMobileDock?.openSettings(dialog);
+    trigger.setAttribute("aria-expanded", "true");
+  }
+  function hideSettings() {
+    dialog.hidden = true;
+    trigger.setAttribute("aria-expanded", "false");
+    window.BearMobileDock?.closeSettings();
+  }
   const storagePanel = dialog.querySelector("#app-settings-storage-panel");
   window.BearStorageCleanup?.mount(storagePanel);
   window.BearAppUpdates?.mount(dialog.querySelector('#app-settings-version-panel'));
@@ -203,7 +218,7 @@
     saveButton.disabled = !loaded || saving || !state.items.length;
   }
   async function close() {
-    if (saving || closing || !dialog.open) return false;
+    if (saving || closing || dialog.hidden) return false;
     closing = true;
     try {
       if (required) {
@@ -212,25 +227,26 @@
         if (!accepted) return false;
         deferred = true;
       }
-      dialog.close(); trigger.focus(); return true;
+      hideSettings(); trigger.focus(); return true;
     } finally { closing = false; }
   }
   async function open() {
     if (window.BearStartupReady) await window.BearStartupReady;
-    if (dialog.open) return;
+    if (!dialog.hidden) { await close(); return; }
     message.textContent = "";
     displayMessage.textContent = "";
     required = !store.snapshot().profile;
     paintCloseButtons();
     selectedTab = tabs[0];
-    selectCategory(categories[0], "detail");
+    selectCategory(categories[0], required ? "detail" : "items");
     saveButton.textContent = required ? "저장하고 시작" : "저장";
     const profile = store.snapshot().profile;
     form.elements.owner.value = profile?.owner || "";
     selection = profile?.team_id || "";
     paintTeams();
     paintTracking();
-    dialog.showModal();
+    showSettings();
+    trigger.setAttribute("aria-expanded", "true");
     if (!loaded) await initialize();
     else void refresh();
   }
@@ -256,9 +272,9 @@
       trigger.title = state.profile ? `${state.profile.owner} · ${state.profile.team_name} 설정` : "담당자·팀 설정";
       if (state.profile) window.dispatchEvent(new CustomEvent("bearpoint:profile-changed", { detail: state.profile }));
       if (!state.profile) {
-        if (!dialog.open && !deferred) await open();
+        if (dialog.hidden && !deferred) await open();
         else paintTeams();
-      } else if (dialog.open) {
+      } else if (!dialog.hidden) {
         required = false; paintCloseButtons();
         form.elements.owner.value = state.profile.owner; selection = state.profile.team_id; paintTeams();
       }
@@ -268,7 +284,7 @@
       loaded = false; trigger.dataset.required = "true";
       if (window.BearStartupReady) await window.BearStartupReady;
       required = true; paintCloseButtons();
-      if (!dialog.open && !deferred) dialog.showModal();
+      if (dialog.hidden && !deferred) { showSettings(); trigger.setAttribute("aria-expanded", "true"); }
       saveButton.disabled = true; message.textContent = error.message;
       refreshButton.textContent = "저장소 다시 연결";
     }
@@ -291,7 +307,7 @@
       const next = await store.saveTracking({ interval_seconds: trackingForm.elements.interval.value });
       saved = true;
       await window.BearGpsTrackUi?.updateInterval(next.interval_seconds);
-      dialog.close(); trigger.focus();
+      hideSettings(); trigger.focus();
     } catch (error) { trackingMessage.textContent = (saved ? "기본 설정은 저장했지만 현재 기록에 간격을 적용하지 못했습니다. 다시 저장해주세요. " : "설정을 저장하지 못했습니다. ") + error.message; }
     finally { saving = false; button.disabled = false; }
   });
@@ -303,16 +319,26 @@
       const profile = await store.save(form.elements.owner.value, selection);
       required = false; trigger.dataset.required = "false"; trigger.title = `${profile.owner} · ${profile.team_name} 설정`;
       window.dispatchEvent(new CustomEvent("bearpoint:profile-changed", { detail: profile }));
-      dialog.close(); trigger.focus();
+      hideSettings(); trigger.focus();
     } catch (error) { message.textContent = "설정을 저장하지 못했습니다. " + error.message; }
     finally { saving = false; refreshButton.disabled = false; form.querySelectorAll("input").forEach(input => { input.disabled = false; }); paintTeams(); }
+  });
+  function handleBack() {
+    if (dialog.hidden) return false;
+    if (dialog.dataset.settingsView === "detail" && backButton.getClientRects().length) {
+      selectTab(selectedTab, "items"); selectedTab.focus();
+    } else void close();
+    return true;
+  }
+  dialog.addEventListener("keydown", event => {
+    if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); handleBack(); }
   });
   closeButtons.forEach(button => button.addEventListener("click", close));
   dialog.addEventListener("cancel", event => { event.preventDefault(); close(); });
   trigger.addEventListener("click", open);
   refreshButton.addEventListener("click", refresh);
-  window.addEventListener("online", () => { if (dialog.open) void refresh(); });
-  window.BearAppSettings = { store, open, close, isOpen: () => dialog.open, getProfile: () => store.snapshot().profile,
+  window.addEventListener("online", () => { if (!dialog.hidden) void refresh(); });
+  window.BearAppSettings = { store, open, close, isOpen: () => !dialog.hidden, handleBack, getProfile: () => store.snapshot().profile,
     requireIdentity: async () => { try { return await store.identity(); } catch (error) { void open(); throw error; } } };
   void initialize();
 })();

@@ -89,7 +89,9 @@
       finally { busy = false; await refresh(); if (errorMessage) message.textContent = errorMessage; }
     });
     root.document.addEventListener('visibilitychange', () => { if (!root.document.hidden) void refresh(); });
-    if (typeof root.MutationObserver === 'function') new root.MutationObserver(() => { if (dialog.open) void refresh(); }).observe(dialog, {attributes: true, attributeFilter: ['open']});
+    if (typeof root.MutationObserver === 'function') new root.MutationObserver(() => {
+      if (dialog.open || (dialog.classList?.contains('app-settings-panel') && !dialog.hidden)) void refresh();
+    }).observe(dialog, {attributes: true, attributeFilter: ['open','hidden']});
     if (!supported) message.textContent = native ? '알림 설정을 사용하려면 앱을 최신 버전으로 업데이트해주세요.' : '공유 알림 수신 설정은 Android 앱에서 사용할 수 있습니다.';
     async function initialize() {
       if (!supported || !plugin.initializeNotifications) { await refresh(); return; }

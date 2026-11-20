@@ -15,13 +15,28 @@
         <button type="button" data-menu="tracking">${icon('<circle cx="5" cy="18" r="3"/><circle cx="19" cy="6" r="3"/><path d="M5 15v-3a4 4 0 0 1 4-4h6m4 1v3a4 4 0 0 1-4 4h-4"/>')}<span>이동 기록</span><i class="mobile-recording-dot" hidden aria-label="기록 중"></i></button>
       </nav>`;
     document.body.append(dock);
+    // Move the existing trigger so its settings handlers, required marker and focus restoration stay intact.
+    const settingsButton=document.getElementById('btn-app-settings');
+    if(settingsButton){
+      settingsButton.dataset.menu='settings';
+      settingsButton.setAttribute('aria-controls','app-settings-panel-host');
+      const label=document.createElement('span');label.textContent='설정';
+      settingsButton.append(label);
+      dock.querySelector('.mobile-dock-nav').append(settingsButton);
+    }
+    let settingsReturn=null;
     const content=dock.querySelector('.mobile-dock-content'),fold=dock.querySelector('.mobile-dock-fold');
     const actions=dock.querySelector('.mobile-dock-actions'),title=fold.querySelector('strong');
+    const settingsClose=document.createElement('button');
+    settingsClose.className='mobile-dock-settings-close';settingsClose.setAttribute('type','button');
+    settingsClose.setAttribute('aria-label','설정 닫기');settingsClose.innerHTML=icon('<path d="m6 6 12 12M18 6 6 18"/>');
+    dock.querySelector('.mobile-dock-head').append(settingsClose);
+    settingsClose.addEventListener('click',()=>{void root.BearAppSettings?.close();});
     const status=document.getElementById('status');
     let lastStatusText='';
     const nav=[...dock.querySelectorAll('[data-menu]')];
     const panels={observations:obs,bears,tracking:track};
-    const names={observations:'관측점',bears:'개체 추적',tracking:'이동 기록'};
+    const names={observations:'관측점',bears:'개체 추적',tracking:'이동 기록',settings:'설정'};
     const obsActions=obs.querySelector('.obs-header-actions'),bearRefresh=document.getElementById('btn-bears-refresh');
     const trackActions=track.querySelector('.gps-track-header-actions');
     const homes=new Map();
@@ -66,21 +81,20 @@
     let showObservationsOnSave=false;
     function paint(){
       if(mobile===null)return;
-      if(!mobile)expanded=true;
       const sidebarHidden=!mobile&&document.body.classList.contains('bp-sidebar-collapsed');
-      if(sidebarHidden||document.body.classList.contains('analysis-mobile-active'))dock.setAttribute('inert','');else dock.removeAttribute('inert');
+      if(active!=='settings'&&(sidebarHidden||document.body.classList.contains('analysis-mobile-active')))dock.setAttribute('inert','');else dock.removeAttribute('inert');
       dock.dataset.menu=active;dock.classList.toggle('is-expanded',expanded);content.hidden=!expanded&&!slideAnimation;
       dock.classList.toggle('is-full',expanded&&full);
       dock.classList.toggle('is-filtering',expanded&&active==='tracking'&&filtering);
       observations.setMapVisible(registrationWasOpen||(active==='observations'&&(!tablet.matches||!document.body.classList.contains('bp-sidebar-collapsed'))));
       gps.setMapVisible?.(active==='tracking'&&!registrationWasOpen);
-      fold.disabled=!mobile;
+      fold.disabled=!mobile||active==='settings';
       fold.setAttribute('aria-expanded',String(expanded));fold.setAttribute('aria-label',names[active]+(expanded?' 접기':' 펼치기'));
       title.textContent=names[active];
       if(active==='observations'&&!expanded)title.textContent+=' '+(document.getElementById('obs-list-count').textContent||'');
       if(active==='tracking'&&oldGps.classList.contains('is-recording'))title.textContent=oldGps.textContent;
       nav.forEach(button=>{
-        const selected=button.dataset.menu===active;button.classList.toggle('is-active',selected);
+        const selected=expanded&&button.dataset.menu===active;button.classList.toggle('is-active',selected);
         if(selected)button.setAttribute('aria-current','page');else button.removeAttribute('aria-current');
       });
       for(const [name,element]of Object.entries(panels))element.classList.toggle('mobile-dock-inactive',name!==active);
@@ -122,23 +136,29 @@
       slideFrom(previousHeight);
     }
     function collapse(){
+      if(active==='settings'&&expanded){void root.BearAppSettings?.close();return true;}
       if(mobile===null||!expanded)return false;
-      if(!mobile){if(document.body.classList.contains('bp-sidebar-collapsed'))return false;setSidebarCollapsed?.(true);return true;}
       const previousHeight=captureHeight();
       expanded=false;paint();slideFrom(previousHeight);return true;
     }
-    nav.forEach(button=>button.addEventListener('click',()=>{
-      if(mobile&&active===button.dataset.menu&&expanded){collapse();return;}
+    nav.forEach(button=>button.addEventListener('click',async()=>{
+      if(button.dataset.menu==='settings')return;
+      if(active==='settings'){
+        const accepted=await root.BearAppSettings?.close();
+        if(accepted===false)return;
+      }
+      if(active===button.dataset.menu&&expanded){collapse();return;}
       select(button.dataset.menu);
     }));
     let drag=null,suppressClickUntil=0;
     fold.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' ')suppressClickUntil=0;});
     fold.addEventListener('click',event=>{
       if(Date.now()<suppressClickUntil){event.preventDefault();return;}
+      if(active==='settings')return;
       if(expanded)collapse();else select(active);
     });
     fold.addEventListener('pointerdown',event=>{
-      if(!mobile||registrationWasOpen||event.isPrimary===false||(event.button!=null&&event.button!==0))return;
+      if(!mobile||active==='settings'||registrationWasOpen||event.isPrimary===false||(event.button!=null&&event.button!==0))return;
       drag={id:event.pointerId,touch:event.pointerType==='touch',y:event.clientY,initial:expanded,full:expanded&&full,height:expanded?content.getBoundingClientRect().height:0,moved:false,delta:0};
       fold.setPointerCapture?.(event.pointerId);
     });
@@ -222,6 +242,23 @@
     const sidebarObserver=new MutationObserver(()=>{if(!mobile&&!restoring)paint();});sidebarObserver.observe(document.body,{attributes:true,attributeFilter:['class']});
     tablet.addEventListener('change',layout);root.addEventListener('resize',()=>{finishDrag(null,true);stopSlide();measure();});
     root.BearMobileDock={select,collapse,isMobile:()=>!!mobile,isDocked:()=>true,getActive:()=>active,handleBack:collapse,
+      attachSettings(panel){panels.settings=panel;content.append(panel);paint();},
+      openSettings(panel){
+        if(active==='settings')return;
+        settingsReturn={active,expanded,full,filtering,detail:dock.classList.contains('is-detail'),sidebarCollapsed:document.body.classList.contains('bp-sidebar-collapsed')};
+        stopSlide();onBeforeOpen?.();
+        active='settings';expanded=true;full=true;filtering=false;
+        if(!mobile)setSidebarCollapsed?.(false);
+        dock.classList.remove('is-detail');panel.hidden=false;paint();measure();
+      },
+      closeSettings(){
+        if(active!=='settings')return;
+        const previous=settingsReturn||{active:'bears',expanded:false,full:false,filtering:false};
+        active=previous.active;expanded=false;full=false;filtering=previous.filtering;
+        dock.classList.toggle('is-detail',!!previous.detail);
+        if(!mobile)setSidebarCollapsed?.(!!previous.sidebarCollapsed);
+        settingsReturn=null;paint();measure();
+      },
       prepareDetail(){
         stopSlide();
         const focused=document.activeElement;
