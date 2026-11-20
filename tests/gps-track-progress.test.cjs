@@ -8,7 +8,7 @@ const poll=code.slice(code.indexOf('    async function poll() {'),code.indexOf("
 test('recorder reports location rejection without losing the route, then clears warning on recovery',async()=>{
   let response={active:{id:'active',point_count:1},location_warning:'accuracy warning'};
   let draws=0;
-  const context={polling:false,document:{hidden:false},busy:false,initial:false,
+  const context={recordingOperation:0,polling:false,document:{hidden:false},busy:false,initial:false,
     displayed:{id:'active',point_count:1},active:{id:'active',point_count:1},
     plugin:{status:async()=>response},message:{textContent:''},paint(){},syncRecords(){},refreshSharedHistory(){},
     show:async()=>{draws++;context.displayed={...response.active};}};
@@ -21,7 +21,7 @@ test('recorder reports location rejection without losing the route, then clears 
 
 test('live location diagnostics do not overwrite the selected historical route',async()=>{
   let draws=0;
-  const context={polling:false,document:{hidden:false},busy:false,initial:false,
+  const context={recordingOperation:0,polling:false,document:{hidden:false},busy:false,initial:false,
     displayed:{id:'history',point_count:10},active:{id:'active',point_count:1},
     plugin:{status:async()=>({active:{id:'active',point_count:2},location_warning:'accuracy warning'})},
     message:{textContent:'history'},paint(){},syncRecords(){},refreshSharedHistory(){},show:async()=>{draws++;}};

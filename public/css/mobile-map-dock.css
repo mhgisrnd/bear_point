@@ -11,8 +11,8 @@ body.bp-map-dock #mobile-map-dock { position: fixed; left: var(--safe-left,0px);
 .mobile-dock-grip { position: absolute; width: 34px; height: 4px; border-radius: 4px; background: #b6c0cd; top: 4px; left: calc(50% - 17px); }
 .mobile-dock-chevron { display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; flex: 0 0 30px; width: 30px; height: 30px; margin-left: auto; border: 1px solid #d7e2ef; border-radius: 9px; background: linear-gradient(150deg,#f8fbff,#eaf1fa); color: #45678c; box-shadow: 0 1px 2px #1c3b5910,inset 0 1px 0 #fff; transition: background .15s ease,box-shadow .15s ease; }
 .mobile-dock-chevron svg { width: 18px; height: 18px; transition: transform .18s ease; }
-body.bp-mobile-dock .mobile-dock-head { padding-right: 44px; }
-body.bp-mobile-dock .mobile-dock-chevron { position: absolute; right: 10px; top: 6px; bottom: 3px; margin: auto 0; }
+body.bp-map-dock .mobile-dock-head { padding-right: 44px; }
+body.bp-map-dock .mobile-dock-chevron { position: absolute; right: 10px; top: 6px; bottom: 3px; margin: auto 0; }
 body.bp-mobile-dock #mobile-map-dock.is-sliding .mobile-dock-content { flex: 1 1 auto; max-height: none; pointer-events: none; }
 body.bp-mobile-dock #mobile-map-dock.is-sliding .mobile-dock-content * { pointer-events: none !important; }
 .is-expanded .mobile-dock-chevron svg { transform: rotate(180deg); }
@@ -95,20 +95,20 @@ body.bp-mobile-dock .map-right-controls { bottom: calc(var(--mobile-dock-height)
 body.bp-mobile-dock .map-legend-disclosure { --map-legend-bottom: calc(var(--mobile-dock-height) + 10px); }
 body.bp-mobile-dock:has(#mobile-map-dock.is-full) :is(.map-right-controls, .map-legend-disclosure) { visibility: hidden; pointer-events: none; }
 @media (max-height: 480px) { body.bp-mobile-dock #heading-dial { transform: scale(0.72); } }
-/* The tablet uses the same views and menu styling in its fixed left sidebar. */
+/* Reuse the phone panel layout inside the tablet's left column. */
 body.bp-tablet-dock #mobile-map-dock {
   left: 8px; right: auto; top: var(--safe-top,0px); bottom: var(--safe-bottom,0px);
   width: calc(var(--bp-sidebar-w,420px) - 16px); height: calc(100dvh - var(--safe-top,0px) - var(--safe-bottom,0px));
-  max-height: none; padding-bottom: 0; border: 0; border-radius: 0; box-shadow: none; z-index: 9991;
+  max-height: none; padding-bottom: 0; z-index: 9991;
   transition: opacity .25s ease,transform .25s ease;
 }
-body.bp-tablet-dock #bp-tablet-sidebar { background: #fff; box-shadow: 2px 0 12px #142a4010; }
-body.bp-tablet-dock #mobile-map-dock .mobile-dock-nav { order: -1; border-top: 0; border-bottom: 1px solid #e0e7f0; padding: 8px 2px; gap: 5px; }
-body.bp-tablet-dock #mobile-map-dock .mobile-dock-nav button { min-height: 48px; border-radius: 9px; }
-body.bp-tablet-dock #mobile-map-dock .mobile-dock-head { border-bottom: 1px solid #e7edf4; padding: 6px 8px; }
-body.bp-tablet-dock #mobile-map-dock .mobile-dock-grip,
-body.bp-tablet-dock #mobile-map-dock .mobile-dock-chevron { display: none; }
-body.bp-tablet-dock #mobile-map-dock .mobile-dock-fold { cursor: default; color: #243c56; opacity: 1; }
+body.bp-tablet-dock #map { margin-left:0; transition:none; }
+body.bp-tablet-dock :is(#bp-tablet-sidebar, #btn-sidebar-toggle) { display:none; }
+body.bp-tablet-dock .map-legend-disclosure {
+  left:calc(var(--bp-sidebar-w,420px) + 12px + var(--safe-left,0px));
+  width:min(304px,calc(100% - var(--bp-sidebar-w,420px) - 88px - var(--safe-left,0px) - var(--safe-right,0px)));
+}
+body.bp-tablet-dock #mobile-map-dock .mobile-dock-fold { cursor:pointer; }
 body.bp-tablet-dock #mobile-map-dock .mobile-dock-content { flex: 1 1 auto; max-height: none; }
 body.bp-tablet-dock #mobile-map-dock .obs-sheet { pointer-events: auto; }
 body.bp-tablet-dock.bp-sidebar-collapsed #mobile-map-dock { visibility: hidden; opacity: 0; transform: translateX(-28px); pointer-events: none; }
@@ -118,8 +118,8 @@ body.bp-tablet-dock #btn-sidebar-toggle svg { width: 18px; height: 18px; transit
 body.bp-tablet-dock.bp-sidebar-collapsed #btn-sidebar-toggle svg { transform: rotate(180deg); }
 body.bp-map-dock #mobile-map-dock #panel .panel-header { display: none; }
 
-/* Settings is a fourth dock panel, with the same navigation and a full viewport. */
-body.bp-map-dock #mobile-map-dock[data-menu="settings"].is-expanded { top:var(--safe-top,0px); bottom:var(--safe-bottom,0px); left:var(--safe-left,0px); right:var(--safe-right,0px); width:auto; height:calc(100dvh - var(--safe-top,0px) - var(--safe-bottom,0px)); max-height:calc(100dvh - var(--safe-top,0px) - var(--safe-bottom,0px)); padding-bottom:0; border-radius:0; z-index:10020; }
+/* Settings fills the phone viewport and shares the tablet's existing sidebar. */
+body.bp-mobile-dock #mobile-map-dock[data-menu="settings"].is-expanded { top:var(--safe-top,0px); bottom:var(--safe-bottom,0px); left:var(--safe-left,0px); right:var(--safe-right,0px); width:auto; height:calc(100dvh - var(--safe-top,0px) - var(--safe-bottom,0px)); max-height:calc(100dvh - var(--safe-top,0px) - var(--safe-bottom,0px)); padding-bottom:0; border-radius:0; z-index:10020; }
 #mobile-map-dock[data-menu="settings"] .mobile-dock-content { flex:1 1 auto; max-height:none; }
 #mobile-map-dock[data-menu="settings"] .mobile-dock-grip,
 #mobile-map-dock[data-menu="settings"] .mobile-dock-chevron { display:none; }
@@ -128,5 +128,6 @@ body.bp-map-dock #mobile-map-dock[data-menu="settings"].is-expanded { top:var(--
 #mobile-map-dock .app-settings-panel[hidden] { display:none !important; }
 #mobile-map-dock .app-settings-panel .app-settings-head { display:none; }
 #mobile-map-dock .app-settings-panel .app-settings-back { flex:0 0 32px; width:32px; height:32px; border:1px solid #d7e2ef; border-radius:8px; background:#f5f9ff; }
-body.bp-map-dock #mobile-map-dock[data-menu="settings"] .mobile-dock-nav { order:0; border-top:1px solid #dfe7f0; border-bottom:0; padding-bottom:calc(7px + var(--safe-bottom,0px)); }
+body.bp-mobile-dock #mobile-map-dock[data-menu="settings"] .mobile-dock-nav { order:0; border-top:1px solid #dfe7f0; border-bottom:0; padding-bottom:calc(7px + var(--safe-bottom,0px)); }
+body.bp-mobile-dock:has(#mobile-map-dock[data-menu="settings"].is-expanded) :is(#btn-sidebar-toggle, .map-right-controls, .map-legend-disclosure) { visibility:hidden; pointer-events:none; }
 body.analysis-mobile-active #mobile-map-dock[data-menu="settings"] { z-index:22010; }

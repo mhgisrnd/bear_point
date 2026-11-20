@@ -25,7 +25,7 @@ test('typing applies the latest query immediately; mine toggles and reset clears
   const reset=element(''),mine=element(''),search=element('');search.elements=elements;
   const requests=[];
   const context={filters:require('../public/js/tracking/gps-track-filters'),search,teamSelect:elements.team,mineButton:mine,
-    period:'all',teamId:'',message:{},appliedQuery:{},paintFilterState(){},paintMine(){},periodFields(){},myOwner:()=> 'Kim',
+    period:'all',teamId:'',message:{},appliedQuery:{},displayed:{id:'selected'},viewVersion:0,pendingHistoryRow:'selected',source:{clear(){}},paintFilterState(){},paintMine(){},periodFields(){},myOwner:()=> 'Kim',
     root:{addEventListener(){}},panel:{querySelector:()=>reset},action:fn=>fn(),setFilterPanelOpen(){},
     loadHistory:async()=>{requests.push(context.appliedQuery);}};
   vm.createContext(context);
@@ -39,4 +39,5 @@ test('typing applies the latest query immediately; mine toggles and reset clears
   elements.team.value='regional';elements.team.handlers.change();assert.equal(context.appliedQuery.team_id,'regional');
   elements.period.value='day';elements.period.handlers.change();assert.notEqual(context.appliedQuery.from,null);
   await reset.handlers.click();assert.equal(context.appliedQuery.owner,'');assert.equal(context.appliedQuery.team_id,'');assert.equal(context.appliedQuery.from,null);
+  assert.equal(context.displayed,null);assert.equal(context.pendingHistoryRow,null);assert.equal(context.viewVersion,1);
 });

@@ -4,6 +4,27 @@ const vm=require('node:vm');
 const fs=require('node:fs');
 const source=fs.readFileSync('public/js/obs/obsList.js','utf8');
 
+test('observation focus follows the current item without changing checkbox selection',()=>{
+  const makeRow=key=>{
+    const classes=new Set(['selected']),attrs=new Map([['data-observation-key',String(key)]]);
+    return {classes,attrs,classList:{toggle(name,on){on?classes.add(name):classes.delete(name);}},
+      getAttribute:name=>attrs.get(name),setAttribute:(name,value)=>attrs.set(name,value),removeAttribute:name=>attrs.delete(name)};
+  };
+  const rows=[makeRow('a'),makeRow(2)];
+  const context=vm.createContext({obsListBodyEl:{querySelectorAll:()=>rows}});
+  const start=source.indexOf('  let focusedObservationKey');
+  vm.runInContext(source.slice(start,source.indexOf('  const observationMarkers',start)),context);
+  context.focusObservationRow('a');
+  assert.equal(rows[0].attrs.get('aria-current'),'true');
+  context.focusObservationRow(2);
+  assert.equal(rows[0].classes.has('obs-row--focused'),false);
+  assert.equal(rows[0].attrs.has('aria-current'),false);
+  assert.equal(rows[1].classes.has('obs-row--focused'),true);
+  assert.ok(rows.every(row=>row.classes.has('selected')));
+  context.focusObservationRow(null);
+  assert.ok(rows.every(row=>!row.classes.has('obs-row--focused')));
+});
+
 test('the same observation keeps its selection identity across reloads and edits',()=>{
   const context=vm.createContext({toHeadingText:String,cleanupObservationFlashCache(){},
     observationFlashUntilById:new Map(),observationFlashPresetById:new Map()});

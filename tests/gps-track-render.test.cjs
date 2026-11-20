@@ -3,12 +3,27 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const vm=require('node:vm');
 
+test('the existing summary shows selection guidance until a route is chosen',()=>{
+  const context=vm.createContext({active:null,displayed:null,busy:false,initial:false,recordingTarget:null,native:false,
+    quickRecord:{render(){}},button:{classList:{toggle(){}},setAttribute(){}},start:{},stop:{},refreshButton:{},summary:{hidden:true,dataset:{}},
+    panel:{hidden:false},teamSelect:{},search:{elements:Object.fromEntries(['period','day','month','year','rangeStart','rangeEnd'].map(name=>[name,{}]))},
+    paintMine(){},paintFilterState(){},place(){},elapsed:()=> '85분',km:()=> '7.98km',date:()=> '11. 12.'});
+  const code=fs.readFileSync('public/js/tracking/gps-track-ui.js','utf8');
+  vm.runInContext(code.slice(code.indexOf('    function paint() {'),code.indexOf('    let pendingHistoryRow')),context);
+  context.paint();assert.equal(context.summary.hidden,false);assert.equal(context.summary.dataset.state,'guide');
+  assert.equal(context.summary.textContent,'목록에서 기록을 선택하면 지도에 이동 경로가 표시됩니다.');
+  context.displayed={id:'one',started_at:1,status:'saved'};context.paint();
+  assert.equal(context.summary.dataset.state,'selected');
+  assert.equal(context.summary.textContent,'11. 12. · 85분 · 7.98km');
+  context.displayed=null;context.paint();assert.match(context.summary.textContent,/목록에서 기록을 선택/);
+});
+
 test('history renders newest first across loaded pages and refresh resets previous rows',async()=>{
   function element(){return {dataset:{},children:[],classList:{toggle(){}},style:{},append(...children){this.children.push(...children);},replaceChildren(){this.children=[];},prepend(){},setAttribute(){},addEventListener(){}};}
   const history=element(),requests=[],frame={scrollTop:0};
   let response={items:[{id:'old',started_at:100},{id:'new',started_at:300}],total:4};
   const context={history,panel:{querySelector:()=>frame},historyVersion:0,historyOffset:0,historyLoaded:false,more:{},count:{},appliedQuery:{},displayed:null,
-    filters:require('../public/js/tracking/gps-track-filters'),document:{createElement:element},date:String,elapsed:()=>'',paintTeams(){},place(){},
+    filters:require('../public/js/tracking/gps-track-filters'),document:{createElement:element},date:String,elapsed:()=>'',paintTeams(){},place(){},pendingHistoryRow:null,
     syncClient:{list:async query=>{requests.push(query.offset);return response;}}};
   vm.createContext(context);
   const code=fs.readFileSync('public/js/tracking/gps-track-ui.js','utf8');
@@ -37,7 +52,7 @@ test('stationary records show one location marker; actual movement shows line an
   const code=fs.readFileSync('public/js/tracking/gps-track-ui.js','utf8'),source=new Vector();
   const teams=[{id:'gurye',color:'#16A34A'}];
   const context=vm.createContext({root:{BearAppSettings:{store:{snapshot:()=>({items:teams})}}},ol:{Feature,geom:{Point,LineString},style:{Style,Text,Fill,Stroke,Circle}},source,
-    history:{querySelectorAll:()=>[]},project:(lat,lng)=>[lng,lat],paint(){},displayed:null,map:{getView:()=>({fit(){}})}});
+    history:{querySelectorAll:()=>[]},project:(lat,lng)=>[lng,lat],paint(){},revealHistoryRow(){},displayed:null,map:{getView:()=>({fit(){}})}});
   vm.runInContext(code.slice(code.indexOf('    function draw(track,fit) {'),code.indexOf('    async function show(')),context);
   const point={lat:35,lng:127};context.draw({id:'stationary',status:'saved',color:'#9333EA',points:[point]},true);
   assert.equal(source.getFeatures().length,1);assert.equal(source.getFeatures()[0].getGeometry().getType(),'Point');

@@ -79,7 +79,7 @@
 :root[data-display-size="large"] .sdr-dialog .sdr-animal-favorite { left: 4px; width: 48px; font-size: 25px; }
 :root[data-display-size="large"] .sdr-dialog .sdr-animal-slots button { font-size: var(--bp-large-secondary); }
 
-@media (max-width: 520px) {
+@container app-settings (max-width: 520px) {
   :root[data-display-size="large"] .app-settings-layout { grid-template-columns: clamp(86px, 25%, 112px) minmax(0, 1fr); }
   :root[data-display-size="large"] .app-settings-category { font-size: var(--bp-large-secondary); }
 }

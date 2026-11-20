@@ -115,6 +115,16 @@
   let reconcileSharedBearEstimates = function () { return Promise.resolve(); };
   const overlayBackCloseStack = [];
   const selectedBearEstimateIds = new Set();
+  let focusedBearEstimateId = null;
+  function highlightBearEstimate(id) {
+    focusedBearEstimateId = id == null ? null : String(id);
+    for (const row of bearsListEl?.querySelectorAll('[data-bear-estimate-id]') || []) {
+      const focused = row.getAttribute('data-bear-estimate-id') === focusedBearEstimateId;
+      row.classList.toggle('bears-item--focused', focused);
+      if (focused) row.setAttribute('aria-current', 'true');
+      else row.removeAttribute('aria-current');
+    }
+  }
   let statusBlinkResetTimer = null;
   let backExitToastEl = null;
   let backExitToastIconEl = null;
@@ -4577,7 +4587,7 @@
     const observation = observationPopupEl._observationData;
     const estimate = observationPopupEl._bearEstimateData;
     if (observation && typeof obsListModule !== 'undefined') obsListModule?.revealItem?.(observation._obsKey || observation.id);
-    if (estimate && typeof bearListPages !== 'undefined') bearListPages.reveal(estimate.id);
+    if (estimate && typeof bearListPages !== 'undefined') { highlightBearEstimate(estimate.id); bearListPages.reveal(estimate.id); }
   }
 
   let bearListFocusVersion = 0;
@@ -7511,6 +7521,11 @@
       const isSelected = selectedBearEstimateIds.has(itemId);
       const el = document.createElement("div");
       el.className = "bears-item bears-item--unified" + (isSelected ? " is-selected" : "");
+      el.setAttribute('data-bear-estimate-id', itemId);
+      if (itemId === focusedBearEstimateId) {
+        el.classList.add('bears-item--focused');
+        el.setAttribute('aria-current', 'true');
+      }
       const bearCode = it.bear_code || it.bearCode || "-";
       const ownerName = normalizeOwnerName(it.owner) || "미지정";
       const regionName = it.admin_region || "미지정";
@@ -7540,6 +7555,7 @@
         '</tbody></table></div>';
 
       el.addEventListener("click", function () {
+        highlightBearEstimate(it.id);
         focusBearListItem(it.id, !!it.remoteOnly, [it.lat, it.lng]);
         triggerHapticImpact("LIGHT");
       });

@@ -56,7 +56,10 @@
 .gps-history-chips button > i { width: 5px; height: 5px; flex: 0 0 5px; border-radius: 50%; }
 .gps-history-date-row { margin-left: 29px; }
 .gps-history-date-row input { min-width: 0; width: 100%; height: 29px; padding: 0 6px; border: 1px solid #d7e1ed; border-radius: 6px; color: #243c56; background: #fff; font: 12px system-ui,sans-serif; box-sizing: border-box; }
-.gps-track-summary { margin: 0 0 8px; }
+.gps-track-summary { flex:0 0 auto; margin:0 0 8px; padding:8px 10px; border:1px solid #d5e3f2; border-left:3px solid #8baacb; border-radius:8px; background:#f3f7fc; color:#456181; font-size:12px; font-weight:600; line-height:1.5; overflow-wrap:anywhere; }
+.gps-track-summary[data-state="selected"] { border-color:#bfdbfe; border-left-color:#3b82f6; background:#eff6ff; color:#1e4f9b; }
+.gps-track-summary[data-state="recording"] { border-color:#bbdfcf; border-left-color:#16a36a; background:#effaf4; color:#176344; }
+:root[data-display-size="large"] .gps-track-summary { font-size:var(--bp-large-secondary); }
 .gps-track-panel [data-more] { border: 1px solid #cadaed; border-radius: 8px; padding: 7px 10px; min-height: 34px; background: #edf4ff; color: #2456bc; font: 700 12px system-ui,sans-serif; cursor: pointer; }
 .gps-track-message { color: #98602e; margin: 6px 0; overflow-wrap: anywhere; }
 .gps-track-message:empty,.gps-track-sync-message:empty { display: none; }
@@ -73,7 +76,8 @@
 .gps-track-history-table td > span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .gps-track-history-table tbody tr { cursor: pointer; }
 .gps-track-history-table tbody tr:hover td { background: #f5f8fd; }
-.gps-track-history-table .is-selected td { background: #eaf2ff; }
+.gps-track-history-table tbody tr.is-selected td { background:#e0f2fe; box-shadow:inset 0 1px 0 #7dd3fc,inset 0 -1px 0 #7dd3fc; }
+.gps-track-history-table tbody tr.is-selected td:first-child { box-shadow:inset 3px 0 0 #0284c7,inset 0 1px 0 #7dd3fc,inset 0 -1px 0 #7dd3fc; }
 .gps-track-history-table tbody tr.is-flashing td { animation: obsRowFlash .9s ease-out; }
 .gps-history-open { display: grid; gap: 2px; width: 100%; min-height: 32px; padding: 0; border: 0; color: #284567; background: none; font: 700 10px/1.4 system-ui,sans-serif; text-align: center; cursor: pointer; }
 .gps-history-open small { color: #78899a; font-size: 10px; font-weight: 400; }

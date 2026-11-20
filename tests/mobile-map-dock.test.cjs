@@ -90,7 +90,7 @@ test('settings reuses the existing gear trigger and restores the previous menu w
     button.click();
     assert.equal(opens,1);assert.equal(env.api.getActive(),'settings');
     assert.equal(settings.parentNode.id,'mobile-dock-content');
-    assert.equal(dock.classList.contains('is-full'),true);
+    assert.equal(dock.classList.contains('is-full'),!tablet);
     assert.equal(button.classList.contains('is-active'),true);
     assert.equal(dock.querySelector('[data-menu="observations"]').classList.contains('is-active'),false);
     assert.equal(list.scrollTop,230);assert.equal(dock.classList.contains('is-expanded'),true);
@@ -216,10 +216,13 @@ test('tablet menus close to navigation only while retaining observation markers'
   assert.ok(dock.querySelector('.mobile-dock-actions .obs-header-actions'));
   dock.querySelector('[data-menu="observations"]').click();assert.equal(env.calls.sidebarCollapsed,false);
   assert.equal(dock.classList.contains('is-expanded'),false);
+  assert.equal(env.api.getMapPadding()[3],30);
   assert.equal(dock.querySelectorAll('.mobile-dock-nav .is-active').length,0);
   env.api.collapse();env.trigger(doc.body);assert.equal(env.calls.mapVisible,true);assert.equal(env.calls.sidebarCollapsed,false);
   assert.equal(dock.hasAttribute('inert'),false);
   env.api.select('tracking');assert.equal(env.calls.sidebarCollapsed,false);assert.equal(env.calls.mapVisible,false);
+  dock.getBoundingClientRect=()=>({left:8,top:0,right:412,width:404,height:844});
+  assert.equal(env.api.getMapPadding()[3],430);
   assert.equal(dock.hasAttribute('inert'),false);
   assert.ok(dock.querySelector('.mobile-dock-actions .gps-track-header-actions'));
   assert.equal(doc.getElementById('obs-sheet').classList.contains('mobile-dock-inactive'),true);
@@ -301,12 +304,11 @@ test('touch taps with small finger movement toggle immediately and ignore synthe
   assert.equal(dock.classList.contains('is-expanded'),true);
 });
 test('header taps fold each menu while retaining its selection and map display',()=>{
-  for(const name of ['observations','bears','tracking']){
-    const env=environment(),dock=env.document.getElementById('mobile-map-dock'),fold=dock.querySelector('.mobile-dock-fold');
+  for(const tablet of [false,true])for(const name of ['observations','bears','tracking']){
+    const env=environment(tablet),dock=env.document.getElementById('mobile-map-dock'),fold=dock.querySelector('.mobile-dock-fold');
+    assert.equal(fold.disabled,false);
     env.api.select(name);
-    env.dispatch(fold,'pointerdown',{clientY:500});
-    env.dispatch(fold,'pointerup',{clientY:500});
-    env.dispatch(fold,'click',{detail:1});
+    fold.click();
     assert.equal(dock.classList.contains('is-expanded'),false);
     assert.equal(env.api.getActive(),name);
     if(name==='observations')assert.equal(env.calls.mapVisible,true);

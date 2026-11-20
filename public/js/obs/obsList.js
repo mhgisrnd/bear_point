@@ -158,6 +158,16 @@ window.createObsListModule = function createObsListModule({
   const chkAllEl = document.getElementById("chk-all");
 
   const selectedObsIds = new Set();
+  let focusedObservationKey = null;
+  function focusObservationRow(id) {
+    focusedObservationKey = id == null ? null : String(id);
+    for (const row of obsListBodyEl?.querySelectorAll('tr[data-observation-key]') || []) {
+      const focused = row.getAttribute('data-observation-key') === focusedObservationKey;
+      row.classList.toggle('obs-row--focused', focused);
+      if (focused) row.setAttribute('aria-current', 'true');
+      else row.removeAttribute('aria-current');
+    }
+  }
   const observationMarkers = [];
   let observationSamples = [];
   // 앱(SQLite) 경로는 저장 직후 재조회가 일어나므로, ID별 플래시 만료시각을 별도로 보관한다.
@@ -742,6 +752,7 @@ window.createObsListModule = function createObsListModule({
   // 관측점 행 클릭 시 해당 좌표로 이동한 뒤 마커 옆에 상세정보를 연다.
   function moveToObservation(item, row) {
     if (!item) return;
+    focusObservationRow(item._obsKey);
     const focusVersion = ++observationFocusVersion;
     const currentZoom = map && typeof map.getZoom === "function" ? map.getZoom() : undefined;
     const focusZoom = Number.isFinite(currentZoom) ? Math.max(16, currentZoom) : 16;
@@ -799,6 +810,11 @@ window.createObsListModule = function createObsListModule({
 
     observationListPages.render(items, item => {
       const row = document.createElement("tr");
+      row.setAttribute('data-observation-key', String(item._obsKey));
+      if (String(item._obsKey) === focusedObservationKey) {
+        row.classList.add('obs-row--focused');
+        row.setAttribute('aria-current', 'true');
+      }
       const teamName = escapeHtml(item.team_name || "미지정");
       const teamColor = /^#[0-9a-f]{6}$/i.test(String(item.team_color || "")) ? item.team_color : "#7e90a2";
       const isChecked = selectedObsIds.has(item._obsKey);
@@ -2184,6 +2200,6 @@ window.createObsListModule = function createObsListModule({
       renderObservationMarkers(getFilteredItems());
     },
     refreshObservationList: refreshObservationData,
-    revealItem: id => observationListPages.reveal(id)
+    revealItem: id => { focusObservationRow(id); return observationListPages.reveal(id); }
   };
 };

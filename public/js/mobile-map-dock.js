@@ -88,7 +88,7 @@
       dock.classList.toggle('is-filtering',expanded&&active==='tracking'&&filtering);
       observations.setMapVisible(registrationWasOpen||(active==='observations'&&(!tablet.matches||!document.body.classList.contains('bp-sidebar-collapsed'))));
       gps.setMapVisible?.(active==='tracking'&&!registrationWasOpen);
-      fold.disabled=!mobile||active==='settings';
+      fold.disabled=active==='settings';
       fold.setAttribute('aria-expanded',String(expanded));fold.setAttribute('aria-label',names[active]+(expanded?' 접기':' 펼치기'));
       title.textContent=names[active];
       if(active==='observations'&&!expanded)title.textContent+=' '+(document.getElementById('obs-list-count').textContent||'');
@@ -218,6 +218,7 @@
       content.append(obs,bears,track);obs.classList.remove('obs-sheet--peek');
       for(const property of ['left','right','top','width'])obs.style.removeProperty(property);
       if(!mobile){expanded=true;full=false;document.body.style.removeProperty('--mobile-dock-height');document.body.style.removeProperty('--mobile-controls-height');}
+      if(active==='settings')full=!!mobile;
       paint();
       restoring=false;
       root.dispatchEvent?.(new Event('bearpoint:mobile-dock-layout'));
@@ -247,7 +248,7 @@
         if(active==='settings')return;
         settingsReturn={active,expanded,full,filtering,detail:dock.classList.contains('is-detail'),sidebarCollapsed:document.body.classList.contains('bp-sidebar-collapsed')};
         stopSlide();onBeforeOpen?.();
-        active='settings';expanded=true;full=true;filtering=false;
+        active='settings';expanded=true;full=!!mobile;filtering=false;
         if(!mobile)setSidebarCollapsed?.(false);
         dock.classList.remove('is-detail');panel.hidden=false;paint();measure();
       },
@@ -269,7 +270,7 @@
       },
       getMapPadding(){
         const bounds=dock.getBoundingClientRect();
-        if(!mobile)return document.body.classList.contains('bp-sidebar-collapsed')?[70,70,30,30]:[70,70,30,bounds.right+18];
+        if(!mobile)return !expanded||document.body.classList.contains('bp-sidebar-collapsed')?[70,70,30,30]:[70,70,30,bounds.right+18];
         return [70,70,Math.max(30,root.innerHeight-bounds.top+18),18];
       },
       showObservationsAfterSave(){

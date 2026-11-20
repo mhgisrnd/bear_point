@@ -202,13 +202,15 @@ body:has(.sdr-dialog[open]) #btn-sdr-diagnostics,
   }
 }
 
-.app-settings-dialog--navigation { width: min(800px, calc(100vw - var(--map-dialog-safe-left) - var(--map-dialog-safe-right) - 48px)); }
+.app-settings-dialog--navigation { container: app-settings / inline-size; width: min(800px, calc(100vw - var(--map-dialog-safe-left) - var(--map-dialog-safe-right) - 48px)); }
 @media (max-width: 520px) {
   .app-settings-dialog--navigation {
     inset-inline: calc(var(--map-dialog-safe-left) + 8px) calc(var(--map-dialog-safe-right) + 8px);
     width: calc(100vw - var(--map-dialog-safe-left) - var(--map-dialog-safe-right) - 16px);
     max-width: none;
   }
+}
+@container app-settings (max-width: 520px) {
   .app-settings-layout { grid-template-columns: clamp(78px, 23%, 108px) minmax(0, 1fr); }
   .app-settings-categories { padding-inline: 5px; }
   .app-settings-category { padding-inline: 4px; text-align: center; word-break: keep-all; }
@@ -222,7 +224,7 @@ body:has(.sdr-dialog[open]) #btn-sdr-diagnostics,
   .app-settings-dialog--navigation .app-settings-footer { padding: 10px 12px; }
   .app-settings-dialog--navigation .app-settings-footer button { padding-inline: 10px; }
 }
-@media (max-width: 420px) {
+@container app-settings (max-width: 420px) {
   .app-settings-dialog--navigation .app-settings-team-grid { grid-template-columns: minmax(0, 1fr); }
   .app-settings-dialog--navigation .app-settings-notification-toggle { flex-wrap: wrap; }
   .app-settings-dialog--navigation .app-settings-notification-toggle strong { flex-basis: 100%; }
