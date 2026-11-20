@@ -6,13 +6,18 @@
   dialog.className = "sdr-dialog";
   dialog.setAttribute("aria-labelledby", "sdr-title");
   dialog.innerHTML = `
-    <div class="sdr-header"><div class="sdr-title-group"><h2 id="sdr-title">수신기</h2><span class="sdr-header-caption">연결부터 관측점 등록까지</span></div><button type="button" data-back hidden aria-label="탐색 재개">‹ 탐색</button><button type="button" data-close aria-label="수신기 닫기">×</button></div>
+    <div class="sdr-header"><div class="sdr-title-group"><h2 id="sdr-title">수신기</h2></div><button type="button" data-back hidden aria-label="탐색 재개">‹ 탐색</button><button type="button" data-close aria-label="수신기 닫기">×</button></div>
+    <nav class="sdr-workflow" aria-label="수신 단계">
+      <button type="button" data-sdr-stage="connection"><span>1</span>연결</button>
+      <button type="button" data-sdr-stage="setup"><span>2</span>개체·주파수</button>
+      <button type="button" data-sdr-stage="monitor"><span>3</span>수신</button>
+    </nav>
     <div class="sdr-body">
     <div data-receiver-selector class="sdr-operation" role="group" aria-label="수신기 연결 방식"></div>
     <section data-bluetooth class="sdr-workspace" hidden aria-label="Bluetooth IC-R30 수신기"></section>
     <div data-usb-content class="sdr-workspace">
+    <p class="sdr-message sdr-workflow-error" role="alert"></p>
     <div class="sdr-connection-pane">
-    <p class="sdr-message" role="alert"></p>
     <section data-usb-section class="sdr-usb-section sdr-connection" data-connected="false" aria-label="USB 수신기">
       <div class="sdr-connection-heading"><h3 data-usb-heading class="sdr-stage-heading"><span class="sdr-step" aria-hidden="true">1</span> 수신기 연결</h3><div class="sdr-usb-tools sdr-connection-tools"><button type="button" data-refresh>기기 새로고침</button><button type="button" data-disconnect class="sdr-quiet" hidden>연결 해제</button></div></div>
       <p class="sdr-status sdr-connection-status" role="status">USB 연결 대기</p>
@@ -31,7 +36,7 @@
           <p data-animal-notice class="sdr-note" role="status"></p><div class="sdr-animal-list-tools"><p data-animal-count class="sdr-note" role="status"></p><button type="button" data-animal-favorites-filter aria-pressed="false">☆ 즐겨찾기</button></div><div data-animal-list class="sdr-animal-list" aria-label="개체 검색 결과"></div></div>
         </div>
       </div>
-      <div class="sdr-tuning-pane">
+      <div data-usb-tuning class="sdr-tuning-pane">
         <div class="sdr-wide sdr-frequency-field" data-frequency-field>
           <div class="sdr-frequency-heading"><div><strong>수신 주파수</strong><span data-frequency-range>MHz</span><span data-frequency-animal class="sdr-frequency-animal" aria-live="polite" hidden></span></div><button type="button" data-frequency-edit aria-expanded="false">직접 입력</button></div>
           <div data-frequency-entry class="sdr-frequency-entry" hidden><input data-frequency-draft type="text" inputmode="decimal" enterkeyhint="done" autocomplete="off" aria-label="수신 주파수 MHz" aria-describedby="sdr-frequency-error" placeholder="148.24130" /><span data-frequency-error id="sdr-frequency-error" role="status" hidden></span></div>
@@ -77,8 +82,8 @@
     </div></div>
     <div class="sdr-footer" hidden>
       <p data-receiver-context class="sdr-footer-context"></p>
-      <button type="button" class="sdr-primary sdr-register-observation" data-register-observation hidden>수신 확인 · 관측점 등록</button>
       <div class="sdr-actions sdr-run"><button type="button" class="sdr-primary" data-start disabled>수신 시작</button><button type="button" data-stop disabled>정지</button></div>
+      <button type="button" class="sdr-primary sdr-register-observation sdr-stage-action" data-register-observation hidden>관측점 등록</button>
     </div>
     <div data-bt-footer class="sdr-receiver-footer" hidden></div>`;
   document.body.appendChild(dialog);
@@ -109,6 +114,40 @@
   let busy = false;
   let current = null;
   let bluetooth = null;
+  const workflowStages = { usb: null, bluetooth: null };
+  const workflowConnections = { usb: false, bluetooth: false };
+  const workflowButtons = ["connection", "setup", "monitor"].map(stage => ({
+    stage, button: dialog.querySelector(`[data-sdr-stage="${stage}"]`)
+  }));
+  function workflowTransport() { return bluetooth?.selected() ? "bluetooth" : "usb"; }
+  function goToStage(stage) {
+    const transport = workflowTransport();
+    workflowStages[transport] = stage;
+    renderWorkflow();
+    dialog.querySelector(".sdr-body").scrollTop = 0;
+  }
+  function renderWorkflow() {
+    const transport = workflowTransport(), usingBluetooth = transport === "bluetooth";
+    const connected = usingBluetooth ? bluetooth.status().state === "connected" : current?.state === "connected";
+    const live = !usingBluetooth && ["starting", "receiving", "scanning", "stopping"].includes(current?.receptionState);
+    const canSetup = connected && (usingBluetooth || !settingsSection.hidden);
+    const hasLogs = usingBluetooth ? bluetooth.hasSavedLogs?.() : !!current?.diagnostic?.records?.length;
+    const canMonitor = hasLogs || (connected && (usingBluetooth ? bluetooth.canMonitor?.() !== false : !resultSection.hidden));
+    if (workflowConnections[transport] && !connected) workflowStages[transport] = null;
+    workflowConnections[transport] = connected;
+    if (!connected && !(hasLogs && workflowStages[transport] === "monitor")) workflowStages[transport] = null;
+    else if (connected && !workflowStages[transport]) workflowStages[transport] = live ? "monitor" : "setup";
+    else if (workflowStages[transport] === "monitor" && !canMonitor && !usingBluetooth) workflowStages.usb = "setup";
+    const stage = workflowStages[transport] || "connection";
+    if (dialog.dataset.receiverStage !== stage) dialog.querySelector(".sdr-body").scrollTop = 0;
+    dialog.dataset.receiverStage = stage;
+    dialog.dataset.receiverLive = String(live);
+    for (const item of workflowButtons) {
+      item.button.setAttribute("aria-current", item.stage === stage ? "step" : "false");
+      item.button.disabled = item.stage === "setup" ? !canSetup : item.stage === "monitor" ? !canMonitor : false;
+    }
+  }
+  for (const item of workflowButtons) item.button.addEventListener("click", () => goToStage(item.stage));
   let listener = null;
   let listenerPromise = null;
   let sequence = 0;
@@ -152,6 +191,7 @@
     } catch (_) { message.textContent = "기기에 즐겨찾기를 저장하지 못했습니다."; return false; }
   }
   const registerObservationButton = dialog.querySelector("[data-register-observation]");
+  const tuningPane = dialog.querySelector("[data-usb-tuning]");
   function animalFormat(hz) { return window.BearSdrAnimals?.formatHz(hz) || (hz / 1e6).toFixed(6).replace(/0+$/, "").replace(/\.(\d{0,2})$/, (_, digits) => "." + digits.padEnd(3, "0")); }
   function animalMatchesFrequency() {
     return !!(selectedAnimal && window.BearSdrFrequency.matchesAnimalFrequency(selectedAnimalHz, Math.round(Number(frequency.value) * 1e6)));
@@ -179,6 +219,7 @@
     selectedAnimal = item; selectedAnimalHz = hz;
     finishAnimalSearch();
     frequency.value = String(hz / 1e6); setFrequencyEditing(false); updateWindow();
+    if (!live || receivedHz === hz) revealSignal(tuningPane);
     if (!live || receivedHz === hz) return;
     await run(() => restartFixedReception());
   }
@@ -324,7 +365,7 @@
   const fixedButton = dialog.querySelector("[data-task-fixed]");
   let mapUsbConnected = false;
   function renderMapStatus(snapshot) {
-    bluetooth?.updateUsb();
+    bluetooth?.updateUsb(snapshot?.state === "connected" || snapshot?.state === "permissionPending");
     const bluetoothSelected = !!bluetooth?.selected();
     const usbConnected = !bluetoothSelected && snapshot?.state === "connected";
     if (mapUsbConnected && !usbConnected && !bluetoothSelected) window.__bpShowToast?.("USB 연결이 해제되었습니다.");
@@ -746,8 +787,16 @@
     renderCandidates(snapshot);
     renderAnimalPicker();
     if (["scanning", "receiving"].includes(snapshot.receptionState) && previousReception !== snapshot.receptionState) {
-      revealSignal(resultSection, "smooth");
-    }
+      if (workflowTransport() === "usb" && workflowStages.usb !== "connection") workflowStages.usb = "monitor";
+      if (task === "fixed" && snapshot.receptionState === "receiving") {
+        finishAnimalSearch();
+        renderWorkflow();
+        revealSignal(resultSection, "smooth");
+      } else {
+        renderWorkflow();
+        revealSignal(resultSection, "smooth");
+      }
+    } else renderWorkflow();
   }
 
   function renderCandidates(snapshot) {
@@ -865,6 +914,7 @@
     restoredFixed = false; candidateSelected = false;
     const scan = snapshot.backgroundScanning || snapshot.receptionState === "scanning" ||
       (snapshot.scanResumeAvailable && !snapshot.fixedResultAvailable);
+    workflowStages.usb = "monitor";
     setTask(scan ? "scan" : "fixed", false);
     void openReceiver().then(async () => {
       if (!dialog.open) return;
@@ -1074,9 +1124,11 @@
       only: () => favoritesOnly,
       toggleFilter: toggleFavoritesFilter
     },
-    onChange: () => renderMapStatus(current),
+    onChange: () => { renderMapStatus(current); renderWorkflow(); },
+    onTuned: () => goToStage("monitor"),
     revealSignal
   }) || null;
+  renderWorkflow();
   dialog.addEventListener("cancel", event => { event.preventDefault(); handleBackNavigation(); });
 
   function updateDialogViewport(snapshot = current) {

@@ -18,7 +18,6 @@ import java.util.Iterator;
 /** Foreground-only USB audio capture, independent of the IC-R30 serial connection. */
 final class IcR30UsbAudio implements Runnable {
     private static final int RATE = IcR30AudioAnalysis.RATE;
-    private static final int POINTS = 120;
     private static final long ROUTE_TIMEOUT_MS = 1000;
     private static final long READ_TIMEOUT_MS = 2000;
     private static final long PUBLISH_MS = 125;
@@ -142,7 +141,7 @@ final class IcR30UsbAudio implements Runnable {
         int filled = 0, revision = tuningRevision;
         short[] samples = new short[IcR30AudioAnalysis.BLOCK];
         IcR30AudioAnalysis analysis = new IcR30AudioAnalysis();
-        IcR30AudioFilter filter = new IcR30AudioFilter();
+        final IcR30AudioFilter filter = new IcR30AudioFilter();
         while (!stopped) {
             int count = record.read(samples, filled, samples.length - filled, AudioRecord.READ_NON_BLOCKING);
             if (count < 0) throw new IllegalStateException("USB 오디오 읽기 오류 (" + count + ")");
@@ -159,7 +158,6 @@ final class IcR30UsbAudio implements Runnable {
             if (revision != tuningRevision) {
                 revision = tuningRevision;
                 analysis = new IcR30AudioAnalysis();
-                filter = new IcR30AudioFilter();
                 filled = 0;
                 updated = 0;
                 speaker.discontinuity();
@@ -190,19 +188,11 @@ final class IcR30UsbAudio implements Runnable {
     }
 
     private static JSObject frame(String device, short[] samples, SdrCwDetector detector) {
-        JSArray low = new JSArray(), high = new JSArray();
         JSArray spectrum = new JSArray();
         for (double dbfs : detector.audioSpectrumDbfs()) spectrum.put((Object) dbfs);
-        for (int i = 0; i < POINTS; i++) {
-            int min = Short.MAX_VALUE, max = Short.MIN_VALUE;
-            for (int j = i * samples.length / POINTS; j < (i + 1) * samples.length / POINTS; j++) {
-                min = Math.min(min, samples[j]);
-                max = Math.max(max, samples[j]);
-            }
-            low.put(min);
-            high.put(max);
-        }
-        return state("active", device).put("low", low).put("high", high)
+        int peakSample = 0;
+        for (short sample : samples) peakSample = Math.max(peakSample, Math.abs(sample));
+        return state("active", device).put("peakSample", peakSample)
                 .put("spectrumDbfs", spectrum).put("spectrumCenterHz", IcR30AudioAnalysis.CENTER_HZ)
                 .put("spectrumSpanHz", SdrCwDetector.AUDIO_SPECTRUM_BINS * RATE / (double) SdrCwDetector.SIZE)
                 .put("ready", detector.ready()).put("count", detector.pulseCount())

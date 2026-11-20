@@ -27,17 +27,26 @@ const animalCatalog = () => ({formatHz:hz=>String(hz/1e6),load:async()=>({notice
   {id:'2',code:'KF-112',frequencies:[]}
 ]})});
 
-test('USB reception shows the signal section once on start without scrolling on every reading',async()=>{
+test('USB reception moves to the monitor stage without repeatedly scrolling',async()=>{
   const ui=setup();ui.device.hasPermission=true;
-  await ui.trigger.click();await ui.button().click();await tick();
+  await ui.trigger.click();
+  assert.equal(ui.dialog.dataset.receiverStage,'connection');
+  assert.equal(ui.dialog.querySelector('[data-sdr-stage="setup"]').disabled,true);
+  await ui.button().click();await tick();
+  assert.equal(ui.dialog.dataset.receiverStage,'setup');
   let scrolls=0;
   ui.dialog.querySelector('[data-result]').scrollIntoView=()=>{scrolls++;};
   ui.state.receptionState='receiving';
   ui.state.reception={mode:'cw',frequencyHz:148241000,hasSamples:true,signalDbfs:-65,powerDbfs:-35};
   ui.emit();
   assert.equal(scrolls,1);
+  assert.equal(ui.dialog.dataset.receiverStage,'monitor');
+  await ui.dialog.querySelector('[data-sdr-stage="setup"]').click();
   ui.emit();
   assert.equal(scrolls,1);
+  assert.equal(ui.dialog.dataset.receiverStage,'setup');
+  await ui.dialog.querySelector('[data-sdr-stage="monitor"]').click();
+  assert.equal(ui.dialog.dataset.receiverStage,'monitor');
 });
 
 test('CW detector uses directional power independently of confidence and keeps the target frequency',async()=>{
@@ -105,6 +114,11 @@ test('saved diagnostics remain available without a receiver and sharing uses the
     {id:'sdr-diagnostic-new',time:1730790000000,sizeBytes:20000000},
     {id:'sdr-diagnostic-old',time:1730780000000,sizeBytes:19000000}
   ]};ui.emit();
+  assert.equal(ui.dialog.dataset.receiverStage,'connection');
+  const monitor=ui.dialog.querySelector('[data-sdr-stage="monitor"]');
+  assert.equal(monitor.disabled,false);
+  await monitor.click();
+  assert.equal(ui.dialog.dataset.receiverStage,'monitor');
   const section=ui.dialog.querySelector('[data-diagnostic-section]'),select=ui.dialog.querySelector('[data-diagnostic-record]');
   assert.equal(section.hidden,false);assert.equal(select.children.length,2);
   assert.equal(ui.dialog.querySelector('[data-result]').hidden,true);
@@ -115,20 +129,21 @@ test('saved diagnostics remain available without a receiver and sharing uses the
   await ui.dialog.querySelector('[data-diagnostic-share]').click();await tick();
   assert.equal(ui.plugin.sharedId,'sdr-diagnostic-old');
 });
-test('USB diagnostics stay visible before connection, during permission wait and after disconnect',async()=>{
+test('USB remains at connection until the receiver is ready',async()=>{
   const ui=setup();await ui.trigger.click();await tick();
   const section=ui.dialog.querySelector('[data-diagnostic-section]');
   assert.equal(section.hidden,false);
+  assert.equal(ui.dialog.dataset.receiverStage,'connection');
   assert.equal(ui.dialog.querySelector('[data-diagnostic-start]').disabled,true);
   assert.equal(ui.dialog.querySelector('[data-diagnostic-share]').disabled,true);
   assert.equal(ui.dialog.querySelector('[data-usb-pairing]').hidden,false);
   ui.state.state='permissionPending';ui.emit();
-  assert.equal(section.hidden,false);
+  assert.equal(ui.dialog.dataset.receiverStage,'connection');
   ui.state.state='connected';ui.device.connected=true;ui.emit();
   assert.equal(ui.dialog.querySelector('[data-usb-pairing]').hidden,true);
   assert.equal(ui.dialog.querySelector('.sdr-status').hidden,true);
   ui.state.state='idle';ui.device.connected=false;ui.emit();
-  assert.equal(section.hidden,false);
+  assert.equal(ui.dialog.dataset.receiverStage,'connection');
   assert.equal(ui.dialog.querySelector('[data-usb-pairing]').hidden,false);
   assert.equal(ui.dialog.querySelector('.sdr-status').hidden,false);
 });
@@ -1565,7 +1580,8 @@ test('card A/B/C stays available during reception and switches only after stoppi
   await ui.trigger.click();await ui.button().click();await tick();
   const cards=()=>ui.dialog.querySelector('[data-animal-list]').children;
   const slot=i=>cards()[0].children[2].children[i];
-  await slot(0).click();await ui.dialog.querySelector('[data-start]').click();
+  await slot(0).click();
+  await ui.dialog.querySelector('[data-start]').click();
   ui.state.receptionState='receiving';ui.state.backgroundReceiving=true;
   ui.state.reception={mode:'cw',frequencyHz:148229500,listenFrequencyHz:148241500,hasSamples:true,powerDbfs:-56};ui.emit();
   assert.equal(ui.dialog.querySelector('[data-settings]').disabled,true);
@@ -1573,6 +1589,7 @@ test('card A/B/C stays available during reception and switches only after stoppi
   const order=[],originalStart=ui.plugin.startReception.bind(ui.plugin);
   ui.plugin.startReception=async o=>{order.push('start');await originalStart(o);};
   let release;ui.plugin.stopReception=()=>new Promise(resolve=>{order.push('stop');release=()=>{ui.state.receptionState='idle';ui.emit();resolve();};});
+  await ui.dialog.querySelector('[data-sdr-stage="setup"]').click();
   const switching=slot(1).click();await tick();
   assert.equal(ui.plugin.starts.length,1);assert.equal(ui.dialog.querySelector('[data-register-observation]').disabled,true);
   release();await switching;

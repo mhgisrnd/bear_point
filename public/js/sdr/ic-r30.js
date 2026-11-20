@@ -5,13 +5,13 @@
   function mount(dialog, options) {
     const { revealSignal = section => section.scrollIntoView?.({ block: "start" }) } = options;
     const selector = dialog.querySelector("[data-receiver-selector]");
-    selector.innerHTML = `<button type="button" data-receiver-usb aria-pressed="true"><strong>USB</strong><span>RTL-SDR · 청취 · 탐색</span></button><button type="button" data-receiver-bt aria-pressed="false"><strong>Bluetooth</strong><span>IC-R30 · 제어 · S-Meter</span></button>`;
+    selector.innerHTML = `<button type="button" data-receiver-bt aria-pressed="true"><strong>Bluetooth</strong><span>IC-R30 · 제어 · S-Meter</span></button><button type="button" data-receiver-usb aria-pressed="false"><strong>USB</strong><span>RTL-SDR · 청취 · 탐색</span></button>`;
     const panel = dialog.querySelector("[data-bluetooth]");
     const footer = dialog.querySelector("[data-bt-footer]");
-    footer.innerHTML = `<p data-bt-target class="sdr-footer-context" role="status"></p><button type="button" data-bt-register class="sdr-primary sdr-register-observation" disabled>수신 확인 · 관측점 등록</button>`;
+    footer.innerHTML = `<p data-bt-target class="sdr-footer-context" role="status"></p><button type="button" data-bt-view class="sdr-primary sdr-stage-action" disabled>수신 보기</button><button type="button" data-bt-register class="sdr-primary sdr-register-observation sdr-stage-action" disabled>관측점 등록</button>`;
     panel.innerHTML = `
+      <p data-bt-error class="sdr-message sdr-workflow-error" role="alert"></p>
       <div class="sdr-connection-pane">
-      <p data-bt-error class="sdr-message" role="alert"></p>
       <section data-bt-connection class="sdr-connection" data-connected="false" aria-label="Bluetooth 수신기">
       <div class="sdr-connection-heading"><h3 data-bt-heading class="sdr-stage-heading"><span class="sdr-step" aria-hidden="true">1</span> 수신기 연결</h3><div class="sdr-connection-tools"><button type="button" data-bt-refresh>기기 새로고침</button><button type="button" data-bt-disconnect class="sdr-quiet" hidden>연결 해제</button></div></div>
       <p data-bt-status class="sdr-connection-status" role="status">Bluetooth 연결 대기</p>
@@ -33,7 +33,7 @@
         </div>
         </div>
         </div>
-        <div class="sdr-tuning-pane">
+        <div data-bt-tuning class="sdr-tuning-pane">
         <fieldset data-bt-fields class="sdr-settings">
           <div class="sdr-frequency-field">
             <div class="sdr-frequency-heading"><div><strong>수신 주파수</strong><span>MHz · 0.1–3304.999</span><span data-bt-frequency-animal class="sdr-frequency-animal" aria-live="polite" hidden></span></div><button type="button" data-bt-frequency-edit aria-expanded="false">직접 입력</button></div>
@@ -49,25 +49,26 @@
         </div>
       </section>
         <div class="sdr-section sdr-signal-pane" data-bt-signal hidden>
-        <h3 class="sdr-stage-heading"><span class="sdr-step" aria-hidden="true">3</span> 신호 확인</h3>
-        <p data-bt-measurement-status class="sdr-note" role="status"></p>
-        <p data-bt-readout class="sdr-frequency-readout" aria-live="polite">수신 주파수 —</p>
-        <div class="sdr-strength"><div class="sdr-strength-heading"><strong>수신 신호 세기 · S-Meter</strong><span data-bt-strength>측정 대기</span></div>
-          <div data-bt-meter class="sdr-strength-bars" role="meter" aria-label="IC-R30 S-Meter 원시값" aria-valuemin="0" aria-valuemax="255">${Array.from({ length: 10 }, (_, i) => `<span data-bt-bar="${i}" style="height:${8 + i * 3}px"></span>`).join("")}</div>
-          <p class="sdr-note">0–255 원시값 · dBm, S1–S9 또는 USB 신호 세기와 직접 비교할 수 없습니다.</p>
+        <div class="sdr-bt-signal-summary">
+          <h3 class="sdr-stage-heading"><span class="sdr-step" aria-hidden="true">3</span> 신호 확인</h3>
+          <p data-bt-readout class="sdr-frequency-readout" aria-live="polite">수신 주파수 —</p>
+          <p data-bt-measurement-status class="sdr-note" role="status" hidden></p>
         </div>
-        <div class="sdr-strength">
-          <div class="sdr-strength-heading"><strong>USB 오디오 입력</strong>
+        <div class="sdr-strength sdr-bt-meter"><div class="sdr-strength-heading"><strong>S-Meter</strong><span data-bt-strength>측정 대기</span></div>
+          <div data-bt-meter class="sdr-strength-bars" role="meter" aria-label="IC-R30 S-Meter 원시값" aria-valuemin="0" aria-valuemax="255">${Array.from({ length: 10 }, (_, i) => `<span data-bt-bar="${i}" style="height:${8 + i * 3}px"></span>`).join("")}</div>
+        </div>
+        <div class="sdr-strength sdr-bt-audio">
+          <div class="sdr-audio-head"><strong>USB 오디오 입력</strong>
             <button type="button" data-bt-audio-permission class="sdr-secondary" hidden>마이크 권한 허용</button>
+          <div data-bt-audio-playback class="sdr-listening-controls" hidden>
+            <label>청취 필터 <select data-bt-audio-filter>
+              <option value="0">원음</option><option value="1">약</option><option value="2">중</option><option value="3">강</option>
+            </select></label>
+            <button type="button" data-bt-audio-mute aria-pressed="false" class="sdr-secondary">음소거</button>
+          </div>
           </div>
           <p data-bt-audio-status class="sdr-note" role="status">USB 오디오 연결 대기 중</p>
           <p data-bt-audio-speaker-notice class="sdr-note" role="status" hidden></p>
-          <div data-bt-audio-playback class="sdr-log-actions" hidden>
-            <button type="button" data-bt-audio-mute aria-pressed="false" class="sdr-secondary">음소거</button>
-            <label class="sdr-listening-level">청취 필터 <select data-bt-audio-filter>
-              <option value="0">원음</option><option value="1">약</option><option value="2">중</option><option value="3">강</option>
-            </select></label>
-          </div>
           <figure class="sdr-spectrum">
             <figcaption>오디오 스펙트럼</figcaption>
             <canvas data-bt-audio-spectrum role="img" aria-label="오디오 입력 대기"></canvas>
@@ -75,12 +76,6 @@
           </figure>
           <p data-bt-audio-level class="sdr-note" hidden></p>
           <p data-bt-audio-tone class="sdr-note" role="status" hidden></p>
-          <details data-bt-audio-waveform class="sdr-help" hidden><summary>시간 파형</summary>
-            <svg data-bt-audio-wave class="sdr-bt-test-chart" viewBox="0 0 300 90" role="img" aria-label="최근 20밀리초 USB 오디오 파형" hidden>
-              <line x1="0" y1="45" x2="300" y2="45" stroke="currentColor" opacity=".25" />
-              <path data-bt-audio-path fill="none" stroke="currentColor" stroke-width="1.5" />
-            </svg>
-          </details>
         </div>
         </div>
       <div class="sdr-diagnostics-pane">
@@ -97,11 +92,11 @@
       </details>
       <details class="sdr-help"><summary>연결 유지 · 지원 기능 안내</summary><p>SPP는 주파수·모드 제어와 S-Meter 조회에 사용합니다. 연결된 USB 오디오의 재생과 필터는 화면을 꺼도 유지됩니다. 알림에서 소리를 끄거나 Bluetooth 연결을 해제할 수 있습니다.</p></details>
       </div>`;
-    const node = key => (key === "target" || key === "register" ? footer : panel).querySelector(`[data-bt-${key}]`);
+    const node = key => (["target", "register", "view"].includes(key) ? footer : panel).querySelector(`[data-bt-${key}]`);
     const meterBars = Array.from({ length: 10 }, (_, i) => panel.querySelector(`[data-bt-bar="${i}"]`));
     const usbButton = selector.querySelector("[data-receiver-usb]");
     const btButton = selector.querySelector("[data-receiver-bt]");
-    let selected = false, plugin = null, listener = null, busy = false, loadingCatalog = false;
+    let selected = true, plugin = null, listener = null, busy = false, loadingCatalog = false;
     let snapshot = { state: "idle", measurement: null, error: "" };
     let animals = [], target = null, deviceKey = "", animalKey = "", catalogNotice = "";
     let draftFrequency = false, draftMode = false, localError = "", recordsKey = "";
@@ -123,8 +118,14 @@
     function connected() { return snapshot.state === "connected"; }
     function testing() { return snapshot.test?.active === true; }
     function locked() { return busy || snapshot.state === "connecting" || connected(); }
-    function updateUsb() {
-      btButton.disabled = options.usbLocked();
+    function setTransport(useBluetooth) {
+      selected = useBluetooth;
+      dialog.dataset.transport = useBluetooth ? "bluetooth" : "usb";
+      panel.hidden = !useBluetooth;
+    }
+    function updateUsb(usbActive = false) {
+      if (usbActive && selected && !connected() && snapshot.state !== "connecting") setTransport(false);
+      btButton.disabled = usbActive || options.usbLocked();
       usbButton.disabled = locked();
       usbButton.setAttribute("aria-pressed", String(!selected));
       btButton.setAttribute("aria-pressed", String(selected));
@@ -209,6 +210,7 @@
             frequencyControls.setEditing(false);
             node("search").blur?.();
             render();
+            options.onTuned?.();
             revealSignal(node("signal"));
           }, true));
           slotControls.push({ button, frequency, check });
@@ -294,15 +296,17 @@
       });
       const canRegister = !busy && !testing() && !draftFrequency && !draftMode && !frequencyControls.editing() && !localError &&
         liveReading;
-      node("measurement-status").textContent = updating ? "수신기 설정 적용 중 · 마지막 측정을 유지하며 새 응답을 기다립니다."
-        : reading ? "S-Meter 자동 측정 중"
-        : "측정값 대기 · 수신기 응답을 확인하고 있습니다.";
+      const measurementStatus = node("measurement-status");
+      measurementStatus.textContent = updating ? "수신기 설정 적용 중…"
+        : reading ? "" : "측정값 대기";
+      measurementStatus.hidden = !measurementStatus.textContent;
       const reason = updating ? "설정 적용 중 · 확인 후 등록할 수 있습니다."
         : testing() ? "로그 기록 종료 후 등록할 수 있습니다."
         : draftFrequency || frequencyControls.editing() ? "주파수 직접 입력을 완료하고 적용값을 확인하세요."
         : !reading || localError ? "수신기 측정값과 오류를 확인하세요." : "관측점 등록 가능";
       node("target").textContent = target ? `${target.code} · ${formatHz(reading?.frequencyHz || target.hz)} MHz${reading ? ` · ${reading.mode}` : ""} · ${reason}` : reason;
       node("register").disabled = !canRegister;
+      node("view").disabled = !canRegister;
       frequencyControls.render();
       renderTest();
       renderAnimals();
@@ -381,7 +385,7 @@
       const message = active ? "입력 중 · " + audioState.message + (audioState.speakerEnabled ? " · 스피커 재생" : "")
         : audioState.message || "USB 오디오 연결 대기 중";
       if (status.textContent !== message) status.textContent = message;
-      node("audio-waveform").hidden = node("audio-wave").hidden = node("audio-level").hidden = node("audio-tone").hidden = !active;
+      node("audio-level").hidden = node("audio-tone").hidden = !active;
     }
     function renderAudioSpectrum() {
       const plot = root.SdrSpectrumPlot;
@@ -405,14 +409,7 @@
       renderAudio();
       renderAudioSpectrum();
       if (value.state !== "active") return;
-      const peak = Math.max(0, ...value.high, ...value.low.map(sample => -sample));
-      const scale = 42 / Math.max(512, peak);
-      const path = value.low.map((low, i) => {
-        const x = ((i + .5) * 300 / value.low.length).toFixed(1);
-        const y = sample => (45 - sample * scale).toFixed(1);
-        return "M" + x + " " + y(low) + "V" + y(value.high[i]);
-      });
-      node("audio-path").setAttribute("d", path.join(" "));
+      const peak = value.peakSample;
       node("audio-level").textContent = peak ? "입력 피크 " + (20 * Math.log10(peak / 32768)).toFixed(1) + " dBFS" : "입력 신호 없음";
       const tone = node("audio-tone");
       let detection = "CW 후보 대기 · 감지 " + value.count + "회";
@@ -528,15 +525,14 @@
     }
     function select(bluetooth) {
       if (bluetooth ? options.usbLocked() : locked()) return;
-      selected = bluetooth;
-      dialog.dataset.transport = bluetooth ? "bluetooth" : "usb";
-      panel.hidden = !bluetooth;
+      setTransport(bluetooth);
       updateUsb();
       options.onChange();
-      if (bluetooth) {
-        void run(async () => { applySnapshot(await plugin.getStatus()); });
-        if (!animals.length) void loadAnimals();
-      }
+      if (bluetooth) refreshBluetoothView();
+    }
+    function refreshBluetoothView() {
+      void run(async () => { applySnapshot(await plugin.getStatus()); renderAudioSpectrum(); });
+      if (!animals.length) void loadAnimals();
     }
     btButton.addEventListener("click", () => select(true));
     usbButton.addEventListener("click", () => select(false));
@@ -585,6 +581,7 @@
       applySnapshot(await plugin.setMode({ mode: node("mode").value }));
       draftMode = false;
     }, true));
+    node("view").addEventListener("click", () => options.onTuned?.());
     node("register").addEventListener("click", () => run(async () => {
       applySnapshot(await plugin.getStatus());
       if (!validReading() || draftFrequency || draftMode || testing() || frequencyControls.editing()) throw new Error("수신기의 적용 주파수와 현재 수신을 확인하세요.");
@@ -596,10 +593,13 @@
         if (root.BearSdrRegistration.open(context, back) === false) throw new Error("관측점 저장 또는 수정을 완료한 뒤 다시 시도해주세요.");
       } catch (error) { back(); throw error; }
     }));
+    setTransport(true);
     render();
     return {
       updateUsb,
       refreshFavorites: renderAnimals,
+      canMonitor: () => validReading() || !!lastReading,
+      hasSavedLogs: () => !!snapshot.test?.records?.length || !!snapshot.test?.available,
       cancelFrequencyEditing() {
         if (!frequencyControls.editing()) return false;
         frequencyControls.cancel();
@@ -610,7 +610,7 @@
       busy: () => busy,
       status: () => snapshot,
       onOpen() {
-        if (selected) void run(async () => { applySnapshot(await plugin.getStatus()); renderAudioSpectrum(); });
+        if (selected) refreshBluetoothView();
       },
       async exit() {
         if (plugin) applySnapshot(await plugin.disconnect());

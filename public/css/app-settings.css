@@ -140,6 +140,13 @@ body:has(.sdr-dialog[open]) #btn-sdr-diagnostics,
   width: min(420px, calc(100vw - var(--map-dialog-safe-left) - var(--map-dialog-safe-right) - 32px));
   max-width: calc(100vw - var(--map-dialog-safe-left) - var(--map-dialog-safe-right) - 32px);
 }
+@media (orientation: portrait) {
+  .sdr-dialog {
+    inset-inline: calc(var(--map-dialog-safe-left) + 8px) calc(var(--map-dialog-safe-right) + 8px);
+    width: min(920px, calc(100vw - var(--map-dialog-safe-left) - var(--map-dialog-safe-right) - 16px));
+    max-width: none;
+  }
+}
 :is(.sdr-dialog, .app-settings-dialog) :is(.sdr-header, .app-settings-head) {
   display: flex;
   flex: 0 0 auto;

@@ -17,17 +17,19 @@ final class IcR30AudioFilter {
 
     short[] process(short[] input, int level, double candidateHz) {
         if (level == 0 && bandMix == 0) return input.clone();
-        boolean follow = level > 0 && candidateHz >= 300 && candidateHz <= 2100;
-        if (follow && (Math.abs(candidateHz - toneHz) >= 45 || toneLevel != level)) {
-            if (Math.abs(candidateHz - toneHz) >= 45) {
+        // Keep suppressing hiss while the detector reacquires a tone after tuning.
+        if (level > 0) {
+            if (candidateHz >= 300 && candidateHz <= 2100 && Math.abs(candidateHz - toneHz) >= 45) {
+                toneHz = candidateHz;
                 tone.reset();
-                toneMix = 0;
+                toneLevel = 0;
             }
-            toneHz = candidateHz;
-            toneLevel = level;
-            tone.configure(toneHz, toneHz / TONE_WIDTH[level], 0);
+            if (toneHz > 0 && toneLevel != level) {
+                toneLevel = level;
+                tone.configure(toneHz, toneHz / TONE_WIDTH[level], 0);
+            }
         }
-        double targetToneMix = follow ? TONE_MIX[level] : 0;
+        double targetToneMix = toneHz > 0 ? TONE_MIX[level] : 0;
         double bandStep = (BAND_MIX[level] - bandMix) / input.length;
         double toneStep = (targetToneMix - toneMix) / input.length;
         short[] output = new short[input.length];
@@ -42,6 +44,7 @@ final class IcR30AudioFilter {
         }
         bandMix = BAND_MIX[level];
         toneMix = targetToneMix;
+        if (level == 0) toneHz = 0;
         return output;
     }
 

@@ -50,4 +50,19 @@ public class IcR30AudioFilterTest {
         filter.process(pcm, 0, 700);
         assertArrayEquals(pcm, filter.process(pcm, 0, 700));
     }
+
+    @Test public void tuningDoesNotBringBackInterferenceWhileTheDetectorReacquires() {
+        short[] pcm = input();
+        IcR30AudioFilter filter = new IcR30AudioFilter();
+        short[] filtered = pcm;
+        for (int i = 0; i < 12; i++) filtered = filter.process(pcm, 3, 700);
+        double trackedInterference = amplitude(filtered, 1400);
+        for (int i = 0; i < 12; i++) {
+            filtered = filter.process(pcm, 3, 0);
+            assertEquals(trackedInterference, amplitude(filtered, 1400), 2);
+        }
+        for (int i = 0; i < 12; i++) filtered = filter.process(pcm, 3, 1400);
+        assertTrue(amplitude(filtered, 1400) > .85 * amplitude(pcm, 1400));
+        assertTrue(amplitude(filtered, 700) < .15 * amplitude(pcm, 700));
+    }
 }

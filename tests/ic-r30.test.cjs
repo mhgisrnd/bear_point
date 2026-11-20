@@ -108,8 +108,9 @@ function setup(native = true) {
     fs.readFileSync('public/js/sdr/spectrum.js', 'utf8') + '\n' +
     fs.readFileSync('public/js/sdr/ic-r30.js', 'utf8'), { window, document: { createElement: () => new Element() } });
   const favorites = new Set(); let revision = 0, favoritesOnly = false;
+  let monitorTransitions = 0;
   const controller = window.BearIcR30.mount(dialog, {
-    usbLocked: () => usbLocked, onChange() {},
+    usbLocked: () => usbLocked, onChange() {}, onTuned: () => { monitorTransitions++; },
     favorites: {
       has: code => favorites.has(code), revision: () => revision,
       only: () => favoritesOnly,
@@ -127,6 +128,7 @@ function setup(native = true) {
     await node('devices').children[0].children[2].click();
   }
   return { dialog, panel, footer, node, tab, plugin, controller, calls, emit, connect, reading,
+    monitorTransitions: () => monitorTransitions,
     async pollAudio() {
       const [id, fn] = timers.entries().next().value;
       timers.delete(id);
@@ -134,7 +136,7 @@ function setup(native = true) {
     },
     setFavoritesOnly(value) { favoritesOnly = value; controller.refreshFavorites(); },
     favoritesOnly: () => favoritesOnly,
-    setUsbLocked(value) { usbLocked = value; controller.updateUsb(); },
+    setUsbLocked(value, active = false) { usbLocked = value; controller.updateUsb(active); },
     registration: () => registered, back: () => returned?.(),
     setRegistrationResult(value) { registrationResult = value; } };
 }
@@ -144,7 +146,7 @@ test('Bluetooth USB audio follows attachment and closing the dialog only stops U
   const spectrumDbfs = Array(80).fill(-100);
   spectrumDbfs[19] = -31;
   const audio = {
-    state: 'active', message: 'USB Audio Device', low: [-200, 20], high: [-30, 600],
+    state: 'active', message: 'USB Audio Device', peakSample: 600,
     spectrumDbfs, spectrumCenterHz: 1200, spectrumSpanHz: 1875,
     ready: true, tracked: true, confidence: 2, toneHz: 700, snrDb: 12.5, count: 3, speakerEnabled: true
   };
@@ -160,8 +162,8 @@ test('Bluetooth USB audio follows attachment and closing the dialog only stops U
   try {
     attached = true;
     await ui.pollAudio();
-    assert.equal(ui.node('audio-wave').hidden, false);
-    assert.match(ui.node('audio-path').attributes.d, /M.*V.*M.*V/);
+    assert.equal(ui.node('audio-level').hidden, false);
+    assert.match(ui.node('audio-level').textContent, /입력 피크 -34\.7 dBFS/);
     assert.match(ui.node('audio-tone').textContent, /반복 CW 후보 · 700 Hz.*3회/);
     assert.match(ui.node('audio-peak').textContent, /최대 피크 708 Hz.*CW 후보 700 Hz/);
     assert.match(ui.node('audio-status').textContent, /스피커 재생/);
@@ -175,7 +177,7 @@ test('Bluetooth USB audio follows attachment and closing the dialog only stops U
     assert.equal(ui.node('audio-mute').textContent, '음소거');
     attached = false;
     await ui.pollAudio();
-    assert.equal(ui.node('audio-wave').hidden, true);
+    assert.equal(ui.node('audio-level').hidden, true);
     assert.match(ui.node('audio-status').textContent, /연결 대기/);
     assert.equal(ui.controller.status().state, 'connected');
     attached = true;
@@ -185,7 +187,7 @@ test('Bluetooth USB audio follows attachment and closing the dialog only stops U
     ui.dialog.close();
     ui.dialog.events.close();
   }
-  assert.equal(ui.node('audio-wave').hidden, true);
+  assert.equal(ui.node('audio-level').hidden, true);
   assert.match(ui.node('audio-peak').textContent, /USB 오디오가 연결되면/);
   assert.equal(ui.calls.some(([method]) => method === 'disconnect'), false);
   assert.equal(ui.controller.status().state, 'connected');
@@ -325,6 +327,7 @@ test('Bluetooth selected target remains in the fixed footer and can be cleared w
   let scrolls = 0;
   ui.node('signal').scrollIntoView = () => { scrolls++; };
   await ui.node('animals').children[0].children[1].children[0].click();
+  assert.equal(ui.monitorTransitions(),1);
   assert.equal(scrolls, 1);
   ui.emit(ui.controller.status());
   assert.equal(scrolls, 1, 'polling must not repeatedly move the viewport');
@@ -349,7 +352,12 @@ test('Bluetooth search shows an empty state and IME search submits without tunin
 });
 test('USB ownership prevents Bluetooth selection or a stale device connect action', async () => {
   const ui = setup();
-  ui.setUsbLocked(true); await ui.tab('bt').click();
+  assert.equal(ui.controller.selected(), true);
+  assert.equal(ui.dialog.dataset.transport, 'bluetooth');
+  assert.equal(ui.tab('bt').attributes['aria-pressed'], 'true');
+  const modes = ui.dialog.querySelector('[data-receiver-selector]').innerHTML;
+  assert.ok(modes.indexOf('data-receiver-bt') < modes.indexOf('data-receiver-usb'));
+  ui.setUsbLocked(true, true); await ui.tab('bt').click();
   assert.equal(ui.controller.selected(), false);
   ui.setUsbLocked(false); await ui.tab('bt').click(); await tick();
   await ui.node('refresh').click();
@@ -552,7 +560,8 @@ test('Bluetooth favorites filter and search share the USB favorite callbacks wit
   await list.children[0].children[2].click();
   assert.equal(list.children[0].textContent, '즐겨찾기한 개체가 없습니다.');
   assert.equal(ui.calls.length, calls);
-  assert.match(ui.node('measurement-status').textContent, /자동 측정 중/);
+  assert.equal(ui.node('measurement-status').hidden, true);
+  assert.equal(ui.node('measurement-status').textContent, '');
 });
 test('Bluetooth renders externally changed shared filter state and toggles that same state',async()=>{
   const ui=setup();await ui.connect();
