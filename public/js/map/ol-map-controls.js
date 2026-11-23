@@ -202,12 +202,14 @@ window.createOlMapControlsManager = function createOlMapControlsManager(options)
     const canComplete = isAreaMeasureMode() ? measureDraftPoints.length >= 3 : measureDraftPoints.length >= 2;
 
     if (measureUndoBtnEl) {
-      measureUndoBtnEl.disabled = !hasAnyPoint;
+      measureUndoBtnEl.textContent = hasAnyPoint ? "되돌리기" : "취소";
+      measureUndoBtnEl.setAttribute("aria-label", hasAnyPoint ? "마지막 측정점 되돌리기" : "거리 측정 취소");
+      measureUndoBtnEl.disabled = false;
       measureUndoBtnEl.style.opacity = "1";
-      measureUndoBtnEl.style.cursor = hasAnyPoint ? "pointer" : "default";
-      measureUndoBtnEl.style.background = hasAnyPoint ? "#e2e8f0" : "#f8fafc";
-      measureUndoBtnEl.style.color = hasAnyPoint ? "#334155" : "#94a3b8";
-      measureUndoBtnEl.style.borderColor = hasAnyPoint ? "#94a3b8" : "#cbd5e1";
+      measureUndoBtnEl.style.cursor = "pointer";
+      measureUndoBtnEl.style.background = "#e2e8f0";
+      measureUndoBtnEl.style.color = "#334155";
+      measureUndoBtnEl.style.borderColor = "#94a3b8";
     }
     if (measureCompleteBtnEl) {
       measureCompleteBtnEl.disabled = !canComplete;
@@ -550,7 +552,11 @@ window.createOlMapControlsManager = function createOlMapControlsManager(options)
   }
 
   function setMeasureButtonActive(active, modeType) {
-    if (measureDistanceBtnEl) measureDistanceBtnEl.classList.toggle("is-active", !!active && modeType === "distance");
+    if (measureDistanceBtnEl) {
+      const distanceActive = !!active && modeType === "distance";
+      measureDistanceBtnEl.classList.toggle("is-active", distanceActive);
+      measureDistanceBtnEl.setAttribute("aria-pressed", String(distanceActive));
+    }
     if (measureAreaBtnEl) measureAreaBtnEl.classList.toggle("is-active", !!active && modeType === "area");
     if (measureToolsEl) measureToolsEl.classList.toggle("is-measuring", !!active);
   }
@@ -670,30 +676,9 @@ window.createOlMapControlsManager = function createOlMapControlsManager(options)
       onLocateButtonReady(locateBtnEl);
     }
 
-    // 측정 도구: 도구 버튼을 누르면 거리·면적이 펼쳐지고, 접으면 진행 중인 측정도 끝낸다.
+    // 거리 버튼에서 바로 측정 모드를 켜고 끈다.
     measureToolsEl = document.createElement("div");
     measureToolsEl.className = "map-ctl-group map-ctl-tools";
-
-    const measureItemsEl = document.createElement("div");
-    measureItemsEl.className = "map-ctl-tools__items";
-    measureItemsEl.id = "map-measure-tools";
-    measureItemsEl.hidden = true;
-
-    const toolsToggleBtn = makeBtn(
-      "map-ctl-tools__toggle",
-      "측정 도구",
-      '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m3.5 16.5 13-13 4 4-13 13z"/><path d="m7.5 12.5 2 2m1-5 2 2m1-5 2 2"/></svg><span>도구</span>',
-      function () {
-        const open = measureItemsEl.hidden;
-        measureItemsEl.hidden = !open;
-        toolsToggleBtn.setAttribute("aria-expanded", String(open));
-        measureToolsEl.classList.toggle("is-open", open);
-        keepControlVisible(open ? toolsToggleBtn : locateBtnEl);
-        if (!open && measureModeActive) setMeasureMode(false, "toggle");
-      }
-    );
-    toolsToggleBtn.setAttribute("aria-expanded", "false");
-    toolsToggleBtn.setAttribute("aria-controls", measureItemsEl.id);
 
     function keepControlVisible(control) {
       if (root.clientHeight >= root.scrollHeight) return;
@@ -712,7 +697,9 @@ window.createOlMapControlsManager = function createOlMapControlsManager(options)
         setMeasureMode(nextActive, "toggle", "distance");
       }
     );
+    measureDistanceBtnEl.setAttribute("aria-pressed", "false");
 
+    /* 면적 측정은 현재 화면에서 사용하지 않지만, 필요 시 버튼을 복원할 수 있다.
     measureAreaBtnEl = makeBtn(
       "map-ctl-measure",
       "면적 측정",
@@ -722,6 +709,7 @@ window.createOlMapControlsManager = function createOlMapControlsManager(options)
         setMeasureMode(nextActive, "toggle", "area");
       }
     );
+    */
 
     measureActionPanelEl = document.createElement("div");
     measureActionPanelEl.style.display = "none";
@@ -782,7 +770,8 @@ window.createOlMapControlsManager = function createOlMapControlsManager(options)
       completeDraftMeasure();
     });
     measureUndoBtnEl = makeActionBtn("되돌리기", function () {
-      undoLastDraftPoint();
+      if (measureDraftPoints.length) undoLastDraftPoint();
+      else setMeasureMode(false, "cancel");
     });
 
     const measureActionRowEl = document.createElement("div");
@@ -799,10 +788,8 @@ window.createOlMapControlsManager = function createOlMapControlsManager(options)
     mainControlGroup.appendChild(btnJiri);
     mainControlGroup.appendChild(compassBtn);
 
-    measureItemsEl.appendChild(measureDistanceBtnEl);
-    measureItemsEl.appendChild(measureAreaBtnEl);
-    measureToolsEl.appendChild(measureItemsEl);
-    measureToolsEl.appendChild(toolsToggleBtn);
+    measureToolsEl.appendChild(measureDistanceBtnEl);
+    // 면적 측정을 다시 제공할 때 measureAreaBtnEl을 여기에 추가한다.
 
     const scaleTarget = document.createElement("div");
     scaleTarget.className = "map-ctl-scale-slot";
@@ -838,7 +825,7 @@ window.createOlMapControlsManager = function createOlMapControlsManager(options)
         if (viewportHeight === root.clientHeight && locateHeight === locateRow.clientHeight) return;
         viewportHeight = root.clientHeight;
         locateHeight = locateRow.clientHeight;
-        keepControlVisible(measureItemsEl.hidden ? locateBtnEl : toolsToggleBtn);
+        keepControlVisible(locateBtnEl);
       });
       sizeObserver.observe(root);
       sizeObserver.observe(locateRow);
