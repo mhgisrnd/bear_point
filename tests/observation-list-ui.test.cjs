@@ -49,7 +49,7 @@ test("animal detail uses compact full-width rows and retains export/delete permi
 });
 test("observation detail table preserves long text, detector rows and zero heading safely", () => {
   const escapeHtml = value => String(value == null ? "" : value).replace(/[&<>"']/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]);
-  const context = vm.createContext({ escapeHtml, getObservationLabel: item => item.place,
+  const context = vm.createContext({ escapeHtml, selectedObsIds: new Set(), getObservationLabel: item => item.place,
     formatCoordinate: value => String(value), formatDateTimeSeconds: value => String(value),
     isShared: item => item.shareState === "shared" });
   const start = source.indexOf("  function buildDetectorRowsHtml(detectors) {");
@@ -109,7 +109,7 @@ test("one list includes shared and unshared observations, with ordinary text sea
 test("bulk actions appear only for the selected eligible observations", () => {
   const field = () => ({ hidden: false, disabled: false, style: {}, textContent: "" });
   const context = vm.createContext({ observationSamples: rows, selectedObsIds: new Set(), selectionActionsEl: field(),
-    obsSelectedCountEl: field(), btnAnalysis: field(), btnDeleteSelected: field(), btnSendSelected: field(),
+    obsSelectedCountEl: field(), obsSelectionClearEl: field(), analysisSelectionCode: null, btnAnalysis: field(), btnDeleteSelected: field(), btnSendSelected: field(),
     isShared: item => ["shared", "sending"].includes(item.shareState), getFilteredItems: () => rows,
     syncFilterControls() {}, syncChkAll() {}, syncObservationMarkerSelection() {} });
   const start = source.indexOf("  function updateSelectionUI() {");
@@ -126,4 +126,25 @@ test("bulk actions appear only for the selected eligible observations", () => {
   assert.equal(context.btnSendSelected.hidden, false);
   assert.equal(context.btnSendSelected.textContent, "선택 공유 1");
   assert.equal(context.btnDeleteSelected.textContent, "선택 삭제 2");
+});
+
+test("select-all state follows only the active analysis code", () => {
+  const context = vm.createContext({ analysisSelectionCode: 'MH-001', selectedObsIds: new Set(), chkAllEl: {} });
+  const start = source.indexOf('  function getSelectAllTargets(items) {');
+  const end = source.indexOf('  // 관측점명', start);
+  vm.runInContext(source.slice(start, end), context);
+  const items = [{ _obsKey: 'a', bearCode: 'MH-001' }, { _obsKey: 'b', bearCode: 'MH-001' }, { _obsKey: 'c', bearCode: 'KF-83' }];
+  context.selectedObsIds.add('a');
+  context.syncChkAll(items);
+  assert.equal(context.chkAllEl.checked, false);
+  assert.equal(context.chkAllEl.indeterminate, true);
+  context.selectedObsIds.add('b');
+  context.syncChkAll(items);
+  assert.equal(context.chkAllEl.checked, true);
+  assert.equal(context.chkAllEl.indeterminate, false);
+  context.selectedObsIds.clear();
+  context.analysisSelectionCode = null;
+  context.syncChkAll(items);
+  assert.equal(context.chkAllEl.checked, false);
+  assert.equal(context.chkAllEl.indeterminate, false);
 });

@@ -136,6 +136,7 @@ window.createObsListModule = function createObsListModule({
   const obsListStatusEl = document.getElementById("obs-list-status");
   const obsListCountEl = document.getElementById("obs-list-count");
   const obsSelectedCountEl = document.getElementById("obs-selected-count");
+  const obsSelectionClearEl = document.getElementById("obs-selection-clear");
   const searchQueryEl = document.getElementById("search-query");
   const btnSearchClearEl = document.getElementById("btn-search-clear");
   const btnFilterEl = document.getElementById("btn-obs-filter");
@@ -158,6 +159,7 @@ window.createObsListModule = function createObsListModule({
   const chkAllEl = document.getElementById("chk-all");
 
   const selectedObsIds = new Set();
+  let analysisSelectionCode = null;
   let focusedObservationKey = null;
   function focusObservationRow(id) {
     focusedObservationKey = id == null ? null : String(id);
@@ -425,7 +427,7 @@ window.createObsListModule = function createObsListModule({
             ${row("등록일시", formatDateTimeSeconds(item && item.createdAt))}
           </tbody></table>
         </div>
-        ${item.shareState === "sending" ? '' : '<div class="obs-popup-card__actions"><button class="obs-popup-card__action-btn obs-popup-card__action-btn--edit" type="button" data-observation-action="edit">수정</button></div>'}
+        <div class="obs-popup-card__actions">${item.shareState === "sending" ? '' : '<button class="obs-popup-card__action-btn obs-popup-card__action-btn--edit" type="button" data-observation-action="edit">수정</button>'}<button class="obs-popup-card__action-btn obs-popup-card__action-btn--analysis" type="button" data-observation-action="analysis-select">${selectedObsIds.has(item._obsKey) ? '선택 해제' : '위치분석에 추가'}</button></div>
       </div>
     `;
   }
@@ -866,10 +868,21 @@ window.createObsListModule = function createObsListModule({
   // 개별 관측점 체크박스 선택 상태를 관리한다.
   function handleObsCheck(id, checked, row) {
     if (checked) {
+      const item = observationSamples.find(entry => entry._obsKey === id);
+      if (analysisSelectionCode && String(item?.bearCode || '').trim() !== analysisSelectionCode) {
+        const checkbox = row.querySelector('.obs-row-chk');
+        if (checkbox) checkbox.checked = false;
+        const message = `${analysisSelectionCode} 선택 중입니다. 현재 선택을 확인해 주세요.`;
+        statusEl.textContent = message;
+        highlightStatusOnce();
+        window.__bpShowToast?.(message);
+        return;
+      }
       selectedObsIds.add(id);
       row.classList.add("selected");
     } else {
       selectedObsIds.delete(id);
+      if (!selectedObsIds.size) analysisSelectionCode = null;
       row.classList.remove("selected");
     }
     syncObservationMarkerSelection();
@@ -880,14 +893,17 @@ window.createObsListModule = function createObsListModule({
   function updateSelectionUI() {
     syncFilterControls();
     const count = selectedObsIds.size;
+    if (!count) analysisSelectionCode = null;
     const editable = observationSamples.filter(item => selectedObsIds.has(item._obsKey) && !["sending", "conflict"].includes(item.shareState));
     const sendable = observationSamples.filter(item => selectedObsIds.has(item._obsKey) && !["shared", "sending", "conflict"].includes(item.shareState));
     if (selectionActionsEl) selectionActionsEl.hidden = count < 1;
 
     if (obsSelectedCountEl) {
-      obsSelectedCountEl.textContent = `${count}개 선택`;
+      const codes = new Set(observationSamples.filter(item => selectedObsIds.has(item._obsKey)).map(item => String(item.bearCode || '').trim()).filter(Boolean));
+      obsSelectedCountEl.textContent = codes.size === 1 ? `${[...codes][0]} · ${count}개 선택` : `코드 혼합 · ${count}개 선택`;
       obsSelectedCountEl.hidden = count < 1;
     }
+    if (obsSelectionClearEl) obsSelectionClearEl.hidden = count < 1;
 
     if (btnAnalysis) {
       const canAnalyze = count >= 1;
@@ -1007,11 +1023,17 @@ window.createObsListModule = function createObsListModule({
     };
   }
 
-  // 현재 필터 대상 기준으로 전체선택 체크박스 상태를 동기화한다.
+  // 분석 대상이 정해져 있으면 전체 선택도 같은 코드의 관측점에 적용한다.
+  function getSelectAllTargets(items) {
+    return items.filter(item => !analysisSelectionCode || String(item.bearCode || '').trim() === analysisSelectionCode);
+  }
+
+  // 전체선택 상태는 실제로 선택 가능한 관측점을 기준으로 계산한다.
   function syncChkAll(items) {
     if (!chkAllEl) return;
-    const allChecked = items.length > 0 && items.every((it) => selectedObsIds.has(it._obsKey));
-    const someChecked = items.some((it) => selectedObsIds.has(it._obsKey));
+    const targets = getSelectAllTargets(items);
+    const allChecked = targets.length > 0 && targets.every((it) => selectedObsIds.has(it._obsKey));
+    const someChecked = targets.some((it) => selectedObsIds.has(it._obsKey));
     chkAllEl.checked = allChecked;
     chkAllEl.indeterminate = !allChecked && someChecked;
   }
@@ -1823,6 +1845,12 @@ window.createObsListModule = function createObsListModule({
       if (map && typeof map.closePopup === "function") map.closePopup();
       void runPositionAnalysis();
     });
+    if (obsSelectionClearEl) obsSelectionClearEl.addEventListener("click", () => {
+      selectedObsIds.clear();
+      analysisSelectionCode = null;
+      applySearch();
+      syncObservationMarkerSelection();
+    });
 
     // 선택된 관측점 삭제 버튼 핸들러
     if (btnDeleteSelected) btnDeleteSelected.addEventListener("click", async () => {
@@ -1904,10 +1932,12 @@ window.createObsListModule = function createObsListModule({
 
     if (chkAllEl) chkAllEl.addEventListener("change", () => {
       const filtered = getFilteredItems();
+      const targets = getSelectAllTargets(filtered);
       if (chkAllEl.checked) {
-        filtered.forEach((it) => selectedObsIds.add(it._obsKey));
+        targets.forEach((it) => selectedObsIds.add(it._obsKey));
       } else {
-        filtered.forEach((it) => selectedObsIds.delete(it._obsKey));
+        targets.forEach((it) => selectedObsIds.delete(it._obsKey));
+        if (!selectedObsIds.size) analysisSelectionCode = null;
       }
       applySearch();
       updateSelectionUI();
@@ -2029,6 +2059,25 @@ window.createObsListModule = function createObsListModule({
     },
     renderObservationMarkers,
     buildPopupHtml: buildObservationPopupHtml,
+    toggleAnalysisSelection: function (item) {
+      const key = String(item?._obsKey || '');
+      const target = observationSamples.find(row => String(row._obsKey) === key);
+      if (!target) return { ok: false, message: '관측점을 목록에서 찾을 수 없습니다. 목록을 새로고침해 주세요.' };
+      if (selectedObsIds.has(target._obsKey)) {
+        selectedObsIds.delete(target._obsKey);
+        if (!selectedObsIds.size) analysisSelectionCode = null;
+      }
+      else {
+        const codes = new Set(getSelectedObservations().map(row => String(row.bearCode || '').trim()));
+        const code = String(target.bearCode || '').trim();
+        if (codes.size && (codes.size !== 1 || !codes.has(code))) return { ok: false, message: '다른 코드가 선택되어 있습니다. 현재 선택을 확인해 주세요.' };
+        selectedObsIds.add(target._obsKey);
+        analysisSelectionCode = code;
+      }
+      applySearch();
+      syncObservationMarkerSelection();
+      return { ok: true };
+    },
     setMapVisible: visible => observationMarkersLayer.setVisible(visible),
     prepareRegistrationMap: async () => {
       if (!observationSamples.length) await loadObservationSamples();

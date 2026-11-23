@@ -4431,6 +4431,19 @@
         openObservationEdit(obsData);
         return;
       }
+      if (action === "analysis-select") {
+        const result = obsListModule?.toggleAnalysisSelection(obsData);
+        if (!result?.ok) {
+          const message = result?.message || '관측점을 선택하지 못했습니다.';
+          if (statusEl) statusEl.textContent = message;
+          triggerStatusBlinkHighlight();
+          window.__bpShowToast?.(message);
+          return;
+        }
+        closeObservationPopup();
+        obsListModule.openList();
+        return;
+      }
       return;
     }
 

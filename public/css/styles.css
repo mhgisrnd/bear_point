@@ -811,6 +811,7 @@ a.leaflet-control-locate-btn.is-active svg{
 .obs-popup-card__action-btn--edit {
   background: linear-gradient(180deg, #2563eb 0%, #1d4ed8 100%);
 }
+.obs-popup-card__action-btn--analysis { background: #e8f1ff; color: #2456a2; border: 1px solid #bfd4f4; }
 
 .obs-popup-card__action-btn--file {
   background: linear-gradient(180deg, #0ea5e9 0%, #0284c7 100%);
@@ -925,7 +926,7 @@ body.bp-mobile-dock:has(#mobile-map-dock[data-menu="settings"].is-expanded) :is(
 #notification-history .notification-direction[data-direction="sent"] { background:#e7f3ed; color:#19724b; }
 #notification-history .notification-item strong { display:block; min-width:0; color:#2456a2; }
 #notification-history .notification-unread-label { flex:none; margin-left:auto; color:#174ca5; font-size:11px; font-weight:700; white-space:nowrap; }
-#notification-history .notification-item p { margin:3px 0; }
+#notification-history .notification-item p { margin:3px 0; word-break:keep-all; overflow-wrap:anywhere; }
 #notification-history .notification-item time, #notification-status { color:#60758c; font-size:11px; }
 #notification-history .notification-item[data-unread="true"] { background:#dcecff; box-shadow:inset 3px 0 #2765c8; }
 #notification-more:not([hidden]) { margin-top:8px; }

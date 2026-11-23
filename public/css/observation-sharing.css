@@ -82,6 +82,7 @@
 .obs-selection-actions::-webkit-scrollbar { display: none; }
 .obs-selection-actions button { flex-shrink: 0; min-height: 28px; padding: 0 9px; border-radius: 7px; font-size: 11px; box-shadow: none; white-space: nowrap; }
 .obs-selection-actions .sel-count-badge { flex-shrink: 0; margin: 0; white-space: nowrap; }
+.obs-selection-actions .obs-selection-clear { color: #47627d; background: #f2f6fb; border: 1px solid #d7e2ee; }
 .obs-share-badge { font-size: 10px; font-weight: 600; color: #7b899c; }
 .obs-share-badge--failed { color: #b65c30; }
 .obs-share-badge--shared { color: #347d69; }
