@@ -84,6 +84,40 @@ test('restored APK supports offline retry but cannot replace a newer or withdraw
   assert.equal(await controller.recover(),false);assert.equal(controller.snapshot().update,null);
 });
 
+test('settings update check, download, cancel and install stay in the settings panel',async()=>{
+  const handlers={}, calls=[];
+  const controls=Object.fromEntries(['[data-check]','[data-cancel]','[data-update]'].map(key=>[key,{addEventListener:(_,fn)=>handlers[key]=fn}]));
+  let phase='idle';
+  const controller={check:async()=>{calls.push('check');return true;},cancel:async()=>calls.push('cancel'),
+    snapshot:()=>({phase}),download:async()=>{calls.push('download');return true;},install:async()=>calls.push('install')};
+  const context=vm.createContext({controller,showOffer:()=>assert.fail('Settings must not open the update popup')});
+  const source=fs.readFileSync('public/js/settings/app-updates.js','utf8');
+  vm.runInContext(source.slice(source.indexOf('  function bind(container)'),source.indexOf('  root.BearAppUpdates=')),context);
+  context.bind({querySelector:key=>controls[key]});
+  await handlers['[data-check]']();
+  await handlers['[data-update]']();
+  await handlers['[data-cancel]']();
+  phase='ready';await handlers['[data-update]']();
+  assert.deepEqual(calls,['check','download','install','cancel','install']);
+});
+
+test('settings show only the cancel action while downloading and restore actions afterwards',()=>{
+  const controls=Object.fromEntries(['[data-current]','[data-latest]','[data-notes]','[data-message]','[data-check]','[data-update]','progress','[data-progress]','[data-cancel]'].map(key=>[key,{}]));
+  const mounts=[{querySelector:key=>controls[key]||null}];
+  const context=vm.createContext({mounts,size:value=>String(value)});
+  const source=fs.readFileSync('public/js/settings/app-updates.js','utf8');
+  vm.runInContext(source.slice(source.indexOf('  function paint(state)'),source.indexOf('  function content(withCheck)')),context);
+  context.paint({phase:'downloading',update,received:1,total:2});
+  assert.equal(controls['[data-check]'].hidden,true);
+  assert.equal(controls['[data-update]'].hidden,true);
+  assert.equal(controls['[data-cancel]'].hidden,false);
+  context.paint({phase:'ready',update});
+  assert.equal(controls['[data-check]'].hidden,false);
+  assert.equal(controls['[data-update]'].hidden,false);
+  assert.equal(controls['[data-update]'].textContent,'설치 계속');
+  assert.equal(controls['[data-cancel]'].hidden,true);
+});
+
 test('startup keeps the loading modal until the update offer opens and defers app readiness until dismissal',async()=>{
   let finishCheck, closeOffer;
   const events=[];

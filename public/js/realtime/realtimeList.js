@@ -98,6 +98,10 @@
     const nativePushRuntime = isNativeCapacitorRuntime();
     const securePushEndpoint = /^https:\/\//i.test(API_BASE);
     const pushPlugin = nativePushRuntime && securePushEndpoint ? window.Capacitor?.Plugins?.BearPush : null;
+    window.BearNotificationHistory?.mount(pushPlugin
+      ? "알림 기기 등록을 확인하고 있습니다."
+      : nativePushRuntime ? "이 앱에서는 알림 연결을 사용할 수 없습니다."
+      : "알림 이력은 Android 앱에서 사용할 수 있습니다.");
     let pushRegistrationPending;
     let pushRegistered = false;
     let pushStatus = {
@@ -109,6 +113,7 @@
 
     function reportPushStatus(message, busy = false) {
       pushStatus = { message, busy };
+      window.BearNotificationHistory?.setPendingMessage(message);
       window.dispatchEvent(new window.Event("bearpoint:push-registration-changed"));
     }
 
@@ -136,6 +141,7 @@
             signal: window.AbortSignal?.timeout?.(10000),
           });
           pushRegistered = true;
+          window.BearNotificationHistory?.start({ apiBase: API_BASE, plugin: pushPlugin });
           const settings = await pushPlugin.getNotificationSettings?.();
           reportPushStatus(settings?.enabled === false ? "개체 추적 공유 알림이 꺼져 있습니다."
             : registration.token ? "기기 등록 완료 · 알림 수신 허용"

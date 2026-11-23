@@ -21,6 +21,7 @@
         <div class="app-settings-tabs" id="app-settings-field-items" role="tablist" aria-orientation="vertical" aria-labelledby="app-settings-field-category">
           <button type="button" class="app-settings-tab" id="app-settings-profile-tab" role="tab" aria-selected="true" aria-controls="app-settings-profile-panel" tabindex="0">담당자·팀</button>
           <button type="button" class="app-settings-tab" id="app-settings-tracking-tab" role="tab" aria-selected="false" aria-controls="app-settings-tracking-panel" tabindex="-1" disabled>이동 기록</button>
+          <button type="button" class="app-settings-tab" id="app-settings-direction-tab" role="tab" aria-selected="false" aria-controls="app-settings-direction-panel" tabindex="-1" disabled>방위각 보정</button>
         </div>
         <div class="app-settings-tabs" id="app-settings-app-items" role="tablist" aria-orientation="vertical" aria-labelledby="app-settings-app-category" hidden>
           <button type="button" class="app-settings-tab" id="app-settings-notifications-tab" role="tab" aria-selected="false" aria-controls="app-settings-notifications-panel" tabindex="-1">알림</button>
@@ -51,6 +52,15 @@
         <p class="app-settings-tracking-status" role="status" aria-live="polite"></p>
         </div><div class="app-settings-actions app-settings-footer"><button type="submit" class="app-settings-save">저장</button><button type="button" class="app-settings-cancel">취소</button></div>
       </form>
+    </section><section id="app-settings-direction-panel" role="tabpanel" aria-labelledby="app-settings-direction-tab" hidden>
+      <form class="app-settings-form app-settings-direction-form"><div class="app-settings-body app-settings-fields">
+        <p class="app-settings-intro">지도 방향 표시와 위치분석에 같은 편각을 적용합니다.</p>
+        <label class="app-settings-field" for="app-settings-declination">편각 (°)</label>
+        <div class="app-settings-direction-control"><input id="app-settings-declination" name="declination" type="number" min="-180" max="180" step="any" required inputmode="decimal" /><button type="button" data-direction-sign aria-label="편각 부호 전환">±</button></div>
+        <p class="app-settings-help">기본값은 −7°입니다. 보정이 필요하지 않으면 0°로 설정하세요.</p>
+        <p class="app-settings-help">저장된 관측점 방향각과 기존 추적 결과는 변경하지 않습니다. 이 기기에 적용되며, 저장 후 새로 분석하는 결과부터 사용합니다.</p>
+        <p class="app-settings-direction-status" role="status" aria-live="polite"></p>
+      </div><div class="app-settings-actions app-settings-footer"><button type="submit" class="app-settings-save">저장</button><button type="button" class="app-settings-cancel">취소</button></div></form>
     </section><section id="app-settings-notifications-panel" role="tabpanel" aria-labelledby="app-settings-notifications-tab" hidden>
       <div class="app-settings-body app-settings-fields">
         <p class="app-settings-intro">새로운 개체 추적 위치가 공유되면 알림을 받을 수 있습니다.</p>
@@ -180,6 +190,19 @@
   const closeButtons = [...dialog.querySelectorAll(".app-settings-close,.app-settings-cancel")];
   const trackingForm = dialog.querySelector(".app-settings-tracking-form");
   const trackingMessage = dialog.querySelector(".app-settings-tracking-status");
+  const directionForm = dialog.querySelector('.app-settings-direction-form');
+  const directionMessage = dialog.querySelector('.app-settings-direction-status');
+  let paintedDeclination = null;
+  function paintDirection() {
+    const value = store.snapshot().declinationDeg;
+    directionForm.elements.declination.value = String(value);
+    directionMessage.textContent = '';
+    dialog.querySelector('#app-settings-direction-tab').disabled = !loaded;
+    if (paintedDeclination !== value) {
+      paintedDeclination = value;
+      window.dispatchEvent(new Event('bearpoint:declination-changed'));
+    }
+  }
   const displayOptions = dialog.querySelector(".app-settings-display-options");
   const displayMessage = dialog.querySelector(".app-settings-display-status");
   const displayChoices = [...displayOptions.querySelectorAll('input[type="radio"]')];
@@ -245,6 +268,7 @@
     selection = profile?.team_id || "";
     paintTeams();
     paintTracking();
+    paintDirection();
     showSettings();
     trigger.setAttribute("aria-expanded", "true");
     if (!loaded) await initialize();
@@ -273,6 +297,7 @@
       window.dispatchEvent(new Event("bearpoint:teams-changed"));
       required = !state.profile;
       paintTracking();
+      paintDirection();
       paintDisplaySize();
       paintCloseButtons();
       saveButton.textContent = required ? "저장하고 시작" : "저장";
@@ -319,6 +344,19 @@
     } catch (error) { trackingMessage.textContent = (saved ? "기본 설정은 저장했지만 현재 기록에 간격을 적용하지 못했습니다. 다시 저장해주세요. " : "설정을 저장하지 못했습니다. ") + error.message; }
     finally { saving = false; button.disabled = false; }
   });
+  directionForm.addEventListener('submit', async event => {
+    event.preventDefault(); if (!loaded || saving) return;
+    saving = true; const button = directionForm.querySelector('[type="submit"]'); button.disabled = true;
+    try {
+      await store.saveDeclination(directionForm.elements.declination.value);
+      paintDirection(); hideSettings(); trigger.focus();
+    } catch (error) { directionMessage.textContent = '설정을 저장하지 못했습니다. ' + error.message; }
+    finally { saving = false; button.disabled = false; }
+  });
+  directionForm.querySelector('[data-direction-sign]').addEventListener('click', () => {
+    const input = directionForm.elements.declination;
+    if (input.value.trim() && Number.isFinite(Number(input.value))) input.value = String(-Number(input.value));
+  });
   form.addEventListener("submit", async event => {
     event.preventDefault(); if (!loaded || saving) return;
     saving = true; saveButton.disabled = true; refreshButton.disabled = true; message.textContent = "저장 중…";
@@ -351,6 +389,7 @@
   const teamRefreshTimer = window.setInterval(refreshWhenVisible, 30000);
   window.addEventListener("pagehide", () => window.clearInterval(teamRefreshTimer), {once:true});
   window.BearAppSettings = { store, open, close, isOpen: () => !dialog.hidden, handleBack, getProfile: () => store.snapshot().profile,
+    getDeclinationDeg: () => store.snapshot().declinationDeg,
     requireIdentity: async () => { try { return await store.identity(); } catch (error) { void open(); throw error; } } };
   void initialize();
 })();

@@ -148,13 +148,16 @@
           </div>
 
           <!-- 방향각 -->
-          <div class="obs-reg-row">
+          <div class="obs-reg-row obs-reg-heading-row">
             <label class="obs-reg-label" for="reg-heading">방향각</label>
-            <div class="obs-reg-heading-wrap">
-              <input class="obs-reg-input obs-reg-input--gps obs-reg-input--heading" id="reg-heading" type="text" inputmode="decimal" placeholder="현재 GPS 값" readonly />
-              <label class="obs-reg-lock-label" for="chk-reg-heading-lock">
-                <input id="chk-reg-heading-lock" type="checkbox" /> 각 고정
-              </label>
+            <div class="obs-reg-heading-field">
+              <div class="obs-reg-heading-wrap">
+                <input class="obs-reg-input obs-reg-input--gps obs-reg-input--heading" id="reg-heading" type="text" inputmode="decimal" placeholder="현재 GPS 값" aria-describedby="reg-heading-correction" readonly />
+                <label class="obs-reg-lock-label" for="chk-reg-heading-lock">
+                  <input id="chk-reg-heading-lock" type="checkbox" /> 각 고정
+                </label>
+              </div>
+              <p class="obs-reg-heading-correction" id="reg-heading-correction">지도 방향 보정 <span id="reg-heading-correction-value">−7°</span></p>
             </div>
           </div>
 
@@ -366,6 +369,11 @@
   <button id="btn-sidebar-toggle" type="button" aria-label="사이드바 접기" aria-expanded="true" title="사이드바 접기">◀</button>
 
   <div id="map">
+    <button id="btn-notification-history" type="button" aria-label="알림 이력" aria-expanded="false" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 20a2 2 0 0 0 4 0"/></svg><span id="notification-unread" hidden></span></button>
+    <section id="notification-history" aria-label="알림 이력" hidden>
+      <div class="notification-header"><div class="notification-heading"><strong>알림 이력</strong><button id="notification-read" type="button" disabled>모두 확인</button><button id="notification-close" type="button" aria-label="닫기">×</button></div><fieldset class="notification-filter" id="notification-filter"><legend class="notification-filter-label">알림 이력 구분</legend><label><input type="radio" name="notification-direction" value="received" checked><span>수신</span></label><label><input type="radio" name="notification-direction" value="sent"><span>발송</span></label><label><input type="radio" name="notification-direction" value="all"><span>전체</span></label></fieldset></div>
+      <div class="notification-scroll"><div id="notification-status" role="status"></div><div id="notification-items"></div><button id="notification-more" type="button" hidden>이전 알림 더 보기</button></div>
+    </section>
     <button id="btn-sdr-diagnostics" type="button" aria-label="탐색" title="탐색">탐색</button>
     <button id="btn-app-settings" type="button" aria-label="설정" title="설정"><span class="app-settings-icon" aria-hidden="true"></span></button>
     <details class="map-legend-disclosure" id="map-legend-disclosure">
@@ -404,6 +412,7 @@
   <script src="js/db/editable-region-field.js"></script>
   <script src="runtime-config.js"></script>
   <script src="js/analysis/bear-position-analysis.js"></script>
+  <script src="js/realtime/notification-history.js"></script>
   <script src="js/realtime/realtimeList.js"></script>
   <script src="js/realtime/bear-estimate-store.js"></script>
   <script src="js/realtime/estimate-history-model.js"></script>

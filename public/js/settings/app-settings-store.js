@@ -8,6 +8,11 @@
   ];
   const clone = value => JSON.parse(JSON.stringify(value));
   const DEFAULT_TRACKING = { interval_seconds: 10 };
+  const DEFAULT_DECLINATION_DEG = -7;
+  function normalizeDeclination(value) {
+    if ((typeof value !== 'number' && typeof value !== 'string') || String(value).trim() === '' || !Number.isFinite(Number(value)) || Math.abs(Number(value)) > 180) throw new Error('편각은 -180~180도 사이의 숫자로 입력해주세요.');
+    return Number(value);
+  }
   function normalizeTracking(value) {
     if (!value || ![5, 10, 30, 60].includes(Number(value.interval_seconds))) throw new Error("이동 기록 설정을 확인해주세요.");
     return { interval_seconds: Number(value.interval_seconds) };
@@ -36,6 +41,7 @@
     let profile = null, catalog = { items: clone(DEFAULT_TEAMS), source: "builtin", updated_at: null };
     let tracking = clone(DEFAULT_TRACKING);
     let displaySize = "standard";
+    let declinationDeg = DEFAULT_DECLINATION_DEG;
     let loading, refreshing, writes = Promise.resolve();
     async function read(key) {
       if (!native()) return decode(win.localStorage.getItem("bearpoint.settings." + key));
@@ -61,6 +67,8 @@
         const savedTracking = await read("tracking.v1");
         try { if (savedTracking) tracking = normalizeTracking(savedTracking); } catch (_) { /* use valid defaults */ }
         displaySize = await read("display-size.v1") === "large" ? "large" : "standard";
+        const savedDeclination = await read('declination.v1');
+        try { if (savedDeclination !== null) declinationDeg = normalizeDeclination(savedDeclination); } catch (_) { /* keep the default for an invalid setting */ }
         if (teams && Array.isArray(teams.items)) {
           try { catalog = { items: normalizeTeams(teams.items), source: "cache", updated_at: teams.updated_at || null }; } catch (_) { /* keep bundled defaults for invalid cache */ }
         }
@@ -71,7 +79,13 @@
     function snapshot() {
       const team = catalog.items.find(item => item.id === profile?.team_id);
       const currentProfile = profile && team ? {...profile, team_name:team.name, team_color:team.color} : profile;
-      return clone({ profile:currentProfile, ...catalog, tracking, displaySize });
+      return clone({ profile:currentProfile, ...catalog, tracking, displaySize, declinationDeg });
+    }
+    function saveDeclination(value) {
+      return enqueue(async () => {
+        await load(); const next = normalizeDeclination(value);
+        await write('declination.v1', next); declinationDeg = next; return next;
+      });
     }
     function saveTracking(value) {
       return enqueue(async () => {
@@ -138,9 +152,9 @@
       if (!team) throw new Error("소속 팀을 선택해주세요.");
       return { owner: name, team_id: team.id, team_name: team.name, team_color: team.color };
     }
-    return { load, snapshot, refresh, save, saveTracking, saveDisplaySize, identity, manualIdentity };
+    return { load, snapshot, refresh, save, saveTracking, saveDisplaySize, saveDeclination, identity, manualIdentity };
   }
-  const api = { DEFAULT_TEAMS, DEFAULT_TRACKING, normalizeTracking, normalizeTeams, validProfile, createStore };
+  const api = { DEFAULT_TEAMS, DEFAULT_TRACKING, DEFAULT_DECLINATION_DEG, normalizeDeclination, normalizeTracking, normalizeTeams, validProfile, createStore };
   if (typeof module === "object" && module.exports) module.exports = api;
   else root.BearAppSettingsStore = api;
 })(typeof window !== "undefined" ? window : globalThis);

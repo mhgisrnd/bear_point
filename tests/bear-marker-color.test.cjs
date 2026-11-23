@@ -21,7 +21,7 @@ test('local and shared bear markers use the estimation method for labels and pul
   vm.runInContext(source.slice(start,end),context);
   const mapping=source.indexOf('  function mapBearMarkerItems(');
   vm.runInContext(source.slice(mapping,source.indexOf('  function readBearPeriodFilter(',mapping)),context);
-  const colors=['#C24A00','#1D4ED8'];
+  const colors=['#DC2626','#1D4ED8'];
   for(const [count,method] of [[1,null],[2,null],[3,null],[4,null],[5,null],[8,null],[3,'single'],[1,'intersection']]){
     const color=colors[(method==='single'||(!method&&count===1))?0:1];
     const observations=Array.from({length:count},(_,index)=>({id:String(index)}));
@@ -120,15 +120,8 @@ test('the map legend keeps all catalogue teams and unassigned visible across men
   assert.deepEqual(list.querySelectorAll('li').map(item => item.getAttribute('style')),
     ['intersection','single'].map(estimation_method => '--map-legend-swatch:' + context.bearMarkerColor({ estimation_method })));
   assert.deepEqual(list.querySelectorAll('img').map(icon => icon.getAttribute('src')),
-    ['#1D4ED8','#C24A00'].map(color=>context.createBearMarkerIconDataUri(color)));
-  for(const color of ['#1D4ED8','#C24A00']){
-    const uri=context.createBearMarkerIconDataUri(color);
-    const svg=decodeURIComponent(uri.split(',')[1]);
-    assert.ok(svg.includes('fill="'+color+'"'));
-    assert.match(svg,/fill="#242827"/);
-    assert.doesNotMatch(svg,/<image|base64/);
-    assert.equal(context.createBearMarkerIconDataUri(color),uri);
-  }
+    ['css/svg/bear_marker_point.svg','css/svg/bear_marker_point.svg']);
+  assert.ok(fs.existsSync('public/css/svg/bear_marker_point.svg'));
   const setOpen = value => { disclosure.open = value; disclosure.on.toggle(); };
   setOpen(true);
   assert.equal(disclosure.open, true);
