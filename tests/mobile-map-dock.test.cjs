@@ -293,6 +293,26 @@ test('mouse/touch header drag follows motion and snaps open or closed without a 
   env.dispatch(fold,'click',{detail:0});assert.equal(dock.classList.contains('is-expanded'),true);
 });
 
+test('tablet header folds on downward drag and reopens on upward drag or tap',()=>{
+  const env=environment(true),dock=env.document.getElementById('mobile-map-dock'),fold=dock.querySelector('.mobile-dock-fold');
+  assert.equal(dock.classList.contains('is-expanded'),true);
+  env.dispatch(fold,'pointerdown',{pointerType:'touch',clientY:100});
+  env.dispatch(fold,'pointermove',{pointerType:'touch',clientY:160});
+  assert.equal(dock.classList.contains('is-tablet-dragging'),true);
+  assert.equal(dock.style['--dock-tablet-drag-height'],'50px');
+  env.dispatch(fold,'pointerup',{pointerType:'touch',clientY:160});
+  assert.equal(dock.classList.contains('is-expanded'),false);
+  assert.equal(dock.classList.contains('is-tablet-dragging'),false);
+  env.dispatch(fold,'pointerdown',{pointerType:'touch',clientY:160});
+  env.dispatch(fold,'pointermove',{pointerType:'touch',clientY:100});
+  assert.equal(dock.style['--dock-tablet-drag-height'],'170px');
+  env.dispatch(fold,'pointerup',{pointerType:'touch',clientY:100});
+  assert.equal(dock.classList.contains('is-expanded'),true);
+  env.dispatch(fold,'pointerdown',{pointerType:'touch',clientY:100});
+  env.dispatch(fold,'pointerup',{pointerType:'touch',clientY:100});
+  assert.equal(dock.classList.contains('is-expanded'),false);
+});
+
 test('touch taps with small finger movement toggle immediately and ignore synthetic clicks',()=>{
   const env=environment(),dock=env.document.getElementById('mobile-map-dock'),fold=dock.querySelector('.mobile-dock-fold');
   env.dispatch(fold,'pointerdown',{pointerType:'touch',clientY:500});
