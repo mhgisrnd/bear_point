@@ -20,10 +20,12 @@ test('history displays unread count and sends the displayed boundary when markin
   const ids = ['btn-notification-history', 'notification-history', 'notification-unread', 'notification-status', 'notification-items', 'notification-read', 'notification-more', 'notification-close', 'notification-filter'];
   function element() { return { hidden: false, children: [], dataset: {}, handlers: {}, setAttribute() {}, focus() {}, addEventListener(name, fn) { this.handlers[name] = fn; }, replaceChildren() { this.children = []; }, append(...items) { this.children.push(...items); } }; }
   const elements = Object.fromEntries(ids.map(id => [id, element()]));
-  elements['notification-filter'].value = 'received';
+  const scroll = { scrollTop: 40 };
+  elements['notification-history'].querySelector = () => scroll;
+  elements['notification-filter'].querySelector = () => ({ value: 'received' });
   const document = { hidden: false, getElementById: id => elements[id], createElement: element, addEventListener() {} };
   const requests = [];
-  let unread = 2;
+  let unread = 2, legacy = false, noItems = false;
   const fetch = async (url, options) => {
     requests.push({ url, options });
     if (url.endsWith('/stream')) return { ok: true, body: { getReader: () => ({ read: () => new Promise(() => {}) }) } };
@@ -33,7 +35,7 @@ test('history displays unread count and sends the displayed boundary when markin
       { id: 16, title: 'KF-108', body: '공유', direction: 'received', accepted_at: '2026-11-23T00:00:00Z', read_at: unread ? null : '2026-11-23T00:01:00Z' }
     ];
     const direction = new URL(url).searchParams.get('direction');
-    return { ok: true, json: async () => ({ unread, read_through: unread ? 16 : 0, items: items.filter(item => direction === 'all' || item.direction === direction) }) };
+    return { ok: true, json: async () => ({ ...(legacy ? {} : { direction }), unread, read_through: unread ? 16 : 0, items: noItems ? [] : items.filter(item => direction === 'all' || item.direction === direction) }) };
   };
   const window = { addEventListener() {} };
   const context = { window, document, fetch, AbortController, TextDecoder, URLSearchParams, setTimeout, clearTimeout, Date };
@@ -45,18 +47,27 @@ test('history displays unread count and sends the displayed boundary when markin
   assert.equal(rows.length, 1);
   assert.equal(rows[0].children[0].children[0].textContent, '수신');
   assert.equal(rows[0].dataset.unread, 'true');
-  elements['notification-filter'].value = 'sent';
-  elements['notification-filter'].handlers.change();
+  elements['notification-filter'].handlers.change({ target: { value: 'sent' } });
   await new Promise(resolve => setImmediate(resolve));
+  assert.equal(scroll.scrollTop, 0);
   assert.equal(elements['notification-items'].children[0].children[0].children[0].textContent, '발송');
   assert.equal(elements['notification-read'].disabled, true);
   assert.equal(elements['notification-unread'].textContent, '2');
-  elements['notification-filter'].value = 'all';
-  elements['notification-filter'].handlers.change();
+  noItems = true;
+  elements['notification-filter'].handlers.change({ target: { value: 'received' } });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(elements['notification-read'].disabled, true);
+  noItems = false;
+  elements['notification-filter'].handlers.change({ target: { value: 'all' } });
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(elements['notification-items'].children.length, 2);
   await elements['notification-read'].handlers.click();
   const request = requests.find(item => item.url.endsWith('/read'));
   assert.equal(request.options.body, '{"through":16}');
   assert.equal(elements['notification-unread'].hidden, true);
+  legacy = true;
+  elements['notification-filter'].handlers.change({ target: { value: 'sent' } });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.match(elements['notification-status'].textContent, /서버 업데이트/);
+  assert.equal(elements['notification-items'].children.length, 0);
 });

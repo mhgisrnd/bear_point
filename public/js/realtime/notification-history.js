@@ -34,7 +34,8 @@
     const mark = document.getElementById('notification-read');
     const more = document.getElementById('notification-more');
     const filter = document.getElementById('notification-filter');
-    let latest = 0, oldest = 0, controller = null, retry = null, generation = 0, refreshId = 0;
+    let selectedDirection = filter.querySelector('input:checked')?.value || 'received';
+    let latest = 0, oldest = 0, visibleUnread = false, controller = null, retry = null, generation = 0, refreshId = 0;
     button.hidden = false;
     async function headers() {
       const data = await plugin.getCredentials();
@@ -42,18 +43,22 @@
     }
     async function refresh(before = 0) {
       const requestId = ++refreshId;
-      const params = new URLSearchParams({ direction: filter.value });
+      const requestedDirection = selectedDirection;
+      const params = new URLSearchParams({ direction: requestedDirection });
       if (before) params.set('before', String(before));
       const response = await fetch(apiBase + '/notifications?' + params, { headers: await headers(), cache: 'no-store' });
       if (!response.ok) throw new Error('이력을 불러오지 못했습니다.');
       const data = await response.json();
       if (requestId !== refreshId) return;
+      if (data.direction !== requestedDirection) throw new Error('알림 필터를 사용하려면 서버 업데이트가 필요합니다.');
       badge.hidden = !data.unread;
       badge.textContent = data.unread > 99 ? '99+' : String(data.unread);
       button.setAttribute('aria-label', data.unread ? `알림 이력, 확인하지 않은 알림 ${data.unread}개` : '알림 이력');
       latest = Number(data.read_through) || 0;
       if (data.items.length) oldest = Number(data.items[data.items.length - 1].id);
-      mark.disabled = filter.value === 'sent' || !data.unread || !latest;
+      if (!before) visibleUnread = false;
+      visibleUnread ||= data.items.some(item => item.direction !== 'sent' && !item.read_at);
+      mark.disabled = selectedDirection === 'sent' || !data.unread || !latest || !visibleUnread;
       if (!before) list.replaceChildren();
       for (const item of data.items) {
         const sent = item.direction === 'sent';
@@ -69,9 +74,9 @@
       more.hidden = data.items.length < 100;
       status.textContent = list.children.length ? '' : '표시할 알림 이력이 없습니다.';
     }
-    function update() { return refresh().catch(() => { status.textContent = '알림 이력을 불러오지 못했습니다. 연결을 확인해주세요.'; }); }
+    function update() { return refresh().catch(error => { status.textContent = error.message === '알림 필터를 사용하려면 서버 업데이트가 필요합니다.' ? error.message : '알림 이력을 불러오지 못했습니다. 연결을 확인해주세요.'; }); }
     button.addEventListener('notification-opened', () => { void update(); });
-    filter.addEventListener('change', () => { list.replaceChildren(); more.hidden = true; latest = 0; mark.disabled = true; status.textContent = '알림 이력을 불러오고 있습니다.'; void update(); });
+    filter.addEventListener('change', event => { if (!['received', 'sent', 'all'].includes(event.target.value)) return; selectedDirection = event.target.value; list.replaceChildren(); panel.querySelector('.notification-scroll').scrollTop = 0; more.hidden = true; latest = 0; visibleUnread = false; mark.disabled = true; status.textContent = '알림 이력을 불러오고 있습니다.'; void update(); });
     more.addEventListener('click', async () => { more.disabled = true; try { await refresh(oldest); } catch (_) { status.textContent = '이전 알림을 불러오지 못했습니다.'; } finally { more.disabled = false; } });
     mark.addEventListener('click', async () => {
       const through = latest; if (!through) return;

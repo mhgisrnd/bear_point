@@ -75,9 +75,9 @@
       container.querySelector('[data-latest]').textContent=state.update?state.update.versionName:'—';
       container.querySelector('[data-notes]').textContent=state.update?.releaseNotes||'';
       container.querySelector('[data-message]').textContent=state.message;
-      const check=container.querySelector('[data-check]');if(check)check.disabled=busy;
+      const check=container.querySelector('[data-check]');if(check){check.disabled=busy;check.hidden=state.phase==='downloading';}
       const action=container.querySelector('[data-update]');
-      action.hidden=!state.update;action.disabled=busy;action.textContent=state.phase==='ready'?'설치 계속':'APK 다운로드';
+      action.hidden=!state.update||state.phase==='downloading';action.disabled=busy;action.textContent=state.phase==='ready'?'설치 계속':'APK 다운로드';
       const progress=container.querySelector('progress');progress.hidden=state.phase!=='downloading';progress.max=state.total||1;progress.value=state.received;
       container.querySelector('[data-progress]').textContent=state.phase==='downloading'?`${size(state.received)} / ${size(state.total)}`:'';
       const cancel=container.querySelector('[data-cancel]');if(cancel)cancel.hidden=state.phase!=='downloading';
