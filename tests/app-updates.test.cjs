@@ -84,6 +84,23 @@ test('restored APK supports offline retry but cannot replace a newer or withdraw
   assert.equal(await controller.recover(),false);assert.equal(controller.snapshot().update,null);
 });
 
+test('settings update check, download, cancel and install stay in the settings panel',async()=>{
+  const handlers={}, calls=[];
+  const controls=Object.fromEntries(['[data-check]','[data-cancel]','[data-update]'].map(key=>[key,{addEventListener:(_,fn)=>handlers[key]=fn}]));
+  let phase='idle';
+  const controller={check:async()=>{calls.push('check');return true;},cancel:async()=>calls.push('cancel'),
+    snapshot:()=>({phase}),download:async()=>{calls.push('download');return true;},install:async()=>calls.push('install')};
+  const context=vm.createContext({controller,showOffer:()=>assert.fail('Settings must not open the update popup')});
+  const source=fs.readFileSync('public/js/settings/app-updates.js','utf8');
+  vm.runInContext(source.slice(source.indexOf('  function bind(container)'),source.indexOf('  root.BearAppUpdates=')),context);
+  context.bind({querySelector:key=>controls[key]});
+  await handlers['[data-check]']();
+  await handlers['[data-update]']();
+  await handlers['[data-cancel]']();
+  phase='ready';await handlers['[data-update]']();
+  assert.deepEqual(calls,['check','download','install','cancel','install']);
+});
+
 test('startup keeps the loading modal until the update offer opens and defers app readiness until dismissal',async()=>{
   let finishCheck, closeOffer;
   const events=[];

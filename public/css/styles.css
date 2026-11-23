@@ -925,3 +925,35 @@ a.leaflet-control-locate-btn.is-active svg{
   right: calc(8px + var(--safe-right));
   bottom: calc(8px + var(--safe-bottom));
 }
+.notification-heading { display:flex; align-items:center; gap:4px; margin-bottom:8px; }
+.notification-heading strong { flex:1; min-width:0; white-space:nowrap; }
+#btn-notification-history { position:absolute; left:calc(12px + var(--safe-left)); top:calc(12px + var(--safe-top)); z-index:9990; width:44px; height:44px; display:grid; place-items:center; border:1px solid #dbe4ee; border-radius:11px; background:white; color:#334e68; box-shadow:0 2px 8px #17344c20; }
+#btn-notification-history svg { width:22px; height:22px; }
+#btn-notification-history[hidden], #notification-history[hidden], #notification-unread[hidden] { display:none; }
+#notification-unread { position:absolute; right:-5px; top:-5px; min-width:19px; border-radius:10px; padding:2px 4px; color:white; background:#d93838; font:700 11px/15px system-ui,sans-serif; }
+#notification-history { position:absolute; box-sizing:border-box; z-index:10000; top:calc(64px + var(--safe-top)); left:calc(12px + var(--safe-left)); width:min(300px, calc(100% - 24px - var(--safe-left) - var(--safe-right))); max-height:min(55vh, 420px); overflow:auto; padding:10px; border:1px solid #dbe4ee; border-radius:12px; background:#fff; color:#263e57; font:14px/1.4 system-ui,sans-serif; box-shadow:0 4px 18px #17344c40; }
+body.bp-mobile-dock #notification-history { max-height:min(420px, max(0px, calc(100dvh - var(--mobile-dock-height) - var(--safe-top) - 74px))); }
+body.bp-mobile-dock:has(#mobile-map-dock.is-full) :is(#btn-notification-history, #notification-history) { visibility:hidden; pointer-events:none; }
+@media (min-width:900px) and (orientation:landscape) {
+  body:not(.bp-tablet-dock):not(.bp-sidebar-collapsed) :is(#btn-notification-history, #notification-history),
+  body.bp-tablet-dock:not(.bp-sidebar-collapsed):has(#mobile-map-dock.is-expanded) :is(#btn-notification-history, #notification-history) { left:calc(var(--bp-sidebar-w, 420px) + 12px + var(--safe-left)); }
+  body:not(.bp-tablet-dock):not(.bp-sidebar-collapsed) #notification-history,
+  body.bp-tablet-dock:not(.bp-sidebar-collapsed):has(#mobile-map-dock.is-expanded) #notification-history { width:min(300px, calc(100% - var(--bp-sidebar-w, 420px) - 24px - var(--safe-left) - var(--safe-right))); }
+}
+body.bp-mobile-dock:has(#mobile-map-dock[data-menu="settings"].is-expanded) :is(#btn-notification-history, #notification-history) { visibility:hidden; pointer-events:none; }
+#notification-history button { min-height:32px; border:1px solid #cfdded; border-radius:7px; padding:3px 8px; background:#f2f7fd; color:#315f99; font:inherit; font-size:12px; }
+#notification-close { min-width:32px; }
+.notification-filter { display:flex; align-items:center; color:#60758c; font-size:12px; }
+.notification-filter-label { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
+.notification-filter select { min-height:32px; max-width:76px; border:1px solid #cfdded; border-radius:7px; padding:3px 4px; background:#fff; color:#263e57; font:inherit; }
+#notification-read { white-space:nowrap; }
+#notification-items { display:grid; gap:6px; }
+#notification-history .notification-item { padding:8px 10px; border-radius:8px; background:#f7f9fc; overflow-wrap:anywhere; font-size:13px; }
+#notification-history .notification-item-heading { display:flex; align-items:baseline; gap:6px; }
+#notification-history .notification-direction { flex:none; border-radius:4px; padding:1px 5px; background:#e3eefc; color:#285ca3; font-size:11px; font-weight:700; }
+#notification-history .notification-direction[data-direction="sent"] { background:#e7f3ed; color:#19724b; }
+#notification-history .notification-item strong { display:block; min-width:0; color:#2456a2; }
+#notification-history .notification-item p { margin:3px 0; }
+#notification-history .notification-item time, #notification-status { color:#60758c; font-size:11px; }
+#notification-history .notification-item[data-unread="true"] { background:#eef5ff; }
+#notification-more:not([hidden]) { margin-top:8px; }

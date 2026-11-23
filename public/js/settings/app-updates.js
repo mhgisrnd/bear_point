@@ -80,6 +80,7 @@
       action.hidden=!state.update;action.disabled=busy;action.textContent=state.phase==='ready'?'설치 계속':'APK 다운로드';
       const progress=container.querySelector('progress');progress.hidden=state.phase!=='downloading';progress.max=state.total||1;progress.value=state.received;
       container.querySelector('[data-progress]').textContent=state.phase==='downloading'?`${size(state.received)} / ${size(state.total)}`:'';
+      const cancel=container.querySelector('[data-cancel]');if(cancel)cancel.hidden=state.phase!=='downloading';
       const close=container.querySelector('[data-dismiss]');if(close){close.disabled=state.phase==='installing';close.textContent=state.phase==='downloading'?'다운로드 취소':'나중에';}
       const x=container.querySelector('[data-close]');if(x)x.disabled=busy;
     }
@@ -90,7 +91,7 @@
     <p class="app-update-notes" data-notes tabindex="0" role="region" aria-label="업데이트 변경 내용"></p><p class="app-update-message" data-message role="status" aria-live="polite"></p>
     <progress aria-label="APK 다운로드 진행률" hidden></progress><p class="app-settings-help" data-progress></p>
     ${withCheck?'</div>':''}
-    <div class="app-settings-actions${withCheck?' app-settings-footer':''}">${withCheck?'<button type="button" data-check>업데이트 확인</button>':''}<button type="button" class="app-settings-save" data-update hidden>APK 다운로드</button></div>
+    <div class="app-settings-actions${withCheck?' app-settings-footer':''}">${withCheck?'<button type="button" data-check>업데이트 확인</button><button type="button" data-cancel hidden>다운로드 취소</button>':''}<button type="button" class="app-settings-save" data-update hidden>APK 다운로드</button></div>
     ${withCheck?'':'<button type="button" class="app-update-dismiss" data-dismiss>닫기</button>'}</div>`;}
   function showOffer(){
     if(!controller?.snapshot().update)return;
@@ -109,9 +110,9 @@
     paint(controller.snapshot());if(!dialog.open)dialog.showModal();
   }
   function bind(container){
-    container.querySelector('[data-check]')?.addEventListener('click',async()=>{if(await controller.check())showOffer();});
+    container.querySelector('[data-check]')?.addEventListener('click',async()=>{await controller.check();});
+    container.querySelector('[data-cancel]')?.addEventListener('click',async()=>{try{await controller.cancel();}catch(_){}});
     container.querySelector('[data-update]').addEventListener('click',async()=>{
-      if(container!==dialog){showOffer();return;}
       if(controller.snapshot().phase==='ready'){await controller.install();return;}
       if(await controller.download())await controller.install();
     });
@@ -137,7 +138,7 @@
   root.BearAppUpdates.waitForStartupOffer=()=>startupOfferClosed;
   async function restoreOnResume(){
     if(document.hidden||root.BearStartupLoading)return;
-    try{if(await controller.recover())showOffer();}catch(_){}
+    try{await controller.recover();}catch(_){}
   }
   document.addEventListener('visibilitychange',()=>void restoreOnResume());
   root.addEventListener('focus',()=>void restoreOnResume());

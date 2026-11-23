@@ -4649,7 +4649,7 @@
   document.addEventListener("click", function dismissDetailForMapTool(event) {
     const target = event.target;
     if (!target?.closest || target.closest('.map-detail-popup')) return;
-    if (target.closest('#btn-gps-record-toggle, #btn-sdr-diagnostics, #btn-app-settings, #btn-map-layers, #map-layer-options, #btn-map-legend, #map-marker-legend, .map-right-controls, #compass, #btn-sidebar-toggle')) {
+    if (target.closest('#btn-gps-record-toggle, #btn-sdr-diagnostics, #btn-app-settings, #btn-map-layers, #map-layer-options, #btn-map-legend, #map-marker-legend, #btn-notification-history, #notification-history, .map-right-controls, #compass, #btn-sidebar-toggle')) {
       closeObservationPopup();
     }
   }, true);
@@ -6094,7 +6094,7 @@
     const legend = disclosure.querySelector('.map-marker-legend');
     const mapElement = document.getElementById('map');
     if (!summary || !mapElement) return;
-    const selectors = '#register-box, #analysis-dialog-overlay, #analysis-save-sheet, .map-detail-popup, #mobile-map-dock';
+    const selectors = '#register-box, #analysis-dialog-overlay, #analysis-save-sheet, #mobile-map-dock';
     const watched = new Set();
     let lift = 0, frame = null;
     function schedule() {

@@ -369,6 +369,11 @@
   <button id="btn-sidebar-toggle" type="button" aria-label="사이드바 접기" aria-expanded="true" title="사이드바 접기">◀</button>
 
   <div id="map">
+    <button id="btn-notification-history" type="button" aria-label="알림 이력" aria-expanded="false" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 20a2 2 0 0 0 4 0"/></svg><span id="notification-unread" hidden></span></button>
+    <section id="notification-history" aria-label="알림 이력" hidden>
+      <div class="notification-heading"><strong>알림 이력</strong><label class="notification-filter"><span class="notification-filter-label">보기</span><select id="notification-filter" aria-label="알림 이력 구분"><option value="received">수신</option><option value="sent">발송</option><option value="all">전체</option></select></label><button id="notification-read" type="button">모두 확인</button><button id="notification-close" type="button" aria-label="닫기">×</button></div>
+      <div id="notification-status" role="status"></div><div id="notification-items"></div><button id="notification-more" type="button" hidden>이전 알림 더 보기</button>
+    </section>
     <button id="btn-sdr-diagnostics" type="button" aria-label="탐색" title="탐색">탐색</button>
     <button id="btn-app-settings" type="button" aria-label="설정" title="설정"><span class="app-settings-icon" aria-hidden="true"></span></button>
     <details class="map-legend-disclosure" id="map-legend-disclosure">
@@ -407,6 +412,7 @@
   <script src="js/db/editable-region-field.js"></script>
   <script src="runtime-config.js"></script>
   <script src="js/analysis/bear-position-analysis.js"></script>
+  <script src="js/realtime/notification-history.js"></script>
   <script src="js/realtime/realtimeList.js"></script>
   <script src="js/realtime/bear-estimate-store.js"></script>
   <script src="js/realtime/estimate-history-model.js"></script>
