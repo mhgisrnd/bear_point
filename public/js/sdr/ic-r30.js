@@ -505,7 +505,10 @@
         showAudio(value);
         options.onAudioFrame?.(value);
       } catch (error) {
-        if (audioSession === session) showAudio({ state: "error", message: error.message || String(error) });
+        if (audioSession === session) {
+          showAudio({ state: "error", message: error.message || String(error) });
+          options.onAudioFrame?.(audioState);
+        }
       }
       if (audioSession === session) audioTimer = root.setTimeout(() => pollAudio(session), audioRunning() ? 125 : 750);
     }

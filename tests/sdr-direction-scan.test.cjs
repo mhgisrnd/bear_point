@@ -83,7 +83,7 @@ function scanFixture(plugins = {}) {
   };
   const panel = { querySelector: selector => node(selector.slice(16, -1)) };
   const scan = load(window).mount(panel);
-  const emit = angle => sensors.get('deviceorientationabsolute')({ type: 'deviceorientationabsolute', alpha: 360 - angle });
+  const emit = (angle, beta = 0) => sensors.get('deviceorientationabsolute')({ type: 'deviceorientationabsolute', alpha: 360 - angle, beta });
   return { scan, node, emit, sensors, timers, setTime: value => { time = value; } };
 }
 
@@ -162,7 +162,7 @@ test('a full sweep leads to a narrower second sweep using only the matching sign
   assert.equal(timers.size, 1);
   [...timers.values()][0]();
   assert.match(node('result').textContent, /100°/);
-  assert.match(node('detail').textContent, /삡 3회/);
+  assert.match(node('samples').textContent, /수신 신호 3회/);
   assert.match(node('chart').innerHTML, /sdr-direction-ray/);
   assert.equal(node('refine').hidden, false);
   assert.equal(sensors.size, 2);
@@ -191,7 +191,7 @@ test('a full sweep leads to a narrower second sweep using only the matching sign
   assert.ok(node('progress').value >= 85);
   [...timers.values()][0]();
   assert.match(node('result').textContent, /정밀 측정 약 117°/);
-  assert.match(node('detail').textContent, /3° 간격 · 삡 3회/);
+  assert.match(node('samples').textContent, /3° 간격 · 수신 신호 3회/);
   assert.equal(sensors.size, 2);
   emit(126);
   assert.match(node('target-guide').textContent, /왼쪽으로 9°/);
@@ -203,7 +203,7 @@ test('a physical return with a 15° compass mismatch can finish without changing
   const { scan, node, emit, timers, setTime } = scanFixture();
   scan.update(true, 'bt');
   await node('start').click();
-  assert.equal(node('finish').disabled, true);
+  assert.equal(node('finish').textContent, '측정 중단');
   for (let angle = 0; angle <= 345; angle += 5) {
     const time = 1000 + angle * 120;
     setTime(time);
@@ -219,6 +219,73 @@ test('a physical return with a 15° compass mismatch can finish without changing
   assert.equal(node('progress').value, 345);
   assert.match(node('coverage').textContent, /시작 0° · 종료 345° · 나침반 회전 345° \/ 360°/);
   assert.match(node('result').textContent, /약 70°/);
+});
+
+test('a sweep shows competing bearings and can refine either without guiding to a single target', async () => {
+  const { scan, node, emit, timers, setTime } = scanFixture();
+  scan.update(true, 'usb:148241000', 'usb');
+  await node('start').click();
+  for (let angle = 0; angle <= 360; angle += 5) {
+    const time = 1000 + angle * 120;
+    setTime(time);
+    emit(angle);
+    if ([80, 90, 100, 260, 270, 280].includes(angle)) {
+      scan.push('usb:148241000', time, 0, angle === 90 ? -20 : angle === 270 ? -22 : -27, 710);
+    }
+  }
+  [...timers.values()][0]();
+  assert.match(node('result').textContent, /추가 확인 필요 · 90° \/ 270°/);
+  assert.equal(node('target-guide').hidden, true);
+  assert.match(node('bearing-coverage').innerHTML, /sdr-direction-visited/);
+  assert.equal(node('marker').innerHTML.match(/sdr-direction-peak/g).length, 2);
+  assert.equal(node('refine-alternative').textContent, '270° 정밀 측정');
+  await node('refine-alternative').click();
+  assert.match(node('guide').textContent, /225° ↔ 315°/);
+  node('finish').click();
+  assert.match(node('result').textContent, /90° \/ 270°/);
+  scan.update(true, 'usb:148250000', 'usb');
+  assert.equal(node('report').hidden, true);
+  assert.equal(node('refine').hidden, true);
+});
+
+test('flat pulse levels do not produce turn guidance', async () => {
+  const { scan, node, emit, timers, setTime } = scanFixture();
+  scan.update(true, 'usb');
+  await node('start').click();
+  for (let angle = 0; angle <= 360; angle += 5) {
+    const time = 1000 + angle * 120;
+    setTime(time);
+    emit(angle);
+    if ([80, 90, 100].includes(angle)) scan.push('usb', time, 0, -25, 710);
+  }
+  [...timers.values()][0]();
+  assert.match(node('detail').textContent, /신호 세기 차이가 작아요/);
+  assert.equal(node('target-guide').hidden, true);
+});
+
+test('a sweep warns about fast rotation, missing pulses and persistent tilt', async () => {
+  const { scan, node, emit, setTime } = scanFixture();
+  scan.update(true, null, 'bluetooth');
+  assert.equal(node('start').disabled, true);
+  assert.match(node('status').textContent, /USB 오디오 입력/);
+  scan.update(true, 'bluetooth:148241000:CW', 'bluetooth');
+  await node('start').click();
+  emit(0);
+  setTime(1500);
+  emit(15);
+  assert.match(node('feedback').textContent, /천천히/);
+  setTime(6500);
+  emit(18);
+  assert.match(node('feedback').textContent, /5초간 신호/);
+  scan.push('bluetooth:148241000:CW', 6500, 0, -22, 710);
+  assert.match(node('feedback').textContent, /신호를 기록/);
+  setTime(6800);
+  emit(22, 28);
+  assert.match(node('feedback').textContent, /수평/);
+  setTime(7900);
+  emit(28, 30);
+  assert.match(node('status').textContent, /기기가 기울어 측정을 중단/);
+  assert.equal(node('start').disabled, false);
 });
 
 test('the live heading at Start counts when the first post-start sensor update arrives after rotation has begun', async () => {
@@ -296,7 +363,7 @@ test('90° direct search centers on the first heading and reset clears live and 
   assert.ok(node('progress').value >= 85);
   [...timers.values()][0]();
   assert.match(node('result').textContent, /90° 직접 탐색 약 351°/);
-  assert.match(node('detail').textContent, /삡 4회/);
+  assert.match(node('samples').textContent, /수신 신호 4회/);
   assert.equal(node('target-guide').hidden, false);
   node('reset').click();
   assert.equal(node('chart').innerHTML, '');

@@ -11,26 +11,26 @@
       <button type="button" data-sdr-stage="connection"><span>1</span>연결</button>
       <button type="button" data-sdr-stage="setup"><span>2</span>개체·주파수</button>
       <button type="button" data-sdr-stage="monitor"><span>3</span>수신</button>
-      <button type="button" data-sdr-stage="direction" hidden><span>4</span>방향 실험</button>
+      <button type="button" data-sdr-stage="direction" hidden><span>4</span>방향 탐색</button>
       <button type="button" data-sdr-stage="diagnostics">수신 진단</button>
     </nav>
     <div class="sdr-body">
     <div data-receiver-selector class="sdr-operation" role="group" aria-label="수신기 연결 방식"></div>
     <section class="sdr-section sdr-direction" data-direction-panel hidden>
       <div class="sdr-direction-ar-target" data-direction-ar-target hidden></div>
-      <h3 class="sdr-stage-heading">안테나 방향 측정 <small>실험</small></h3>
+      <h3 class="sdr-stage-heading">안테나 방향 탐색</h3>
       <div class="sdr-direction-layout">
         <figure class="sdr-direction-visual">
-          <svg class="sdr-direction-dial" viewBox="-100 -66 332 332" role="img" aria-label="나침반과 방향별 삡 신호 세기">
+          <svg class="sdr-direction-dial" viewBox="-100 -66 332 332" role="img" aria-label="나침반과 방향별 수신 신호 세기">
             <circle class="sdr-direction-face" cx="66" cy="100" r="95"/>
             <circle class="sdr-direction-guide" cx="66" cy="100" r="106"/>
             <circle class="sdr-direction-guide" cx="66" cy="100" r="145"/>
-            <g data-direction-rotate><g data-direction-sector></g><g data-direction-ring class="heading-dial__ring"></g><g data-direction-chart></g><g data-direction-marker></g></g>
+            <g data-direction-rotate><g data-direction-sector></g><g data-direction-ring class="heading-dial__ring"></g><g data-direction-bearing-coverage></g><g data-direction-chart></g><g data-direction-marker></g></g>
             <path data-direction-index class="heading-dial__index" d="M60 8H72L66 18Z" hidden/>
             <text data-direction-heading x="66" y="99" class="sdr-direction-bearing">—°</text>
             <text data-direction-caption x="66" y="120" class="sdr-direction-caption">안테나 방향</text>
           </svg>
-          <figcaption class="sdr-note">막대 길이는 이번에 잡힌 신호끼리의 상대 비교예요.<span data-direction-scale hidden></span></figcaption>
+          <figcaption class="sdr-note">안쪽 표시는 돌아본 방향, 바깥 막대는 잡힌 신호의 상대 세기예요.</figcaption>
         </figure>
         <div class="sdr-direction-content">
           <ol class="sdr-direction-steps" aria-label="방향 측정 단계"><li data-direction-coarse-step aria-current="step">360° 탐색</li><li data-direction-fine-step>90° 정밀 측정</li></ol>
@@ -38,14 +38,16 @@
           <div class="sdr-direction-actions">
             <button type="button" class="sdr-primary" data-direction-start disabled>360° 탐색 시작</button>
             <button type="button" class="sdr-primary" data-direction-refine hidden>후보 방향 정밀 측정</button>
+            <button type="button" class="sdr-secondary" data-direction-refine-alternative hidden></button>
             <button type="button" class="sdr-secondary" data-direction-direct disabled>90° 직접 탐색</button>
             <button type="button" data-direction-finish hidden disabled>측정 중단</button>
-            <button type="button" class="sdr-quiet" data-direction-reset disabled>초기화</button>
+            <button type="button" class="sdr-quiet" data-direction-reset hidden disabled>결과 지우기</button>
           </div>
           <progress data-direction-progress max="360" value="0" aria-label="회전 진행도"></progress>
           <p data-direction-status class="sdr-note"></p>
+          <p data-direction-feedback class="sdr-direction-target" hidden></p>
           <p class="sdr-direction-target" data-direction-target-guide hidden></p>
-          <div class="sdr-direction-camera">
+          <details class="sdr-direction-camera sdr-help" data-direction-camera-options hidden><summary>카메라 보정 (실험)</summary>
             <button type="button" class="sdr-secondary" data-direction-camera-button hidden>카메라 보정 켜기</button>
             <video data-direction-camera-video hidden autoplay muted playsinline aria-label="카메라 보정에 사용하는 후면 영상"></video>
             <p data-direction-camera-status class="sdr-note" hidden></p>
@@ -53,9 +55,9 @@
             <button type="button" data-direction-ar-exit hidden>AR 화면 닫기</button>
             <p data-direction-ar-status class="sdr-note" hidden></p>
             <p data-direction-ar-input class="sdr-note" hidden></p>
-          </div>
+          </details>
           <div data-direction-report hidden aria-live="polite">
-            <strong data-direction-result></strong><p data-direction-detail class="sdr-note"></p><p data-direction-coverage class="sdr-note"></p>
+            <strong data-direction-result></strong><p data-direction-detail class="sdr-note"></p><p data-direction-samples class="sdr-note"></p><p data-direction-coverage class="sdr-note"></p>
           </div>
         </div>
       </div>
@@ -211,7 +213,7 @@
   function directionSource() {
     if (workflowTransport() === "bluetooth") {
       const reading = bluetooth.status().measurement;
-      return bluetooth.audioActive?.() && reading ? `bluetooth:${reading.frequencyHz}:${reading.mode}` : null;
+      return bluetooth.audioActive?.() && Number.isFinite(reading?.frequencyHz) ? `bluetooth:${reading.frequencyHz}:${reading.mode}` : null;
     }
     const rf = current?.reception;
     return current?.receptionState === "receiving" && rf?.mode === "cw" && Number.isFinite(rf.listenFrequencyHz)
@@ -220,7 +222,7 @@
   function updateDirection(audioFrame) {
     if (!direction || dialog.dataset.receiverStage !== "direction") return;
     const source = directionSource();
-    direction.update(dialog.open && !document.hidden, source);
+    direction.update(dialog.open && !document.hidden, source, workflowTransport());
     const pulse = audioFrame || current?.reception;
     if (source && pulse && (audioFrame || source.startsWith("usb:"))) {
       direction.push(source, pulse.cwPulseTimeMs, pulse.cwDetectionAgeMs, pulse.cwDirectionDbfs,
@@ -241,11 +243,10 @@
     const live = !usingBluetooth && ["starting", "receiving", "scanning", "stopping"].includes(current?.receptionState);
     const canSetup = connected && (usingBluetooth || !settingsSection.hidden);
     const canMonitor = connected && (usingBluetooth ? bluetooth.canMonitor() : !resultSection.hidden);
-    const canExperiment = !!direction && connected && (usingBluetooth || current?.receptionState === "receiving");
+    const canFindDirection = !!direction && connected;
     if (!connected) workflowStages[transport] = null;
     else if (!workflowStages[transport]) workflowStages[transport] = live ? "monitor" : "setup";
-    else if ((workflowStages[transport] === "monitor" && !canMonitor && !usingBluetooth) ||
-        (workflowStages[transport] === "direction" && !canExperiment)) workflowStages[transport] = "setup";
+    else if (workflowStages[transport] === "monitor" && !canMonitor && !usingBluetooth) workflowStages[transport] = "setup";
     const stage = showingDiagnostics ? "diagnostics" : workflowStages[transport] || "connection";
     const viewTransport = bluetooth?.showDiagnostics?.(showingDiagnostics) || transport;
     if (!showingDiagnostics || viewTransport === "bluetooth") usbLogs.resetPreview();
@@ -260,7 +261,7 @@
     for (const item of workflowButtons) {
       item.button.setAttribute("aria-current", item.stage === stage ? showingDiagnostics ? "page" : "step" : "false");
       if (item.stage === "direction") item.button.hidden = !direction;
-      item.button.disabled = item.stage === "setup" ? !canSetup : item.stage === "monitor" ? !canMonitor : item.stage === "direction" ? !canExperiment : false;
+      item.button.disabled = item.stage === "setup" ? !canSetup : item.stage === "monitor" ? !canMonitor : item.stage === "direction" ? !canFindDirection : false;
     }
   }
   for (const item of workflowButtons) item.button.addEventListener("click", () => goToStage(item.stage));
@@ -910,10 +911,10 @@
     renderCandidates(snapshot);
     renderAnimalPicker();
     if (receptionStarted && !retuning) {
-      if (workflowTransport() === "usb" && workflowStages.usb !== "connection") workflowStages.usb = "monitor";
+      if (workflowTransport() === "usb" && !["connection", "direction"].includes(workflowStages.usb)) workflowStages.usb = "monitor";
       if (task === "fixed" && snapshot.receptionState === "receiving") finishAnimalSearch();
       renderWorkflow();
-      revealSignal(resultSection, "smooth");
+      if (dialog.dataset.receiverStage !== "direction") revealSignal(resultSection, "smooth");
     } else renderWorkflow();
   }
 

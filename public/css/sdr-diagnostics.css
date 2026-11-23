@@ -300,6 +300,11 @@
 .sdr-workflow { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; flex-shrink: 0; padding: 6px 14px 10px; }
 .sdr-dialog .sdr-workflow > :not([hidden]) { display: flex; align-items: center; justify-content: center; gap: 5px; min-height: 36px; padding: 3px; border: 1px solid #dbe5eb; border-radius: 7px; background: #fff; color: #526477; font-size: 12px; text-align: center; }
 .sdr-dialog[data-direction-available="true"] .sdr-workflow { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+@media (max-width: 400px) {
+  .sdr-dialog[data-direction-available="true"] .sdr-workflow { grid-template-columns: .85fr 1.35fr .85fr 1fr 1.05fr; }
+  .sdr-dialog[data-direction-available="true"] .sdr-workflow > :not([hidden]) { gap: 3px; font-size: 11px; }
+  .sdr-dialog[data-direction-available="true"] .sdr-workflow > * > span { flex-basis: 14px; height: 14px; }
+}
 .sdr-workflow [data-sdr-stage="diagnostics"] { position: relative; margin-inline-start: 6px; }
 .sdr-workflow [data-sdr-stage="diagnostics"]::before {
   content: ""; position: absolute; inset-block: 0; inset-inline-start: -6px; width: 1px; background: #cbdbe2;
@@ -312,13 +317,13 @@
 .sdr-workflow-error:empty { display: none; }
 .sdr-direction { grid-column: 1 / -1; width: min(100%, 760px); box-sizing: border-box; margin-top: 8px; }
 .sdr-direction h3 { margin-bottom: 8px; }
-.sdr-direction h3 small { color: #526477; font-size: 11px; font-weight: 600; }
 .sdr-direction p { margin: 6px 0 10px; }
 .sdr-direction-layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; align-items: start; }
 .sdr-direction-visual { margin: 0; text-align: center; }
 .sdr-direction-dial { display: block; width: min(100%, 326px); height: auto; margin-inline: auto; }
 .sdr-direction-face { fill: #f8fafc; stroke: #a5bfca; stroke-width: 1; }
 .sdr-direction-guide { fill: none; stroke: #dce6eb; stroke-dasharray: 1.5 4; }
+.sdr-direction-visited { stroke: #22867d; stroke-width: 3; stroke-linecap: round; }
 .sdr-direction-range { fill: none; stroke: #c9e5e8; stroke-width: 8; stroke-linecap: round; }
 .sdr-direction-ray { stroke: #22867d; stroke-width: 3; stroke-linecap: round; }
 .sdr-direction-peak { fill: #b45309; }
@@ -328,13 +333,17 @@
 .sdr-direction-steps li { padding: 4px 8px; color: #526477; background: #f0f4f7; border-radius: 5px; }
 .sdr-direction-steps [aria-current="step"] { color: #fff; background: #145d75; }
 .sdr-direction-actions { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0; }
+.sdr-direction-actions > button { min-height: 44px; }
 .sdr-direction progress { width: 100%; accent-color: #145d75; }
-.sdr-direction [data-direction-scale]:not([hidden]) { display: block; }
 .sdr-direction-target { padding: 8px 10px; border-radius: 7px; color: #145d75; background: #e8f2f4; font-size: 14px; font-weight: 700; }
+.sdr-direction-target[data-warning] { color: #814308; background: #fff1df; }
 .sdr-direction-camera video { width: 92px; height: 52px; margin-inline-start: 8px; object-fit: cover; vertical-align: middle; border-radius: 6px; }
-.sdr-direction-camera:not(:has(button:not([hidden]))) { display: none; }
 .sdr-direction [data-direction-report] { border-top: 1px solid #dce6eb; padding-top: 12px; }
 .sdr-direction [data-direction-result] { color: #145d75; font-size: 20px; }
+@media (orientation: portrait), (max-width: 719px) {
+  .sdr-direction-visual { order: 1; }
+  .sdr-direction-dial { width: min(100%, 290px); }
+}
 @media (min-width: 720px) and (orientation: landscape) {
   .sdr-direction-layout { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; }
   .sdr-direction-dial { width: min(100%, 326px, 63dvh); }

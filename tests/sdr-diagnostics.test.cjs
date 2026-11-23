@@ -39,6 +39,7 @@ test('USB reception moves to the monitor stage without repeatedly scrolling',asy
   await ui.trigger.click();
   assert.equal(ui.dialog.dataset.receiverStage,'connection');
   assert.equal(ui.dialog.querySelector('[data-sdr-stage="setup"]').disabled,true);
+  assert.equal(ui.dialog.querySelector('[data-sdr-stage="direction"]').hidden,true);
   await ui.button().click();await tick();
   assert.equal(ui.dialog.dataset.receiverStage,'setup');
   let scrolls=0;
@@ -54,6 +55,46 @@ test('USB reception moves to the monitor stage without repeatedly scrolling',asy
   assert.equal(ui.dialog.dataset.receiverStage,'setup');
   await ui.dialog.querySelector('[data-sdr-stage="monitor"]').click();
   assert.equal(ui.dialog.dataset.receiverStage,'monitor');
+});
+
+test('direction stage combines live USB and Bluetooth pulse values with the active receiver', async () => {
+  let receiver, selected = false, audioActive = false;
+  const updates = [], pulses = [];
+  const ui = setup(true, 'injected', false, null, null, (_dialog, options) => {
+    receiver = options;
+    return {
+      updateUsb() {}, onOpen() {}, selected: () => selected, audioActive: () => audioActive,
+      status: () => ({state:'connected', measurement:{frequencyHz:148241000, mode:'CW'}}),
+      disconnecting: () => false, canMonitor: () => true
+    };
+  }, () => ({ update: (...args) => updates.push(args), push: (...args) => pulses.push(args) }));
+  ui.device.hasPermission = true;
+  await ui.trigger.click();
+  const direction = ui.dialog.querySelector('[data-sdr-stage="direction"]');
+  assert.equal(direction.hidden, false);
+  assert.equal(direction.disabled, true);
+  await ui.button().click();
+  await direction.click();
+  assert.equal(ui.dialog.dataset.receiverStage, 'direction');
+  assert.deepEqual(updates.at(-1), [true, null, 'usb']);
+  ui.state.receptionState = 'receiving';
+  ui.state.cwPulseWallTimeMs = 10000;
+  ui.state.reception = {mode:'cw', listenFrequencyHz:148241000, cwPulseTimeMs:500, cwDetectionAgeMs:125,
+    cwDirectionDbfs:-54, cwCandidateOffsetHz:15};
+  ui.emit();
+  assert.deepEqual(updates.at(-1), [true, 'usb:148241000', 'usb']);
+  assert.deepEqual(pulses.at(-1), ['usb:148241000', 500, 125, -54, 15, 10000]);
+
+  selected = audioActive = true;
+  receiver.onChange();
+  await direction.click();
+  receiver.onAudioFrame({cwPulseTimeMs:600, cwDetectionAgeMs:100, cwDirectionDbfs:-37, cwToneHz:700, cwPulseWallTimeMs:20000});
+  assert.deepEqual(updates.at(-1), [true, 'bluetooth:148241000:CW', 'bluetooth']);
+  assert.deepEqual(pulses.at(-1), ['bluetooth:148241000:CW', 600, 100, -37, 700, 20000]);
+  audioActive = false;
+  receiver.onAudioFrame({state:'error'});
+  assert.deepEqual(updates.at(-1), [true, null, 'bluetooth']);
+  assert.equal(ui.dialog.dataset.receiverStage, 'direction');
 });
 
 test('header disconnect is available from the USB monitor and hides when the receiver disconnects',async()=>{
@@ -553,7 +594,7 @@ test('USB tolerance does not allow registration against old samples from a diffe
   assert.equal(ui.dialog.querySelector('[data-register-observation]').disabled,true);
 });
 
-function setup(android = true, bridgeMode = 'injected', listenerAsync = false, catalog = null, storage = null, receiverMount = null) {
+function setup(android = true, bridgeMode = 'injected', listenerAsync = false, catalog = null, storage = null, receiverMount = null, directionMount = null) {
   const trigger = new Element(), body = new Element();
   const device = { deviceId: '/usb/1', name: 'RTL2832U', vendorId: 3034, productId: 10290, candidate: true, hasPermission: false, connected: false };
   const state = { hostSupported: true, state: 'idle', devices: [device] };
@@ -611,12 +652,14 @@ function setup(android = true, bridgeMode = 'injected', listenerAsync = false, c
   if (android && bridgeMode === 'throws') capacitor.registerPlugin = () => { throw new Error('bridge init failure'); };
   const appWindow = { Capacitor: capacitor };
   if (receiverMount) appWindow.BearIcR30 = { mount: receiverMount };
+  if (directionMount) appWindow.BearDirectionScan = { mount: directionMount };
   if (storage) appWindow.localStorage = storage;
   if (catalog) appWindow.BearSdrAnimals = catalog;
+  const diagnosticsSource = directionMount ? source.replace('const directionExperimentEnabled = false;', 'const directionExperimentEnabled = true;') : source;
   vm.runInNewContext(fs.readFileSync('public/js/sdr/frequency-controls.js', 'utf8') + '\n' + spectrumSource + '\n' +
     fs.readFileSync('public/js/sdr/diagnostic-logs.js', 'utf8') + '\n' +
-    fs.readFileSync('public/js/sdr/diagnostic-trace.js', 'utf8') + '\n' + source, {
-    document: { getElementById: () => trigger, createElement: () => new Element(), body },
+    fs.readFileSync('public/js/sdr/diagnostic-trace.js', 'utf8') + '\n' + diagnosticsSource, {
+    document: { getElementById: () => trigger, createElement: () => new Element(), body, addEventListener() {} },
     window: appWindow, console
   });
   const dialog = body.children[0];

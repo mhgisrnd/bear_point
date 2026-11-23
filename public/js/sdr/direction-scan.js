@@ -1,7 +1,7 @@
 (function (root) {
   "use strict";
-  const COARSE = { arc: 360, step: 10, minimumMs: 25000, minVisited: 35 };
-  const FINE = { arc: 90, step: 3, minimumMs: 28000, minVisited: 22 };
+  const COARSE = { arc: 360, step: 10, minimumMs: 25000, minVisited: 35, maxPace: 12 };
+  const FINE = { arc: 90, step: 3, minimumMs: 28000, minVisited: 22, maxPace: 4 };
   const FINE_HALF_ARC = FINE.arc / 2;
   const COARSE_MANUAL_MIN_DEGREES = 335;
   const COARSE_MANUAL_MIN_SECTORS = 32;
@@ -16,7 +16,7 @@
   const delta = (to, from) => norm(to - from + 180) - 180;
   const sector = (angle, step) => Math.round(norm(angle) / step) % (360 / step);
   const displayAngle = angle => `${norm(Math.round(angle))}°`;
-  const coarseGuide = "태블릿을 수평으로 들고 화면 위쪽과 안테나를 맞추세요. 360° 탐색은 같은 자리에서 40~60초에 걸쳐 돌고, 대략적인 방향을 알면 그쪽을 보고 90° 직접 탐색을 누르세요.";
+  const coarseGuide = "기기를 수평으로 들고 화면 위쪽을 안테나가 향하는 쪽에 맞추세요. 같은 자리에서 한 방향으로 40~60초에 걸쳐 한 바퀴 도세요.";
 
   function bearing(event, screenAngle) {
     if (Number.isFinite(event.webkitCompassHeading) && event.webkitCompassHeading >= 0) return norm(event.webkitCompassHeading);
@@ -71,9 +71,19 @@
     const supported = ranked.filter(item => bins[sector(item.angle, step)].length >= 2 || ranked.some(neighbor =>
       neighbor !== item && Math.abs(delta(neighbor.angle, item.angle)) <= 2 * step && Math.abs(neighbor.db - item.db) <= 14));
     const peak = ranked.length >= 3 ? supported[0] ?? null : null;
-    const alternative = peak && supported.find(item => Math.abs(delta(item.angle, peak.angle)) >= 40 && item.db >= peak.db - 3);
+    const alternative = peak && supported.find(item => Math.abs(delta(item.angle, peak.angle)) >= Math.max(18, 4 * step) && item.db >= peak.db - 3);
     const isolated = ranked[0] && !supported.includes(ranked[0]) ? ranked[0] : null;
-    return { levels, step, peak, alternative, isolated, count: matching.length, measured: ranked.length, tone: tones[Math.floor(tones.length / 2)] };
+    const contrast = peak ? peak.db - supported[Math.floor(supported.length / 2)].db : 0;
+    return { levels, step, peak, alternative, isolated, contrast, count: matching.length, measured: ranked.length, tone: tones[Math.floor(tones.length / 2)] };
+  }
+
+  function resultNote({ summary, center }) {
+    if (!summary.peak) return summary.count ? "가까운 방향에서 신호가 충분히 반복되지 않았어요. 수신음을 확인하고 천천히 다시 측정하세요."
+      : "수신 신호를 잡지 못했어요. 3단계에서 주파수와 수신음을 확인하세요.";
+    if (summary.alternative) return `${displayAngle(summary.alternative.angle)}에서도 비슷하게 강했어요. 두 방향을 따로 확인하거나 위치를 조금 옮겨 다시 탐색하세요.`;
+    if (center !== null && Math.abs(delta(summary.peak.angle, center)) >= 39) return "가장 강한 신호가 측정 범위 끝에 있어요. 그 방향을 화면 위쪽에 맞추고 90° 직접 탐색을 해 보세요.";
+    if (summary.contrast < 4) return "방향별 신호 세기 차이가 작아요. 위치를 조금 옮겨 다시 탐색하세요.";
+    return "";
   }
 
   function polarPoint(angle, radius) {
@@ -90,7 +100,7 @@
 
   function mount(panel) {
     const node = key => panel.querySelector(`[data-direction-${key}]`);
-    const start = node("start"), refine = node("refine"), direct = node("direct"), reset = node("reset");
+    const start = node("start"), refine = node("refine"), alternate = node("refine-alternative"), direct = node("direct"), reset = node("reset");
     const finish = node("finish"), report = node("report");
     const progress = node("progress");
     const dial = root.BearHeadingDial;
@@ -103,33 +113,48 @@
 
     const history = [];
     let source = null, run = null, coarse = null, fine = null;
-    let viewActive = false, listening = false, request = 0, timeout;
+    let viewActive = false, listening = false, request = 0, timeout, tiltedAt = null;
     let lastAbsoluteSample = -Infinity;
     let camera, fusion, cameraEnabled = false, cameraPending = false, cameraEpoch = 0, lastCompass = null;
     let arChecked = false, arPending = false, arActive = false, arTracking = false, arEpoch = 0, arListener;
     let arNorthOffset = null, arCompass = null, arLastHeadingAt = null, waitingForAr = null;
     const now = () => root.performance.now();
     const screenRotation = () => root.screen?.orientation?.angle ?? root.orientation ?? 0;
-    const setMessage = text => { node("status").textContent = text; };
+    const setMessage = text => { if (node("status").textContent !== text) node("status").textContent = text; };
+    function setFeedback(text = "", warning = false) {
+      const feedback = node("feedback");
+      feedback.hidden = !text;
+      if (feedback.textContent !== text) feedback.textContent = text;
+      feedback.toggleAttribute("data-warning", warning);
+    }
     const coverage = sample => Math.min(sample.plan.arc, Math.round(sample.plan === FINE ? Math.max(0, sample.turn) : Math.abs(sample.turn)));
     const full = sample => coverage(sample) >= (sample.plan === FINE ? 85 : 358) && sample.visited.size >= sample.plan.minVisited;
     const canFinishCoarse = (sample, time) => sample?.plan === COARSE && sample.start !== null &&
       time - sample.start >= COARSE.minimumMs && coverage(sample) >= COARSE_MANUAL_MIN_DEGREES &&
       sample.visited.size >= COARSE_MANUAL_MIN_SECTORS;
-    const activePeak = () => fine?.summary.peak || (fine?.direct ? null : coarse?.summary.peak);
+    const activePeak = () => {
+      const saved = fine || coarse;
+      const unresolvedCoarse = fine && !fine.direct && coarse?.summary.alternative;
+      return saved && !unresolvedCoarse && !resultNote(saved) ? saved.summary.peak : null;
+    };
 
     function syncButtons() {
-      start.disabled = refine.disabled = direct.disabled = !viewActive || (!source && !arActive) || !!run || cameraPending || arPending;
+      start.disabled = refine.disabled = alternate.disabled = direct.disabled = !viewActive || !source || !!run || cameraPending || arPending;
       start.hidden = direct.hidden = !!run;
       start.textContent = coarse ? "360° 다시 탐색" : "360° 탐색 시작";
-      refine.hidden = !!run || !coarse?.summary.peak;
-      reset.disabled = !run && !coarse && !fine;
+      refine.hidden = !!run || !coarse?.summary.peak || coarse.source !== source;
+      if (!refine.hidden) refine.textContent = `${displayAngle(coarse.summary.peak.angle)} 정밀 측정`;
+      alternate.hidden = refine.hidden || !coarse?.summary.alternative;
+      if (!alternate.hidden) alternate.textContent = `${displayAngle(coarse.summary.alternative.angle)} 정밀 측정`;
+      reset.hidden = reset.disabled = !!run || (!coarse && !fine);
       cameraButton.disabled = cameraPending || !!run;
       arButton.disabled = arPending || cameraPending || !!run;
+      node("camera-options").hidden = cameraButton.hidden && arButton.hidden && !arActive;
       cameraButton.textContent = cameraEnabled ? "카메라 보정 끄기" : "카메라 보정 켜기";
       finish.hidden = !run && !waitingForAr;
-      finish.disabled = !waitingForAr && (!run || (run.plan === COARSE && run.completedAt === null && !canFinishCoarse(run, now())));
-      finish.textContent = waitingForAr ? "시작 대기 취소" : run?.completedAt != null ? "결과 보기" : run?.plan === COARSE ? "한 바퀴 완료" : "측정 중단";
+      finish.disabled = finish.hidden;
+      finish.textContent = waitingForAr ? "시작 대기 취소" : run?.completedAt != null ? "결과 보기"
+        : canFinishCoarse(run, now()) ? "한 바퀴 완료" : "측정 중단";
     }
 
     function setHeading(angle) {
@@ -139,16 +164,17 @@
       node("index").toggleAttribute("hidden", angle == null);
       const target = run ? null : activePeak();
       const guidance = node("target-guide");
-      guidance.hidden = angle == null || !target;
+      guidance.hidden = angle == null || !target || !source || tiltedAt !== null;
       const overlay = node("ar-target");
       overlay.hidden = !arActive || guidance.hidden || !arTracking;
       if (guidance.hidden) return;
       const difference = delta(target.angle, angle);
+      const tolerance = fine ? 3 : 5;
       const remaining = Math.round(Math.abs(difference));
-      guidance.textContent = remaining <= 3 ? `목표 ${displayAngle(target.angle)} · 방향이 맞았어요.`
+      guidance.textContent = remaining <= tolerance ? `목표 ${displayAngle(target.angle)} · 방향이 맞았어요.`
         : `목표 ${displayAngle(target.angle)} · ${difference > 0 ? "오른쪽" : "왼쪽"}으로 ${remaining}°`;
       if (!overlay.hidden) {
-        overlay.textContent = remaining <= 3 ? "↑ 목표 방향" : `${difference > 0 ? "→" : "←"} ${remaining}°`;
+        overlay.textContent = remaining <= tolerance ? "↑ 목표 방향" : `${difference > 0 ? "→" : "←"} ${remaining}°`;
         overlay.style.setProperty("--direction-target-x", `${50 + Math.max(-33, Math.min(33, difference))}%`);
       }
     }
@@ -165,10 +191,15 @@
         : `${directSearch ? "시작 방향" : "후보"} ${displayAngle(center)} 주변 ${displayAngle(left)} ↔ ${displayAngle(right)} 구간을 35~45초에 걸쳐 따라가세요.`;
     }
 
-    function renderDial(summary, marker) {
+    function renderCoverage(sample) {
+      node("bearing-coverage").innerHTML = sample ? [...sample.visited].map(index => {
+        const angle = index * sample.plan.step;
+        return `<path class="sdr-direction-visited" d="M${polarPoint(angle, 88)} L${polarPoint(angle, 94)}"/>`;
+      }).join("") : "";
+    }
+
+    function renderDial(summary, marker, alternative) {
       const scale = summary ? strengthScale(summary.levels) : null;
-      node("scale").hidden = !scale;
-      if (scale) node("scale").textContent = `이 측정의 범위 ${scale.min.toFixed(1)} ~ ${scale.max.toFixed(1)} dBFS · 차이 ${(scale.max - scale.min).toFixed(1)} dB`;
       node("chart").innerHTML = scale ? summary.levels.map((db, index) => {
         if (db === null) return "";
         const angle = index * summary.step;
@@ -176,8 +207,8 @@
         const offsets = summary.step === COARSE.step ? [-2.5, 0, 2.5] : [0];
         return offsets.map(offset => `<path class="sdr-direction-ray" d="M${polarPoint(angle + offset, 106)} L${polarPoint(angle + offset, radius - Math.abs(offset) * 2)}"/>`).join("");
       }).join("") : "";
-      node("marker").innerHTML = marker == null ? "" :
-        `<path class="sdr-direction-peak" d="M66 -65 L61 -56 H71 Z" transform="${dial.rotation(marker)}"/>`;
+      node("marker").innerHTML = [marker, alternative].filter(Number.isFinite).map(angle =>
+        `<path class="sdr-direction-peak" d="M66 -65 L61 -56 H71 Z" transform="${dial.rotation(angle)}"/>`).join("");
     }
 
     function detachHeading() {
@@ -187,6 +218,7 @@
       listening = false;
       history.length = 0;
       lastCompass = null;
+      tiltedAt = null;
       lastAbsoluteSample = -Infinity;
     }
 
@@ -249,9 +281,9 @@
       setArStatus("ARCore 추적 중 · 시작 방위는 전자 나침반 기준");
       recordHeading(norm(frame.yaw + arNorthOffset), arLastHeadingAt, screenRotation());
       if (waitingForAr) {
-        const { plan, directSearch } = waitingForAr;
+        const { plan, directSearch, alternative } = waitingForAr;
         waitingForAr = null;
-        void begin(plan, directSearch);
+        void begin(plan, directSearch, alternative);
       }
       syncButtons();
     }
@@ -350,6 +382,8 @@
       setStage(!!fine, fine?.center, fine?.direct);
       setHeading(history.at(-1)?.angle);
       progress.value = saved?.degrees ?? 0;
+      renderCoverage(saved);
+      setFeedback();
       report.hidden = !saved;
       if (!saved) {
         renderDial(null, null);
@@ -357,18 +391,17 @@
         return;
       }
       const { summary } = saved;
-      const peak = activePeak();
+      const note = resultNote(saved);
       node("result").textContent = summary.peak
-        ? `${fine ? (fine.direct ? "90° 직접 탐색" : "정밀 측정") : "360° 후보"} 약 ${displayAngle(summary.peak.angle)}`
-        : peak ? `정밀 결과 보류 · 360° 후보 ${displayAngle(peak.angle)}` : "방향 추정 보류";
-      node("detail").textContent = `${summary.step}° 간격 · 삡 ${summary.count}회 · 검출 구간 ${summary.measured}곳` +
-        (summary.peak ? ` · 후보 ${summary.peak.db.toFixed(1)} dBFS` : "") +
-        (summary.alternative ? ` · ${displayAngle(summary.alternative.angle)}에서도 비슷한 세기로 잡혔어요.` : "") +
-        (summary.isolated ? ` · ${displayAngle(summary.isolated.angle)}의 단독 강신호는 후보에서 제외했어요.` : "") +
-        (fine && summary.peak && Math.abs(delta(summary.peak.angle, fine.center)) >= 39
-          ? " · 가장 강한 방향이 측정 구간 끝에 가까워요." : "");
+        ? note ? `추가 확인 필요 · ${displayAngle(summary.peak.angle)}${summary.alternative ? ` / ${displayAngle(summary.alternative.angle)}` : ""}`
+          : `${fine ? (fine.direct ? "90° 직접 탐색" : "정밀 측정") : "360° 후보"} 약 ${displayAngle(summary.peak.angle)}`
+        : "방향 추정 보류";
+      node("detail").textContent = note || (fine && !fine.direct && coarse?.summary.alternative
+        ? "이 90° 구간에서 가장 강한 방향이에요. 360°에서 잡힌 다른 후보도 확인한 뒤 비교하세요."
+        : "안테나를 다시 이 방향으로 돌려 수신음을 확인하세요.");
+      node("samples").textContent = `${summary.step}° 간격 · 수신 신호 ${summary.count}회 · 검출 구간 ${summary.measured}곳`;
       node("coverage").textContent = `시작 ${displayAngle(saved.firstAngle)} · 종료 ${displayAngle(saved.lastAngle)} · 나침반 회전 ${saved.degrees}° / ${progress.max}°`;
-      renderDial(summary, peak?.angle);
+      renderDial(summary, summary.peak?.angle, summary.alternative?.angle);
       syncButtons();
     }
 
@@ -383,17 +416,18 @@
 
     function complete(sample) {
       const summary = summarize(sample.pulses, sample.plan.step, sample.targetTone);
-      const saved = { source: sample.source, summary, center: sample.center, direct: sample.direct,
+      const saved = { source: sample.source, summary, center: sample.center, direct: sample.direct, plan: sample.plan, visited: sample.visited,
         degrees: coverage(sample), firstAngle: sample.firstAngle, lastAngle: sample.lastAngle };
       if (sample.plan === FINE) fine = saved;
-      else coarse = saved;
+      else { coarse = saved; fine = null; }
       const label = sample.plan === COARSE ? "360° 탐색 완료" : sample.direct ? "90° 직접 탐색 완료" : "90° 정밀 측정 완료";
-      stop(summary.peak ? label : "서로 가까운 방향에서 삡 신호가 충분히 반복되지 않았어요.");
+      stop(label);
     }
 
     function queueCompletion(sample, time) {
       sample.completedAt = time;
       setMessage("측정값 정리 중…");
+      setFeedback();
       timeout = root.setTimeout(() => complete(sample), 800);
       syncButtons();
     }
@@ -433,7 +467,29 @@
       if (fusion && lastCompass && lastCompass.screenAngle !== screenAngle) fusion = vision.createHeadingFusion();
       lastCompass = { angle, screenAngle, level: Math.abs(event.beta ?? 0) < 23 && Math.abs(event.gamma ?? 0) < 23 };
       const corrected = fusion ? fusion.compass(angle, time, lastCompass.level) : angle;
+      if (!lastCompass.level) {
+        tiltedAt ??= time;
+        history.length = 0;
+        setHeading(null);
+        if (run?.completedAt === null && time - tiltedAt >= 1000) stop("기기가 기울어 측정을 중단했어요. 화면을 수평으로 들고 다시 시작하세요.");
+        setFeedback("화면을 수평으로 들어 주세요.", true);
+        return;
+      }
+      if (tiltedAt !== null) {
+        tiltedAt = null;
+        setFeedback();
+      }
       if (corrected !== null) recordHeading(corrected, time, screenAngle);
+    }
+
+    function measureFeedback(sample, time) {
+      const latest = history.at(-1);
+      const earlier = history.find(heading => latest.time - heading.time <= 1200);
+      const interval = latest.time - earlier.time;
+      const pace = interval >= 400 ? Math.abs(delta(latest.angle, earlier.angle)) * 1000 / interval : 0;
+      if (pace > sample.plan.maxPace) setFeedback("조금 더 천천히 돌려 주세요.", true);
+      else if (time - (sample.lastPulseAt ?? sample.start) >= 5000) setFeedback("최근 5초간 신호가 잡히지 않았어요. 천천히 돌면서 수신음을 확인하세요.", true);
+      else setFeedback(sample.pulses.length ? "수신 신호를 기록하고 있어요." : "수신 신호를 기다리고 있어요.");
     }
 
     function recordHeading(angle, time, screenAngle) {
@@ -442,7 +498,8 @@
         history.length = 0;
         if (run?.completedAt === null) stop("화면 방향이 바뀌었어요. 태블릿 방향을 고정하고 다시 시작하세요.");
       }
-      const change = history.length ? delta(angle, previous.angle) : 0;
+      const lastAngle = history.at(-1)?.angle ?? run?.lastAngle ?? angle;
+      const change = delta(angle, lastAngle);
       if (run?.completedAt === null && Math.abs(change) > 45) {
         stop("나침반 값이 갑자기 바뀌었어요. 태블릿 위치를 확인하고 다시 시작하세요.");
         return;
@@ -463,13 +520,16 @@
       if (isFine) run.turn = run.sign * delta(angle, run.origin);
       run.lastAngle = angle;
       if (!isFine || Math.abs(delta(angle, run.center)) <= FINE_HALF_ARC + 2) {
+        const size = run.visited.size;
         run.visited.add(sector(angle, run.plan.step));
+        if (run.visited.size !== size) renderCoverage(run);
       }
       const turn = coverage(run);
       progress.value = turn;
       const direction = isFine ? (run.sign > 0 ? "시계 방향 · " : "반시계 방향 · ") : "";
       const finishHint = canFinishCoarse(run, time) ? " · 시작 방향으로 돌아왔으면 한 바퀴 완료를 누르세요." : "";
-      setMessage(`${direction}${turn}° / ${run.plan.arc}° · 삡 ${run.pulses.length}회${finishHint}`);
+      setMessage(`${direction}${turn}° / ${run.plan.arc}°${finishHint}`);
+      measureFeedback(run, time);
       if (!full(run)) { syncButtons(); return; }
       if (time - run.start < run.plan.minimumMs) {
         stop(isFine ? "정밀 구간을 너무 빨리 돌았어요. 35~45초에 걸쳐 다시 측정하세요."
@@ -479,18 +539,20 @@
       queueCompletion(run, time);
     }
 
-    async function begin(plan, directSearch = false) {
+    async function begin(plan, directSearch = false, alternative = false) {
       if (!viewActive || run || cameraPending || arPending) return;
-      if (!source) { setMessage("삡 소리를 측정하려면 3단계에서 수신 입력을 먼저 켜세요."); return; }
-      if (plan === FINE && !directSearch && (!coarse?.summary.peak || coarse.source !== source)) return;
+      if (!source) return;
+      const candidate = alternative ? coarse?.summary.alternative : coarse?.summary.peak;
+      if (plan === FINE && !directSearch && (!candidate || coarse.source !== source)) return;
       if (arActive && !arTracking) {
-        waitingForAr = { plan, directSearch };
+        waitingForAr = { plan, directSearch, alternative };
         setMessage(directSearch ? "AR 추적이 준비되면 시작해요. 찾으려는 방향을 유지해 주세요."
           : "AR 추적이 준비되면 시작해요. 지금 방향을 유지해 주세요.");
         syncButtons();
         return;
       }
       const token = ++request;
+      const requestedSource = source;
       try {
         if (typeof root.DeviceOrientationEvent?.requestPermission === "function" &&
             await root.DeviceOrientationEvent.requestPermission(true) !== "granted") {
@@ -501,20 +563,20 @@
         if (token === request) setMessage("나침반 권한을 확인할 수 없어요.");
         return;
       }
-      if (token !== request || !viewActive || !source) return;
-      if (plan === COARSE) coarse = null;
-      fine = null;
+      if (token !== request || !viewActive || source !== requestedSource) return;
       report.hidden = true;
+      setFeedback();
       if (history.at(-1)?.screenAngle !== screenRotation()) history.length = 0;
       const heading = history.at(-1)?.angle;
-      const center = plan === COARSE ? null : directSearch ? heading ?? null : coarse.summary.peak.angle;
+      const center = plan === COARSE ? null : directSearch ? heading ?? null : candidate.angle;
       const startTime = plan === COARSE && heading != null ? now() : null;
       const visited = startTime === null ? [] : [sector(heading, plan.step)];
-      run = { plan, source, start: startTime, firstAngle: heading, lastAngle: heading, turn: 0, visited: new Set(visited), pulses: [], lastPulse: null,
+      run = { plan, source, start: startTime, firstAngle: heading, lastAngle: heading, turn: 0, visited: new Set(visited), pulses: [], lastPulse: null, lastPulseAt: null,
         completedAt: null, center, direct: directSearch, targetTone: plan === FINE && !directSearch ? coarse.summary.tone : null, origin: 0, sign: 0 };
       if (startTime !== null) history.push({ angle: heading, time: startTime, screenAngle: screenRotation() });
       setStage(plan === FINE, center, directSearch);
       setHeading(heading);
+      renderCoverage(run);
       renderDial(null, plan === FINE && !directSearch ? center : null);
       progress.value = 0;
       attachHeading();
@@ -532,6 +594,7 @@
     arButton.addEventListener("click", startAr);
     arExit.addEventListener("click", () => stopAr());
     refine.addEventListener("click", () => begin(FINE));
+    alternate.addEventListener("click", () => begin(FINE, false, true));
     direct.addEventListener("click", () => begin(FINE, true));
     reset.addEventListener("click", () => {
       coarse = fine = null;
@@ -542,11 +605,11 @@
       if (!run) return;
       if (run.completedAt !== null) complete(run);
       else if (canFinishCoarse(run, now())) queueCompletion(run, now());
-      else if (run.plan === FINE) stop("측정을 중단했어요.");
+      else stop("측정을 중단했어요.");
     });
 
     return {
-      update(active, nextSource) {
+      update(active, nextSource, transport) {
         const previousSource = source;
         const wasActive = viewActive;
         source = nextSource;
@@ -558,15 +621,18 @@
         if (!active && (arActive || arPending)) stopAr();
         if (active && !arChecked && typeof ar?.availability === "function") {
           arChecked = true;
-          void ar.availability().then(result => { arButton.hidden = !result.supported; }).catch(() => {});
+          void ar.availability().then(result => { arButton.hidden = !result.supported; syncButtons(); }).catch(() => {});
         }
         const saved = fine || coarse;
-        if (active && source && saved && saved.source !== source) {
+        if (active && saved && (source ? saved.source !== source : transport && !saved.source.startsWith(`${transport}:`))) {
           coarse = fine = null;
           renderSaved();
         }
-        if (active && (!wasActive || previousSource !== source) && report.hidden && !run) {
-          setMessage(source ? "준비되면 탐색을 시작하세요." : "3단계에서 USB 오디오 입력 또는 CW 수신을 먼저 켜세요.");
+        if (active && (!wasActive || previousSource !== source) && !run) {
+          setHeading(history.at(-1)?.angle);
+          if (!source) setMessage(transport === "bluetooth" ? "3단계에서 수신 주파수와 USB 오디오 입력을 확인하세요."
+            : "3단계에서 찾으려는 주파수의 CW 수신을 먼저 시작하세요.");
+          else if (report.hidden && (!wasActive || !previousSource)) setMessage("수신 입력 준비됨 · 준비되면 탐색을 시작하세요.");
         }
         if (active && (coarse || fine || typeof root.DeviceOrientationEvent?.requestPermission !== "function")) attachHeading();
         if (!active) request++;
@@ -587,7 +653,9 @@
         if (isFine && (Math.abs(delta(angle, run.center)) > FINE_HALF_ARC + 2 ||
             (run.targetTone !== null && Math.abs(tone - run.targetTone) > 120))) return;
         run.lastPulse = pulse;
+        run.lastPulseAt = time;
         run.pulses.push({ angle, db, tone });
+        if (run.completedAt === null) measureFeedback(run, now());
         renderDial(summarize(run.pulses, run.plan.step, run.targetTone), isFine && !run.direct ? run.center : null);
       }
     };
