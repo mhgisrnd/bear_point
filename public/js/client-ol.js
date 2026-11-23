@@ -7563,7 +7563,7 @@
           '<input class="bears-item__checkbox" type="checkbox" aria-label="곰 추정위치 선택" ' + (isSelected ? 'checked' : '') + ' />' +
         '</div>' +
         '<div class="bears-item__main">' +
-          '<div class="bears-item__code"><b>' + escapeHtml(bearCode) + '</b>' + (isShared ? '<span class="bears-item__shared-badge" role="status">공유완료</span>' : '') + '</div>' +
+          '<div class="bears-item__code"><b>' + escapeHtml(bearCode) + '</b>' + buildEstimationMethodHtml(it) + (isShared ? '<span class="bears-item__shared-badge" role="status">공유완료</span>' : '') + '</div>' +
         '</div>' +
         '<div class="bears-item__meta bears-item__meta--send">' +
           '<div class="bears-item__buttons">' +
@@ -7574,11 +7574,10 @@
                 ? '<span class="bear-share-control bear-share-control--sending">공유 중</span>'
                 : '<button class="bear-share-control bear-share-control--needed" type="button">공유 필요</button>') +
         '</div>' +
-        '<div class="bears-item__detail-frame"><table class="bears-item__detail-table" aria-label="개체 추적위치 정보"><tbody>' +
-          '<tr><th scope="row">등록자</th><td><div class="bears-item__registrar"><span class="bears-item__detail-value" title="' + escapeHtml(ownerName) + '">' + escapeHtml(ownerName) + '</span><span class="bears-item__team" style="--team-color:' + teamColor + '" title="' + escapeHtml(teamName) + '" aria-label="소속 팀 ' + escapeHtml(teamName) + '"><i aria-hidden="true"></i><span>' + escapeHtml(teamName) + '</span></span></div></td></tr>' +
-          '<tr><th scope="row">추정 방식</th><td>' + buildEstimationMethodHtml(it) + '</td></tr>' +
-          '<tr><th scope="row">위치</th><td><span class="bears-item__detail-value" title="' + escapeHtml(regionName) + '">' + escapeHtml(regionName) + '</span></td></tr>' +
-        '</tbody></table></div>';
+        '<div class="bears-item__detail-frame"><div class="bears-item__detail-summary">' +
+          '<div class="bears-item__detail-field bears-item__detail-field--registrar"><span class="bears-item__detail-label">등록자</span><div class="bears-item__registrar"><span class="bears-item__detail-value" title="' + escapeHtml(ownerName) + '">' + escapeHtml(ownerName) + '</span><span class="bears-item__team" style="--team-color:' + teamColor + '" title="' + escapeHtml(teamName) + '" aria-label="소속 팀 ' + escapeHtml(teamName) + '"><i aria-hidden="true"></i><span>' + escapeHtml(teamName) + '</span></span></div></div>' +
+          '<div class="bears-item__detail-location bears-item__detail-field"><span class="bears-item__detail-label">위치</span><span class="bears-item__detail-value" title="' + escapeHtml(regionName) + '">' + escapeHtml(regionName) + '</span></div>' +
+        '</div></div>';
 
       el.addEventListener("click", function () {
         highlightBearEstimate(it.id);

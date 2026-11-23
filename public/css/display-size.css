@@ -60,6 +60,14 @@
 :root[data-display-size="large"] body.bp-map-dock .mobile-dock-actions :is(.obs-header-add, .obs-header-refresh, .tracking-refresh) { min-height: 44px; font-size: var(--bp-large-secondary); }
 :root[data-display-size="large"] .bears-item--unified .bears-item__code { font-size: 20px; }
 :root[data-display-size="large"] .bears-item__detail-table :is(th, td) { font-size: var(--bp-large-secondary); }
+:root[data-display-size="large"] .bears-item__detail-summary,
+:root[data-display-size="large"] .bears-item__detail-location,
+:root[data-display-size="large"] .bears-item__detail-frame :is(.bears-item__detail-label, .estimate-method) { font-size: var(--bp-large-secondary); }
+:root[data-display-size="large"] :is(.bears-item__detail-field--registrar, .bears-item__detail-location) > .bears-item__detail-label { width: 70px; }
+:root[data-display-size="large"] .bears-item__detail-summary .estimate-method { line-height: 1.3; }
+:root[data-display-size="large"] .bears-item__code .estimate-method { font-size: var(--bp-large-secondary); line-height: 1.3; }
+:root[data-display-size="large"] .bears-item--unified .bears-item__shared-badge { font-size: var(--bp-large-secondary); line-height: 1.3; }
+:root[data-display-size="large"] .bears-item__detail-summary .bears-item__detail-location > .bears-item__detail-label { width: auto; }
 :root[data-display-size="large"] .bears-item__detail-table th { width: 58px; }
 :root[data-display-size="large"] .bears-item__detail-value--coords { font-size: var(--bp-large-secondary); }
 :root[data-display-size="large"] .map-detail-title { font-size: var(--bp-large-text); }
