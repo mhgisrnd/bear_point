@@ -113,6 +113,11 @@ final class SdrReceiver {
         comparison.begin(currentSettings);
     }
     void stopComparison(){comparison.cancel();}
+    void stopDiagnostic() {
+        if (!comparison.active && ("waiting".equals(diagnostic.state()) || "recording".equals(diagnostic.state()))) {
+            captureWriter.finish(SystemClock.elapsedRealtime(), "manual");
+        }
+    }
     File diagnosticFile() { return diagnostic.readyFile(); }
     File diagnosticFile(String id) { return diagnostic.file(id); }
     void deleteDiagnostic(String id) {
@@ -123,9 +128,15 @@ final class SdrReceiver {
         JSObject result=new JSObject();result.put("state",diagnostic.state());result.put("error",diagnostic.error());
         result.put("iqBytes",diagnostic.bytes());result.put("omittedIqBytes",diagnostic.omitted());
         result.put("writerDroppedBlocks",diagnostic.writerDroppedBlocks());result.put("pendingFrames",captureWriter.pending());
+        SdrDiagnosticCapture.AudioTrace trace = diagnostic.audioTrace();
+        JSArray peaks = new JSArray();
+        for (int peak : trace.peaks) peaks.put(peak);
+        result.put("recordedElapsedMs", trace.elapsedMs).put("recordingDurationMs", trace.durationMs);
+        result.put("audioIntervalMs", SdrRecordedAudioPeaks.INTERVAL_MS).put("audioPeaks", peaks);
         JSArray records=new JSArray();
         for(SdrDiagnosticCapture.Saved record:diagnostic.saved()) {
-            JSObject item=new JSObject();item.put("id",record.id);item.put("time",record.time);item.put("sizeBytes",record.size);item.put("comparison",record.comparison);records.put(item);
+            JSObject item=new JSObject();item.put("id",record.id);item.put("time",record.time);item.put("sizeBytes",record.size);item.put("comparison",record.comparison);
+            item.put("hasAudio", record.hasAudio);records.put(item);
         }
         result.put("records",records);
         JSObject cmp=new JSObject();cmp.put("active",comparison.active);cmp.put("phase",comparison.phase);cmp.put("message",comparison.message);

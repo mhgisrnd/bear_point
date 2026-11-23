@@ -67,7 +67,7 @@
 :root[data-display-size="large"] :is(.map-detail-history-button, .map-detail-close-button, .obs-popup-card__action-btn) { min-height: 44px; font-size: var(--bp-large-secondary); }
 
 /* Keep the frequency digits in one row and give each preset a taller hit area. */
-:root[data-display-size="large"] .sdr-dialog :is(button, summary, input:not([type=checkbox]):not([type=radio]), select) { min-height: var(--bp-large-touch); font-size: var(--bp-large-text); }
+:root[data-display-size="large"] .sdr-dialog :is(button:not(.sdr-log-preview), summary, input:not([type=checkbox]):not([type=radio]), select) { min-height: var(--bp-large-touch); font-size: var(--bp-large-text); }
 :root[data-display-size="large"] .sdr-dialog :is([data-bt-disconnect], [data-disconnect]) { height: auto; }
 :root[data-display-size="large"] .sdr-dialog:not([data-search-compact="true"]) [data-close] { flex-basis: 48px; width: 48px; height: 48px; min-height: 48px; font-size: 24px; }
 :root[data-display-size="large"] .sdr-dialog[data-search-compact="true"] .sdr-header button { min-height: 36px; }

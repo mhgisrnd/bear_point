@@ -82,7 +82,8 @@ public class SdrDiagnosticCaptureTest {
             capture.observe(frame(6,0,127,128,255),new short[]{-32768,32767},100,"{\"sampleRate\":1024000}","{\"usbReadMs\":32,\"usbStatus\":0}");
             assertEquals("recording",capture.state());
             capture.observe(frame(2,7,8),null,110,"{}");
-            try(ZipFile zip=new ZipFile(ready(capture))) {
+            File archive = ready(capture);
+            try(ZipFile zip=new ZipFile(archive)) {
                 assertArrayEquals(new byte[]{0,127,-128,-1,7,8},entry(zip,"samples.cu8"));
                 String metadata=new String(entry(zip,"metadata.json"),StandardCharsets.UTF_8);
                 assertTrue(metadata.contains("\"omitted_iq_bytes\":2"));
@@ -102,6 +103,11 @@ public class SdrDiagnosticCaptureTest {
                 assertEquals("RIFF",new String(wav,0,4,StandardCharsets.US_ASCII));
                 assertArrayEquals(new byte[]{(byte)0x80,(byte)0xbb,0,0},java.util.Arrays.copyOfRange(wav,24,28));
                 assertArrayEquals(new byte[]{0,-128,-1,127},java.util.Arrays.copyOfRange(wav,44,48));
+                File preview = SdrDiagnosticExport.extractAudioPreview(temporary.getRoot(), archive);
+                assertArrayEquals(wav, java.nio.file.Files.readAllBytes(preview.toPath()));
+                File nextPreview = SdrDiagnosticExport.extractAudioPreview(temporary.getRoot(), archive);
+                assertFalse(preview.exists());
+                assertArrayEquals(wav, java.nio.file.Files.readAllBytes(nextPreview.toPath()));
             }
         } finally { capture.shutdown(111); }
     }
@@ -119,6 +125,29 @@ public class SdrDiagnosticCaptureTest {
             }
         } finally { capture.shutdown(6); }
     }
+    @Test public void audioTraceUsesRecordedPcmPeaksAndElapsedTime() throws Exception {
+        SdrDiagnosticCapture capture = new SdrDiagnosticCapture(() -> {}, 10000, 100);
+        try {
+            capture.request(temporary.getRoot());
+            short[] first = new short[2400];
+            first[0] = -100;
+            short[] second = new short[4801];
+            second[500] = 200;
+            second[4800] = Short.MIN_VALUE;
+            capture.observe(frame(2, 1, 2), first, 1000, "{}");
+            capture.observe(frame(2, 1, 2), null, 1100, "{}");
+            capture.observe(frame(2, 1, 2), second, 1250, "{}");
+            SdrDiagnosticCapture.AudioTrace trace = capture.audioTrace();
+            assertEquals(250, trace.elapsedMs);
+            assertEquals(10000, trace.durationMs);
+            assertArrayEquals(new int[]{200, 32768}, trace.peaks);
+            IcR30TestAudio bluetooth = new IcR30TestAudio();
+            bluetooth.append(first, 0, first.length);
+            bluetooth.append(second, 0, 30);
+            bluetooth.append(second, 30, second.length - 30);
+            assertArrayEquals(trace.peaks, bluetooth.peaks());
+        } finally { capture.shutdown(1300); }
+    }
     @Test public void emptyCaptureAndDuplicateRequestAreGuarded() throws Exception {
         SdrDiagnosticCapture capture=new SdrDiagnosticCapture(()->{},10,100);
         try {
@@ -127,6 +156,21 @@ public class SdrDiagnosticCaptureTest {
             capture.finish(0,"reception-ended");assertEquals("error",capture.state());
             try { capture.readyFile();fail("Empty archive shared"); } catch(IllegalStateException expected) {}
         } finally { capture.shutdown(1); }
+    }
+    @Test public void bundledExportPreservesDistinctArchivesWithIdenticalNames() throws Exception {
+        File first = new File(temporary.newFolder("first"), "sdr-diagnostic.zip");
+        File second = new File(temporary.newFolder("second"), "sdr-diagnostic.zip");
+        java.nio.file.Files.write(first.toPath(), new byte[]{1, 2});
+        java.nio.file.Files.write(second.toPath(), new byte[]{3, 4});
+        File export = temporary.newFile("selected.zip");
+        try (OutputStream output = new FileOutputStream(export)) {
+            SdrDiagnosticExport.writeArchives(java.util.Arrays.asList(first, second), output);
+        }
+        try (ZipFile zip = new ZipFile(export)) {
+            assertEquals(2, zip.size());
+            assertArrayEquals(new byte[]{1, 2}, entry(zip, "01-sdr-diagnostic.zip"));
+            assertArrayEquals(new byte[]{3, 4}, entry(zip, "02-sdr-diagnostic.zip"));
+        }
     }
     @Test public void archivesSurviveRestartAndInvalidOrPartialFilesCannotBeShared() throws Exception {
         File root=temporary.newFolder("files"),cache=temporary.newFolder("cache");

@@ -31,7 +31,8 @@
 .sdr-dialog [data-bt-search-form] { margin: 0; }
 .sdr-bt-mode { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 8px; margin-top: 10px; font-size: 12px; font-weight: 600; }
 .sdr-bt-test { margin: 12px 0; }
-.sdr-bt-test-chart { display: block; width: 100%; height: 110px; background: #edf5f6; color: #145d75; }
+.sdr-diagnostic-chart { display: block; width: 100%; height: 110px; background: #edf5f6; color: #145d75; }
+.sdr-diagnostic-progress { display: block; width: 100%; height: 8px; margin-top: 6px; accent-color: #145d75; }
 .sdr-bt-test .sdr-note { overflow-wrap: anywhere; }
 .sdr-dialog h2 { margin: 0; font-size: 21px; }
 .sdr-header, .sdr-actions { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
@@ -56,6 +57,7 @@
 .sdr-dialog[open] { display: flex; flex-direction: column; }
 .sdr-header { flex-shrink: 0; padding: 16px 20px; border-bottom: 1px solid #d4dfe5; background: #f8fafc; }
 .sdr-title-group { display: flex; align-items: center; gap: 8px; }
+.sdr-dialog [data-header-disconnect] { min-height: 36px; padding: 4px 8px; font-size: 12px; white-space: nowrap; }
 .sdr-dialog [data-back] { padding: 6px 8px; border-color: #c7dce2; color: #145d75; font-size: 12px; white-space: nowrap; }
 .sdr-body { overflow-y: auto; overscroll-behavior: contain; padding: 0 20px 12px; min-height: 0; flex: 1; }
 .sdr-footer { flex-shrink: 0; padding: 12px 20px; border-top: 1px solid #d4dfe5; background: #fff; box-shadow: 0 -4px 16px #172b3a08; }
@@ -295,11 +297,15 @@
 .sdr-connected-badge { flex-shrink: 0; padding: 1px 5px; font-size: 10px; }
 .sdr-section { margin: 0 0 12px; padding: 14px; border: 1px solid #dce6eb; border-radius: 14px; background: #fff; }
 .sdr-stage-heading { display: flex; align-items: center; gap: 8px; margin: 0 0 12px; color: #244759; font-size: 14px; font-weight: 700; }
-.sdr-workflow { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; flex-shrink: 0; padding: 6px 14px 10px; }
+.sdr-workflow { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; flex-shrink: 0; padding: 6px 14px 10px; }
 .sdr-dialog .sdr-workflow > :not([hidden]) { display: flex; align-items: center; justify-content: center; gap: 5px; min-height: 36px; padding: 3px; border: 1px solid #dbe5eb; border-radius: 7px; background: #fff; color: #526477; font-size: 12px; text-align: center; }
-.sdr-dialog[data-direction-available="true"] .sdr-workflow { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.sdr-dialog[data-direction-available="true"] .sdr-workflow { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.sdr-workflow [data-sdr-stage="diagnostics"] { position: relative; margin-inline-start: 6px; }
+.sdr-workflow [data-sdr-stage="diagnostics"]::before {
+  content: ""; position: absolute; inset-block: 0; inset-inline-start: -6px; width: 1px; background: #cbdbe2;
+}
 .sdr-workflow > * > span { display: grid; flex: 0 0 17px; height: 17px; place-items: center; border-radius: 50%; background: #e8eff3; color: #345368; font-size: 10px; }
-.sdr-dialog .sdr-workflow [aria-current="step"] { background: #145d75; border-color: #145d75; color: #fff; font-weight: 700; }
+.sdr-dialog .sdr-workflow :is([aria-current="step"], [aria-current="page"]) { background: #145d75; border-color: #145d75; color: #fff; font-weight: 700; }
 .sdr-dialog .sdr-workflow button:disabled { opacity: .65; }
 .sdr-dialog[data-search-compact="true"] .sdr-workflow { display: none; }
 .sdr-dialog[data-receiver-stage] .sdr-step,
@@ -391,16 +397,66 @@
 .sdr-readout-row [data-audio] { min-height: 44px; width: auto; padding: 4px 8px; font-size: 12px; white-space: nowrap; }
 .sdr-listening-level { display: flex; align-items: center; justify-content: flex-end; gap: 6px; margin: 0 0 6px; color: #526477; font-size: 11px; }
 .sdr-listening-level select { min-height: 32px; width: 90px; border: 1px solid #c7dce2; border-radius: 6px; padding: 3px 6px; background: #fff; color: #145d75; font: inherit; }
-.sdr-reception-diagnostic { margin: 0; padding: 0 12px; border: 1px solid #dce6eb; border-radius: 12px; background: #fff; font-size: 12px; color: #526477; }
-.sdr-reception-diagnostic summary { cursor: pointer; margin: 0; padding: 12px 0; min-height: 44px; box-sizing: border-box; font-size: 12px; font-weight: 650; color: #345368; }
-.sdr-dialog [data-diagnostic-section] { padding: 0; background: transparent; border: 0; }
-.sdr-reception-diagnostic[open] { padding-bottom: 12px; }
-.sdr-reception-diagnostic select { display: block; width: 100%; min-width: 0; min-height: 34px; margin-top: 6px; border: 1px solid #c7dce2; border-radius: 6px; padding: 4px; font: inherit; color: #145d75; background: #fff; }
+.sdr-diagnostics-pane { display: grid; gap: 10px; }
+.sdr-reception-diagnostic { min-width: 0; margin: 0; padding: 12px; border: 1px solid #dce6eb; border-radius: 12px; background: #fff; font-size: 12px; color: #526477; }
+.sdr-reception-diagnostic h3 { margin: 0 0 8px; font-size: 14px; color: #345368; }
 .sdr-reception-diagnostic .sdr-log-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; margin: 8px 0; }
 .sdr-dialog .sdr-bt-test { margin: 0; }
 .sdr-dialog .sdr-register-observation { min-height: 48px; font-size: 14px; }
-.sdr-reception-diagnostic > [data-bt-recording-tools] { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .sdr-reception-diagnostic button { min-height: 44px; padding: 6px; font-size: 12px; }
+.sdr-saved-log-list .sdr-log-actions { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.sdr-log-list {
+  --sdr-log-select-width: 40px;
+  --sdr-log-play-width: 60px;
+  --sdr-log-divider: #dce6eb;
+  max-height: clamp(166px, 42dvh, 420px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: 1px solid var(--sdr-log-divider);
+  border-radius: 8px;
+}
+.sdr-log-rows { list-style: none; padding: 0; margin: 0; }
+.sdr-log-heading, .sdr-log-row { display: grid; grid-template-columns: var(--sdr-log-select-width) minmax(0, 1fr) var(--sdr-log-play-width); }
+.sdr-log-heading { position: sticky; top: 0; z-index: 1; border-bottom: 1px solid var(--sdr-log-divider); background: #edf5f6; color: #345368; font-weight: 650; }
+.sdr-log-heading > :last-child { place-self: center; }
+.sdr-log-heading label { display: grid; min-height: 40px; cursor: pointer; }
+.sdr-log-heading > :nth-child(2), .sdr-log-row label > span {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 0;
+  padding: 6px 10px;
+  border-inline: 1px solid var(--sdr-log-divider);
+}
+.sdr-log-row + .sdr-log-row { border-top: 1px solid var(--sdr-log-divider); }
+.sdr-log-row label { grid-column: span 2; display: grid; grid-template-columns: var(--sdr-log-select-width) minmax(0, 1fr); min-height: 56px; cursor: pointer; }
+.sdr-log-list input[type="checkbox"] { place-self: center; inline-size: 17px; block-size: 17px; min-height: 0; margin: 0; padding: 0; accent-color: #145d75; }
+.sdr-log-row :is(strong, small) { display: block; overflow-wrap: anywhere; }
+.sdr-log-row strong { color: #345368; }
+.sdr-dialog .sdr-log-preview {
+  display: grid;
+  place-items: center;
+  place-self: center;
+  position: relative;
+  box-sizing: border-box;
+  inline-size: 44px;
+  block-size: 44px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+.sdr-log-preview::before {
+  content: "";
+  position: absolute;
+  inset: 4px;
+  border: 1px solid #d4e1e7;
+  border-radius: 8px;
+  background: #fff;
+}
+.sdr-dialog .sdr-log-preview:enabled:active { background: transparent; }
+.sdr-log-preview:enabled:active::before { background: #e4f0f3; }
+.sdr-log-preview svg { position: relative; width: 20px; height: 20px; }
+.sdr-saved-log-list audio { grid-column: 1 / -1; width: calc(100% - 16px); margin: 0 8px 8px; }
 .sdr-strength { padding: 8px; margin-bottom: 8px; border-radius: 6px; }
 .sdr-strength-heading { font-size: 13px; }
 .sdr-strength-bars { margin-top: 3px; }
@@ -471,6 +527,10 @@
   .sdr-dialog[data-receiver-stage="connection"] [data-receiver-selector] { grid-area: transport; }
   .sdr-dialog[data-receiver-stage="connection"] .sdr-connection-pane { grid-area: connection; min-width: 0; }
   .sdr-dialog[data-receiver-stage="connection"] .sdr-workflow-error { grid-area: error; }
+  .sdr-dialog[data-receiver-stage="diagnostics"] [data-receiver-selector]:not(:empty) {
+    width: min(100%, 230px); box-sizing: border-box; grid-template-columns: repeat(2, minmax(0, 1fr)); margin-bottom: 10px;
+  }
+  .sdr-diagnostics-pane { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; }
   .sdr-dialog :is(.sdr-footer, .sdr-receiver-footer):not([hidden]) {
     display: flex;
     align-items: center;
@@ -517,6 +577,8 @@
     border-inline-end: 1px solid #dce6eb;
   }
   .sdr-dialog > .sdr-workflow button { justify-content: flex-start; padding-inline: 7px; }
+  .sdr-workflow [data-sdr-stage="diagnostics"] { margin-inline-start: 0; margin-block-start: 8px; }
+  .sdr-workflow [data-sdr-stage="diagnostics"]::before { inset: -7px 0 auto; width: auto; height: 1px; }
   .sdr-dialog > .sdr-body { grid-area: body; }
   .sdr-dialog > :is(.sdr-footer, .sdr-receiver-footer) { grid-area: footer; min-width: 0; }
   .sdr-dialog:not([data-search-compact="true"]) .sdr-body {
@@ -549,7 +611,7 @@
   .sdr-dialog:not([data-search-compact="true"]) .sdr-workspace:not([hidden]) {
     display: contents;
   }
-  .sdr-dialog:not([data-receiver-stage="connection"]):not([data-search-compact="true"]) :is([data-settings-section], [data-bt-controls]):not([hidden]) {
+  .sdr-dialog:is([data-receiver-stage="setup"], [data-receiver-stage="monitor"]):not([data-search-compact="true"]) :is([data-settings-section], [data-bt-controls]):not([hidden]) {
     display: contents;
     margin: 0;
     padding: 0;
@@ -563,7 +625,7 @@
   .sdr-tuning-pane { grid-area: tuning; }
   .sdr-signal-pane { grid-area: signal; min-width: 0; }
   [data-usb-content]:has([data-settings-section][hidden]) > [data-result] { grid-column: 1 / -1; }
-  .sdr-diagnostics-pane { grid-area: diagnostics; min-width: 0; }
+  .sdr-monitor-help { grid-area: diagnostics; min-width: 0; }
   .sdr-dialog:not([data-search-compact="true"]) :is(.sdr-animals-pane, .sdr-tuning-pane) {
     min-width: 0;
     margin-bottom: 10px;
@@ -633,7 +695,7 @@
   .sdr-animals-pane { grid-area: animals; }
   .sdr-tuning-pane { grid-area: tuning; }
   .sdr-signal-pane { grid-area: signal; }
-  .sdr-diagnostics-pane { grid-area: diagnostics; }
+  .sdr-monitor-help { grid-area: diagnostics; }
   .sdr-dialog:not([data-search-compact="true"]) :is(.sdr-animals-pane, .sdr-tuning-pane) {
     min-width: 0;
     box-sizing: border-box;
@@ -646,13 +708,17 @@
   .sdr-tuning-pane { width: min(100%, 360px); justify-self: center; }
 }
 
-.sdr-dialog[data-receiver-stage="connection"] :is([data-settings-section], [data-bt-controls], .sdr-signal-pane, .sdr-diagnostics-pane, .sdr-footer, .sdr-receiver-footer),
+.sdr-dialog[data-receiver-stage="connection"] :is([data-settings-section], [data-bt-controls], .sdr-signal-pane, .sdr-footer, .sdr-receiver-footer),
 .sdr-dialog:is([data-receiver-stage="setup"], [data-receiver-stage="monitor"]) :is([data-receiver-selector], .sdr-connection-pane),
-.sdr-dialog[data-receiver-stage="setup"] :is(.sdr-signal-pane, .sdr-diagnostics-pane, [data-stop], [data-bt-target], .sdr-register-observation),
+.sdr-dialog[data-receiver-stage="setup"] :is(.sdr-signal-pane, [data-stop], [data-bt-target], .sdr-register-observation),
 .sdr-dialog[data-receiver-stage="monitor"] :is(.sdr-animals-pane, [data-bt-view]),
 .sdr-dialog[data-receiver-stage="monitor"][data-receiver-live="true"] [data-start] { display: none; }
 .sdr-dialog[data-receiver-stage="direction"] .sdr-body :is([data-receiver-selector], .sdr-workspace),
 .sdr-dialog[data-receiver-stage="direction"] > :is(.sdr-footer, .sdr-receiver-footer):not([hidden]) { display: none; }
+.sdr-dialog[data-receiver-stage="diagnostics"] .sdr-body { display: block; padding-top: 8px; }
+.sdr-dialog:not([data-receiver-stage="diagnostics"]) .sdr-diagnostics-pane,
+.sdr-dialog:not([data-receiver-stage="monitor"]) .sdr-monitor-help,
+.sdr-dialog[data-receiver-stage="diagnostics"] :is(.sdr-connection-pane, .sdr-signal-pane, [data-back], [data-settings-section], [data-bt-controls], .sdr-footer, .sdr-receiver-footer) { display: none; }
 .sdr-dialog[data-receiver-stage="monitor"]:not([data-transport="bluetooth"]):not([data-search-compact="true"]) .sdr-footer:not([hidden]) {
   display: flex;
   align-items: center;

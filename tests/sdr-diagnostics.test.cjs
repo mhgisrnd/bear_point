@@ -14,13 +14,20 @@ class Element {
   addEventListener(name, callback) { this.events[name] = callback; }
   append(...elements) { this.children.push(...elements); }
   appendChild(element) { this.append(element); }
-  replaceChildren() { this.children = []; }
+  replaceChildren(...elements) { this.children = elements; }
   showModal() { this.open = true; }
   close() { this.open = false; return this.events.close?.(); }
   async click() { if (!this.disabled) await this.events.click?.(); }
   async change(value) { this.value = value; await this.events.change?.(); }
 }
 const tick = () => new Promise(resolve => setImmediate(resolve));
+const archiveList = ui => ui.dialog.querySelector('[data-diagnostic-record]');
+const archiveCheck = (ui,index) => archiveList(ui).children[index].children[0].children[0];
+function checkArchive(ui,index=0) {
+  const checkbox=archiveCheck(ui,index);
+  checkbox.checked=true;
+  checkbox.events.change();
+}
 
 const animalCatalog = () => ({formatHz:hz=>String(hz/1e6),load:async()=>({notice:'',items:[
   {id:'1',code:'KF-110',frequencies:[{slot:'A',hz:148241500},{slot:'B',hz:149125000}]},
@@ -47,6 +54,56 @@ test('USB reception moves to the monitor stage without repeatedly scrolling',asy
   assert.equal(ui.dialog.dataset.receiverStage,'setup');
   await ui.dialog.querySelector('[data-sdr-stage="monitor"]').click();
   assert.equal(ui.dialog.dataset.receiverStage,'monitor');
+});
+
+test('header disconnect is available from the USB monitor and hides when the receiver disconnects',async()=>{
+  const ui=setup();
+  await ui.trigger.click();
+  const button=ui.dialog.querySelector('[data-header-disconnect]');
+  assert.equal(button.hidden,true);
+  ui.state.state='permissionPending';ui.emit();
+  assert.equal(button.hidden,true);
+  ui.state.state='connected';ui.device.connected=true;
+  ui.state.receptionState='receiving';
+  ui.state.reception={mode:'cw',frequencyHz:148241000,hasSamples:true,signalDbfs:-65,powerDbfs:-35};
+  ui.emit();
+  assert.equal(ui.dialog.dataset.receiverStage,'monitor');
+  assert.equal(button.hidden,false);
+  const closeDevice=ui.plugin.closeDevice;
+  let finishDisconnect,calls=0;
+  ui.plugin.closeDevice=async()=>{
+    calls++;
+    await new Promise(resolve=>{finishDisconnect=resolve;});
+    return closeDevice();
+  };
+  const pending=button.click();
+  assert.equal(button.disabled,true);
+  await button.click();
+  assert.equal(calls,1);
+  finishDisconnect();
+  await pending;
+  assert.equal(ui.dialog.dataset.receiverStage,'connection');
+  assert.equal(button.hidden,true);
+});
+
+test('header disconnect uses the active Bluetooth connection',async()=>{
+  let state='idle',onChange,calls=0;
+  const ui=setup(true,'injected',false,null,null,(_dialog,options)=>{
+    onChange=options.onChange;
+    return {updateUsb(){},onOpen(){},selected:()=>true,status:()=>({state}),canMonitor:()=>true,
+      disconnecting:()=>false,async disconnect(){calls++;state='idle';onChange();}};
+  });
+  await ui.trigger.click();
+  const button=ui.dialog.querySelector('[data-header-disconnect]');
+  state='connecting';onChange();
+  assert.equal(button.hidden,true);
+  state='connected';onChange();
+  assert.equal(ui.dialog.dataset.receiverStage,'setup');
+  assert.equal(button.hidden,false);
+  await button.click();
+  assert.equal(calls,1);
+  assert.equal(ui.dialog.dataset.receiverStage,'connection');
+  assert.equal(button.hidden,true);
 });
 
 test('CW detector uses directional power independently of confidence and keeps the target frequency',async()=>{
@@ -108,31 +165,51 @@ test('normal status does not open the receiver; scan notification selects the li
   assert.equal(ui.plugin.scans.length,0);assert.equal(ui.state.receptionState,'scanning');
 });
 
-test('saved diagnostics remain available without a receiver and sharing uses the selected archive',async()=>{
+test('USB archives can be saved and shared after disconnect without entering the monitor stage',async()=>{
   const ui=setup();await ui.trigger.click();await tick();
+  ui.state.state='connected';ui.device.connected=true;
+  ui.state.receptionState='receiving';
+  ui.state.reception={mode:'cw',frequencyHz:148241000,hasSamples:true,signalDbfs:-65,powerDbfs:-35};
   ui.state.diagnostic={state:'idle',records:[
     {id:'sdr-diagnostic-new',time:1730790000000,sizeBytes:20000000},
     {id:'sdr-diagnostic-old',time:1730780000000,sizeBytes:19000000}
   ]};ui.emit();
+  assert.equal(ui.dialog.dataset.receiverStage,'monitor');
+  const diagnostics=ui.dialog.querySelector('[data-sdr-stage="diagnostics"]');
+  await diagnostics.click();
+  assert.equal(ui.dialog.dataset.receiverStage,'diagnostics');
+  assert.equal(ui.dialog.querySelector('[data-diagnostic-start]').disabled,false);
+  ui.state.state='idle';ui.device.connected=false;ui.emit();
+  assert.equal(ui.dialog.dataset.receiverStage,'diagnostics','disconnect leaves the separate tab open');
+  assert.equal(ui.dialog.querySelector('[data-diagnostic-start]').disabled,true,'a stale receive snapshot must not enable recording');
+  assert.equal(ui.dialog.querySelector('[data-diagnostic-compare]').disabled,true);
+  assert.equal(ui.window.SdrDiagnostics.handleBackNavigation(),true);
   assert.equal(ui.dialog.dataset.receiverStage,'connection');
   const monitor=ui.dialog.querySelector('[data-sdr-stage="monitor"]');
-  assert.equal(monitor.disabled,false);
+  assert.equal(monitor.disabled,true);
   await monitor.click();
-  assert.equal(ui.dialog.dataset.receiverStage,'monitor');
-  const section=ui.dialog.querySelector('[data-diagnostic-section]'),select=ui.dialog.querySelector('[data-diagnostic-record]');
-  assert.equal(section.hidden,false);assert.equal(select.children.length,2);
+  assert.equal(ui.dialog.dataset.receiverStage,'connection');
+  await diagnostics.click();
+  assert.equal(ui.dialog.dataset.receiverStage,'diagnostics');
+  const select=ui.dialog.querySelector('[data-diagnostic-record]');
+  assert.equal(select.children.length,2);
   assert.equal(ui.dialog.querySelector('[data-result]').hidden,true);
   assert.equal(ui.dialog.querySelector('[data-diagnostic-start]').disabled,true);
-  assert.equal(ui.dialog.querySelector('[data-diagnostic-share]').disabled,false);
-  await select.change('sdr-diagnostic-old');ui.emit();
-  assert.equal(select.value,'sdr-diagnostic-old','status refresh must preserve the archive selection');
+  assert.equal(ui.dialog.querySelector('[data-diagnostic-share]').disabled,true);
+  checkArchive(ui,1);ui.emit();
+  assert.equal(archiveCheck(ui,1).checked,true,'status refresh must preserve the archive selection');
   await ui.dialog.querySelector('[data-diagnostic-share]').click();await tick();
   assert.equal(ui.plugin.sharedId,'sdr-diagnostic-old');
+  ui.plugin.saveDiagnostic=async ({id})=>{ui.plugin.savedId=id;};
+  ui.emit();
+  await ui.dialog.querySelector('[data-diagnostic-save]').click();
+  assert.equal(ui.plugin.savedId,'sdr-diagnostic-old');
+  assert.equal(ui.window.SdrDiagnostics.handleBackNavigation(),true);
+  assert.equal(ui.dialog.dataset.receiverStage,'connection');
+  assert.equal(ui.dialog.open,true);
 });
 test('USB remains at connection until the receiver is ready',async()=>{
   const ui=setup();await ui.trigger.click();await tick();
-  const section=ui.dialog.querySelector('[data-diagnostic-section]');
-  assert.equal(section.hidden,false);
   assert.equal(ui.dialog.dataset.receiverStage,'connection');
   assert.equal(ui.dialog.querySelector('[data-diagnostic-start]').disabled,true);
   assert.equal(ui.dialog.querySelector('[data-diagnostic-share]').disabled,true);
@@ -148,15 +225,121 @@ test('USB remains at connection until the receiver is ready',async()=>{
   assert.equal(ui.dialog.querySelector('.sdr-status').hidden,false);
 });
 
+test('saved USB audio opens from its row without checking it and leaving diagnostics stops playback',async()=>{
+  const ui=setup();
+  ui.capacitor.convertFileSrc=uri=>`web:${uri}`;
+  let requestedId,played=0,paused=0;
+  ui.plugin.getDiagnosticAudio=async({id})=>{requestedId=id;return {uri:'file:///preview.wav'};};
+  await ui.trigger.click();
+  await ui.dialog.querySelector('[data-sdr-stage="diagnostics"]').click();
+  ui.state.diagnostic={state:'idle',records:[
+    {id:'audio',time:1730790000000,sizeBytes:20e6,hasAudio:true},
+    {id:'comparison',time:1730780000000,sizeBytes:25e6,comparison:true,hasAudio:false}
+  ]};
+  ui.emit();
+  const button=archiveList(ui).children[0].children[1];
+  const player=ui.dialog.querySelector('[data-diagnostic-player]');
+  player.play=async()=>{played++;};
+  player.pause=()=>{paused++;};
+  player.hasAttribute=key=>key==='src' && !!player.src;
+  player.removeAttribute=()=>{delete player.src;};
+  player.load=()=>{};
+  assert.equal(button.disabled,false);
+  await button.click();
+  assert.equal(requestedId,'audio');
+  assert.equal(played,1);
+  assert.equal(player.hidden,false);
+  assert.equal(player.src,'web:file:///preview.wav');
+  assert.equal(archiveCheck(ui,0).checked,false);
+  assert.equal(archiveList(ui).children[1].children[1].disabled,true);
+  ui.window.SdrDiagnostics.handleBackNavigation();
+  assert.equal(paused,1);
+  assert.equal(player.hidden,true);
+});
+
+test('USB manual recording stop is separate from its comparison diagnostic',async()=>{
+  const ui=setup();
+  let stopped=0;
+  ui.plugin.stopDiagnostic=async()=>{stopped++;ui.state.diagnostic.state='packaging';ui.emit();};
+  await ui.trigger.click();
+  ui.state.state='connected';ui.device.connected=true;
+  ui.state.diagnostic={state:'recording',records:[]};ui.emit();
+  const button=ui.dialog.querySelector('[data-diagnostic-stop]');
+  assert.equal(button.disabled,false);
+  await button.click();
+  assert.equal(stopped,1);
+  assert.equal(button.disabled,true);
+  ui.state.diagnostic={state:'recording',comparison:{active:true},records:[]};ui.emit();
+  assert.equal(button.disabled,true);
+});
+
+test('USB diagnostic plots the recorded audio and displays elapsed time',async()=>{
+  const ui=setup();
+  await ui.trigger.click();
+  let points;
+  ui.dialog.querySelector('[data-diagnostic-audio-line]').setAttribute=(name,value)=>{if(name==='points')points=value;};
+  ui.state.diagnostic={state:'recording',recordedElapsedMs:1200,recordingDurationMs:10000,audioIntervalMs:100,
+    audioPeaks:[0,32768,-1,16384]};
+  ui.emit();
+  const progress=ui.dialog.querySelector('[data-diagnostic-progress]');
+  assert.equal(progress.hidden,false);
+  assert.equal(progress.value,1200);
+  assert.equal(progress.max,10000);
+  assert.match(ui.dialog.querySelector('[data-diagnostic-audio-level]').textContent,/1\.2 \/ 10초.*-6\.0 dBFS/);
+  assert.match(points,/^0,85 3,5 9,/);
+  ui.state.diagnostic.state='ready';ui.emit();
+  assert.equal(progress.hidden,true);
+  assert.match(points,/^0,85 3,5 9,/);
+});
+
+test('checked USB rows are exported together and removed by one confirmation',async()=>{
+  const ui=setup();
+  const deleted=[];
+  ui.plugin.shareDiagnostic=async options=>{ui.plugin.sharedIds=Array.from(options.ids);};
+  ui.plugin.saveDiagnostic=async options=>{ui.plugin.savedIds=Array.from(options.ids);};
+  ui.plugin.deleteDiagnostic=async({id})=>{deleted.push(id);ui.state.diagnostic.records=ui.state.diagnostic.records.filter(row=>row.id!==id);};
+  await ui.trigger.click();
+  ui.state.diagnostic={state:'idle',records:[
+    {id:'new',time:1730790000000,sizeBytes:20e6},
+    {id:'old',time:1730780000000,sizeBytes:25e6}
+  ]};
+  ui.emit();
+  const selectAll=ui.dialog.querySelector('[data-diagnostic-select-all]');
+  assert.equal(selectAll.disabled,false);
+  assert.equal(selectAll.checked,false);
+  checkArchive(ui,0);
+  assert.equal(selectAll.indeterminate,true);
+  selectAll.checked=true;selectAll.events.change();
+  assert.equal(selectAll.indeterminate,false);
+  assert.equal(archiveCheck(ui,1).checked,true);
+  await ui.dialog.querySelector('[data-diagnostic-share]').click();
+  await ui.dialog.querySelector('[data-diagnostic-save]').click();
+  assert.deepEqual(ui.plugin.sharedIds,['new','old']);
+  assert.deepEqual(ui.plugin.savedIds,['new','old']);
+  selectAll.checked=false;selectAll.events.change();
+  assert.equal(archiveCheck(ui,0).checked,false);
+  assert.equal(archiveCheck(ui,1).checked,false);
+  assert.equal(ui.dialog.querySelector('[data-diagnostic-delete]').disabled,true);
+  selectAll.checked=true;selectAll.events.change();
+  let confirmations=0;
+  ui.window.confirm=()=>{confirmations++;return true;};
+  await ui.dialog.querySelector('[data-diagnostic-delete]').click();
+  assert.equal(confirmations,1);
+  assert.deepEqual(deleted,['new','old']);
+  assert.equal(archiveList(ui).hidden,true);
+  assert.equal(selectAll.disabled,true);
+});
+
 test('selected diagnostic deletion confirms, cancels and refreshes without requiring a USB receiver',async()=>{
   const ui=setup();await ui.trigger.click();await tick();
   ui.state.diagnostic={state:'ready',records:[{id:'new',time:1730790000000,sizeBytes:20e6},{id:'old',time:1730780000000,sizeBytes:19e6}]};
   const deleted=[];ui.plugin.deleteDiagnostic=async({id})=>{deleted.push(id);ui.state.diagnostic.records=ui.state.diagnostic.records.filter(r=>r.id!==id);if(!ui.state.diagnostic.records.length)ui.state.diagnostic.state='idle';};
   ui.emit();const select=ui.dialog.querySelector('[data-diagnostic-record]'),button=ui.dialog.querySelector('[data-diagnostic-delete]');
-  select.value='old';let prompt='';ui.window.confirm=text=>{prompt=text;return false;};
+  checkArchive(ui,1);let prompt='';ui.window.confirm=text=>{prompt=text;return false;};
   await button.click();assert.equal(deleted.length,0);assert.match(prompt,/삭제.*복구/s);
   ui.window.confirm=()=>true;await button.click();await tick();assert.deepEqual(deleted,['old']);
-  assert.equal(select.children.length,1);assert.equal(select.value,'new');
+  assert.equal(select.children.length,1);assert.equal(archiveCheck(ui,0).checked,false);
+  checkArchive(ui);
   await button.click();await tick();assert.deepEqual(deleted,['old','new']);assert.equal(button.disabled,true);
   assert.equal(ui.dialog.querySelector('[data-diagnostic-share]').disabled,true);
   assert.equal(ui.counts().openCount,0);assert.equal(ui.plugin.starts.length,0);
@@ -164,11 +347,12 @@ test('selected diagnostic deletion confirms, cancels and refreshes without requi
 
 test('diagnostic deletion is disabled while recording and failure preserves the selected record',async()=>{
   const ui=setup();await ui.trigger.click();await tick();
-  ui.state.diagnostic={state:'recording',records:[{id:'keep',time:1730790000000,sizeBytes:20e6}]};
+  ui.state.diagnostic={state:'idle',records:[{id:'keep',time:1730790000000,sizeBytes:20e6}]};
   ui.plugin.deleteDiagnostic=async()=>{throw Error('삭제 실패');};ui.window.confirm=()=>true;ui.emit();
+  checkArchive(ui);ui.state.diagnostic.state='recording';ui.emit();
   const button=ui.dialog.querySelector('[data-diagnostic-delete]');assert.equal(button.disabled,true);
   ui.state.diagnostic.state='idle';ui.emit();await button.click();await tick();
-  assert.equal(ui.state.diagnostic.records.length,1);assert.equal(ui.dialog.querySelector('[data-diagnostic-record]').value,'keep');
+  assert.equal(ui.state.diagnostic.records.length,1);assert.equal(archiveCheck(ui,0).checked,true);
   assert.equal(button.disabled,false);
 });
 
@@ -176,7 +360,8 @@ test('a recorder overflow is shown as partial while sharing and live reception r
   const ui=setup();ui.device.hasPermission=true;
   await ui.trigger.click();await ui.button().click();await tick();
   ui.state.receptionState='receiving';ui.state.reception={mode:'cw',frequencyHz:148229000,listenFrequencyHz:148241000};
-  ui.state.diagnostic={state:'ready',writerDroppedBlocks:1};ui.emit();
+  ui.state.diagnostic={state:'ready',writerDroppedBlocks:1,records:[{id:'partial',time:1730790000000,sizeBytes:1234}]};ui.emit();
+  checkArchive(ui);
   assert.match(ui.dialog.querySelector('[data-diagnostic-status]').textContent,/일부만 기록/);
   assert.equal(ui.dialog.querySelector('[data-diagnostic-share]').disabled,false);
   assert.equal(ui.state.receptionState,'receiving');assert.equal(ui.plugin.starts.length,0);
@@ -210,7 +395,8 @@ test('live listening gain does not retune or alter measured RF strength; local c
   assert.equal(record.disabled,false);assert.equal(share.disabled,true);
   await record.click();await tick();assert.equal(gain.disabled,true);assert.equal(record.disabled,true);
   assert.equal(ui.plugin.shared,undefined);
-  ui.state.diagnostic={state:'ready',iqBytes:20480000};ui.emit();
+  ui.state.diagnostic={state:'ready',iqBytes:20480000,records:[{id:'recorded',time:1730790000000,sizeBytes:20480000}]};ui.emit();
+  checkArchive(ui);
   assert.equal(gain.disabled,false);assert.equal(share.disabled,false);
   await share.click();await tick();assert.equal(ui.plugin.shared,1);
   await ui.plugin.stopReception();assert.equal(record.disabled,true);
@@ -427,7 +613,9 @@ function setup(android = true, bridgeMode = 'injected', listenerAsync = false, c
   if (receiverMount) appWindow.BearIcR30 = { mount: receiverMount };
   if (storage) appWindow.localStorage = storage;
   if (catalog) appWindow.BearSdrAnimals = catalog;
-  vm.runInNewContext(fs.readFileSync('public/js/sdr/frequency-controls.js', 'utf8') + '\n' + spectrumSource + '\n' + source, {
+  vm.runInNewContext(fs.readFileSync('public/js/sdr/frequency-controls.js', 'utf8') + '\n' + spectrumSource + '\n' +
+    fs.readFileSync('public/js/sdr/diagnostic-logs.js', 'utf8') + '\n' +
+    fs.readFileSync('public/js/sdr/diagnostic-trace.js', 'utf8') + '\n' + source, {
     document: { getElementById: () => trigger, createElement: () => new Element(), body },
     window: appWindow, console
   });
@@ -1502,12 +1690,48 @@ test('a USB adjustment outside the live tuning range resumes automatically with 
   ui.state.reception = { mode: 'cw', listenFrequencyHz: 148241000, hasSamples: true, powerDbfs: -55 };
   ui.state.audio = { enabled: false, volume: 0.5 };
   ui.emit();
+  const body=ui.dialog.querySelector('.sdr-body');
+  body.scrollTop=147;
+  let revealed=0;
+  node('result').scrollIntoView=()=>{revealed++;};
   ui.plugin.retuneReception = async () => ({ retuned: false });
   await node('freq-up="10000"').click();
   assert.equal(ui.plugin.starts.length, 2);
   assert.equal(ui.plugin.starts[1].frequencyHz, 148251000);
   assert.equal(ui.plugin.starts[1].audioEnabled, false);
   assert.equal(ui.plugin.starts[1].audioVolume, 0.5);
+  ui.state.receptionState='receiving';ui.emit();
+  assert.equal(ui.dialog.dataset.receiverStage,'monitor');
+  assert.equal(body.scrollTop,147);
+  assert.equal(revealed,0);
+});
+
+test('editing the live USB frequency from setup keeps the stage and scroll position on restart', async () => {
+  const ui=setup();ui.device.hasPermission=true;
+  await ui.trigger.click();await ui.button().click();
+  const node=key=>ui.dialog.querySelector(`[data-${key}]`);
+  await node('start').click();
+  ui.state.receptionState='receiving';
+  ui.state.reception={mode:'cw',listenFrequencyHz:150000000,hasSamples:true,powerDbfs:-55};
+  ui.emit();
+  await node('sdr-stage="setup"').click();
+  const body=ui.dialog.querySelector('.sdr-body');
+  body.scrollTop=126;
+  node('result').scrollIntoView=()=>assert.fail('Retuning should not scroll to the result');
+  ui.plugin.retuneReception=async()=>({retuned:false});
+  ui.plugin.stopReception=async()=>{
+    ui.state.receptionState='idle';
+    ui.state.reception={};
+    ui.state.fixedResultAvailable=false;
+    ui.emit();
+  };
+  await node('frequency-edit').click();
+  node('frequency-draft').value='148.40000';
+  await node('frequency-edit').click();
+  ui.state.receptionState='receiving';ui.emit();
+  assert.equal(ui.plugin.starts.at(-1).frequencyHz,148400000);
+  assert.equal(ui.dialog.dataset.receiverStage,'setup');
+  assert.equal(body.scrollTop,126);
 });
 
 

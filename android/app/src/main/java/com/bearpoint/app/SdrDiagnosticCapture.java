@@ -15,9 +15,12 @@ import java.util.concurrent.atomic.AtomicLong;
 
 /** Bounded local capture of existing IQ/PCM buffers. Failures never stop reception. */
 final class SdrDiagnosticCapture {
+    private static final int AUDIO_SAMPLE_RATE = 48000;
     private final Runnable changed;
     private final long durationMs;
     private final long limit;
+    private final SdrRecordedAudioPeaks audioPeaks;
+    private long recordedElapsedMs;
     private final ExecutorService packager = Executors.newSingleThreadExecutor();
     private volatile String state = "idle", error = "", path = "";
     private volatile long bytes, omitted;
@@ -34,8 +37,8 @@ final class SdrDiagnosticCapture {
     private final ArrayDeque<String[]> recent = new ArrayDeque<>();
     private File[] roots = new File[0];
     static final class Saved {
-        final String id; final File file; final long size, time; final boolean comparison;
-        Saved(File file,boolean comparison) { this.comparison=comparison;this.file=file;id=file.getParentFile().getName();size=file.length();time=file.lastModified(); }
+        final String id; final File file; final long size, time; final boolean comparison, hasAudio;
+        Saved(File file,boolean comparison,boolean hasAudio) { this.comparison=comparison;this.hasAudio=hasAudio;this.file=file;id=file.getParentFile().getName();size=file.length();time=file.lastModified(); }
     }
     private volatile Saved[] saved = new Saved[0];
     Saved[] saved() { return saved; }
@@ -48,7 +51,9 @@ final class SdrDiagnosticCapture {
             for(File folder:folders) {
                 File archive=new File(folder,"sdr-diagnostic.zip");
                 if(archive.isFile()&&archive.length()>0)try(ZipFile zip=new ZipFile(archive)) {
-                    if(zip.getEntry("metadata.json")!=null&&(zip.getEntry("samples.cu8")!=null||zip.getEntry("comparison.json")!=null))found.add(new Saved(archive,zip.getEntry("comparison.json")!=null));
+                    ZipEntry audio = zip.getEntry("received-audio.wav");
+                    if(zip.getEntry("metadata.json")!=null&&(zip.getEntry("samples.cu8")!=null||zip.getEntry("comparison.json")!=null))
+                        found.add(new Saved(archive,zip.getEntry("comparison.json")!=null,audio!=null && audio.getSize()>44));
                 }catch(IOException ignored){}
             }
         }
@@ -85,11 +90,24 @@ final class SdrDiagnosticCapture {
     SdrDiagnosticCapture(Runnable changed) { this(changed, 10000, 50L * 1024 * 1024); }
     SdrDiagnosticCapture(Runnable changed, long durationMs, long limit) {
         this.changed = changed; this.durationMs = durationMs; this.limit = limit;
+        audioPeaks = new SdrRecordedAudioPeaks(AUDIO_SAMPLE_RATE, durationMs);
     }
     String state() { return state; }
     String error() { return error; }
     long bytes() { return bytes; }
     long omitted() { return omitted; }
+    static final class AudioTrace {
+        final long elapsedMs, durationMs;
+        final int[] peaks;
+        AudioTrace(long elapsedMs, long durationMs, int[] peaks) {
+            this.elapsedMs = elapsedMs;
+            this.durationMs = durationMs;
+            this.peaks = peaks;
+        }
+    }
+    synchronized AudioTrace audioTrace() {
+        return new AudioTrace(recordedElapsedMs, durationMs, audioPeaks.snapshot());
+    }
     synchronized File readyFile() {
         if (!"ready".equals(state)) throw new IllegalStateException("진단 기록이 아직 준비되지 않았습니다.");
         return new File(path);
@@ -101,6 +119,8 @@ final class SdrDiagnosticCapture {
         directory = new File(cache,"sdr-diagnostic-" + UUID.randomUUID());
         if (!directory.mkdirs()) throw new IOException("진단 기록 저장 공간을 만들지 못했습니다.");
         bytes = omitted = usbBytes = audioSamples = 0;writeMs=0;sampleRate=0;firstAudioOffset = -1; path = error = "";
+        recordedElapsedMs = 0;
+        audioPeaks.reset();
         writerDroppedBytes.set(0);writerDroppedBlocks.set(0);
         state = "waiting"; changed.run();
     }
@@ -134,12 +154,16 @@ final class SdrDiagnosticCapture {
                 byte[] raw=new byte[count];for(int i=0;i<count;i++)raw[i]=(byte)Math.round(values[i+7]*127.5+127.5);iq.write(raw);
             }
             bytes += count; omitted += received-count;
+            recordedElapsedMs = Math.max(recordedElapsedMs, Math.min(durationMs, now - started));
             if (audio != null && audio.length>0) {
                 if (firstAudioOffset<0) firstAudioOffset=usbBytes;
                 byte[] data = new byte[audio.length*2];
-                for (int i=0;i<audio.length;i++) { data[i*2]=(byte)audio[i]; data[i*2+1]=(byte)(audio[i]>>8); }
+                for (int i=0;i<audio.length;i++) {
+                    data[i*2]=(byte)audio[i]; data[i*2+1]=(byte)(audio[i]>>8);
+                }
                 pcm.write(data);
                 audioSamples+=audio.length;
+                audioPeaks.append(audio, 0, audio.length);
             }
             usbBytes += received;
             writeMs+=(System.nanoTime()-writeBegan)/1e6;
@@ -220,22 +244,12 @@ final class SdrDiagnosticCapture {
                 }
                 File audio=new File(folder,"audio.s16le");
                 zip.putNextEntry(new ZipEntry("received-audio.wav"));
-                byte[] header=new byte[44];
-                ascii(header,0,"RIFF");le(header,4,audio.length()+36,4);ascii(header,8,"WAVEfmt ");
-                le(header,16,16,4);le(header,20,1,2);le(header,22,1,2);le(header,24,48000,4);
-                le(header,28,96000,4);le(header,32,2,2);le(header,34,16,2);ascii(header,36,"data");le(header,40,audio.length(),4);
-                zip.write(header);copy(audio,zip);zip.closeEntry();
+                zip.write(SdrPcmWave.mono16Header(AUDIO_SAMPLE_RATE,audio.length()));copy(audio,zip);zip.closeEntry();
             }
             if(!partial.renameTo(archive))throw new IOException("진단 파일 저장을 마무리하지 못했습니다.");
             for (String name:new String[]{"metadata.json","blocks.csv","samples.cu8","audio.s16le","telemetry.jsonl"}) new File(folder,name).delete();
             synchronized(this) {path=archive.getAbsolutePath();refreshSaved();state="ready";}changed.run();
         } catch (Exception failure) { synchronized(this) { fail(failure); } }
-    }
-    private static void ascii(byte[] target,int offset,String text) {
-        byte[] bytes=text.getBytes(StandardCharsets.US_ASCII);System.arraycopy(bytes,0,target,offset,bytes.length);
-    }
-    private static void le(byte[] target,int offset,long value,int length) {
-        for(int i=0;i<length;i++)target[offset+i]=(byte)(value>>(i*8));
     }
     private static void copy(File file,OutputStream output) throws IOException {
         try(InputStream input=new FileInputStream(file)) { byte[] buffer=new byte[65536];int n;while((n=input.read(buffer))!=-1)output.write(buffer,0,n); }

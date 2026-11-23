@@ -6,9 +6,6 @@ import java.io.IOException;
 import java.io.FileOutputStream;
 import java.io.OutputStreamWriter;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayDeque;
-import java.util.ArrayList;
-import java.util.List;
 
 final class IcR30TestRecording {
     static final long LIMIT_MS = 10000;
@@ -18,10 +15,9 @@ final class IcR30TestRecording {
     private int errors;
     private long pollsStarted;
     private boolean pollPending;
-    private long started, lastSample, intervals, maxInterval, count, marks;
+    private long started, lastSample, intervals, maxInterval, count;
     private int min, max, changes, previous;
     private String reason = "";
-    private final ArrayDeque<long[]> recent = new ArrayDeque<>();
 
     synchronized void start(File file, long elapsed) throws IOException {
         start(file, elapsed, System.currentTimeMillis(), "{}");
@@ -42,11 +38,10 @@ final class IcR30TestRecording {
         } catch(IOException error) { writer=null;opened.close();throw error; }
         started = elapsed;
         startedUnix = unix;errors = 0;pollsStarted=0;pollPending=false;
-        lastSample = intervals = maxInterval = count = marks = 0;
+        lastSample = intervals = maxInterval = count = 0;
         min = 255;
         max = changes = previous = 0;
         reason = "";
-        recent.clear();
         try { event("start",unix,elapsed,context); }
         catch(IOException error) { writer=null;opened.close();events.close();events=null;throw error; }
     }
@@ -75,16 +70,7 @@ final class IcR30TestRecording {
         max = Math.max(max, value);
         previous = value;
         lastSample = elapsed;
-        recent.addLast(new long[]{elapsed - started, value});
-        if (recent.size() > 100) recent.removeFirst();
         event("sample",unix,elapsed,"{\"sample_index\":"+count+",\"smeter_raw\":"+value+",\"s_label_exact\":"+quote(sLabel(value))+"}");
-    }
-
-    synchronized void mark(long unix, long elapsed) throws IOException {
-        if (!active()) throw new IOException("S-Meter 테스트를 먼저 시작하세요.");
-        writer.write("heard," + unix + "," + (elapsed - started) + ",,,,,,,manual\n");
-        writer.flush();
-        marks++;
     }
 
     synchronized void stop(String why) throws IOException {
@@ -98,7 +84,7 @@ final class IcR30TestRecording {
         try {
             closing.write("stop,,,,,,,,," + why + "\n");
             event("stop",unix,elapsed,"{\"reason\":"+quote(why)+",\"started_unix_ms\":"+startedUnix+
-                ",\"samples\":"+count+",\"poll_errors\":"+errors+",\"manual_heard_marks\":"+marks+
+                ",\"samples\":"+count+",\"poll_errors\":"+errors+
                 ",\"polls_started_during_capture\":"+pollsStarted+",\"poll_pending_at_stop\":"+pollPending+
                 ",\"minimum_raw\":"+min()+",\"maximum_raw\":"+max+",\"mean_interval_ms\":"+meanInterval()+",\"max_interval_ms\":"+maxInterval+"}");
         } finally {
@@ -138,7 +124,6 @@ final class IcR30TestRecording {
     }
 
     synchronized long count() { return count; }
-    synchronized long marks() { return marks; }
     synchronized int min() { return count == 0 ? 0 : min; }
     synchronized int max() { return max; }
     synchronized int changes() { return changes; }
@@ -149,5 +134,4 @@ final class IcR30TestRecording {
         if (!active() && "time_limit".equals(reason)) return LIMIT_MS;
         return count == 0 && !active() ? 0 : Math.max(0, (active() ? elapsed : lastSample) - started);
     }
-    synchronized List<long[]> recent() { return new ArrayList<>(recent); }
 }

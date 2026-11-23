@@ -98,4 +98,48 @@ public class IcR30LogStoreTest {
         }
         store.delete(csv.getName());assertFalse(new File(csv.getPath()+".jsonl").exists());assertEquals(0,store.list().size());
     }
+    @Test public void wavAudioIsExportedAndDeletedWithItsRecord() throws Exception {
+        IcR30LogStore store = new IcR30LogStore(folder.getRoot());
+        File csv = store.create();
+        File wave = store.audioPath(csv);
+        IcR30TestAudio audio = new IcR30TestAudio();
+        audio.append(new short[]{99, 0x1234, -2, 99}, 1, 2);
+        assertEquals(2, audio.save(wave));
+        try (ZipFile zip = new ZipFile(store.archive(csv.getName()))) {
+            byte[] data = read(zip, "received-audio.wav");
+            java.nio.ByteBuffer header = java.nio.ByteBuffer.wrap(data).order(java.nio.ByteOrder.LITTLE_ENDIAN);
+            assertEquals("RIFF", new String(data, 0, 4, StandardCharsets.US_ASCII));
+            assertEquals(48000, header.getInt(24));
+            assertEquals(4, header.getInt(40));
+            assertEquals((short) 0x1234, header.getShort(44));
+            assertEquals((short) -2, header.getShort(46));
+            String metadata = new String(read(zip, "metadata.json"), StandardCharsets.UTF_8);
+            assertTrue(metadata.contains("\"contains_audio\":true"));
+            assertTrue(metadata.contains("\"audio_file\":\"received-audio.wav\""));
+        }
+        store.delete(csv.getName());
+        assertFalse(wave.exists());
+    }
+    @Test public void audioCaptureIsLimitedToTenSecondsAndEmptyCaptureHasNoWave() throws Exception {
+        IcR30LogStore store = new IcR30LogStore(folder.getRoot());
+        File wave = store.audioPath(store.create());
+        assertEquals(0, new IcR30TestAudio().save(wave));
+        assertFalse(wave.exists());
+        IcR30TestAudio audio = new IcR30TestAudio();
+        short[] samples = new short[480010];
+        audio.append(samples, 0, samples.length);
+        assertEquals(480000, audio.save(wave));
+        assertEquals(960044, wave.length());
+    }
+    @Test public void audioTraceCapturesShortPeaksAtFixedPcmSampleOffsets() {
+        IcR30TestAudio recording = new IcR30TestAudio();
+        short[] pcm = new short[4800 * 4];
+        pcm[4799] = -300;
+        pcm[4801] = 5000;
+        pcm[9602] = Short.MIN_VALUE;
+        recording.append(pcm, 0, 4801);
+        assertArrayEquals(new int[]{300, 0}, recording.peaks());
+        recording.append(pcm, 4801, pcm.length - 4801);
+        assertArrayEquals(new int[]{300, 5000, 32768, 0}, recording.peaks());
+    }
 }

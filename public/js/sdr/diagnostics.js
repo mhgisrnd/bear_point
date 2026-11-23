@@ -6,12 +6,13 @@
   dialog.className = "sdr-dialog";
   dialog.setAttribute("aria-labelledby", "sdr-title");
   dialog.innerHTML = `
-    <div class="sdr-header"><div class="sdr-title-group"><h2 id="sdr-title">수신기</h2></div><button type="button" data-back hidden aria-label="탐색 재개">‹ 탐색</button><button type="button" data-close aria-label="수신기 닫기">×</button></div>
+    <div class="sdr-header"><div class="sdr-title-group"><h2 id="sdr-title">수신기</h2></div><button type="button" data-back hidden aria-label="탐색 재개">‹ 탐색</button><button type="button" data-header-disconnect hidden>연결 해제</button><button type="button" data-close aria-label="수신기 닫기">×</button></div>
     <nav class="sdr-workflow" aria-label="수신 단계">
       <button type="button" data-sdr-stage="connection"><span>1</span>연결</button>
       <button type="button" data-sdr-stage="setup"><span>2</span>개체·주파수</button>
       <button type="button" data-sdr-stage="monitor"><span>3</span>수신</button>
       <button type="button" data-sdr-stage="direction" hidden><span>4</span>방향 실험</button>
+      <button type="button" data-sdr-stage="diagnostics">수신 진단</button>
     </nav>
     <div class="sdr-body">
     <div data-receiver-selector class="sdr-operation" role="group" aria-label="수신기 연결 방식"></div>
@@ -120,9 +121,26 @@
       <p data-spectrum-info class="sdr-note" hidden></p>
       </div>
     </section>
-    <section data-diagnostic-section class="sdr-section sdr-diagnostics-pane">
-      <details class="sdr-reception-diagnostic" aria-label="USB 수신 진단 로그"><summary>수신 진단 · 저장된 로그</summary><div class="sdr-log-actions"><button type="button" data-diagnostic-start class="sdr-primary" disabled>10초 기록</button><button type="button" data-diagnostic-compare>수신 비교 진단</button><button type="button" data-diagnostic-share disabled>파일 공유</button><button type="button" data-diagnostic-delete class="sdr-danger" disabled>선택 삭제</button></div><p class="sdr-note">CW 수신 중 10초 기록 또는 약 2분 비교 진단을 실행합니다. 비교 중에는 위치와 안테나 방향을 유지하세요. 저장된 로그는 연결 없이 공유·삭제할 수 있습니다.</p><select data-diagnostic-record aria-label="저장된 수신 진단 기록" hidden></select><p data-diagnostic-status class="sdr-note" role="status">저장된 기록 없음 · CW 수신을 시작한 뒤 기록하세요.</p></details>
-    </section>
+    <div data-diagnostic-section class="sdr-diagnostics-pane">
+      <section class="sdr-reception-diagnostic">
+        <h3>수신 진단</h3>
+        <div class="sdr-log-actions"><button type="button" data-diagnostic-start class="sdr-primary" disabled>10초 기록</button><button type="button" data-diagnostic-stop disabled>기록 종료</button></div>
+        <p class="sdr-note">CW 수신 중 수신음, 신호 세기, 원본 I/Q를 10초간 기록합니다.</p>
+        <p data-diagnostic-status class="sdr-note" role="status">기록 대기</p>
+        ${window.BearSdrDiagnosticTrace.markup("diagnostic")}
+        <details class="sdr-help"><summary>고급 진단</summary>
+          <p>RTL-SDR의 감도와 샘플레이트 등을 바꿔 약 2분간 비교합니다. 위치와 안테나 방향을 유지하세요.</p>
+          <button type="button" data-diagnostic-compare disabled>수신 비교 진단</button>
+        </details>
+      </section>
+      <section class="sdr-reception-diagnostic sdr-saved-log-list">
+        <h3>USB 저장된 로그</h3>
+        <p data-diagnostic-saved-status class="sdr-note" role="status">저장된 기록 없음</p>
+        <div class="sdr-log-actions"><button type="button" data-diagnostic-save disabled>파일 저장</button><button type="button" data-diagnostic-share disabled>파일 공유</button><button type="button" data-diagnostic-delete class="sdr-danger" disabled>선택 삭제</button></div>
+        ${window.BearSdrLogs.markup("diagnostic", "저장된 USB 수신 진단 기록")}
+        <audio data-diagnostic-player controls preload="none" aria-label="저장된 USB 수신음" hidden></audio>
+      </section>
+    </div>
 
     </div></div>
     <div class="sdr-footer" hidden>
@@ -137,6 +155,7 @@
   const list = dialog.querySelector("[data-devices]");
   const refreshButton = dialog.querySelector("[data-refresh]");
   const disconnectButton = dialog.querySelector("[data-disconnect]");
+  const headerDisconnect = dialog.querySelector("[data-header-disconnect]");
   const startButton = dialog.querySelector("[data-start]");
   const stopButton = dialog.querySelector("[data-stop]");
   const settings = dialog.querySelector("[data-settings]");
@@ -157,14 +176,35 @@
   const sampleRates = [250000, 1024000, 1536000, 2048000, 2400000];
   let plugin = null;
   let busy = false;
+  let disconnectingUsb = false;
   let current = null;
   let bluetooth = null;
+  const renderDiagnosticAudio = window.BearSdrDiagnosticTrace.mount(dialog, "diagnostic");
+  const usbLogs = window.BearSdrLogs.mount({
+    scroll: dialog.querySelector("[data-diagnostic-log-scroll]"),
+    list: dialog.querySelector("[data-diagnostic-record]"),
+    selectAll: dialog.querySelector("[data-diagnostic-select-all]"),
+    status: dialog.querySelector("[data-diagnostic-saved-status]"),
+    player: dialog.querySelector("[data-diagnostic-player]"),
+    save: dialog.querySelector("[data-diagnostic-save]"),
+    share: dialog.querySelector("[data-diagnostic-share]"),
+    remove: dialog.querySelector("[data-diagnostic-delete]"),
+    run,
+    describe: record => ({
+      title: new Date(record.time).toLocaleString("ko-KR"),
+      detail: `${record.comparison ? "비교 진단" : record.hasAudio ? "수신음 · 수신 진단" : "수신 진단"} · ${(record.sizeBytes / 1e6).toFixed(1)} MB`
+    }),
+    loadAudio: id => plugin.getDiagnosticAudio({ id }),
+    saveLogs: options => plugin.saveDiagnostic(options),
+    shareLogs: options => plugin.shareDiagnostic(options),
+    deleteLog: id => plugin.deleteDiagnostic({ id })
+  });
   const directionExperimentEnabled = false;
   const directionPanel = dialog.querySelector("[data-direction-panel]");
   const direction = directionExperimentEnabled ? window.BearDirectionScan?.mount(directionPanel) : null;
   const workflowStages = { usb: null, bluetooth: null };
-  const workflowConnections = { usb: false, bluetooth: false };
-  const workflowButtons = ["connection", "setup", "monitor", "direction"].map(stage => ({
+  let showingDiagnostics = false;
+  const workflowButtons = ["connection", "setup", "monitor", "direction", "diagnostics"].map(stage => ({
     stage, button: dialog.querySelector(`[data-sdr-stage="${stage}"]`)
   }));
   function workflowTransport() { return bluetooth?.selected() ? "bluetooth" : "usb"; }
@@ -189,26 +229,27 @@
     }
   }
   function goToStage(stage) {
-    const transport = workflowTransport();
-    workflowStages[transport] = stage;
+    showingDiagnostics = stage === "diagnostics";
+    if (!showingDiagnostics) workflowStages[workflowTransport()] = stage;
     renderWorkflow();
-    dialog.querySelector(".sdr-body").scrollTop = 0;
   }
   function renderWorkflow() {
     const transport = workflowTransport(), usingBluetooth = transport === "bluetooth";
     const connected = usingBluetooth ? bluetooth.status().state === "connected" : current?.state === "connected";
+    headerDisconnect.hidden = !connected;
+    headerDisconnect.disabled = usingBluetooth ? bluetooth.disconnecting() : disconnectingUsb;
     const live = !usingBluetooth && ["starting", "receiving", "scanning", "stopping"].includes(current?.receptionState);
     const canSetup = connected && (usingBluetooth || !settingsSection.hidden);
-    const hasLogs = usingBluetooth ? bluetooth.hasSavedLogs?.() : !!current?.diagnostic?.records?.length;
-    const canMonitor = hasLogs || (connected && (usingBluetooth ? bluetooth.canMonitor?.() !== false : !resultSection.hidden));
+    const canMonitor = connected && (usingBluetooth ? bluetooth.canMonitor() : !resultSection.hidden);
     const canExperiment = !!direction && connected && (usingBluetooth || current?.receptionState === "receiving");
-    if (workflowConnections[transport] && !connected) workflowStages[transport] = null;
-    workflowConnections[transport] = connected;
-    if (!connected && !(hasLogs && workflowStages[transport] === "monitor")) workflowStages[transport] = null;
-    else if (connected && !workflowStages[transport]) workflowStages[transport] = live ? "monitor" : "setup";
-    else if (workflowStages[transport] === "monitor" && !canMonitor && !usingBluetooth) workflowStages.usb = "setup";
-    else if (workflowStages[transport] === "direction" && !canExperiment) workflowStages[transport] = connected ? "setup" : null;
-    const stage = workflowStages[transport] || "connection";
+    if (!connected) workflowStages[transport] = null;
+    else if (!workflowStages[transport]) workflowStages[transport] = live ? "monitor" : "setup";
+    else if ((workflowStages[transport] === "monitor" && !canMonitor && !usingBluetooth) ||
+        (workflowStages[transport] === "direction" && !canExperiment)) workflowStages[transport] = "setup";
+    const stage = showingDiagnostics ? "diagnostics" : workflowStages[transport] || "connection";
+    const viewTransport = bluetooth?.showDiagnostics?.(showingDiagnostics) || transport;
+    if (!showingDiagnostics || viewTransport === "bluetooth") usbLogs.resetPreview();
+    if (!showingDiagnostics || viewTransport === "usb") bluetooth?.resetAudioPreview?.();
     if (dialog.dataset.receiverStage !== stage) dialog.querySelector(".sdr-body").scrollTop = 0;
     dialog.dataset.receiverStage = stage;
     dialog.dataset.receiverLive = String(live);
@@ -217,7 +258,7 @@
     if (stage === "direction") updateDirection();
     else direction?.update(false, null);
     for (const item of workflowButtons) {
-      item.button.setAttribute("aria-current", item.stage === stage ? "step" : "false");
+      item.button.setAttribute("aria-current", item.stage === stage ? showingDiagnostics ? "page" : "step" : "false");
       if (item.stage === "direction") item.button.hidden = !direction;
       item.button.disabled = item.stage === "setup" ? !canSetup : item.stage === "monitor" ? !canMonitor : item.stage === "direction" ? !canExperiment : false;
     }
@@ -227,6 +268,7 @@
   let listenerPromise = null;
   let sequence = 0;
   let connectionAttempt = 0;
+  let usbRetuneAttempt = null;
   let task = "fixed", lastScan = null, restoredFixed = false, candidateSelected = false;
   let handledReceiverUiRequest = 0;
   let animalItems = [], selectedAnimal = null, selectedAnimalHz = null, catalogLoading = false, catalogLoaded = false;
@@ -282,10 +324,17 @@
   async function restartFixedReception(audio) {
     restoredFixed = true;
     const attempt = ++connectionAttempt;
-    await plugin.stopReception();
-    await refresh();
-    if (attempt !== connectionAttempt || !dialog.open || current?.state !== "connected") return;
-    await startFixedReception(audio);
+    usbRetuneAttempt = attempt;
+    let restarted = false;
+    try {
+      await plugin.stopReception();
+      await refresh();
+      if (attempt !== connectionAttempt || !dialog.open || current?.state !== "connected") return;
+      await startFixedReception(audio);
+      restarted = true;
+    } finally {
+      if (!restarted && usbRetuneAttempt === attempt) usbRetuneAttempt = null;
+    }
   }
   async function chooseAnimalFrequency(item, hz) {
     if (animalPickerLocked()) return;
@@ -652,6 +701,12 @@
   function render(snapshot) {
     renderMapStatus(snapshot);
     const connected = snapshot.state === "connected";
+    const previousReception = current?.receptionState;
+    const retuning = connected && usbRetuneAttempt === connectionAttempt;
+    const receptionStarted = ["scanning", "receiving"].includes(snapshot.receptionState) &&
+      previousReception !== snapshot.receptionState;
+    if (!connected || receptionStarted || snapshot.receptionState === "error" ||
+        (snapshot.receptionState === "idle" && previousReception === "starting")) usbRetuneAttempt = null;
     dialog.querySelector("[data-usb-section]").dataset.connected = String(connected);
     dialog.querySelector("[data-usb-heading]").hidden = connected;
     dialog.querySelector("[data-usb-pairing]").hidden = connected;
@@ -659,7 +714,7 @@
     if (!connected && current?.state === "connected") resetDisconnectedUi();
     const running = ["starting", "receiving", "scanning", "stopping"].includes(snapshot.receptionState);
     settingsSection.hidden = !connected || (running && task !== "fixed");
-    resultSection.hidden = !connected || !(running || snapshot.scanResumeAvailable || snapshot.fixedResultAvailable || Object.keys(snapshot.reception || {}).length);
+    resultSection.hidden = !connected || !(retuning || running || snapshot.scanResumeAvailable || snapshot.fixedResultAvailable || Object.keys(snapshot.reception || {}).length);
     footer.hidden = !connected;
     if (snapshot.scanResumeAvailable && snapshot.scan && snapshot.scan.startHz != null) {
       if (!lastScan) {
@@ -682,7 +737,6 @@
       restoredFixed = true;
       setTask("fixed", false);
     }
-    const previousReception = current && current.receptionState;
     current = snapshot;
     updateDialogViewport(snapshot);
     updateRunButtons();
@@ -734,7 +788,7 @@
     refreshButton.hidden = connected;
     disconnectButton.hidden = !connected && snapshot.state !== "permissionPending";
     refreshButton.disabled = busy;
-    disconnectButton.disabled = !busy && snapshot.state !== "connected" && snapshot.state !== "permissionPending";
+    disconnectButton.disabled = disconnectingUsb || (!busy && !connected && snapshot.state !== "permissionPending");
     const receiving = ["starting", "receiving", "scanning", "stopping"].includes(snapshot.receptionState);
     settings.disabled = busy || receiving || snapshot.state === "unsupported";
     scanButton.disabled = fixedButton.disabled = settings.disabled;
@@ -808,40 +862,34 @@
     const diagnostic = snapshot.diagnostic || {};
     const comparison = diagnostic.comparison || {};
     const comparing = !!comparison.active;
+    renderDiagnosticAudio(diagnostic, diagnostic.state === "recording", comparing);
     const capturing = isDiagnosticActive(snapshot);
     const records = Array.isArray(diagnostic.records) ? diagnostic.records : [];
-    const recordSelect = dialog.querySelector("[data-diagnostic-record]");
-    const recordKeys = records.map(record => record.id).join(",");
-    if (recordSelect.dataset.keys !== recordKeys) {
-      const previous = recordSelect.value;recordSelect.replaceChildren();
-      for (const record of records) {
-        const option = document.createElement("option");option.value = record.id;
-        option.textContent = `${record.comparison ? "비교 진단 · " : ""}${new Date(record.time).toLocaleString("ko-KR")} · ${(record.sizeBytes / 1e6).toFixed(1)} MB`;
-        recordSelect.append(option);
-      }
-      recordSelect.value = diagnostic.state === "ready" || !records.some(record => record.id === previous) ? records[0]?.id || "" : previous;
-      recordSelect.dataset.keys = recordKeys;
-    }
-    recordSelect.hidden = !records.length;recordSelect.disabled = capturing || busy;
-    dialog.querySelector("[data-diagnostic-section]").hidden = false;
+    usbLogs.render(records, {
+      locked: busy || capturing,
+      canSave: typeof plugin?.saveDiagnostic === "function",
+      canShare: typeof plugin?.shareDiagnostic === "function",
+      canDelete: typeof plugin?.deleteDiagnostic === "function",
+      canPreview: typeof plugin?.getDiagnosticAudio === "function"
+    });
     const audioGain = dialog.querySelector("[data-audio-gain]");
     if (Number.isInteger(audio.gainDb)) audioGain.value = String(audio.gainDb);
     audioGain.disabled = busy || capturing || typeof plugin?.setAudio !== "function" || snapshot.receptionState === "stopping";
     dialog.querySelector(".sdr-listening-level").hidden = task !== "fixed";
     const compareButton = dialog.querySelector("[data-diagnostic-compare]");
     compareButton.textContent = comparing ? "비교 중단" : "수신 비교 진단";
-    const canRecord = snapshot.receptionState === "receiving" && rf.mode === "cw" && rf.hasSamples;
-    compareButton.disabled = busy || (comparing ? ["restoring", "bundling"].includes(comparison.phase) : capturing || !canRecord || typeof plugin?.startComparisonDiagnostic !== "function");
+    const canRecord = connected && snapshot.receptionState === "receiving" && rf.mode === "cw" && rf.hasSamples;
+    compareButton.disabled = !connected || busy || (comparing ? ["restoring", "bundling"].includes(comparison.phase) : capturing || !canRecord || typeof plugin?.startComparisonDiagnostic !== "function");
     dialog.querySelector("[data-diagnostic-start]").disabled = busy || capturing || !canRecord || typeof plugin?.startDiagnostic !== "function";
-    dialog.querySelector("[data-diagnostic-share]").disabled = busy || capturing || (!records.length && diagnostic.state !== "ready") || typeof plugin?.shareDiagnostic !== "function";
-    dialog.querySelector("[data-diagnostic-delete]").disabled = busy || capturing || !records.length || typeof plugin?.deleteDiagnostic !== "function";
+    dialog.querySelector("[data-diagnostic-stop]").disabled = busy || !connected || comparing ||
+      diagnostic.state !== "recording" || typeof plugin?.stopDiagnostic !== "function";
     dialog.querySelector("[data-diagnostic-status]").textContent = comparing ? `${comparison.message || "비교 진단"} · 약 2분 · 위치와 안테나 방향을 유지하세요.`
       : comparison.message ? comparison.message
       : diagnostic.state === "error" ? `진단 기록 실패: ${diagnostic.error}`
       : diagnostic.state === "ready" ? diagnostic.writerDroppedBlocks > 0 ? "저장 지연으로 일부만 기록됨 · 파일 공유 가능" : "기록 완료 · 파일을 공유해 수신 상태를 비교할 수 있습니다."
       : diagnostic.state === "packaging" ? "진단 파일 준비 중…"
       : capturing ? `원본 수신 기록 중 · ${(Number(diagnostic.iqBytes || 0) / 1e6).toFixed(1)} MB`
-      : records.length ? `저장된 기록 ${records.length}개 · 선택한 기록을 공유·삭제할 수 있습니다.` : "저장된 기록 없음 · CW 수신을 시작한 뒤 기록하세요.";
+      : "기록 대기";
     const tunerMetrics = task === "scan" && snapshot.scan?.tuner ? snapshot.scan : rf;
     dialog.querySelector("[data-gain-info]").textContent = tunerMetrics?.tuner && Number.isFinite(tunerMetrics.gainDb)
       ? `${tunerMetrics.tuner} · 적용 ${tunerMetrics.gainDb.toFixed(1)} dB` +
@@ -861,16 +909,11 @@
     renderSpectrum(snapshot);
     renderCandidates(snapshot);
     renderAnimalPicker();
-    if (["scanning", "receiving"].includes(snapshot.receptionState) && previousReception !== snapshot.receptionState) {
+    if (receptionStarted && !retuning) {
       if (workflowTransport() === "usb" && workflowStages.usb !== "connection") workflowStages.usb = "monitor";
-      if (task === "fixed" && snapshot.receptionState === "receiving") {
-        finishAnimalSearch();
-        renderWorkflow();
-        revealSignal(resultSection, "smooth");
-      } else {
-        renderWorkflow();
-        revealSignal(resultSection, "smooth");
-      }
+      if (task === "fixed" && snapshot.receptionState === "receiving") finishAnimalSearch();
+      renderWorkflow();
+      revealSignal(resultSection, "smooth");
     } else renderWorkflow();
   }
 
@@ -989,6 +1032,7 @@
     restoredFixed = false; candidateSelected = false;
     const scan = snapshot.backgroundScanning || snapshot.receptionState === "scanning" ||
       (snapshot.scanResumeAvailable && !snapshot.fixedResultAvailable);
+    showingDiagnostics = false;
     workflowStages.usb = "monitor";
     setTask(scan ? "scan" : "fixed", false);
     void openReceiver().then(async () => {
@@ -1082,20 +1126,9 @@
     return run(() => plugin.setAudio({ gainDb }));
   });
   dialog.querySelector("[data-diagnostic-start]").addEventListener("click", () => run(() => plugin.startDiagnostic()));
+  dialog.querySelector("[data-diagnostic-stop]").addEventListener("click", () => run(() => plugin.stopDiagnostic()));
   dialog.querySelector("[data-diagnostic-compare]").addEventListener("click", () => run(() =>
     current?.diagnostic?.comparison?.active ? plugin.stopComparisonDiagnostic() : plugin.startComparisonDiagnostic()));
-  dialog.querySelector("[data-diagnostic-share]").addEventListener("click", () => {
-    const id = dialog.querySelector("[data-diagnostic-record]").value;
-    return run(() => plugin.shareDiagnostic(id ? { id } : {}));
-  });
-  dialog.querySelector("[data-diagnostic-delete]").addEventListener("click", () => {
-    const select = dialog.querySelector("[data-diagnostic-record]");
-    const id = select.value;
-    if (!id || typeof plugin?.deleteDiagnostic !== "function") return;
-    const label = [...select.children].find(option => option.value === id)?.textContent || "";
-    if (!window.confirm(`선택한 수신 진단 기록을 삭제할까요?\n${label}\n삭제한 기록은 복구할 수 없습니다.`)) return;
-    return run(() => plugin.deleteDiagnostic({ id }));
-  });
   registerObservationButton.addEventListener("click", () => run(async () => {
     if (registerObservationButton.hidden || frequencyControls.editing() || !current?.fixedResultAvailable || !current?.reception?.hasSamples ||
         (current.reception.listenFrequencyHz || current.reception.frequencyHz) !== Math.round(Number(frequency.value) * 1e6) ||
@@ -1173,6 +1206,12 @@
     if (appExitPending) return true;
     if (!dialog.open) return false;
     if (busy || bluetooth?.busy()) return true;
+    if (showingDiagnostics) {
+      showingDiagnostics = false;
+      renderWorkflow();
+      workflowButtons.find(item => item.stage === dialog.dataset.receiverStage)?.button.focus?.();
+      return true;
+    }
     if (dialog.dataset.receiverStage === "direction") { goToStage("monitor"); return true; }
     if (bluetooth?.selected() && bluetooth.cancelFrequencyEditing()) {
       return true;
@@ -1222,14 +1261,30 @@
     if (Number.isFinite(height) && height > 0) dialog.style?.setProperty("--sdr-viewport-height", `${height}px`);
     dialog.style?.setProperty("--sdr-viewport-top", `${viewport && Number.isFinite(viewport.offsetTop) ? viewport.offsetTop : 0}px`);
   }
-  // This action must remain available while a permission call is outstanding.
-  disconnectButton.addEventListener("click", async function () {
+  // The connection card can also cancel a pending USB permission request.
+  async function disconnectUsb() {
+    if (!plugin || disconnectingUsb) return;
+    disconnectingUsb = true;
+    disconnectButton.disabled = true;
+    renderWorkflow();
     ++connectionAttempt;
     try { await plugin.closeDevice(); message.textContent = ""; await refresh(); }
     catch (error) { message.textContent = error.message || String(error); }
+    finally {
+      disconnectingUsb = false;
+      disconnectButton.disabled = disconnectButton.hidden;
+      renderWorkflow();
+    }
+  }
+  disconnectButton.addEventListener("click", disconnectUsb);
+  headerDisconnect.addEventListener("click", () => {
+    if (workflowTransport() === "bluetooth") return bluetooth.disconnect();
+    return disconnectUsb();
   });
   dialog.querySelector("[data-close]").addEventListener("click", () => dialog.close());
   dialog.addEventListener("close", async function () {
+    showingDiagnostics = false;
+    renderWorkflow();
     direction?.update(false, null);
     finishAnimalSearch();
     if (frequencyControls.editing()) frequencyControls.cancel();

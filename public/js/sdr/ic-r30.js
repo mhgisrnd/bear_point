@@ -90,27 +90,48 @@
         </div>
         </div>
       <div class="sdr-diagnostics-pane">
-      <details class="sdr-reception-diagnostic sdr-bt-test" aria-label="Bluetooth 수신 진단 로그">
-        <summary>수신 진단 · 저장된 로그</summary>
-        <div class="sdr-log-actions"><button type="button" data-bt-test-start class="sdr-primary">10초 기록</button><button type="button" data-bt-test-share disabled>파일 공유</button><button type="button" data-bt-test-delete class="sdr-danger" disabled>선택 삭제</button></div>
-        <div class="sdr-log-actions" data-bt-recording-tools hidden><button type="button" data-bt-test-mark disabled>삡 들림 표시</button><button type="button" data-bt-test-stop class="sdr-quiet" disabled>기록 종료</button></div>
-        <p class="sdr-note">시작 설정을 확인한 뒤 S-Meter를 10초간 기록합니다. ZIP에 원본 CSV, 기록 시각·수신기 설정·통신 오류를 함께 담습니다. 저장된 로그는 연결 없이 공유·삭제할 수 있습니다. 오디오·I/Q나 자동 신호 판정은 포함하지 않습니다.</p>
-        <select data-bt-test-record aria-label="저장된 Bluetooth 수신 진단 기록" hidden></select>
+      <section class="sdr-reception-diagnostic sdr-bt-test">
+        <h3>수신 진단</h3>
+        <div class="sdr-log-actions"><button type="button" data-bt-test-start class="sdr-primary" disabled>10초 기록</button><button type="button" data-bt-test-stop disabled>기록 종료</button></div>
+        <button type="button" data-bt-test-audio-permission class="sdr-secondary" hidden>마이크 권한 허용</button>
+        <p data-bt-test-audio-status class="sdr-note" role="status" hidden></p>
+        <p class="sdr-note">USB 오디오로 들어오는 수신음과 S-Meter를 10초간 기록합니다. ZIP에서 수신음 WAV와 측정값 CSV를 확인할 수 있습니다.</p>
         <p data-bt-test-summary class="sdr-note" role="status">기록 대기</p>
-        <svg class="sdr-bt-test-chart" viewBox="0 0 300 90" role="img" aria-label="최근 100개 S-Meter 측정값. 세로축은 원시값 변화에 맞춰 자동 확대됩니다."><polyline data-bt-test-line fill="none" stroke="currentColor" stroke-width="1.5"></polyline></svg>
-        <p data-bt-test-range class="sdr-note"></p>
-        <p class="sdr-note">R30에서 희미한 삡이 들릴 때 표시 버튼을 누르세요. 표시는 사람의 반응 지연이 포함된 참고 시점입니다. 수신기에서도 주파수·모드를 바꾸지 마세요. 홈 화면·화면 잠금 중에도 네이티브 기록을 계속하지만 앱 강제 종료는 보장하지 않습니다.</p>
-      </details>
-      <details class="sdr-help"><summary>연결 유지 · 지원 기능 안내</summary><p>SPP는 주파수·모드 제어와 S-Meter 조회에 사용합니다. 연결된 USB 오디오의 재생과 필터는 화면을 꺼도 유지됩니다. 알림에서 소리를 끄거나 Bluetooth 연결을 해제할 수 있습니다.</p></details>
-      </div>`;
+        ${root.BearSdrDiagnosticTrace.markup("bt-test")}
+        <p class="sdr-note">기록 중에는 수신기에서 주파수와 모드를 유지하세요.</p>
+      </section>
+      <section class="sdr-reception-diagnostic sdr-saved-log-list">
+        <h3>Bluetooth 저장된 로그</h3>
+        <p data-bt-saved-status class="sdr-note" role="status">저장된 기록 없음</p>
+        <div class="sdr-log-actions"><button type="button" data-bt-test-save disabled>파일 저장</button><button type="button" data-bt-test-share disabled>파일 공유</button><button type="button" data-bt-test-delete class="sdr-danger" disabled>선택 삭제</button></div>
+        ${root.BearSdrLogs.markup("bt-test", "저장된 Bluetooth 수신 진단 기록")}
+        <audio data-bt-test-player controls preload="none" aria-label="저장된 Bluetooth 수신음" hidden></audio>
+      </section>
+      </div>
+      <details class="sdr-help sdr-monitor-help"><summary>연결 유지 · 지원 기능 안내</summary><p>SPP는 주파수·모드 제어와 S-Meter 조회에 사용합니다. 연결된 USB 오디오의 재생과 필터는 화면을 꺼도 유지됩니다. 알림에서 소리를 끄거나 Bluetooth 연결을 해제할 수 있습니다.</p></details>`;
     const node = key => (["target", "register", "view"].includes(key) ? footer : panel).querySelector(`[data-bt-${key}]`);
+    const renderDiagnosticAudio = root.BearSdrDiagnosticTrace.mount(panel, "bt-test");
+    const logs = root.BearSdrLogs.mount({
+      scroll: node("test-log-scroll"), selectAll: node("test-select-all"),
+      list: node("test-record"), status: node("saved-status"), player: node("test-player"),
+      save: node("test-save"), share: node("test-share"), remove: node("test-delete"), run,
+      describe: record => ({
+        title: new Date(record.createdAt).toLocaleString("ko-KR"),
+        detail: `${record.hasAudio ? "수신음 · S-Meter" : "S-Meter"} · ${(record.bytes / 1024).toFixed(1)} KB`
+      }),
+      loadAudio: id => plugin.getTestAudio({ id }),
+      saveLogs: options => plugin.saveTest(options),
+      shareLogs: options => plugin.shareTest(options),
+      deleteLog: async id => applySnapshot(await plugin.deleteTest({ id }))
+    });
     const meterBars = Array.from({ length: 10 }, (_, i) => panel.querySelector(`[data-bt-bar="${i}"]`));
     const usbButton = selector.querySelector("[data-receiver-usb]");
     const btButton = selector.querySelector("[data-receiver-bt]");
-    let selected = true, plugin = null, listener = null, busy = false, loadingCatalog = false;
+    let selected = true, plugin = null, listener = null, busy = false, loadingCatalog = false, disconnecting = false;
+    let diagnosticSelection = null;
     let snapshot = { state: "idle", measurement: null, error: "" };
     let animals = [], target = null, deviceKey = "", animalKey = "", catalogNotice = "";
-    let draftFrequency = false, draftMode = false, localError = "", recordsKey = "";
+    let draftFrequency = false, draftMode = false, localError = "";
     let requestedVolume = null, volumeError = "";
     let updating = false, lastReading = null, animalCards = [];
     let audioSession = 0, audioTimer, audioState = { state: "idle" }, audioWatching = false, playbackPending = false;
@@ -130,18 +151,25 @@
     function connected() { return snapshot.state === "connected"; }
     function testing() { return snapshot.test?.active === true; }
     function locked() { return busy || snapshot.state === "connecting" || connected(); }
-    function setTransport(useBluetooth) {
-      selected = useBluetooth;
-      dialog.dataset.transport = useBluetooth ? "bluetooth" : "usb";
-      panel.hidden = !useBluetooth;
-    }
     function updateUsb(usbActive = false) {
-      if (usbActive && selected && !connected() && snapshot.state !== "connecting") setTransport(false);
-      btButton.disabled = usbActive || options.usbLocked();
-      usbButton.disabled = locked();
-      usbButton.setAttribute("aria-pressed", String(!selected));
-      btButton.setAttribute("aria-pressed", String(selected));
+      if (usbActive && selected && !connected() && snapshot.state !== "connecting") selected = false;
+      const showingDiagnostics = diagnosticSelection !== null;
+      const showingBluetooth = diagnosticSelection ?? selected;
+      dialog.dataset.transport = showingBluetooth ? "bluetooth" : "usb";
+      panel.hidden = !showingBluetooth;
+      selector.setAttribute("aria-label", showingDiagnostics ? "수신 진단 기록 종류" : "수신기 연결 방식");
+      btButton.disabled = !showingDiagnostics && (usbActive || options.usbLocked());
+      usbButton.disabled = !showingDiagnostics && locked();
+      usbButton.setAttribute("aria-pressed", String(!showingBluetooth));
+      btButton.setAttribute("aria-pressed", String(showingBluetooth));
       footer.hidden = !selected || !connected();
+    }
+    function showDiagnostics(enabled) {
+      if (enabled !== (diagnosticSelection !== null)) {
+        diagnosticSelection = enabled ? selected : null;
+        updateUsb();
+      }
+      return dialog.dataset.transport;
     }
     function validReading() {
       const value = snapshot.measurement;
@@ -279,7 +307,7 @@
       node("settings").disabled = locked() || !native;
       node("pairing").hidden = node("refresh").hidden = node("settings").hidden = connected();
       node("disconnect").hidden = !connected() && snapshot.state !== "connecting";
-      node("disconnect").disabled = false;
+      node("disconnect").disabled = disconnecting;
       node("devices").hidden = busy || connected() || snapshot.state === "connecting";
       node("other-devices").hidden = node("devices").hidden || !node("other-device-list").children.length;
       node("service-help").hidden = connected();
@@ -365,54 +393,47 @@
         }
       }).finally(() => { requestedVolume = null; renderVolume(); });
     }
+    function renderTestStart() {
+      const audioReady = audioState.state === "active";
+      node("test-start").disabled = busy || snapshot.test?.preparing || !validReading() || testing() ||
+        !audioReady || draftFrequency || frequencyControls.editing();
+      node("test-audio-permission").hidden = !connected() || audioState.state !== "permission";
+      const status = node("test-audio-status");
+      status.hidden = !connected() || audioReady || testing();
+      status.textContent = status.hidden ? "" : audioState.message || "수신음 기록에는 USB 오디오 입력이 필요합니다.";
+    }
     function renderTest() {
       const test = snapshot.test || {};
       const records = test.records || [];
-      const key = JSON.stringify(records);
-      const select = node("test-record");
-      if (key !== recordsKey) {
-        const previous = select.value;
-        select.replaceChildren();
-        for (const record of records) {
-          const option = document.createElement("option");
-          option.value = record.id;
-          option.textContent = `${new Date(record.createdAt).toLocaleString("ko-KR")} · ${(record.bytes / 1024).toFixed(1)} KB · ${record.id === "ic-r30-test.csv" ? "이전 기록 · ZIP 공유" : "S-Meter · ZIP 공유"}`;
-          select.appendChild(option);
-        }
-        select.value = records.some(record => record.id === previous) ? previous : records[0]?.id || "";
-        recordsKey = key;
-      }
-      select.hidden = !records.length;
-      select.disabled = busy || testing();
-      node("test-start").disabled = busy || test.preparing || !validReading() || testing() || draftFrequency || frequencyControls.editing();
+      logs.render(records, {
+        locked: busy || testing(),
+        canSave: typeof plugin?.saveTest === "function",
+        canShare: typeof plugin?.shareTest === "function",
+        canDelete: typeof plugin?.deleteTest === "function",
+        canPreview: typeof plugin?.getTestAudio === "function",
+        error: test.error && `로그 목록 조회 실패: ${test.error}`
+      });
+      renderTestStart();
       node("test-stop").disabled = busy || !testing();
-      node("recording-tools").hidden = !testing();
-      node("test-mark").disabled = busy || !testing();
-      node("test-share").disabled = busy || testing() || !records.length;
-      node("test-delete").disabled = busy || testing() || !records.length;
       const ending = { manual: "수동 종료", time_limit: "10초 기록 완료", disconnected: "연결 종료" }[test.reason] || "기록 대기";
-      node("test-summary").textContent = test.error ? `로그 목록 조회 실패: ${test.error}` : `저장 ${records.length}개 · ${testing() ? "기록 중" : ending} · 최근 기록 ${Math.floor((test.durationMs || 0) / 1000)}초 · ${test.count || 0}개 · 값 변경 ${test.changes || 0}회 · 청취 표시 ${test.marks || 0}회 · 실제 평균 간격 ${test.meanIntervalMs || 0}ms / 최대 ${test.maxIntervalMs || 0}ms`;
-      if (!test.error && !testing() && !test.reason && !test.count) {
-        node("test-summary").textContent = records.length ? `저장된 기록 ${records.length}개 · 선택한 기록을 공유·삭제할 수 있습니다.` : "저장된 기록 없음 · 수신기를 연결한 뒤 기록하세요.";
-      }
+      node("test-summary").textContent = testing() || test.reason || test.count
+        ? `${testing() ? "기록 중" : ending} · 최근 기록 ${Math.floor((test.durationMs || 0) / 1000)}초 · ${test.count || 0}개 · 값 변경 ${test.changes || 0}회 · 실제 평균 간격 ${test.meanIntervalMs || 0}ms / 최대 ${test.maxIntervalMs || 0}ms`
+        : ending;
       if(test.preparing)node("test-summary").textContent="수신기 설정 확인 중 · 완료 후 10초 기록을 시작합니다.";
-      const points = test.recent || [];
-      if (!points.length) {
-        node("test-line").setAttribute("points", "");
-        node("test-range").textContent = "측정값 대기 · 그래프 자동 확대는 신호 검출을 의미하지 않습니다.";
-        return;
-      }
-      const low = Math.min(...points.map(point => point[1])), high = Math.max(...points.map(point => point[1]));
-      const span = Math.max(1, points.at(-1)[0] - points[0][0]);
-      node("test-line").setAttribute("points", points.map(point =>
-        `${(point[0] - points[0][0]) * 300 / span},${high === low ? 45 : 85 - (point[1] - low) * 80 / (high - low)}`).join(" "));
-      node("test-range").textContent = `최근 그래프 범위 ${low}–${high} / 255 (자동 확대) · 전체 최소 ${test.min} / 최대 ${test.max}`;
+      else if (test.audioNotice) node("test-summary").textContent += ` · ${test.audioNotice}`;
+      renderTestTrace();
+    }
+    function renderTestTrace() {
+      const saved = snapshot.test?.audioTrace || {};
+      const live = audioState.diagnosticTrace;
+      const useLive = testing() && live?.id && live.id === saved.id && live.recordedElapsedMs >= saved.recordedElapsedMs;
+      renderDiagnosticAudio(useLive ? live : saved, testing());
     }
     async function init() {
       if (!native) throw new Error("Bluetooth 수신기 연결은 Android 앱에서 사용할 수 있습니다.");
       if (!plugin) {
         plugin = root.Capacitor.Plugins?.IcR30 || root.Capacitor.registerPlugin?.("IcR30");
-        if (!plugin || ["getStatus", "listDevices", "connect", "disconnect", "setFrequency", "setMode", "addListener", "startTest", "stopTest", "markTest", "shareTest", "deleteTest"].some(name => typeof plugin[name] !== "function")) {
+        if (!plugin || ["getStatus", "listDevices", "connect", "disconnect", "setFrequency", "setMode", "addListener", "startTest", "stopTest", "shareTest", "deleteTest"].some(name => typeof plugin[name] !== "function")) {
           plugin = null;
           throw new Error("IC-R30 네이티브 플러그인이 없습니다. 최신 APK를 설치하세요.");
         }
@@ -459,8 +480,11 @@
       canvas.setAttribute("aria-label", summary);
     }
     function showAudio(value) {
+      const changed = value.state !== audioState.state || value.message !== audioState.message;
       audioState = value;
       renderAudio();
+      if (value.diagnosticTrace && testing()) renderTestTrace();
+      if (changed) renderTestStart();
       renderAudioSpectrum();
       if (value.state !== "active") return;
       const peak = value.peakSample;
@@ -579,24 +603,37 @@
       finally { loadingCatalog = false; render(); }
     }
     function select(bluetooth) {
+      if (diagnosticSelection !== null) {
+        if (diagnosticSelection === bluetooth) return;
+        diagnosticSelection = bluetooth;
+        updateUsb();
+        options.onChange();
+        if (bluetooth) refreshBluetoothView(false);
+        return;
+      }
       if (bluetooth ? options.usbLocked() : locked()) return;
-      setTransport(bluetooth);
+      selected = bluetooth;
       updateUsb();
       options.onChange();
       if (bluetooth) refreshBluetoothView();
     }
-    function refreshBluetoothView() {
-      void run(async () => { applySnapshot(await plugin.getStatus()); renderAudioSpectrum(); });
-      if (!animals.length) void loadAnimals();
+    function refreshBluetoothView(loadReceiverControls = true) {
+      void run(async () => {
+        applySnapshot(await plugin.getStatus());
+        if (loadReceiverControls) renderAudioSpectrum();
+      });
+      if (loadReceiverControls && !animals.length) void loadAnimals();
     }
     btButton.addEventListener("click", () => select(true));
     usbButton.addEventListener("click", () => select(false));
-    node("audio-permission").addEventListener("click", () => {
+    function requestAudioPermission() {
       if (!audioWatching || audioState.state !== "permission") return;
       root.clearTimeout(audioTimer);
       showAudio({ state: "starting", message: "Android 마이크 권한 확인 중…" });
       return pollAudio(++audioSession, true);
-    });
+    }
+    node("audio-permission").addEventListener("click", requestAudioPermission);
+    node("test-audio-permission").addEventListener("click", requestAudioPermission);
     node("audio-mute").addEventListener("click", () => setAudioPlayback({ muted: audioState.speakerEnabled === true }));
     node("audio-filter").addEventListener("change", () => setAudioPlayback({ filterLevel: Number(node("audio-filter").value) }));
     node("volume-down").addEventListener("click", () => adjustVolume(-1));
@@ -607,26 +644,28 @@
     });
     node("refresh").addEventListener("click", () => run(refreshDevices));
     node("settings").addEventListener("click", () => run(() => plugin.openSettings()));
-    node("disconnect").addEventListener("click", async () => {
-      if (!plugin) return;
-      try { applySnapshot(await plugin.disconnect()); localError = ""; }
+    async function disconnect() {
+      if (!plugin || disconnecting) return;
+      disconnecting = true;
+      node("disconnect").disabled = true;
+      options.onChange();
+      try {
+        const value = await plugin.disconnect();
+        localError = "";
+        applySnapshot(value);
+      }
       catch (error) { localError = error.message || String(error); }
-      render();
-    });
+      finally { disconnecting = false; render(); options.onChange(); }
+    }
+    node("disconnect").addEventListener("click", disconnect);
     node("search").addEventListener("input", renderAnimals);
     node("favorites-filter").addEventListener("click", () => { node("animals").scrollLeft = 0; options.favorites.toggleFilter(); renderAnimals(); });
     node("search-form").addEventListener("submit", event => { event.preventDefault(); node("search").blur?.(); });
     node("clear").addEventListener("click", () => { target = null; render(); });
     node("catalog-refresh").addEventListener("click", loadAnimals);
-    for (const [button, method] of [["test-start", "startTest"], ["test-stop", "stopTest"], ["test-mark", "markTest"]]) {
+    for (const [button, method] of [["test-start", "startTest"], ["test-stop", "stopTest"]]) {
       node(button).addEventListener("click", () => run(async () => { applySnapshot(await plugin[method]()); }));
     }
-    node("test-share").addEventListener("click", () => run(() => plugin.shareTest({ id: node("test-record").value })));
-    node("test-delete").addEventListener("click", () => {
-      const id = node("test-record").value;
-      if (!id || !root.confirm("선택한 Bluetooth 로그를 삭제할까요? 삭제한 기록은 복구할 수 없습니다.")) return;
-      return run(async () => { applySnapshot(await plugin.deleteTest({ id })); });
-    });
     node("mode").addEventListener("change", () => { draftMode = true; });
     async function tune(hz) {
       if (!Number.isSafeInteger(hz) || hz < 100000 || hz > 3304999000) throw new Error("주파수는 0.1–3304.999 MHz 범위여야 합니다.");
@@ -650,14 +689,14 @@
         if (root.BearSdrRegistration.open(context, back) === false) throw new Error("관측점 저장 또는 수정을 완료한 뒤 다시 시도해주세요.");
       } catch (error) { back(); throw error; }
     }));
-    setTransport(true);
     render();
     return {
       updateUsb,
+      showDiagnostics,
       refreshFavorites: renderAnimals,
       canMonitor: () => validReading() || !!lastReading,
       audioActive: () => audioState.state === "active",
-      hasSavedLogs: () => !!snapshot.test?.records?.length || !!snapshot.test?.available,
+      resetAudioPreview: logs.resetPreview,
       cancelFrequencyEditing() {
         if (!frequencyControls.editing()) return false;
         frequencyControls.cancel();
@@ -666,6 +705,8 @@
       },
       selected: () => selected,
       busy: () => busy,
+      disconnect,
+      disconnecting: () => disconnecting,
       status: () => snapshot,
       onOpen() {
         if (selected) refreshBluetoothView();

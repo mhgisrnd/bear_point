@@ -16,8 +16,8 @@ import android.os.Handler;
 import android.os.Looper;
 import android.os.Build;
 import android.os.SystemClock;
+import androidx.activity.result.ActivityResult;
 import androidx.core.content.ContextCompat;
-import androidx.core.content.FileProvider;
 import com.getcapacitor.annotation.Permission;
 import com.getcapacitor.annotation.PermissionCallback;
 import androidx.core.view.ViewCompat;
@@ -28,7 +28,11 @@ import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
+import com.getcapacitor.annotation.ActivityCallback;
 import com.getcapacitor.annotation.CapacitorPlugin;
+import java.io.File;
+import java.io.IOException;
+import java.util.List;
 import java.util.UUID;
 
 /** USB permissions and foreground single-frequency IQ diagnostics. */
@@ -470,6 +474,9 @@ public class RtlSdrPlugin extends Plugin {
             call.resolve(snapshot());publish();
         });
     }
+    @PluginMethod public void stopDiagnostic(PluginCall call) {
+        execute(call, () -> { sdr.stopDiagnostic(); call.resolve(snapshot()); publish(); });
+    }
     @PluginMethod public void stopComparisonDiagnostic(PluginCall call) {
         execute(call,()->{sdr.stopComparison();call.resolve(snapshot());publish();});
     }
@@ -502,13 +509,42 @@ public class RtlSdrPlugin extends Plugin {
 
     @PluginMethod public void shareDiagnostic(PluginCall call) {
         execute(call, () -> {
-            String id=call.getString("id","");
-            java.io.File file=id.isEmpty()?sdr.diagnosticFile():sdr.diagnosticFile(id);
-            Uri uri=FileProvider.getUriForFile(getContext(),getContext().getPackageName()+".fileprovider",file);
-            Intent send=new Intent(Intent.ACTION_SEND).setType("application/zip").putExtra(Intent.EXTRA_STREAM,uri)
-                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-            getActivity().startActivity(Intent.createChooser(send,"수신 진단 파일 공유"));call.resolve();
+            SdrDiagnosticExport.share(getActivity(), selectedDiagnostics(call), "수신 진단 파일 공유");
+            call.resolve();
         });
+    }
+
+    private List<File> selectedDiagnostics(PluginCall call) {
+        try {
+            return SdrDiagnosticExport.selectedFiles(call, this::diagnosticArchive);
+        } catch (IOException error) {
+            throw new IllegalArgumentException(error.getMessage(), error);
+        }
+    }
+
+    private File diagnosticArchive(String id) {
+        return id.isEmpty() ? sdr.diagnosticFile() : sdr.diagnosticFile(id);
+    }
+
+    @PluginMethod public void saveDiagnostic(PluginCall call) {
+        execute(call, () -> {
+            List<File> archives = selectedDiagnostics(call);
+            String name = archives.size() == 1 ? archives.get(0).getParentFile().getName() + ".zip" : "sdr-diagnostics.zip";
+            startActivityForResult(call, SdrDiagnosticExport.createDocument(name), "saveDiagnosticResult");
+        });
+    }
+
+    @PluginMethod public void getDiagnosticAudio(PluginCall call) {
+        execute(call, () -> {
+            File archive = sdr.diagnosticFile(call.getString("id", ""));
+            SdrDiagnosticExport.prepareAudioPreview(call, getContext().getCacheDir(), archive);
+        });
+    }
+
+    @ActivityCallback private void saveDiagnosticResult(PluginCall call, ActivityResult result) {
+        Uri destination = SdrDiagnosticExport.destination(call, result);
+        if (destination == null) return;
+        execute(call, () -> SdrDiagnosticExport.copy(call, getContext().getContentResolver(), this::diagnosticArchive, destination));
     }
 
     @Override protected void handleOnPause() {

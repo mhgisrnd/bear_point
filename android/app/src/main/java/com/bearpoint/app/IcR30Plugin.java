@@ -15,20 +15,22 @@ import android.os.Looper;
 import android.os.ParcelUuid;
 import android.os.SystemClock;
 import android.net.Uri;
-import androidx.core.content.FileProvider;
 import android.provider.Settings;
 import android.util.Log;
+import androidx.activity.result.ActivityResult;
 import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.PermissionState;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
+import com.getcapacitor.annotation.ActivityCallback;
 import com.getcapacitor.annotation.CapacitorPlugin;
 import com.getcapacitor.annotation.Permission;
 import com.getcapacitor.annotation.PermissionCallback;
 import java.io.IOException;
 import java.io.File;
+import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -79,19 +81,26 @@ public final class IcR30Plugin extends Plugin {
     private boolean preparingTest;
 
     private File recordingFile;
+    private IcR30TestAudio recordingAudio;
+    private int[] lastTestAudioPeaks = new int[0];
+    private String testAudioNotice = "";
     private IcR30LogStore logStore() { return new IcR30LogStore(getContext().getFilesDir()); }
     private JSObject testSnapshot() {
         JSObject result = new JSObject();
         result.put("active", test.active());
         result.put("preparing",preparingTest);
+        result.put("audioNotice", testAudioNotice);
         JSArray records = new JSArray();
         try {
-            for (File file : logStore().list()) {
+            IcR30LogStore store = logStore();
+            for (File file : store.list()) {
                 if (test.active() && file.equals(recordingFile)) continue;
+                long audioBytes = store.audioPath(file).length();
                 JSObject record = new JSObject();
                 record.put("id", file.getName());
                 record.put("createdAt", file.lastModified());
-                record.put("bytes", file.length());
+                record.put("bytes", file.length() + audioBytes);
+                record.put("hasAudio", audioBytes > 44);
                 records.put(record);
             }
         } catch (IOException error) {
@@ -101,7 +110,6 @@ public final class IcR30Plugin extends Plugin {
         result.put("records", records);
         result.put("available", records.length() > 0);
         result.put("count", test.count());
-        result.put("marks", test.marks());
         result.put("min", test.min());
         result.put("max", test.max());
         result.put("changes", test.changes());
@@ -109,14 +117,17 @@ public final class IcR30Plugin extends Plugin {
         result.put("maxIntervalMs", test.maxInterval());
         result.put("durationMs", test.duration(SystemClock.elapsedRealtime()));
         result.put("reason", test.reason());
-        JSArray points = new JSArray();
-        for (long[] point : test.recent()) {
-            JSArray pair = new JSArray();
-            pair.put(point[0]); pair.put(point[1]);
-            points.put(pair);
-        }
-        result.put("recent", points);
+        result.put("audioTrace", testAudioTrace());
         return result;
+    }
+
+    private JSObject testAudioTrace() {
+        JSArray peaks = new JSArray();
+        for (int peak : recordingAudio == null ? lastTestAudioPeaks : recordingAudio.peaks()) peaks.put(peak);
+        return new JSObject().put("id", recordingFile == null ? "" : recordingFile.getName())
+            .put("recordedElapsedMs", test.duration(SystemClock.elapsedRealtime()))
+            .put("recordingDurationMs", IcR30TestRecording.LIMIT_MS)
+            .put("audioIntervalMs", SdrRecordedAudioPeaks.INTERVAL_MS).put("audioPeaks", peaks);
     }
 
     private BluetoothAdapter adapter() {
@@ -167,7 +178,9 @@ public final class IcR30Plugin extends Plugin {
             return;
         }
         if (usbAudio != null && !usbAudio.failed()) {
-            call.resolve(usbAudio.snapshot());
+            JSObject audio = usbAudio.snapshot();
+            if (recordingAudio != null) audio.put("diagnosticTrace", testAudioTrace());
+            call.resolve(audio);
             return;
         }
         AudioDeviceInfo input = IcR30UsbAudio.findInput(getContext());
@@ -572,6 +585,9 @@ public final class IcR30Plugin extends Plugin {
                 call.reject("수신기 연결과 설정 완료 후 테스트를 시작하세요."); return;
             }
             if (test.active()) { call.reject("이미 로그를 기록 중입니다."); return; }
+            if (usbAudio == null || !usbAudio.ready()) {
+                call.reject("USB 오디오 입력을 연결한 뒤 수신음을 기록하세요."); return;
+            }
             int token=generation;IcR30Civ civ=client;
             JSObject context=new JSObject().put("web_asset_revision",MainActivity.WEB_ASSET_REVISION)
                 .put("phone_manufacturer",Build.MANUFACTURER).put("phone_model",Build.MODEL).put("android_sdk",Build.VERSION.SDK_INT)
@@ -616,6 +632,8 @@ public final class IcR30Plugin extends Plugin {
     }
     private void beginTest(PluginCall call,JSObject context){
             try {
+                if (usbAudio == null || !usbAudio.ready()) throw new IOException("USB 오디오 입력이 끊겼습니다.");
+                IcR30TestAudio audio = new IcR30TestAudio();
                 recordingFile = logStore().create();
                 try { test.start(recordingFile, SystemClock.elapsedRealtime(),System.currentTimeMillis(),context.toString()); }
                 catch (IOException error) {
@@ -623,6 +641,10 @@ public final class IcR30Plugin extends Plugin {
                     File sidecar=new File(recordingFile.getPath()+".jsonl");if(sidecar.exists()&&!sidecar.delete())Log.w(TAG,"Failed recording detail cleanup");
                     throw error;
                 }
+                testAudioNotice = "";
+                lastTestAudioPeaks = new int[0];
+                recordingAudio = audio;
+                usbAudio.setDiagnosticAudio(audio);
                 if (testDeadline != null) main.removeCallbacks(testDeadline);
                 testDeadline = () -> {
                     try { stopTestRecording("time_limit"); publish(); }
@@ -633,14 +655,30 @@ public final class IcR30Plugin extends Plugin {
                 call.resolve(snapshot());
             } catch (IOException error) {
                 IcR30Service.keepAwakeForOperation(false);
+                publish();
                 call.reject("테스트 기록 시작 실패: " + error.getMessage(), error);
             }
             finally { if("connected".equals(state)&&client!=null)schedulePoll(generation,client); }
     }
     private void stopTestRecording(String reason) throws IOException {
         if (testDeadline != null) { main.removeCallbacks(testDeadline); testDeadline = null; }
+        IcR30TestAudio audio = recordingAudio;
+        recordingAudio = null;
+        if (usbAudio != null) usbAudio.setDiagnosticAudio(null);
         try { test.stop(reason,System.currentTimeMillis(),SystemClock.elapsedRealtime()); }
         finally {
+            if (audio != null) {
+                try {
+                    int samples = audio.save(logStore().audioPath(recordingFile));
+                    testAudioNotice = samples == 0 ? "수신음 없음 · S-Meter만 저장되었습니다."
+                        : String.format(java.util.Locale.ROOT, "수신음 %.2f초 저장", samples / (double) IcR30TestAudio.RATE);
+                } catch (IOException error) {
+                    Log.e(TAG, "Failed to save diagnostic audio", error);
+                    testAudioNotice = "수신음 저장 실패 · S-Meter 기록을 확인하세요.";
+                } finally {
+                    lastTestAudioPeaks = audio.peaks();
+                }
+            }
             if (settingCall == null && connectingCall == null) IcR30Service.keepAwakeForOperation(false);
             if (stopped) measurement = null;
         }
@@ -651,29 +689,45 @@ public final class IcR30Plugin extends Plugin {
             catch (IOException error) { fail("테스트 기록 종료 실패: " + error.getMessage()); call.reject(lastError, error); }
         });
     }
-    @PluginMethod public void markTest(PluginCall call) {
-        main.post(() -> {
-            try {
-                test.mark(System.currentTimeMillis(), SystemClock.elapsedRealtime());
-                publish(); call.resolve(snapshot());
-            } catch (IOException error) { call.reject("청취 표시 기록 실패: " + error.getMessage(), error); }
-        });
-    }
     @PluginMethod public void shareTest(PluginCall call) {
         main.post(() -> {
             if (test.active()) { call.reject("기록을 종료한 뒤 ZIP을 공유하세요."); return; }
             if (stopped) { call.reject("앱 화면에서 ZIP을 공유하세요."); return; }
-            try {
-                File shared = logStore().archive(call.getString("id", ""));
-                Uri uri = FileProvider.getUriForFile(getContext(), getContext().getPackageName() + ".fileprovider", shared);
-                Intent send = new Intent(Intent.ACTION_SEND).setType("application/zip").putExtra(Intent.EXTRA_STREAM, uri)
-                    .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-                send.setClipData(android.content.ClipData.newRawUri("IC-R30 수신 진단 ZIP", uri));
-                getActivity().startActivity(Intent.createChooser(send, "IC-R30 수신 진단 ZIP 공유"));
-                call.resolve();
-            } catch (IOException | RuntimeException error) { call.reject("ZIP 공유 실패: " + error.getMessage(), error); }
+            SdrDiagnosticExport.shareSelection(call, getActivity(), logStore()::archive, "IC-R30 수신 진단 ZIP 공유");
         });
     }
+    @PluginMethod public void saveTest(PluginCall call) {
+        main.post(() -> {
+            if (test.active()) { call.reject("기록을 종료한 뒤 ZIP을 저장하세요."); return; }
+            try {
+                IcR30LogStore store = logStore();
+                List<File> sources = SdrDiagnosticExport.selectedFiles(call, store::find);
+                String name = sources.size() == 1 ? store.archivePath(sources.get(0)).getName() : "ic-r30-diagnostics.zip";
+                startActivityForResult(call, SdrDiagnosticExport.createDocument(name), "saveTestResult");
+            } catch (IOException | RuntimeException error) {
+                call.reject("ZIP 저장 실패: " + error.getMessage(), error);
+            }
+        });
+    }
+
+    @PluginMethod public void getTestAudio(PluginCall call) {
+        main.post(() -> {
+            if (test.active()) { call.reject("기록을 종료한 뒤 수신음을 들을 수 있습니다."); return; }
+            try {
+                IcR30LogStore store = logStore();
+                File audio = store.audioPath(store.find(call.getString("id", "")));
+                if (!audio.isFile() || audio.length() <= 44) throw new IOException("저장된 수신음이 없습니다.");
+                call.resolve(new JSObject().put("uri", Uri.fromFile(audio).toString()));
+            } catch (IOException error) { call.reject(error.getMessage(), error); }
+        });
+    }
+
+    @ActivityCallback private void saveTestResult(PluginCall call, ActivityResult result) {
+        Uri destination = SdrDiagnosticExport.destination(call, result);
+        if (destination == null) return;
+        SdrDiagnosticExport.copy(call, getContext().getContentResolver(), logStore()::archive, destination);
+    }
+
     @PluginMethod public void deleteTest(PluginCall call) {
         main.post(() -> {
             if (test.active()) { call.reject("기록을 종료한 뒤 삭제하세요."); return; }
@@ -793,7 +847,10 @@ public final class IcR30Plugin extends Plugin {
         if (settingCall != null) { settingCall.reject(reason); settingCall = null; }
         preparingTest=false;
         IOException closeError = null;
-        try { test.connectionClosed(System.currentTimeMillis(),SystemClock.elapsedRealtime(),reason);stopTestRecording("disconnected"); }
+        try {
+            try { test.connectionClosed(System.currentTimeMillis(),SystemClock.elapsedRealtime(),reason); }
+            finally { stopTestRecording("disconnected"); }
+        }
         catch (IOException error) { closeError = error; }
         if (old != null) {
             try { old.close(); }

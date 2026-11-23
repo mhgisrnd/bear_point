@@ -31,6 +31,7 @@ final class IcR30UsbAudio implements Runnable {
     private volatile int filterLevel;
     private volatile boolean stopped;
     private volatile int tuningRevision;
+    private volatile IcR30TestAudio diagnosticAudio;
     private volatile JSObject status = state("starting", "USB 오디오 입력 확인 중…");
 
     IcR30UsbAudio(Context context, Handler main, AudioDeviceInfo input, boolean muted, int filterLevel, Runnable changed) {
@@ -70,6 +71,7 @@ final class IcR30UsbAudio implements Runnable {
         closeSpeaker();
     }
     void resetDetection() { tuningRevision++; }
+    void setDiagnosticAudio(IcR30TestAudio recording) { diagnosticAudio = recording; }
     boolean failed() { return "error".equals(status.getString("state")); }
     boolean ready() { return "active".equals(status.getString("state")); }
     boolean usesInput(AudioDeviceInfo device) { return input.getId() == device.getId(); }
@@ -148,6 +150,7 @@ final class IcR30UsbAudio implements Runnable {
         IcR30AudioAnalysis analysis = new IcR30AudioAnalysis();
         final IcR30AudioFilter filter = new IcR30AudioFilter();
         while (!stopped) {
+            IcR30TestAudio recording = diagnosticAudio;
             int count = record.read(samples, filled, samples.length - filled, AudioRecord.READ_NON_BLOCKING);
             if (count < 0) throw new IllegalStateException("USB 오디오 읽기 오류 (" + count + ")");
             long now = SystemClock.elapsedRealtime();
@@ -160,6 +163,7 @@ final class IcR30UsbAudio implements Runnable {
                 continue;
             }
             routed = true;
+            if (recording != null && count > 0) recording.append(samples, filled, count);
             if (revision != tuningRevision) {
                 revision = tuningRevision;
                 analysis = new IcR30AudioAnalysis();

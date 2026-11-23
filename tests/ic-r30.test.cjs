@@ -15,10 +15,16 @@ class Element {
   addEventListener(key, callback) { this.events[key] = callback; }
   append(...children) { this.children.push(...children); }
   appendChild(child) { this.children.push(child); }
-  replaceChildren() { this.children = []; }
+  replaceChildren(...children) { this.children = children; }
   async click() { if (!this.disabled) return this.events.click?.(); }
 }
 const tick = () => new Promise(resolve => setImmediate(resolve));
+const archiveCheck = (ui, index) => ui.node('test-record').children[index].children[0].children[0];
+function checkArchive(ui, index = 0) {
+  const checkbox = archiveCheck(ui, index);
+  checkbox.checked = true;
+  checkbox.events.change();
+}
 test('shared digit markup pairs every decimal position with the correct 10 Hz through whole-MHz step', () => {
   const window = {};
   vm.runInNewContext(fs.readFileSync('public/js/sdr/frequency-controls.js', 'utf8'), { window });
@@ -67,6 +73,7 @@ function setup(native = true) {
   const plugin = {
     async addListener(name, fn) { assert.equal(name, 'receiverStateChanged'); listener = fn; return {}; },
     async getStatus() { return state; },
+    async getUsbAudioStatus() { return { state: 'active', peakSample: 0, ready: false }; },
     async listDevices() { return { ...state, devices: [{ deviceId: '01:02:03:04:05:06', name: 'IC-R30', sppSupported: true }] }; },
     async connect(options) { calls.push(['connect', options]); return emit({ state: 'connected', measurement: reading(145520000), error: '', deviceName: 'IC-R30' }); },
     async disconnect() { calls.push(['disconnect']); return emit({ state: 'idle', measurement: null, error: '' }); },
@@ -81,10 +88,6 @@ function setup(native = true) {
   plugin.stopTest = async () => {
     calls.push(['stopTest']);
     return emit({ ...state, test: { ...state.test, active: false, reason: 'manual', records } });
-  };
-  plugin.markTest = async () => {
-    calls.push(['markTest']);
-    return emit({ ...state, test: { ...state.test, marks: (state.test.marks || 0) + 1 } });
   };
   plugin.shareTest = async options => { calls.push(['shareTest', options]); };
   plugin.deleteTest = async options => {
@@ -106,6 +109,8 @@ function setup(native = true) {
   };
   vm.runInNewContext(fs.readFileSync('public/js/sdr/frequency-controls.js', 'utf8') + '\n' +
     fs.readFileSync('public/js/sdr/spectrum.js', 'utf8') + '\n' +
+    fs.readFileSync('public/js/sdr/diagnostic-logs.js', 'utf8') + '\n' +
+    fs.readFileSync('public/js/sdr/diagnostic-trace.js', 'utf8') + '\n' +
     fs.readFileSync('public/js/sdr/ic-r30.js', 'utf8'), { window, document: { createElement: () => new Element() } });
   const favorites = new Set(); let revision = 0, favoritesOnly = false;
   let monitorTransitions = 0;
@@ -357,10 +362,11 @@ test('both transports put status inside the same connection card and keep diagno
   const bt = fs.readFileSync('public/js/sdr/ic-r30.js', 'utf8');
   assert.match(usb, /<section data-usb-section[^>]*sdr-connection[\s\S]*?<p class="sdr-status sdr-connection-status"[\s\S]*?<\/section>/);
   assert.match(bt, /<section data-bt-connection[\s\S]*?<p data-bt-status class="sdr-connection-status"[\s\S]*?<\/section>/);
-  assert.doesNotMatch(usb, /<section data-diagnostic-section[^>]*hidden/);
+  assert.match(usb, /<button[^>]*data-sdr-stage="diagnostics">수신 진단<\/button>/);
   for (const source of [usb, bt]) {
     assert.match(source, /class="sdr-device-list"/);
-    assert.match(source, /class="sdr-reception-diagnostic[^"]*"[^>]*>\s*<summary>수신 진단 · 저장된 로그/);
+    assert.match(source, /class="sdr-reception-diagnostic[^"]*"[^>]*>\s*<h3>수신 진단<\/h3>/);
+    assert.match(source, /class="sdr-reception-diagnostic sdr-saved-log-list"[^>]*>\s*<h3>(USB|Bluetooth) 저장된 로그<\/h3>/);
     assert.match(source, /<summary>처음 연결하는 경우<\/summary>/);
   }
 });
@@ -668,7 +674,7 @@ test('a pending mode write clears the live meter but keeps the explicit subject 
   ui.emit({ state: 'connected', measurement: { ...ui.reading(148241500), mode: 'FM' }, error: '' });
   assert.equal(ui.node('register').disabled, false);
 });
-test('test controls record, mark, stop and share without permitting tuning during recording', async () => {
+test('test controls record, stop and share without permitting tuning during recording', async () => {
   const ui = setup();
   assert.equal(ui.node('test-start').disabled, true);
   await ui.connect();
@@ -678,10 +684,9 @@ test('test controls record, mark, stop and share without permitting tuning durin
   assert.equal(ui.node('animals').children[0].children[1].children[0].disabled, true);
   assert.equal(ui.node('test-start').disabled, true);
   assert.equal(ui.node('test-share').disabled, true);
-  await ui.node('test-mark').click();
-  assert.match(ui.node('test-summary').textContent, /청취 표시 1회/);
   await ui.node('test-stop').click();
   assert.equal(ui.node('fields').disabled, false);
+  checkArchive(ui);
   assert.equal(ui.node('test-share').disabled, false);
   assert.match(ui.node('test-summary').textContent, /수동 종료/);
   await ui.node('test-share').click();
@@ -692,22 +697,34 @@ test('test controls record, mark, stop and share without permitting tuning durin
   assert.equal(ui.node('test-share').disabled, true);
   assert.equal(ui.node('test-record').hidden, true);
 });
-test('test graph exposes small raw changes and real intervals without claiming signal detection', async () => {
+test('Bluetooth audio peaks keep their horizontal positions as recording progresses', async () => {
   const ui = setup(); await ui.connect();
+  const trace = { id:'first', recordedElapsedMs:1200, recordingDurationMs:10000, audioIntervalMs:100,
+    audioPeaks:[0,32768,0] };
   ui.emit({ state: 'connected', error: '', measurement: ui.reading(145520000), test: {
-    active: true, available: true, count: 3, min: 10, max: 11, changes: 2,
-    durationMs: 1200, meanIntervalMs: 135, maxIntervalMs: 170, recent: [[100, 10], [200, 11], [370, 10]]
+    active: true, available: true, count: 3, changes: 2,
+    durationMs: 1200, meanIntervalMs: 135, maxIntervalMs: 170, audioTrace:trace
   } });
   assert.match(ui.node('test-summary').textContent, /평균 간격 135ms \/ 최대 170ms/);
-  assert.match(ui.node('test-range').textContent, /10–11 \/ 255/);
-  assert.equal(ui.node('test-line').attributes.points.split(' ').length, 3);
+  assert.match(ui.node('test-audio-level').textContent, /1\.2 \/ 10초/);
+  assert.equal(ui.node('test-progress').max, 10000);
+  assert.equal(ui.node('test-progress').hidden, false);
+  const original = ui.node('test-audio-line').attributes.points;
+  assert.equal(original, '0,85 3,5 6,85');
+  const newTrace={...trace,recordedElapsedMs:2400,audioPeaks:[...trace.audioPeaks,16000]};
+  ui.plugin.getUsbAudioStatus=async()=>({state:'active',peakSample:16000,ready:false,diagnosticTrace:newTrace});
+  await ui.pollAudio();
+  assert.equal(ui.node('test-progress').value, 2400);
+  assert.ok(ui.node('test-audio-line').attributes.points.startsWith(original+' '));
   ui.emit({ state: 'idle', error: 'CI-V timeout', measurement: null, test: {
-    active: false, available: true, records: [{ id: 'saved.csv', createdAt: 0, bytes: 100 }], reason: 'disconnected', recent: [[100, 10], [200, 10]]
+    active: false, available: true, records: [{ id: 'saved.csv', createdAt: 0, bytes: 100 }], reason: 'disconnected',
+    audioTrace:newTrace
   } });
+  checkArchive(ui);
   assert.equal(ui.node('test-share').disabled, false);
-  assert.equal(ui.node('test-mark').disabled, true);
   assert.match(ui.node('test-summary').textContent, /연결 종료/);
-  assert.equal(ui.node('test-line').attributes.points, '0,45 300,45');
+  assert.equal(ui.node('test-progress').hidden, true);
+  assert.ok(ui.node('test-audio-line').attributes.points.startsWith(original+' '));
 });
 test('test start and export errors remain visible and a persisted CSV can be shared while disconnected', async () => {
   const ui = setup(); await ui.connect();
@@ -715,10 +732,61 @@ test('test start and export errors remain visible and a persisted CSV can be sha
   await ui.node('test-start').click();
   assert.match(ui.node('error').textContent, /공간 부족/);
   ui.emit({ state: 'idle', measurement: null, error: '', test: { active: false, available: true, records: [{ id: 'saved.csv', createdAt: 0, bytes: 100 }] } });
+  assert.equal(ui.node('test-start').disabled, true);
+  let savedId;
+  ui.plugin.saveTest = async ({ id }) => { savedId = id; };
+  ui.emit(ui.controller.status());
+  checkArchive(ui);
+  await ui.node('test-save').click();
+  assert.equal(savedId, 'saved.csv');
   assert.equal(ui.node('test-share').disabled, false);
   ui.plugin.shareTest = async () => { throw new Error('CSV 공유 실패'); };
   await ui.node('test-share').click();
   assert.match(ui.node('error').textContent, /CSV 공유 실패/);
+});
+test('switching USB and Bluetooth archives does not change or require a receiver connection', async () => {
+  const ui = setup();
+  await ui.tab('usb').click();
+  ui.emit({ state: 'idle', error: '', measurement: null, test: {
+    active: false, records: [{ id: 'saved.csv', createdAt: 0, bytes: 100, hasAudio: true }]
+  } });
+  assert.equal(ui.controller.showDiagnostics(true), 'usb');
+  await ui.tab('bt').click();
+  await tick();
+  assert.equal(ui.dialog.dataset.transport, 'bluetooth');
+  assert.equal(ui.controller.selected(), false);
+  assert.equal(ui.node('test-start').disabled, true);
+  checkArchive(ui);
+  await ui.node('test-share').click();
+  assert.equal(ui.calls.at(-1)[1].id, 'saved.csv');
+  assert.equal(ui.calls.some(([method]) => method === 'connect'), false);
+  await ui.tab('usb').click();
+  assert.equal(ui.dialog.dataset.transport, 'usb');
+  ui.controller.showDiagnostics(false);
+  await ui.connect();
+  assert.equal(ui.tab('usb').disabled, true);
+  assert.equal(ui.controller.showDiagnostics(true), 'bluetooth');
+  await ui.tab('usb').click();
+  assert.equal(ui.dialog.dataset.transport, 'usb');
+  assert.equal(ui.controller.status().state, 'connected');
+  assert.equal(ui.controller.showDiagnostics(false), 'bluetooth');
+  assert.equal(ui.tab('usb').disabled, true);
+});
+test('Bluetooth recording requires USB receiver audio and offers mic permission from diagnostics', async () => {
+  const ui = setup();
+  let permissionRequested = false;
+  ui.plugin.getUsbAudioStatus = async ({ requestPermission }) => {
+    if (!requestPermission) return { state: 'permission', message: 'USB 오디오 권한 대기' };
+    permissionRequested = true;
+    return { state: 'active', peakSample: 0, ready: false };
+  };
+  await ui.connect();
+  assert.equal(ui.node('test-start').disabled, true);
+  assert.equal(ui.node('test-audio-permission').hidden, false);
+  await ui.node('test-audio-permission').click();
+  assert.equal(permissionRequested, true);
+  assert.equal(ui.node('test-start').disabled, false);
+  assert.equal(ui.node('test-audio-status').hidden, true);
 });
 test('record selection survives refresh and deleting a missing record reports its error', async () => {
   const ui = setup(); await ui.connect();
@@ -726,13 +794,13 @@ test('record selection survives refresh and deleting a missing record reports it
   const state = { state: 'connected', error: '', measurement: ui.reading(145520000), test: { active: false, records, reason: 'time_limit' } };
   ui.emit(state);
   assert.match(ui.node('test-summary').textContent, /10초 기록 완료/);
-  ui.node('test-record').value = 'old.csv';
+  checkArchive(ui, 1);
   ui.emit({ ...state, test: { ...state.test, records: [...records, { id: 'legacy.csv', createdAt: 0, bytes: 40 }] } });
-  assert.equal(ui.node('test-record').value, 'old.csv');
+  assert.equal(archiveCheck(ui, 1).checked, true);
   await ui.node('test-share').click();
   assert.equal(ui.calls.at(-1)[1].id, 'old.csv');
   ui.plugin.deleteTest = async () => { throw new Error('선택한 로그가 없습니다.'); };
   await ui.node('test-delete').click();
   assert.match(ui.node('error').textContent, /로그가 없습니다/);
-  assert.equal(ui.node('test-record').value, 'old.csv');
+  assert.equal(archiveCheck(ui, 1).checked, true);
 });
