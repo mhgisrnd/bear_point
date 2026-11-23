@@ -15,13 +15,20 @@
       snapshot:()=>({...state}),
       async initialize(){return this.recover();},
       async recover(){
-        if(busy())return false;
+        if(['checking','installing'].includes(state.phase))return false;
         const current=await plugin.getInfo();
+        if(current.downloading){
+          paint({current,update:current.update||state.update,phase:'downloading',received:Number(current.received)||0,total:Number(current.total)||0,message:'APK를 다운로드하고 검증하고 있습니다.'});
+          return false;
+        }
+        if(current.downloadError && (state.phase==='downloading'||state.phase==='idle')){
+          paint({current,phase:'idle',readyHash:null,message:current.downloadError});return false;
+        }
         if(current.downloadReady&&current.update&&(confirmedHash===undefined||confirmedHash===current.update.fileSha256)){
           paint({current,update:current.update,phase:'ready',readyHash:current.update.fileSha256,message:'다운로드한 APK가 준비되어 있습니다. 설치를 계속할 수 있습니다.'});
           return true;
         }
-        if(current.downloadReady===false&&state.phase==='ready')paint({current,phase:'idle',readyHash:null,message:'APK 파일을 다시 다운로드해주세요.'});
+        if(current.downloadReady===false&&(state.phase==='ready'||state.phase==='downloading'))paint({current,phase:'idle',readyHash:null,message:'APK 파일을 다시 다운로드해주세요.'});
         else paint({current});
         return false;
       },
@@ -114,7 +121,7 @@
     container.querySelector('[data-cancel]')?.addEventListener('click',async()=>{try{await controller.cancel();}catch(_){}});
     container.querySelector('[data-update]').addEventListener('click',async()=>{
       if(controller.snapshot().phase==='ready'){await controller.install();return;}
-      if(await controller.download())await controller.install();
+      if(await controller.download()&&!document.hidden)await controller.install();
     });
   }
   root.BearAppUpdates={mount(container){
@@ -125,6 +132,7 @@
   try{controller=createController(plugin,endpoint(root.BEAR_RUNTIME_CONFIG||{}),paint);}catch(_){return;}
   const initialized=controller.initialize().catch(()=>{});
   Promise.resolve(plugin.addListener('progress',value=>controller.progress(value))).catch(()=>{});
+  Promise.resolve(plugin.addListener('downloadStatus',()=>{void controller.recover().catch(()=>{});})).catch(()=>{});
   let startupCheck, startupOfferClosed=Promise.resolve();
   root.BearAppUpdates.prepareStartup=function(){
     if(!startupCheck)startupCheck=(async()=>{

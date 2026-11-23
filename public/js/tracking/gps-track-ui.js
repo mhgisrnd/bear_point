@@ -111,8 +111,6 @@
     });
     let active=null,displayed=null,busy=false,polling=false,historyOffset=0,historyVersion=0,viewVersion=0,initial=true;
     let recordingOperation=0;
-    let recordingTarget=null;
-    const quickRecord=root.BearGpsRecordingToggle.create({native,onChange:enabled=>void setRecording(enabled)});
     const source=new ol.source.Vector();
     const layer=new ol.layer.Vector({source});
     layer.setVisible(false);
@@ -129,7 +127,6 @@
     }
     function paint() {
       const currentTeam = root.BearTeamDisplay?.resolve(active) || active;
-      quickRecord.render({active,busy,ready:!initial,pending:recordingTarget});
       button.classList.toggle('is-recording',!!active);
       button.textContent=active?'● 기록 중 · '+elapsed(active):'이동 기록';
       button.setAttribute('aria-expanded',String(!panel.hidden));
@@ -319,7 +316,6 @@
     async function setRecording(enabled){
       if(!native||busy)return;
       ++recordingOperation;
-      recordingTarget=enabled?true:'confirm';
       try{await action(async()=>{
         // Read the recorder immediately before acting, including stops from the system notification.
         const state=await plugin.status();active=state.active||null;initial=false;paint();
@@ -334,10 +330,10 @@
           if(save!==true&&save!==false)return;
           const latest=await plugin.status();active=latest.active||null;
           if(active?.id!==id)return;
-          recordingTarget=false;paint();
+          paint();
           await stopRecording(save);
         }
-      });}finally{recordingTarget=null;paint();}
+      });}finally{paint();}
     }
     start.addEventListener('click',()=>void setRecording(true));
     stop.addEventListener('click',()=>void setRecording(false));

@@ -1,6 +1,12 @@
 (function (root) {
   'use strict';
   let started = false, mounted = false;
+  function close() {
+    const panel = document.getElementById('notification-history');
+    const button = document.getElementById('btn-notification-history');
+    if (!panel || !button) return;
+    panel.hidden = true; button.setAttribute('aria-expanded', 'false');
+  }
   function mount(message) {
     const button = document.getElementById('btn-notification-history');
     const panel = document.getElementById('notification-history');
@@ -15,8 +21,9 @@
       if (!panel.hidden) button.dispatchEvent(new Event('notification-opened'));
     });
     document.getElementById('notification-close').addEventListener('click', () => {
-      panel.hidden = true; button.setAttribute('aria-expanded', 'false'); button.focus();
+      close(); button.focus();
     });
+    document.addEventListener('click', event => { if (!panel.hidden && !panel.contains(event.target) && !button.contains(event.target)) close(); });
   }
   function setPendingMessage(message) {
     if (!started && mounted) document.getElementById('notification-status').textContent = message;
@@ -63,10 +70,29 @@
       for (const item of data.items) {
         const sent = item.direction === 'sent';
         const row = document.createElement('div'); row.className = 'notification-item'; row.dataset.unread = String(!sent && !item.read_at);
+        row.setAttribute('role', 'button'); row.tabIndex = 0; row.setAttribute('aria-label', (sent ? '발송' : '수신') + ' ' + item.title + ' 상세 보기');
+        let opening = false;
+        const open = async () => {
+          if (opening) return;
+          opening = true;
+          try {
+            if (!sent && !item.read_at) {
+              const response = await fetch(apiBase + '/notifications/read', { method: 'POST', headers: { ...await headers(), 'Content-Type': 'application/json' }, body: JSON.stringify({ id: item.id }) });
+              if (!response.ok) throw new Error();
+              void update();
+            }
+            close();
+            root.dispatchEvent(new CustomEvent('bearpoint:notification-navigate', { detail: { serverId: String(item.estimate_id) } }));
+          } catch (_) { status.textContent = '확인 상태를 저장하지 못했습니다. 다시 시도해주세요.'; }
+          finally { opening = false; }
+        };
+        row.addEventListener('click', open);
+        row.addEventListener('keydown', event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); void open(); } });
         const heading = document.createElement('div'); heading.className = 'notification-item-heading';
         const direction = document.createElement('span'); direction.className = 'notification-direction'; direction.dataset.direction = sent ? 'sent' : 'received'; direction.textContent = sent ? '발송' : '수신';
         const title = document.createElement('strong'); title.textContent = item.title;
         heading.append(direction, title);
+        if (!sent && !item.read_at) { const unread = document.createElement('span'); unread.className = 'notification-unread-label'; unread.textContent = '미확인'; heading.append(unread); }
         const body = document.createElement('p'); body.textContent = item.body;
         const time = document.createElement('time'); time.textContent = new Date(item.accepted_at).toLocaleString('ko-KR') + (sent ? ' · 공유 등록' : ' · 발송 접수');
         row.append(heading, body, time); list.append(row);
@@ -112,5 +138,5 @@
     root.addEventListener('online', () => { disconnect(); void update(); void connect(); });
     void update(); void connect();
   }
-  root.BearNotificationHistory = { mount, start, setPendingMessage };
+  root.BearNotificationHistory = { mount, start, setPendingMessage, close };
 })(window);

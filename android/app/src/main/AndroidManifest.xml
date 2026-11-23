@@ -23,6 +23,7 @@
             </intent-filter>
         </service>
         <service android:name=".GpsTrackService" android:exported="false" android:foregroundServiceType="location" />
+        <service android:name=".AppUpdateDownloadService" android:exported="false" android:foregroundServiceType="dataSync" />
         <service android:name=".IcR30Service" android:exported="false" android:foregroundServiceType="connectedDevice|microphone|mediaPlayback" />
         <!-- UsbManager.requestPermission() is the connectedDevice prerequisite; lint checks only manifest permissions. -->
         <service android:name=".SdrScanService" android:exported="false"
@@ -60,6 +61,7 @@
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />

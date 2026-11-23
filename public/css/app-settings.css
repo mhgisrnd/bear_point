@@ -41,6 +41,7 @@
 .app-settings-dialog--navigation .app-update-notes { max-height: none; overflow: visible; }
 body:has(.app-settings-dialog[open]) #btn-app-settings,
 body:has(.sdr-dialog[open]) #btn-sdr-diagnostics,
+#btn-notification-history[aria-expanded="true"],
 #btn-map-layers[aria-expanded="true"] {
   background: #145d75 !important; color: #fff !important; border-color: #145d75 !important;
   box-shadow: 0 0 0 2px #a8d3df, 0 2px 8px #0002 !important;

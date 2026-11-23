@@ -90,7 +90,7 @@ test('settings update check, download, cancel and install stay in the settings p
   let phase='idle';
   const controller={check:async()=>{calls.push('check');return true;},cancel:async()=>calls.push('cancel'),
     snapshot:()=>({phase}),download:async()=>{calls.push('download');return true;},install:async()=>calls.push('install')};
-  const context=vm.createContext({controller,showOffer:()=>assert.fail('Settings must not open the update popup')});
+  const context=vm.createContext({controller,document:{hidden:false},showOffer:()=>assert.fail('Settings must not open the update popup')});
   const source=fs.readFileSync('public/js/settings/app-updates.js','utf8');
   vm.runInContext(source.slice(source.indexOf('  function bind(container)'),source.indexOf('  root.BearAppUpdates=')),context);
   context.bind({querySelector:key=>controls[key]});
@@ -99,6 +99,28 @@ test('settings update check, download, cancel and install stay in the settings p
   await handlers['[data-cancel]']();
   phase='ready';await handlers['[data-update]']();
   assert.deepEqual(calls,['check','download','install','cancel','install']);
+});
+
+test('a recreated screen restores an active download and then the verified APK',async()=>{
+  const plugin={getInfo:async()=>({versionName:'26.0.0.1',downloading:true,received:512,total:1024,update,downloadReady:false})};
+  const controller=createController(plugin,url);
+  await controller.initialize();
+  assert.equal(controller.snapshot().phase,'downloading');
+  assert.equal(controller.snapshot().received,512);
+  plugin.getInfo=async()=>({versionName:'26.0.0.1',downloading:false,update,downloadReady:true});
+  assert.equal(await controller.recover(),true);
+  assert.equal(controller.snapshot().phase,'ready');
+});
+
+test('a download finishing in the background does not open the installer',async()=>{
+  const handlers={};let installs=0;
+  const control={addEventListener:(_,fn)=>handlers.update=fn};
+  const controller={snapshot:()=>({phase:'idle'}),download:async()=>true,install:async()=>installs++};
+  const context=vm.createContext({controller,document:{hidden:true}});
+  const source=fs.readFileSync('public/js/settings/app-updates.js','utf8');
+  vm.runInContext(source.slice(source.indexOf('  function bind(container)'),source.indexOf('  root.BearAppUpdates=')),context);
+  context.bind({querySelector:key=>key==='[data-update]'?control:null});
+  await handlers.update();assert.equal(installs,0);
 });
 
 test('settings show only the cancel action while downloading and restore actions afterwards',()=>{

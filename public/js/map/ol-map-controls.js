@@ -896,14 +896,21 @@ window.createOlMapControlsManager = function createOlMapControlsManager(options)
     panel.innerHTML =
       '<div class="map-layer-panel__head"><strong>지도 유형</strong>' +
         '<button type="button" class="map-layer-panel__close" aria-label="닫기">×</button></div>' +
-      '<p class="map-layer-panel__title">온라인<small>인터넷 필요</small></p>' +
+      '<div class="map-layer-panel__body">' +
+      '<div class="map-layer-types"><div class="map-layer-types__choices"><section class="map-layer-types__online">' +
+      '<p class="map-layer-panel__title">온라인</p>' +
       '<div class="map-layer-grid">' + tilesOf("online") + "</div>" +
-      '<p class="map-layer-panel__title">오프라인<small>기기에 저장된 지도</small></p>' +
-      '<div class="map-layer-grid">' + tilesOf("offline") + "</div>" +
-      '<p class="map-layer-panel__title">겹쳐 보기</p>' +
-      '<label class="map-layer-switch"><span>음영기복도<small>인터넷 필요</small></span>' +
-        '<input type="checkbox" role="switch" id="map-layer-hillshade"></label>' +
-      (ngiiApiKey ? "" : '<p class="map-layer-panel__note">NGII API 키가 없어 온라인 지도는 사용할 수 없습니다.</p>');
+      '</section><section class="map-layer-types__offline">' +
+      '<p class="map-layer-panel__title">오프라인</p>' +
+      '<div class="map-layer-grid">' + tilesOf("offline") + "</div></section></div>" +
+      '<section class="map-layer-overlay">' +
+      '<label class="map-layer-switch"><span>음영기복도</span>' +
+        '<input type="checkbox" role="switch" id="map-layer-hillshade"></label></section></div>' +
+      (ngiiApiKey ? "" : '<p class="map-layer-panel__note">NGII API 키가 없어 온라인 지도는 사용할 수 없습니다.</p>') + '</div>';
+
+    const panelBody = panel.querySelector(".map-layer-panel__body");
+    const legend = document.getElementById("map-marker-legend");
+    if (legend) panelBody.appendChild(legend);
 
     const hillshadeInput = panel.querySelector("#map-layer-hillshade");
     hillshadeInput.checked = !!layers.hillshadeOverlay.getVisible();
@@ -934,7 +941,24 @@ window.createOlMapControlsManager = function createOlMapControlsManager(options)
     function setOpen(open) {
       panel.hidden = !open;
       toggleBtn.setAttribute("aria-expanded", String(open));
+      if (open) updateAvailableHeight();
     }
+    function updateAvailableHeight() {
+      if (panel.hidden) return;
+      const rect = panel.getBoundingClientRect();
+      const dock = document.getElementById("mobile-map-dock");
+      let bottom = window.visualViewport ? window.visualViewport.offsetTop + window.visualViewport.height : window.innerHeight;
+      if (dock && dock.getClientRects().length && getComputedStyle(dock).visibility !== "hidden") {
+        const dockRect = dock.getBoundingClientRect();
+        if (dockRect.left < rect.right && dockRect.right > rect.left && dockRect.top > rect.top) bottom = Math.min(bottom, dockRect.top - 10);
+      }
+      panel.style.setProperty("--map-layer-available-height", Math.max(80, bottom - rect.top - 10) + "px");
+    }
+    window.addEventListener("resize", updateAvailableHeight);
+    window.addEventListener("bearpoint:mobile-dock-layout", updateAvailableHeight);
+    window.visualViewport?.addEventListener("resize", updateAvailableHeight);
+    const dock = document.getElementById("mobile-map-dock");
+    if (dock && typeof ResizeObserver === "function") new ResizeObserver(updateAvailableHeight).observe(dock);
     toggleBtn.addEventListener("click", function (e) {
       e.preventDefault();
       e.stopPropagation();

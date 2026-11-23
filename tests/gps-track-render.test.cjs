@@ -4,8 +4,8 @@ const fs=require('node:fs');
 const vm=require('node:vm');
 
 test('the existing summary shows selection guidance until a route is chosen',()=>{
-  const context=vm.createContext({root:{},active:null,displayed:null,busy:false,initial:false,recordingTarget:null,native:false,
-    quickRecord:{render(){}},button:{classList:{toggle(){}},setAttribute(){}},start:{},stop:{},refreshButton:{},summary:{hidden:true,dataset:{}},
+  const context=vm.createContext({root:{},active:null,displayed:null,busy:false,initial:false,native:false,
+    button:{classList:{toggle(){}},setAttribute(){}},start:{},stop:{},refreshButton:{},summary:{hidden:true,dataset:{}},
     panel:{hidden:false},teamSelect:{},search:{elements:Object.fromEntries(['period','day','month','year','rangeStart','rangeEnd'].map(name=>[name,{}]))},
     paintMine(){},paintFilterState(){},place(){},elapsed:()=> '85분',km:()=> '7.98km',date:()=> '11. 12.'});
   const code=fs.readFileSync('public/js/tracking/gps-track-ui.js','utf8');

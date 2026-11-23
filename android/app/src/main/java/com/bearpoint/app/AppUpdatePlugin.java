@@ -8,6 +8,7 @@ import android.net.Uri;
 import android.os.Build;
 import android.provider.Settings;
 import androidx.core.content.FileProvider;
+import androidx.core.content.ContextCompat;
 import androidx.activity.result.ActivityResult;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
@@ -25,12 +26,18 @@ import org.json.JSONObject;
 
 @CapacitorPlugin(name = "AppUpdate")
 public final class AppUpdatePlugin extends Plugin {
-    private final ExecutorService worker = Executors.newSingleThreadExecutor();
-    private final AtomicBoolean busy = new AtomicBoolean();
-    private volatile boolean cancelled;
-    private volatile HttpURLConnection connection;
-    private volatile JSONObject downloaded;
+    private static final ExecutorService worker = Executors.newSingleThreadExecutor();
+    private static final AtomicBoolean busy = new AtomicBoolean();
+    private static volatile boolean cancelled;
+    private static volatile HttpURLConnection connection;
+    private static volatile JSONObject downloaded, activeRelease;
+    private static volatile boolean activeDownload;
+    private static volatile long receivedBytes, totalBytes;
+    private static volatile String lastDownloadError;
+    private static volatile AppUpdatePlugin observer;
     private volatile boolean installerOpen;
+
+    @Override public void load() { observer = this; }
 
     private PackageInfo installed() throws Exception {
         return getContext().getPackageManager().getPackageInfo(getContext().getPackageName(), signatureFlags());
@@ -51,9 +58,12 @@ public final class AppUpdatePlugin extends Plugin {
     private JSObject info() throws Exception {
         PackageInfo current = installed();
         JSONObject pending = pending();
+        JSONObject offer = activeDownload && activeRelease != null ? activeRelease : pending;
         return new JSObject().put("packageName", current.packageName).put("versionName", current.versionName)
-            .put("versionCode", code(current)).put("update", pending == null ? JSONObject.NULL : pending)
-            .put("downloadReady", pending != null);
+            .put("versionCode", code(current)).put("update", offer == null ? JSONObject.NULL : offer)
+            .put("downloadReady", pending != null).put("downloading", activeDownload)
+            .put("received", receivedBytes).put("total", totalBytes)
+            .put("downloadError", lastDownloadError == null ? JSONObject.NULL : lastDownloadError);
     }
     private JSONObject pending() throws Exception {
         if (downloaded == null) {
@@ -75,14 +85,37 @@ public final class AppUpdatePlugin extends Plugin {
     }
     private interface Work { void run() throws Exception; }
     private void run(PluginCall call, Work operation) {
+        run(call, operation, false);
+    }
+    private void run(PluginCall call, Work operation, boolean download) {
         if (!busy.compareAndSet(false, true)) { call.reject("업데이트 작업이 진행 중입니다."); return; }
         cancelled = false;
+        if (download) {
+            activeDownload = true; activeRelease = null; receivedBytes = 0; totalBytes = 0; lastDownloadError = null;
+            try { ContextCompat.startForegroundService(getContext(), new Intent(getContext(), AppUpdateDownloadService.class)); }
+            catch (RuntimeException error) { activeDownload = false; busy.set(false); call.reject("백그라운드 다운로드를 시작하지 못했습니다. 앱을 연 상태에서 다시 시도해주세요."); return; }
+        }
         worker.execute(() -> {
-            try { operation.run(); }
-            catch (Exception e) { android.util.Log.w("BearAppUpdate", "Update operation failed", e); call.reject(cancelled ? "다운로드를 취소했습니다." : message(e)); }
-            finally { busy.set(false); }
+            boolean success = false;
+            try { operation.run(); success = true; }
+            catch (Exception e) {
+                android.util.Log.w("BearAppUpdate", "Update operation failed", e);
+                String reason = cancelled ? "다운로드를 취소했습니다." : message(e);
+                if (download) lastDownloadError = reason;
+                call.reject(reason);
+            } finally {
+                if (download) {
+                    activeDownload = false; activeRelease = null;
+                    getContext().getApplicationContext().stopService(new Intent(getContext(), AppUpdateDownloadService.class));
+                    busy.set(false);
+                    if (success) call.resolve(new JSObject().put("ready", true));
+                    AppUpdatePlugin current = observer;
+                    if (current != null) current.notifyListeners("downloadStatus", new JSObject());
+                } else busy.set(false);
+            }
         });
     }
+    static void cancelActiveDownload() { cancelled = true; HttpURLConnection conn = connection; if (conn != null) conn.disconnect(); }
     private String message(Exception e) {
         if (e instanceof java.net.SocketTimeoutException || e instanceof java.net.UnknownHostException
                 || e instanceof javax.net.ssl.SSLException)
@@ -151,13 +184,16 @@ public final class AppUpdatePlugin extends Plugin {
         return directory;
     }
     private void progress(long received, long total) {
-        notifyListeners("progress", new JSObject().put("received", received).put("total", total));
+        receivedBytes = received; totalBytes = total;
+        AppUpdatePlugin current = observer;
+        if (current != null) current.notifyListeners("progress", new JSObject().put("received", received).put("total", total));
     }
     @PluginMethod public void download(PluginCall call) {
         run(call, () -> {
             URI endpoint = AppUpdatePolicy.endpoint(call.getString("apiUrl", ""));
             JSONObject release = latest(endpoint); validate(release);
             AppUpdatePolicy.hash(call.getString("sha256", ""), release.getString("fileSha256"));
+            activeRelease = release;
             long size = release.getLong("fileSize"); File directory = folder();
             File partial = new File(directory, "BearMap.partial.apk"), target = new File(directory, "BearMap.apk");
             downloaded = null;
@@ -191,12 +227,12 @@ public final class AppUpdatePlugin extends Plugin {
                 if (cancelled) throw new IOException("다운로드를 취소했습니다.");
                 if (!partial.renameTo(target)) throw new IOException("APK 파일을 저장하지 못했습니다.");
                 new AppUpdateCache(directory).save(release.toString());
-                downloaded = release; progress(size, size); call.resolve(new JSObject().put("ready", true));
+                downloaded = release; progress(size, size);
             } finally {
                 if (conn != null) conn.disconnect(); connection = null;
                 if (partial.exists()) partial.delete();
             }
-        });
+        }, true);
     }
     private void verifyArchive(File file, JSONObject release) throws Exception {
         PackageInfo archive = getContext().getPackageManager().getPackageArchiveInfo(file.getAbsolutePath(), signatureFlags());
@@ -209,8 +245,7 @@ public final class AppUpdatePlugin extends Plugin {
             throw new IOException("이 기기에 설치할 수 없는 APK입니다.");
     }
     @PluginMethod public void cancelDownload(PluginCall call) {
-        cancelled = true;
-        HttpURLConnection conn = connection; if (conn != null) conn.disconnect();
+        cancelActiveDownload();
         call.resolve();
     }
     @PluginMethod public void install(PluginCall call) {
@@ -277,7 +312,6 @@ public final class AppUpdatePlugin extends Plugin {
         if (call != null) call.resolve(new JSObject().put("installerClosed", true));
     }
     @Override protected void handleOnDestroy() {
-        cancelled = true; HttpURLConnection conn = connection; if (conn != null) conn.disconnect();
-        worker.shutdown();
+        if (observer == this) observer = null;
     }
 }

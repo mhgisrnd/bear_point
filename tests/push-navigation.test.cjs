@@ -32,8 +32,8 @@ test('malformed or missing notification targets never open an arbitrary record',
 });
 test('notification target clears filters and focuses the exact record, while missing records show a notice',async()=>{
   const source=fs.readFileSync('public/js/client-ol.js','utf8').replace(/\r\n/g,'\n');
-  const start=source.indexOf('open: async function (serverId, isCurrent)');
-  const body=source.slice(start+'open: '.length,source.indexOf(',\n      onError:',start));
+  const start=source.indexOf('  async function openNotificationEstimate(');
+  const body=source.slice(start,source.indexOf('  let notificationNavigationVersion',start));
   let focused,notice,selected;
   const context={currentBearEstimateItems:[{id:'local-a',server_id:'55',remoteOnly:false,lat:37,lng:127}],
     refreshBearEstimatePanel:async()=>{},realtimeListModule:{refresh:async()=>({ok:true})},

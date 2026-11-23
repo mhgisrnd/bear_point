@@ -4479,7 +4479,7 @@
     let top = Math.max(0, parseCssPx(safe.getPropertyValue("--safe-top")), (visual ? visual.offsetTop : 0) - rect.top) + 18;
     let bottom = Math.min(rect.height - parseCssPx(safe.getPropertyValue("--safe-bottom")), (visual ? visual.offsetTop + visual.height : window.innerHeight) - rect.top) - 18;
     // Reserve the actual control bounds rather than guessing their width.
-    for (const control of document.querySelectorAll?.('#btn-gps-record-toggle, #btn-sdr-diagnostics, #btn-app-settings:not([data-menu="settings"]), #btn-map-layers, .map-right-controls, #compass') || []) {
+    for (const control of document.querySelectorAll?.('#btn-sdr-diagnostics, #btn-app-settings:not([data-menu="settings"]), #btn-map-layers, .map-right-controls, #compass') || []) {
       if (!control.getClientRects().length) continue;
       const bounds = control.getBoundingClientRect();
       if (!bounds.width || !bounds.height) continue;
@@ -4523,7 +4523,7 @@
       }
     }
     if (isLandscape) {
-      for (const control of document.querySelectorAll?.('#btn-gps-record-toggle, #btn-sdr-diagnostics, #btn-map-layers') || []) {
+      for (const control of document.querySelectorAll?.('#btn-sdr-diagnostics, #btn-map-layers') || []) {
         if (!control.getClientRects().length) continue;
         const bounds = control.getBoundingClientRect();
         if (bounds.left - rect.left < left + popupWidth && bounds.left + bounds.width - rect.left > left) top = Math.max(top, bounds.bottom - rect.top + 12);
@@ -4600,6 +4600,7 @@
     const popupHtml = feature && feature.get("popupHtml");
     const coordinate = feature && feature.getGeometry() ? feature.getGeometry().getCoordinates() : null;
     if (!popupHtml || !coordinate) return;
+    window.BearNotificationHistory?.close();
 
     observationPopupEl._observationData = feature ? (feature.get("observationData") || feature.get("obsData") || null) : null;
     focusedObservationId = observationPopupEl._observationData?.id != null ? String(observationPopupEl._observationData.id) : null;
@@ -4649,7 +4650,7 @@
   document.addEventListener("click", function dismissDetailForMapTool(event) {
     const target = event.target;
     if (!target?.closest || target.closest('.map-detail-popup')) return;
-    if (target.closest('#btn-gps-record-toggle, #btn-sdr-diagnostics, #btn-app-settings, #btn-map-layers, #map-layer-options, #btn-map-legend, #map-marker-legend, #btn-notification-history, #notification-history, .map-right-controls, #compass, #btn-sidebar-toggle')) {
+    if (target.closest('#btn-sdr-diagnostics, #btn-app-settings, #btn-map-layers, #map-layer-options, #btn-map-legend, #map-marker-legend, #btn-notification-history, #notification-history, .map-right-controls, #compass, #btn-sidebar-toggle')) {
       closeObservationPopup();
     }
   }, true);
@@ -6025,12 +6026,8 @@
   }
 
   function initializeMapMarkerLegend() {
-    const toggle = document.getElementById("btn-map-legend");
-    const disclosure = document.getElementById("map-legend-disclosure");
     const bearItems = document.getElementById("bear-marker-legend-items");
     const teamItems = document.getElementById("observation-legend-items");
-    const layerToggle = document.getElementById("btn-map-layers");
-    map.getOverlayContainerStopEvent().appendChild(disclosure);
     const makeItem = ({ label, color }, iconSource, isBear) => {
       const item = document.createElement("li");
       item.style.setProperty("--map-legend-swatch", color);
@@ -6048,7 +6045,7 @@
       return item;
     };
     bearItems.replaceChildren(...BEAR_MARKER_PALETTE.map(entry => makeItem(entry, BEAR_MARKER_ICON, true)));
-    let lastTeams = "", unregisterBack;
+    let lastTeams = "";
 
     function renderTeams() {
       const teams = getObservationLegendTeams();
@@ -6058,98 +6055,9 @@
       teamItems.replaceChildren(...teams.map(team =>
         makeItem(team, createHeadingIconDataUri(OBSERVATION_HEADING_ICON_SIZE, team.color, 5.5), false)));
     }
-    function refreshOpenLegend() {
-      if (disclosure.open) renderTeams();
-    }
-    function closeLegend() {
-      disclosure.open = false;
-      unregisterBack?.();
-      unregisterBack = null;
-    }
-    disclosure.addEventListener("toggle", () => {
-      if (disclosure.open) {
-        renderTeams();
-        unregisterBack ??= registerBackClosableOverlay(disclosure, closeLegend);
-      } else {
-        closeLegend();
-      }
-    });
-    layerToggle?.addEventListener("click", closeLegend);
-    document.addEventListener("pointerdown", event => {
-      if (disclosure.open && !disclosure.contains(event.target)) closeLegend();
-    }, true);
-    disclosure.addEventListener("keydown", event => {
-      if (event.key !== "Escape" || !disclosure.open) return;
-      event.preventDefault();
-      closeLegend();
-      toggle.focus();
-    });
-    window.addEventListener("bearpoint:teams-changed", refreshOpenLegend);
-    window.addEventListener("bearpoint:profile-changed", refreshOpenLegend);
-    initializeMapLegendLayout(disclosure);
-  }
-  function initializeMapLegendLayout(disclosure) {
-    if (typeof ResizeObserver !== 'function') return;
-    const summary = disclosure.querySelector('summary');
-    const legend = disclosure.querySelector('.map-marker-legend');
-    const mapElement = document.getElementById('map');
-    if (!summary || !mapElement) return;
-    const selectors = '#register-box, #analysis-dialog-overlay, #analysis-save-sheet, #mobile-map-dock';
-    const watched = new Set();
-    let lift = 0, frame = null;
-    function schedule() {
-      if (frame !== null) return;
-      frame = window.requestAnimationFrame(() => { frame = null; sync(); });
-    }
-    function sync() {
-      const anchor = summary.getBoundingClientRect();
-      const mapRect = mapElement.getBoundingClientRect();
-      const viewport = window.visualViewport;
-      const top = Math.max(mapRect.top, viewport?.offsetTop || 0) + 78;
-      let targetBottom = anchor.bottom + lift;
-      const left = anchor.left, right = disclosure.open ? disclosure.getBoundingClientRect().right : anchor.right;
-      const obstacles = [];
-      for (const element of watched) {
-        if (!element.isConnected || !element.getClientRects().length) continue;
-        const style = window.getComputedStyle(element);
-        if (style.visibility === 'hidden' || style.display === 'none' || element.hidden) continue;
-        // Desktop analysis overlays fill the screen; reserve their card, not the transparent backdrop.
-        const panel = element.querySelector('#analysis-dialog-panel, .analysis-save-card') || element;
-        const rect = panel.getBoundingClientRect();
-        if (rect.right <= left || rect.left >= right || rect.bottom <= top) continue;
-        obstacles.push(rect);
-      }
-      for (const rect of obstacles.sort((a, b) => b.top - a.top)) {
-        if (rect.top < targetBottom + 10 && rect.bottom > targetBottom - anchor.height) targetBottom = rect.top - 10;
-      }
-      const nextLift = Math.max(0, Math.ceil(anchor.bottom + lift - targetBottom));
-      if (nextLift !== lift) {
-        lift = nextLift;
-        disclosure.style.setProperty('--map-legend-avoidance', lift + 'px');
-      }
-      disclosure.dataset.obscured = String(targetBottom - anchor.height < top);
-      const contentTop = Math.max(top, ...obstacles.filter(rect => rect.bottom <= targetBottom - anchor.height).map(rect => rect.bottom + 10));
-      const space = Math.max(0, Math.floor(targetBottom - anchor.height - contentTop - 4));
-      if (legend) disclosure.style.setProperty('--map-legend-available-height', space + 'px');
-    }
-    const resize = new ResizeObserver(schedule);
-    const changes = new MutationObserver(schedule);
-    function discover() {
-      document.querySelectorAll(selectors).forEach(element => {
-        if (watched.has(element)) return;
-        watched.add(element); resize.observe(element);
-        changes.observe(element, { attributes: true, attributeFilter: ['style', 'class', 'hidden'] });
-      });
-      schedule();
-    }
-    resize.observe(summary); resize.observe(mapElement);
-    new MutationObserver(discover).observe(document.body, { childList: true });
-    changes.observe(document.body, { attributes: true, attributeFilter: ['class'] });
-    disclosure.addEventListener('toggle', schedule);
-    for (const event of ['resize', 'bearpoint:analysis-sheet-layout', 'bearpoint:mobile-dock-layout']) window.addEventListener(event, schedule);
-    window.visualViewport?.addEventListener('resize', schedule);
-    window.visualViewport?.addEventListener('scroll', schedule);
-    discover();
+    renderTeams();
+    window.addEventListener("bearpoint:teams-changed", renderTeams);
+    window.addEventListener("bearpoint:profile-changed", renderTeams);
   }
   function bearMarkerTint(color, opacity) {
     return `rgba(${parseInt(color.slice(1,3),16)},${parseInt(color.slice(3,5),16)},${parseInt(color.slice(5,7),16)},${opacity})`;
@@ -8039,11 +7947,8 @@
   });
   bootWithSQLiteGate();
   void window.BearStartupReady.then(() => refreshUnifiedBearList({ silent: true }));
-  if (isNativeCapacitorPlatform()) {
-    void window.BearPushNavigation?.start({
-      plugin: window.Capacitor?.Plugins?.BearPush,
-      ready: window.BearStartupReady,
-      open: async function (serverId, isCurrent) {
+  async function openNotificationEstimate(serverId, isCurrent = () => true) {
+        if (!/^[1-9][0-9]{0,18}$/.test(String(serverId || ''))) return;
         // Notification links identify a specific shared record, never just an animal code.
         await refreshBearEstimatePanel();
         const response = await realtimeListModule?.refresh({silent: true});
@@ -8064,7 +7969,18 @@
           return;
         }
         focusBearListItem(item.id, !!item.remoteOnly, [Number(item.lat), Number(item.lng)]);
-      },
+  }
+  let notificationNavigationVersion = 0;
+  window.addEventListener('bearpoint:notification-navigate', event => {
+    const version = ++notificationNavigationVersion;
+    void window.BearStartupReady.then(() => openNotificationEstimate(event.detail?.serverId, () => version === notificationNavigationVersion))
+      .catch(() => window.__bpShowToast('알림의 추적 위치를 열지 못했습니다. 개체 추적 목록에서 다시 확인해주세요.'));
+  });
+  if (isNativeCapacitorPlatform()) {
+    void window.BearPushNavigation?.start({
+      plugin: window.Capacitor?.Plugins?.BearPush,
+      ready: window.BearStartupReady,
+      open: openNotificationEstimate,
       onError: function () { window.__bpShowToast('알림의 추적 위치를 열지 못했습니다. 개체 추적 목록에서 다시 확인해주세요.'); }
     });
   }

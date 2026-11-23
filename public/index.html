@@ -376,9 +376,8 @@
     </section>
     <button id="btn-sdr-diagnostics" type="button" aria-label="탐색" title="탐색">탐색</button>
     <button id="btn-app-settings" type="button" aria-label="설정" title="설정"><span class="app-settings-icon" aria-hidden="true"></span></button>
-    <details class="map-legend-disclosure" id="map-legend-disclosure">
-      <summary id="btn-map-legend" aria-label="지도 범례" aria-controls="map-marker-legend">범례</summary>
-      <div class="map-marker-legend" id="map-marker-legend">
+    <div class="map-marker-legend" id="map-marker-legend">
+        <h2 class="map-marker-legend__title">범례</h2>
         <div class="map-marker-legend__category">
           <h3 id="bear-legend-title">개체 추적 <small>추정 방식</small></h3>
           <ul id="bear-marker-legend-items" aria-labelledby="bear-legend-title"></ul>
@@ -387,8 +386,7 @@
           <h3><span id="observation-legend-title">관측점</span> <small id="observation-legend-caption">팀 색상</small></h3>
           <ul id="observation-legend-items" aria-labelledby="observation-legend-title observation-legend-caption"></ul>
         </div>
-      </div>
-    </details>
+    </div>
   </div>
   <!-- 관측점 등록 중 기기가 바라보는 방향 (지도 나침반과 별개, 등록창이 열리고 센서가 동작할 때만 표시) -->
   <div id="heading-dial" role="img" aria-label="기기가 바라보는 방향">
@@ -429,7 +427,6 @@
   <script src="js/tracking/gps-track-filters.js"></script>
   <script src="js/tracking/gps-track-store.js"></script>
   <script src="js/tracking/gps-track-sync.js"></script>
-  <script src="js/tracking/gps-recording-toggle.js"></script>
   <script src="js/tracking/gps-track-ui.js"></script>
   <script src="js/mobile-map-dock.js"></script>
   <script src="js/settings/app-updates.js"></script>

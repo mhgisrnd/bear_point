@@ -46,9 +46,7 @@ body.bp-map-dock #mobile-map-dock .mobile-dock-nav #btn-app-settings.is-active {
 body.bp-map-dock #mobile-map-dock .mobile-dock-nav #btn-app-settings .app-settings-icon { width:22px; height:22px; flex:0 0 22px; }
 body.bp-map-dock #mobile-map-dock .mobile-dock-nav #btn-app-settings[data-required=true]::after { left:calc(50% + 13px); right:auto; }
 body.bp-map-dock #btn-sdr-diagnostics { right:calc(64px + var(--safe-right)); }
-body.bp-map-dock #btn-gps-record-toggle { right:calc(124px + var(--safe-right)); }
 :root[data-display-size="large"] body.bp-map-dock #btn-sdr-diagnostics { right:calc(70px + var(--safe-right)); }
-:root[data-display-size="large"] body.bp-map-dock #btn-gps-record-toggle { right:calc(134px + var(--safe-right)); }
 :root[data-display-size="large"] body.bp-map-dock #mobile-map-dock .mobile-dock-nav #btn-app-settings { min-height:56px; }
 .mobile-recording-dot { position: absolute; top: 4px; left: calc(50% + 13px); width: 7px; height: 7px; border: 2px solid #fff; border-radius: 50%; background: #e83d50; }
 .mobile-recording-dot[hidden] { display: none; }

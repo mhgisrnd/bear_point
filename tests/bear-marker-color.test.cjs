@@ -64,34 +64,19 @@ test('the map legend keeps all catalogue teams and unassigned visible across men
   const { DEFAULT_TEAMS } = require('../public/js/settings/app-settings-store');
   const html = parse(fs.readFileSync('public/index.html', 'utf8'));
   const getElement = id => html.querySelector('#' + id);
-  const button = getElement('btn-map-legend');
-  const details = getElement(button.getAttribute('aria-controls'));
-  const disclosure = getElement('map-legend-disclosure');
+  const details = getElement('map-marker-legend');
   const list = getElement('bear-marker-legend-items');
   const teamList = getElement('observation-legend-items');
-  assert.equal(html.querySelector('#map').querySelector('#btn-map-legend'), button);
-  assert.equal(button.tagName, 'SUMMARY');
-  assert.equal(disclosure.tagName, 'DETAILS');
-  assert.equal(disclosure.hasAttribute('open'), false);
-  assert.equal(disclosure.querySelector('#map-marker-legend'),details);
-  disclosure.open = false;
-  disclosure.contains = target => {
-    for (let node = target; node; node = node.parentNode) if (node === disclosure) return true;
-    return false;
-  };
-  for (const element of [button, disclosure]) {
-    element.on = {};
-    element.addEventListener = (event, listener) => { element.on[event] = listener; };
-  }
+  assert.ok(details);
+  assert.equal(getElement('btn-map-legend'), null);
   for (const element of [list, teamList]) {
     element.replaceChildren = (...items) => { element.set_content(''); items.forEach(item => element.appendChild(item)); };
   }
-  let catalog = [], back;
-  const events = {}, documentEvents = {};
+  let catalog = [];
+  const events = {};
   const context = vm.createContext({
     document: {
       getElementById: getElement,
-      addEventListener:(name, listener, capture)=>{assert.equal(capture,true);documentEvents[name]=listener;},
       createElement: tag => {
         const item = parse('<' + tag + '></' + tag + '>').firstChild;
         item.style = { setProperty(name, value) { item.setAttribute('style', name + ':' + value); } };
@@ -103,13 +88,11 @@ test('the map legend keeps all catalogue teams and unassigned visible across men
       BearAppSettings:{store:{snapshot:()=>({items:catalog})}},
       addEventListener:(name, listener)=>{events[name]=listener;}
     },
-    map:{getOverlayContainerStopEvent:()=>({appendChild:element=>assert.equal(element,disclosure)})},
     observationMarkerLayer:{on:()=>assert.fail('The legend should not track layer visibility')},
     observationMarkerSource:{on:()=>assert.fail('The legend should not track observation selection')},
     getEstimationMethodLabel: item => item.estimation_method === 'single' ? '\uB2E8\uC77C \uAD00\uCE21' : '\uAD50\uCC28 \uBD84\uC11D',
     OBSERVATION_NO_TEAM_COLOR:'#7e90a2',
-    OBSERVATION_HEADING_ICON_SIZE:40,
-    registerBackClosableOverlay:(_,callback)=>{back=callback;return ()=>{back=null;};}
+    OBSERVATION_HEADING_ICON_SIZE:40
   });
   const source = fs.readFileSync('public/js/client-ol.js', 'utf8');
   vm.runInContext(source.slice(source.indexOf('  function createHeadingIconDataUri('), source.indexOf('  function createMyLocationIconDataUri(')), context);
@@ -122,9 +105,6 @@ test('the map legend keeps all catalogue teams and unassigned visible across men
   assert.deepEqual(list.querySelectorAll('img').map(icon => icon.getAttribute('src')),
     ['css/svg/bear_marker_point.svg','css/svg/bear_marker_point.svg']);
   assert.ok(fs.existsSync('public/css/svg/bear_marker_point.svg'));
-  const setOpen = value => { disclosure.open = value; disclosure.on.toggle(); };
-  setOpen(true);
-  assert.equal(disclosure.open, true);
   const teams = () => teamList.querySelectorAll('li').map(item => [item.textContent, item.getAttribute('style')]);
   const expected = [...DEFAULT_TEAMS, {name:'미지정',color:'#7e90a2'}];
   assert.deepEqual(teams(), expected.map(team => [team.name,'--map-legend-swatch:' + team.color]));
@@ -134,14 +114,5 @@ test('the map legend keeps all catalogue teams and unassigned visible across men
   catalog = [{...DEFAULT_TEAMS[0],color:'#B91C1C'}];
   events['bearpoint:teams-changed']();
   assert.deepEqual(teams(), expected.map((team,index) => [team.name,'--map-legend-swatch:' + (index===0?'#B91C1C':team.color)]));
-  documentEvents.pointerdown({target:teamList.querySelector('li')});
-  assert.equal(disclosure.open, true);
-  documentEvents.pointerdown({target:getElement('map')});
-  assert.equal(disclosure.open, false);
-  setOpen(true);
-  back();
-  assert.equal(disclosure.open, false);
-  setOpen(true);
-  setOpen(false);
-  assert.equal(disclosure.open, false);
+
 });
