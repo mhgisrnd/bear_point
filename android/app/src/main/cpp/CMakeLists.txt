@@ -14,6 +14,11 @@ add_library(rtlsdr SHARED ${R}/src/librtlsdr.c ${R}/src/tuner_e4k.c ${R}/src/tun
 target_include_directories(rtlsdr PRIVATE ${R}/include ${U}/libusb)
 target_compile_definitions(rtlsdr PRIVATE rtlsdr_EXPORTS DETACH_KERNEL_DRIVER)
 target_link_libraries(rtlsdr usb m)
+set(A third_party/airspyhf)
+# Airspy HF+ reference driver, pinned in third_party/airspyhf/UPSTREAM.md.
+add_library(airspyhf STATIC ${A}/airspyhf.c ${A}/iqbalancer.c)
+target_include_directories(airspyhf PRIVATE ${A} ${U}/libusb)
+target_link_libraries(airspyhf usb m)
 add_library(bear_sdr SHARED sdr_jni.cpp)
 target_compile_options(bear_sdr PRIVATE -O2)
 target_include_directories(bear_sdr PRIVATE ${R}/include)
