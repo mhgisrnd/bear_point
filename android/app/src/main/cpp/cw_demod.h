@@ -10,6 +10,9 @@ class CwDemod {
     CwAudioLevel audioLevel;
     static constexpr double PI = 3.14159265358979323846;
     double alpha = 0;
+    double audioAlpha = 0;
+    double audioI[4] = {}, audioQ[4] = {};
+    int filterMode = 0;
     double channelOi = 1, channelOq = 0, channelSi = 1, channelSq = 0;
     double channelI[4] = {}, channelQ[4] = {};
     double inputDcI = 0, inputDcQ = 0, inputDcAlpha = 0;
@@ -26,6 +29,16 @@ public:
     double audioGain() const { return audioLevel.appliedGain(); }
     double takeSignalPeak() { return meter.takePeak(); }
     double noisePower() const { return meter.noisePower(); }
+    bool setFilterMode(int mode) {
+        if (mode < 0 || mode > 2 || !rate) return false;
+        if (mode == filterMode && audioAlpha != 0) return true;
+        filterMode = mode;
+        const double cutoff = mode == 1 ? 1400 : mode == 2 ? 4600 : 2500;
+        audioAlpha = 1 - exp(-2 * PI * cutoff / rate);
+        for (double &stage : audioI) stage = 0;
+        for (double &stage : audioQ) stage = 0;
+        return true;
+    }
     bool configure(int sampleRate, int offset) {
         if (sampleRate < 250000 || sampleRate > 2400000 ||
             (offset < 0 ? -double(offset) : double(offset)) + 5000 > sampleRate * .45) return false;
@@ -33,6 +46,8 @@ public:
         meter.configure(48000);
         audioLevel.configure();
         alpha = 1 - exp(-2 * PI * 2500 / rate);
+        audioAlpha = 0;
+        setFilterMode(filterMode);
         channelOi = beatI = 1; channelOq = beatQ = 0; beatCount = 0;
         channelSi = cos(-2 * PI * offset / rate); channelSq = sin(-2 * PI * offset / rate);
         inputDcI = inputDcQ = 0;
@@ -55,6 +70,11 @@ public:
                 double scale = 1.5 - .5 * (channelOi * channelOi + channelOq * channelOq);
                 channelOi *= scale; channelOq *= scale;
             }
+            double ai = ci, aq = cq;
+            for (int stage = 0; stage < 4; stage++) {
+                audioI[stage] += audioAlpha * (ai - audioI[stage]); ai = audioI[stage];
+                audioQ[stage] += audioAlpha * (aq - audioQ[stage]); aq = audioQ[stage];
+            }
             for (int stage = 0; stage < 4; stage++) {
                 channelI[stage] += alpha * (ci - channelI[stage]); ci = channelI[stage];
                 channelQ[stage] += alpha * (cq - channelQ[stage]); cq = channelQ[stage];
@@ -68,7 +88,7 @@ public:
                 channelSamples[channelLength++] = ci;
                 channelSamples[channelLength++] = cq;
             }
-            double value = ci * beatI - cq * beatQ;
+            double value = ai * beatI - aq * beatQ;
             double beatNext = beatI * beatSi - beatQ * beatSq;
             beatQ = beatI * beatSq + beatQ * beatSi; beatI = beatNext;
             if (++beatCount == 4096) {

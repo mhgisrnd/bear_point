@@ -214,6 +214,11 @@ Java_com_bearpoint_app_SdrNative_setAudioGain(JNIEnv *env, jclass, jlong handle,
     if(processor&&processor->cw){if(!processor->beacon.setAudioGainDb(db))error(env,"CW audio gain",-1);else processor->audioGainDb=db;}
 }
 extern "C" JNIEXPORT void JNICALL
+Java_com_bearpoint_app_SdrNative_setCwFilter(JNIEnv *env, jclass, jlong handle, jint mode) {
+    auto *processor = reinterpret_cast<SdrDemod *>(handle);
+    if (!processor || !processor->cw || !processor->beacon.setFilterMode(mode)) error(env, "CW filter", -1);
+}
+extern "C" JNIEXPORT void JNICALL
 Java_com_bearpoint_app_SdrNative_close(JNIEnv *, jclass, jlong handle) {
     if(handle){auto *receiver=reinterpret_cast<ReceiverHandle *>(handle);receiver->stop();rtlsdr_close(receiver->dev);delete receiver;}
 }

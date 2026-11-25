@@ -110,7 +110,7 @@
       <p data-animal-target class="sdr-animal-target" hidden></p>
       <div data-scan-results hidden><p data-scan-progress class="sdr-scan-progress">탐색 대기</p><div class="sdr-candidate-heading"><strong data-candidate-heading>신호 후보</strong><span data-candidate-count>0개</span></div><div data-candidates></div></div>
       <div data-fixed-results>
-      <div class="sdr-readout-row"><p class="sdr-frequency-readout" data-frequency-readout aria-live="polite">수신 주파수 —</p><div data-audio-panel><button type="button" data-audio disabled aria-pressed="false">소리 켜기</button></div></div><label class="sdr-listening-level">청취 증폭<select data-audio-gain aria-label="CW 청취 증폭"><option value="-1">자동</option><option value="0">원음</option><option value="6">2배</option><option value="12">4배</option><option value="18">8배</option><option value="24">16배</option><option value="30">32배</option><option value="36">64배</option></select></label><p data-audio-status class="sdr-note" hidden></p>
+      <div class="sdr-readout-row"><p class="sdr-frequency-readout" data-frequency-readout aria-live="polite">수신 주파수 —</p><div data-audio-panel><button type="button" data-audio disabled aria-pressed="false">소리 켜기</button></div></div><div class="sdr-listening-level"><label>청취 증폭<select data-audio-gain aria-label="CW 청취 증폭"><option value="-1">자동</option><option value="0">원음</option><option value="6">2배</option><option value="12">4배</option><option value="18">8배</option><option value="24">16배</option><option value="30">32배</option><option value="36">64배</option></select></label><label>청취 필터<select data-cw-filter aria-label="CW 청취 필터"><option value="0">기본 · 약 2.2 kHz</option><option value="1">좁게 · 약 1.2 kHz</option><option value="2">넓게 · 약 4.0 kHz</option></select></label></div><p data-audio-status class="sdr-note" hidden></p>
       <div class="sdr-signal-panels">
       <div class="sdr-strength"><div class="sdr-strength-heading"><strong>수신 신호 세기</strong><span data-strength-value>측정 대기</span></div><div class="sdr-strength-bars" data-strength-bars role="meter" aria-label="청취 주파수 상대 신호 세기" aria-valuemin="0" aria-valuemax="10" aria-valuenow="0">${Array.from({ length: 10 }, (_, i) => `<span data-strength-bar="${i}" style="height:${8 + i * 3}px"></span>`).join("")}</div><p class="sdr-note" data-strength-state>청취 주파수 주변의 상대 신호 세기</p>
       <div class="sdr-metrics"><div><span>수신 데이터</span><strong data-throughput>—</strong></div><div><span>대역 전력</span><strong data-power>—</strong></div></div>
@@ -883,6 +883,9 @@
     const audioGain = dialog.querySelector("[data-audio-gain]");
     if (Number.isInteger(audio.gainDb)) audioGain.value = String(audio.gainDb);
     audioGain.disabled = busy || capturing || typeof plugin?.setAudio !== "function" || snapshot.receptionState === "stopping";
+    const cwFilter = dialog.querySelector("[data-cw-filter]");
+    if (Number.isInteger(snapshot.cwFilterMode)) cwFilter.value = String(snapshot.cwFilterMode);
+    cwFilter.disabled = busy || capturing || typeof plugin?.setCwFilter !== "function" || snapshot.receptionState === "stopping";
     dialog.querySelector(".sdr-listening-level").hidden = task !== "fixed";
     const compareButton = dialog.querySelector("[data-diagnostic-compare]");
     compareButton.hidden = isAirspy;
@@ -1134,6 +1137,10 @@
   dialog.querySelector("[data-audio-gain]").addEventListener("change", () => {
     const gainDb = Number(dialog.querySelector("[data-audio-gain]").value);
     return run(() => plugin.setAudio({ gainDb }));
+  });
+  dialog.querySelector("[data-cw-filter]").addEventListener("change", () => {
+    const mode = Number(dialog.querySelector("[data-cw-filter]").value);
+    return run(() => plugin.setCwFilter({ mode }));
   });
   dialog.querySelector("[data-diagnostic-start]").addEventListener("click", () => run(() => plugin.startDiagnostic()));
   dialog.querySelector("[data-diagnostic-stop]").addEventListener("click", () => run(() => plugin.stopDiagnostic()));

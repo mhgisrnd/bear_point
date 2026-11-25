@@ -32,6 +32,8 @@ final class SdrReceiver {
     private File comparisonRoot;
     private UsbDeviceConnection comparisonConnection;
     String mode = "iq";
+    private volatile int cwFilterMode = 0;
+    int cwFilterMode() { return cwFilterMode; }
     private boolean airspy;
     int tunedFrequencyHz;
     private SdrScanSession scanSession;
@@ -215,6 +217,7 @@ final class SdrReceiver {
             long spectrumUpdated = started - 500;
             String[] tuners = {"Unknown", "E4000", "FC0012", "FC0013", "FC2580", "R820T", "R828D"};
             int appliedAudioGain = Integer.MIN_VALUE;
+            int appliedFilterMode = -1;
             int actualRate = rate, actualCenterHz = hardwareHz;
             JSObject registers = new JSObject();
             long previousLoopEnd = SystemClock.elapsedRealtimeNanos();
@@ -229,6 +232,7 @@ final class SdrReceiver {
                     demodulator = replacement;
                     appliedAudioGain = audio.gainDb();
                     SdrNative.setAudioGain(demodulator, appliedAudioGain);
+                    appliedFilterMode = -1;
                     audio.discontinuity();
                     cwSpectrum = new SdrCwSpectrum();
                     cwDetector = new SdrCwDetector(actualRate);
@@ -272,6 +276,10 @@ final class SdrReceiver {
                 if (demodulator != 0 && "cw".equals(mode) && appliedAudioGain != audio.gainDb()) {
                     appliedAudioGain = audio.gainDb();
                     SdrNative.setAudioGain(demodulator, appliedAudioGain);
+                }
+                if (demodulator != 0 && "cw".equals(mode) && appliedFilterMode != cwFilterMode) {
+                    appliedFilterMode = cwFilterMode;
+                    SdrNative.setCwFilter(demodulator, appliedFilterMode);
                 }
                 audio.offer(received.audio,(long)received.diagnostic[9],received.diagnostic[11]);
                 if(received.signalPower>signalPeak){
@@ -335,6 +343,9 @@ final class SdrReceiver {
                     if(captureActive) {
                         JSObject settings=new JSObject();settings.put("pipeline","cw-complex-channel-v1");settings.put("mode",mode);
                         settings.put("sampleRate",(int)block[4]);settings.put("centerFrequencyHz",(int)block[6]);
+                        settings.put("cwAudioFilter",appliedFilterMode == 1 ? "narrow" : appliedFilterMode == 2 ? "wide" : "default");
+                        settings.put("cwAudioFilterApprox3dBBandwidthHz",appliedFilterMode == 1 ? 1200 : appliedFilterMode == 2 ? 4000 : 2200);
+                        settings.put("cwAudioFilterCenterHz",listenHz);
                         settings.put("listenFrequencyHz",listenHz);settings.put("audioGainDb",appliedAudioGain);
                         settings.put("receiverType",airspy?"airspyhf":"rtl");
                         settings.put("iqFormat",airspy?"cf32le":"cu8");
@@ -609,6 +620,14 @@ final class SdrReceiver {
             throw new IllegalStateException("CW 또는 WFM 수신을 시작한 뒤 소리를 켜주세요.");
         if (gainDb != null) audio.setGainDb(gainDb);
         audio.set(enabled, volume);
+    }
+
+    void setCwFilter(int filter) {
+        if (filter < 0 || filter > 2) throw new IllegalArgumentException("Invalid CW filter");
+        if (comparison.active || java.util.Arrays.asList("waiting", "recording", "packaging").contains(diagnostic.state()))
+            throw new IllegalStateException("진단 기록을 마친 후 필터를 변경하세요.");
+        cwFilterMode = filter;
+        changed.run();
     }
 
     void shutdown() {

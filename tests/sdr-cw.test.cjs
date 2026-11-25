@@ -244,3 +244,27 @@ test('Airspy float IQ preserves weak CW pulses without 8-bit quantization', () =
   assert.ok(rms(pcm,.22,.29)>5, 'a small pulse survives');
   assert.ok(rms(pcm,.4,.5)<1, 'silence remains silent');
 });
+
+test('CW listening filter changes audio rejection without altering RF channel', () => {
+  function listen(mode, hz) {
+    const r = receiver(), rate = 768000, pcm = [];
+    r.api.configure(rate, 0, 0); assert.equal(r.api.setCwFilter(mode), 1);
+    for (let start=0; start<rate/4; start+=4096) {
+      const count=Math.min(4096,rate/4-start);
+      const iq=new Float32Array(r.api.memory.buffer,r.api.floatInputBuffer(),count*2);
+      for (let i=0;i<count;i++) {
+        const phase=2*Math.PI*hz*(start+i)/rate;
+        iq[2*i]=.1*Math.cos(phase); iq[2*i+1]=.1*Math.sin(phase);
+      }
+      const n=r.api.processFloat(count);
+      pcm.push(...new Int16Array(r.api.memory.buffer,r.api.outputBuffer(),n));
+    }
+    return {pcm, channel:Array.from(new Float64Array(r.api.memory.buffer,r.api.channelBuffer(),r.api.channelLength()))};
+  }
+  const narrow=listen(1,-400), normal=listen(0,-400), wide=listen(2,-400);
+  assert.ok(rms(narrow.pcm,.1,.2)>rms(normal.pcm,.1,.2)*.7, 'Airspy test pulse stays audible');
+  assert.deepEqual(narrow.channel,normal.channel);
+  assert.deepEqual(wide.channel,normal.channel);
+  const narrowOff=listen(1,1500), wideOff=listen(2,1500);
+  assert.ok(rms(wideOff.pcm,.1,.2)>rms(narrowOff.pcm,.1,.2)*2.5, 'narrow filter reduces off-channel sound');
+});

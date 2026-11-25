@@ -1946,3 +1946,15 @@ test('Airspy keeps CW controls while hiding RTL gain, PPM and unsupported compar
   ui.state.reception={mode:'cw',hasSamples:true,signalDbfs:-60,powerDbfs:-60};ui.emit();
   assert.equal(ui.dialog.querySelector('[data-diagnostic-start]').disabled,false);
 });
+
+test('CW listening filter follows native status and sends live selections',async()=>{
+  const ui=setup(); ui.device.hasPermission=true;
+  ui.plugin.setCwFilter=async ({mode})=>{ui.state.cwFilterMode=mode;ui.emit();};
+  await ui.trigger.click();await ui.button().click();await tick();
+  ui.state.receiverType='airspyhf';ui.state.cwFilterMode=0;ui.emit();
+  const filter=ui.dialog.querySelector('[data-cw-filter]');
+  assert.equal(filter.disabled,false);assert.equal(filter.value,'0');
+  await filter.change('1');await tick();assert.equal(ui.state.cwFilterMode,1);
+  ui.state.diagnostic={state:'recording',records:[]};ui.emit();
+  assert.equal(filter.disabled,true);
+});

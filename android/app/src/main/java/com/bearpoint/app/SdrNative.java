@@ -12,5 +12,6 @@ final class SdrNative {
     static native long createDemodulator(String mode, int sampleRate, int offsetHz, int deemphasisUs);
     static native void closeDemodulator(long handle);
     static native void setAudioGain(long handle, int db);
+    static native void setCwFilter(long handle, int mode);
     static native void close(long handle);
 }

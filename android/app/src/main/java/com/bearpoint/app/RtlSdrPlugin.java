@@ -177,6 +177,7 @@ public class RtlSdrPlugin extends Plugin {
         result.put("scanResumeAvailable", sdr.hasScanSession());
         result.put("receptionError", runtime.serviceError.isEmpty() ? sdr.error : runtime.serviceError);
         result.put("audio", sdr.audio.snapshot());
+        result.put("cwFilterMode", sdr.cwFilterMode());
         result.put("diagnostic", sdr.diagnosticSnapshot());
         result.put("receiverUiRequestId", runtime.receiverUiRequestId);
         result.put("viewportInsets", viewportInsets());
@@ -463,6 +464,14 @@ public class RtlSdrPlugin extends Plugin {
     @PluginMethod public void setAudio(PluginCall call) {
         execute(call, () -> {
             sdr.setAudio(call.getBoolean("enabled"), call.getDouble("volume"), call.getInt("gainDb"));
+            call.resolve(snapshot()); publish();
+        });
+    }
+    @PluginMethod public void setCwFilter(PluginCall call) {
+        execute(call, () -> {
+            Integer mode = call.getInt("mode");
+            if (mode == null) { call.reject("청취 필터를 선택하세요."); return; }
+            sdr.setCwFilter(mode);
             call.resolve(snapshot()); publish();
         });
     }
