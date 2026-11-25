@@ -127,9 +127,13 @@ public class RtlSdrPlugin extends Plugin {
         return usb == null || id == null ? null : usb.getDeviceList().get(id);
     }
 
+    private boolean airspy(UsbDevice device) {
+        return device != null && device.getVendorId() == 0x03eb && device.getProductId() == 0x800c;
+    }
+
     private boolean candidate(UsbDevice device) {
         // Initial supported USB IDs; this is NOT proof of tuner compatibility.
-        return device.getVendorId() == 0x0bda && (device.getProductId() == 0x2832 || device.getProductId() == 0x2838);
+        return airspy(device) || (device.getVendorId() == 0x0bda && (device.getProductId() == 0x2832 || device.getProductId() == 0x2838));
     }
 
     private JSObject deviceInfo(UsbDevice device) {
@@ -139,6 +143,7 @@ public class RtlSdrPlugin extends Plugin {
         result.put("productId", device.getProductId());
         result.put("name", device.getProductName() == null ? "USB 장치" : device.getProductName());
         result.put("candidate", candidate(device));
+        result.put("receiverType", airspy(device) ? "airspyhf" : "rtl");
         result.put("hasPermission", usb.hasPermission(device));
         result.put("connected", device.getDeviceName().equals(runtime.connectedId));
         result.put("tuner", "unverified");
@@ -155,6 +160,7 @@ public class RtlSdrPlugin extends Plugin {
         result.put("devices", devices);
         result.put("state", !hostSupported() ? "unsupported" : permissionCall != null ? "permissionPending" : runtime.connection != null ? "connected" : "idle");
         result.put("connectedDeviceId", runtime.connectedId == null ? "" : runtime.connectedId);
+        result.put("receiverType", airspy(find(runtime.connectedId)) ? "airspyhf" : "rtl");
         result.put("backgroundScanning", SdrScanService.isScanning());
         result.put("backgroundReceiving", SdrScanService.isReceiving());
         result.put("lastError", lastError == null ? "" : lastError);
@@ -220,7 +226,7 @@ public class RtlSdrPlugin extends Plugin {
         if (!hostSupported()) { call.reject("USB Host를 지원하지 않습니다.", "USB_HOST_UNSUPPORTED"); return null; }
         UsbDevice device = find(call.getString("deviceId"));
         if (device == null) { call.reject("장치가 연결되어 있지 않습니다.", "USB_DEVICE_NOT_FOUND"); return null; }
-        if (!candidate(device)) { call.reject("현재 진단에서 지원하는 RTL2832U USB ID가 아닙니다.", "USB_DEVICE_UNSUPPORTED"); return null; }
+        if (!candidate(device)) { call.reject("지원하는 RTL-SDR 또는 Airspy HF+ USB 장치가 아닙니다.", "USB_DEVICE_UNSUPPORTED"); return null; }
         return device;
     }
 
@@ -367,8 +373,12 @@ public class RtlSdrPlugin extends Plugin {
                 || !SdrSettings.validDemodulation(mode, band, hz, listen, rate, deemphasis)) {
                 call.reject("수신 설정 범위를 확인하세요."); return;
             }
+            boolean isAirspy = airspy(find(runtime.connectedId));
+            if (isAirspy && (!"cw".equals(mode) || hz < 60000000 || hz > 260000000)) {
+                call.reject("Airspy HF+는 현재 60~260MHz의 개별 CW 수신만 지원합니다."); return;
+            }
             sdr.start(runtime.connection, hz, rate, gain, ppm, mode, listen, deemphasis,
-                call.getBoolean("audioEnabled", true), call.getDouble("audioVolume", 1d));
+                call.getBoolean("audioEnabled", true), call.getDouble("audioVolume", 1d), isAirspy);
             try { SdrScanService.launch(getContext(), "fixed"); }
             catch (RuntimeException failure) { sdr.stop(); throw failure; }
             call.resolve(snapshot()); publish();
@@ -431,6 +441,7 @@ public class RtlSdrPlugin extends Plugin {
 
     private void beginScan(PluginCall call) {
         execute(call, () -> {
+            if (airspy(find(runtime.connectedId))) { call.reject("Airspy 대역 탐색은 아직 지원하지 않습니다."); return; }
             if (paused) { call.reject("앱 화면에서 탐색을 시작하세요."); return; }
             if (runtime.connection == null) { call.reject("USB 연결을 먼저 확인하세요."); return; }
             int gain = call.getInt("gainTenthsDb", 500), ppm = call.getInt("ppm", 0);
@@ -466,6 +477,7 @@ public class RtlSdrPlugin extends Plugin {
     }
     @PluginMethod public void startComparisonDiagnostic(PluginCall call) {
         execute(call,()->{
+            if (airspy(find(runtime.connectedId))) { call.reject("Airspy 2분 비교 진단은 아직 지원하지 않습니다."); return; }
             if(paused||runtime.connection==null)throw new IllegalStateException("USB 연결 후 앱 화면에서 시작하세요.");
             JSObject device=new JSObject();device.put("manufacturer",Build.MANUFACTURER);device.put("model",Build.MODEL);
             device.put("androidSdk",Build.VERSION.SDK_INT);device.put("androidRelease",Build.VERSION.RELEASE);

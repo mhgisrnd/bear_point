@@ -43,14 +43,7 @@ public:
         for (double &stage : channelQ) stage = 0;
         return true;
     }
-    int process(const unsigned char *input, int length, short *output, int capacity) {
-        channelLength = 0;
-        if (!rate) return 0;
-        int count = 0;
-        for (int n = 0; n < length; n++) {
-            if (!odd) { saved = input[n]; odd = true; continue; }
-            odd = false;
-            double rawI = (saved - 127.5) / 127.5, rawQ = (input[n] - 127.5) / 127.5;
+    void processPair(double rawI, double rawQ, short *output, int capacity, int &count) {
             inputDcI += inputDcAlpha * (rawI - inputDcI); inputDcQ += inputDcAlpha * (rawQ - inputDcQ);
             rawI -= inputDcI; rawQ -= inputDcQ;
             double ci = rawI * channelOi - rawQ * channelOq;
@@ -67,7 +60,7 @@ public:
                 channelQ[stage] += alpha * (cq - channelQ[stage]); cq = channelQ[stage];
             }
             phase += 48000;
-            if (phase < rate) continue;
+            if (phase < rate) return;
             phase -= rate;
             meter.observe(ci * ci + cq * cq);
             // Reuse the selected complex channel before BFO/audio gain for the zoom FFT.
@@ -86,9 +79,28 @@ public:
             if (value > 32767) value = 32767;
             if (value < -32768) value = -32768;
             if (count < capacity) output[count++] = short(value);
+    }
+    int process(const unsigned char *input, int length, short *output, int capacity) {
+        channelLength = 0;
+        if (!rate) return 0;
+        int count = 0;
+        for (int n = 0; n < length; n++) {
+            if (!odd) { saved = input[n]; odd = true; continue; }
+            odd = false;
+            processPair((saved - 127.5) / 127.5, (input[n] - 127.5) / 127.5, output, capacity, count);
         }
         return count;
     }
+    // Airspy's driver outputs interleaved floating point complex samples.
+    int processFloat(const float *input, int complexCount, short *output, int capacity) {
+        channelLength = 0;
+        if (!rate) return 0;
+        int count = 0;
+        for (int n = 0; n < complexCount; n++)
+            processPair(input[n * 2], input[n * 2 + 1], output, capacity, count);
+        return count;
+    }
+
 };
 
 struct SdrDemod {

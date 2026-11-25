@@ -224,3 +224,23 @@ test('zoom spectrum exports the target complex channel before listening gain and
   }
   assert.ok(Math.abs(peak-600)<=10,'RF offset remains 600 Hz, without the 700 Hz audio beat');
 });
+
+test('Airspy float IQ preserves weak CW pulses without 8-bit quantization', () => {
+  const r = receiver(), rate = 768000;
+  assert.equal(r.api.configure(rate, 0, 0), 1);
+  const pcm=[];
+  for (let start=0; start<rate; start+=4096) {
+    const count=Math.min(4096,rate-start);
+    const input=new Float32Array(r.api.memory.buffer,r.api.floatInputBuffer(),count*2);
+    for (let i=0;i<count;i++) {
+      const t=(start+i)/rate, amplitude=t>=.2 && t<.3 ? .001 : 0;
+      input[i*2]=amplitude*Math.cos(2*Math.PI*600*t);
+      input[i*2+1]=amplitude*Math.sin(2*Math.PI*600*t);
+    }
+    const n=r.api.processFloat(count);
+    pcm.push(...new Int16Array(r.api.memory.buffer,r.api.outputBuffer(),n));
+  }
+  assert.equal(pcm.length,48000);
+  assert.ok(rms(pcm,.22,.29)>5, 'a small pulse survives');
+  assert.ok(rms(pcm,.4,.5)<1, 'silence remains silent');
+});

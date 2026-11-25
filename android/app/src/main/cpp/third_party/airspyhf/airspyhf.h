@@ -126,6 +126,7 @@ extern ADDAPI int ADDCALL airspyhf_is_low_if(airspyhf_device_t* device); /* Tell
 extern ADDAPI int ADDCALL airspyhf_set_freq(airspyhf_device_t* device, const uint32_t freq_hz);
 extern ADDAPI int ADDCALL airspyhf_set_freq_double(airspyhf_device_t* device, const double freq_hz);
 extern ADDAPI int ADDCALL airspyhf_set_lib_dsp(airspyhf_device_t* device, const uint8_t flag); /* Enables/Disables the IQ Correction, IF shift and Fine Tuning. */
+extern int airspyhf_samplerates_from_fallback(airspyhf_device_t* device);
 extern ADDAPI int ADDCALL airspyhf_get_samplerates(airspyhf_device_t* device, uint32_t* buffer, const uint32_t len);
 extern ADDAPI int ADDCALL airspyhf_set_samplerate(airspyhf_device_t* device, uint32_t samplerate);
 extern ADDAPI int ADDCALL airspyhf_set_att(airspyhf_device_t* device, float value);

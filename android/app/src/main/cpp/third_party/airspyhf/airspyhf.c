@@ -101,6 +101,7 @@ typedef struct airspyhf_device
 	pthread_cond_t consumer_cv;
 	pthread_mutex_t consumer_mp;
 	uint32_t supported_samplerate_count;
+	int samplerates_from_fallback;
 	uint32_t *supported_samplerates;
 	uint8_t *samplerate_architectures;
 	uint32_t supported_att_step_count;
@@ -1022,6 +1023,7 @@ static int airspyhf_open_init(airspyhf_device_t** device, uint64_t serial_number
 	if (result != AIRSPYHF_SUCCESS)
 	{
 		// Assume one default sample rate with Zero IF
+		lib_device->samplerates_from_fallback = 1;
 
 		lib_device->supported_samplerate_count = 1;
 		lib_device->supported_samplerates = (uint32_t *) malloc(lib_device->supported_samplerate_count * sizeof(uint32_t));
@@ -1179,6 +1181,11 @@ int ADDCALL airspyhf_get_output_size(airspyhf_device_t * device)
 int ADDCALL airspyhf_is_low_if(airspyhf_device_t* device)
 {
 	return device->is_low_if;
+}
+
+int airspyhf_samplerates_from_fallback(airspyhf_device_t* device)
+{
+    return device->samplerates_from_fallback;
 }
 
 int ADDCALL airspyhf_get_samplerates(airspyhf_device_t* device, uint32_t* buffer, const uint32_t len)

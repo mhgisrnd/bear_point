@@ -27,6 +27,8 @@ final class SdrDiagnosticCapture {
     private long started, firstAudioOffset = -1, usbBytes, audioSamples;
     private double writeMs;
     private int sampleRate;
+    private int iqBytesPerSample = 2;
+    private String iqFile = "samples.cu8";
     private final AtomicLong writerDroppedBytes=new AtomicLong(),writerDroppedBlocks=new AtomicLong();
     void writerDrop(long count){writerDroppedBytes.addAndGet(count);writerDroppedBlocks.incrementAndGet();}
     long writerDroppedBlocks(){return writerDroppedBlocks.get();}
@@ -52,7 +54,7 @@ final class SdrDiagnosticCapture {
                 File archive=new File(folder,"sdr-diagnostic.zip");
                 if(archive.isFile()&&archive.length()>0)try(ZipFile zip=new ZipFile(archive)) {
                     ZipEntry audio = zip.getEntry("received-audio.wav");
-                    if(zip.getEntry("metadata.json")!=null&&(zip.getEntry("samples.cu8")!=null||zip.getEntry("comparison.json")!=null))
+                    if(zip.getEntry("metadata.json")!=null&&(zip.getEntry("samples.cu8")!=null||zip.getEntry("samples.cf32le")!=null||zip.getEntry("comparison.json")!=null))
                         found.add(new Saved(archive,zip.getEntry("comparison.json")!=null,audio!=null && audio.getSize()>44));
                 }catch(IOException ignored){}
             }
@@ -87,7 +89,7 @@ final class SdrDiagnosticCapture {
         while(recent.size()>30 || (!recent.isEmpty() && now-Long.parseLong(recent.peekFirst()[0])>3000))recent.removeFirst();
     }
 
-    SdrDiagnosticCapture(Runnable changed) { this(changed, 10000, 50L * 1024 * 1024); }
+    SdrDiagnosticCapture(Runnable changed) { this(changed, 10000, 256L * 1024 * 1024); }
     SdrDiagnosticCapture(Runnable changed, long durationMs, long limit) {
         this.changed = changed; this.durationMs = durationMs; this.limit = limit;
         audioPeaks = new SdrRecordedAudioPeaks(AUDIO_SAMPLE_RATE, durationMs);
@@ -131,11 +133,16 @@ final class SdrDiagnosticCapture {
         observe(values,audio,now,settings,details,null);
     }
     synchronized void observe(double[] values, short[] audio, long now, String settings,String details,byte[] originalIq) {
+        observe(values,audio,now,settings,details,originalIq,false);
+    }
+    synchronized void observe(double[] values, short[] audio, long now, String settings,String details,byte[] originalIq, boolean isFloat) {
         if (!"waiting".equals(state) && !"recording".equals(state)) return;
         try {
             if ("waiting".equals(state)) {
                 started = now; receiver = settings;sampleRate=(int)values[4];
-                iq = output("samples.cu8"); pcm = output("audio.s16le"); index = output("blocks.csv");
+                iqBytesPerSample = isFloat ? 8 : 2;
+                iqFile = isFloat ? "samples.cf32le" : "samples.cu8";
+                iq = output(iqFile); pcm = output("audio.s16le"); index = output("blocks.csv");
                 telemetry = output("telemetry.jsonl");
                 for(String[] entry:recent)if(now-Long.parseLong(entry[0])<=3000)event("baseline",Long.parseLong(entry[0])-started,entry[1]);
                 index.write("file_offset,usb_offset,usb_bytes,saved_bytes,elapsed_ms\n".getBytes(StandardCharsets.UTF_8));
@@ -146,7 +153,7 @@ final class SdrDiagnosticCapture {
             int received = (int)values[0];
             int available=originalIq==null?values.length-7:originalIq.length;
             int count = (int)Math.max(0, Math.min(Math.min(received,available),limit-bytes));
-            count -= count % 2; // Preserve complete I/Q pairs, including at the byte limit.
+            count -= count % iqBytesPerSample; // Preserve complete I/Q pairs.
             // Native FFT export truncates incomplete frames. Record every gap explicitly.
             index.write((bytes+","+usbBytes+","+received+","+count+","+(now-started)+"\n").getBytes(StandardCharsets.UTF_8));
             if(originalIq!=null)iq.write(originalIq,0,count);
@@ -183,17 +190,18 @@ final class SdrDiagnosticCapture {
         try {
             closeStreams();
             if (bytes==0) throw new IOException("진단 기록에 수신 데이터가 없습니다.");
-            String metadata="{\"schema_version\":3,\"format\":\"unsigned 8-bit interleaved IQ, 127.5 midpoint\",\"receiver\":"+receiver+
+            String metadata="{\"schema_version\":3,\"format\":"+quote(iqBytesPerSample == 8 ? "32-bit little-endian floating point interleaved IQ; driver output after libairspyhf DSP" : "unsigned 8-bit interleaved IQ, 127.5 midpoint")+",\"receiver\":"+receiver+
                 ",\"writer_dropped_blocks\":"+writerDroppedBlocks.get()+",\"writer_dropped_bytes\":"+writerDroppedBytes.get()+
-                ",\"receiver_last\":"+lastReceiver+",\"audio_samples\":"+audioSamples+",\"sample_duration_ms\":"+(sampleRate>0?bytes*500.0/sampleRate:0)+
-                ",\"delivered_duration_ms\":"+(sampleRate>0?usbBytes*500.0/sampleRate:0)+",\"capture_write_total_ms\":"+writeMs+
+                ",\"receiver_last\":"+lastReceiver+",\"audio_samples\":"+audioSamples+",\"sample_duration_ms\":"+(sampleRate>0?bytes*1000.0/(sampleRate*iqBytesPerSample):0)+
+                ",\"delivered_duration_ms\":"+(sampleRate>0?usbBytes*1000.0/(sampleRate*iqBytesPerSample):0)+",\"capture_write_total_ms\":"+writeMs+
                 ",\"captured_iq_bytes\":"+bytes+",\"omitted_iq_bytes\":"+omitted+",\"duration_ms\":"+(now-started)+
                 ",\"audio_start_usb_offset\":"+firstAudioOffset+",\"reason\":\""+reason+"\","+
                 "\"continuity\":\"blocks.csv uses decoded byte offsets. telemetry sourceByteOffset and sourceSequence refer to USB callbacks. Queue drops are counted separately; hardware losses cannot be counted directly.\"}";
             try (OutputStream file=output("metadata.json")) { file.write(metadata.getBytes(StandardCharsets.UTF_8)); }
             state="packaging"; changed.run();
             final File folder=directory;
-            packager.execute(()->packageFiles(folder));
+            final String samplesFile=iqFile;
+            packager.execute(()->packageFiles(folder,samplesFile));
         } catch (Exception failure) { fail(failure); }
     }
     private static String quote(String value) {
@@ -233,13 +241,13 @@ final class SdrDiagnosticCapture {
             }catch(Exception failure){synchronized(this){fail(failure);}}
         });
     }
-    private void packageFiles(File folder) {
+    private void packageFiles(File folder,String samplesFile) {
         try {
             File partial=new File(folder,"sdr-diagnostic.zip.partial");
             File archive=new File(folder,"sdr-diagnostic.zip");
             try (ZipOutputStream zip=new ZipOutputStream(new FileOutputStream(partial))) {
                 zip.setLevel(Deflater.NO_COMPRESSION);
-                for (String name:new String[]{"metadata.json","blocks.csv","samples.cu8","telemetry.jsonl"}) {
+                for (String name:new String[]{"metadata.json","blocks.csv",samplesFile,"telemetry.jsonl"}) {
                     zip.putNextEntry(new ZipEntry(name));copy(new File(folder,name),zip);zip.closeEntry();
                 }
                 File audio=new File(folder,"audio.s16le");
@@ -247,7 +255,7 @@ final class SdrDiagnosticCapture {
                 zip.write(SdrPcmWave.mono16Header(AUDIO_SAMPLE_RATE,audio.length()));copy(audio,zip);zip.closeEntry();
             }
             if(!partial.renameTo(archive))throw new IOException("진단 파일 저장을 마무리하지 못했습니다.");
-            for (String name:new String[]{"metadata.json","blocks.csv","samples.cu8","audio.s16le","telemetry.jsonl"}) new File(folder,name).delete();
+            for (String name:new String[]{"metadata.json","blocks.csv",samplesFile,"audio.s16le","telemetry.jsonl"}) new File(folder,name).delete();
             synchronized(this) {path=archive.getAbsolutePath();refreshSaved();state="ready";}changed.run();
         } catch (Exception failure) { synchronized(this) { fail(failure); } }
     }

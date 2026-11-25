@@ -70,7 +70,7 @@
       <div class="sdr-connection-heading"><h3 data-usb-heading class="sdr-stage-heading"><span class="sdr-step" aria-hidden="true">1</span> 수신기 연결</h3><div class="sdr-usb-tools sdr-connection-tools"><button type="button" data-refresh>기기 새로고침</button><button type="button" data-disconnect class="sdr-quiet" hidden>연결 해제</button></div></div>
       <p class="sdr-status sdr-connection-status" role="status">USB 연결 대기</p>
       <div data-devices class="sdr-device-list"></div>
-      <details data-usb-pairing class="sdr-help"><summary>처음 연결하는 경우</summary><p>USB OTG 어댑터로 RTL-SDR을 연결한 뒤 기기 목록에서 연결을 누르고 USB 접근 권한을 허용하세요.</p></details>
+      <details data-usb-pairing class="sdr-help"><summary>처음 연결하는 경우</summary><p>USB OTG 어댑터로 수신기를 연결한 뒤 기기 목록에서 연결을 누르고 USB 접근 권한을 허용하세요.</p></details>
     </section>
     </div>
     <section data-settings-section class="sdr-section" hidden>
@@ -98,8 +98,8 @@
 
         <details class="sdr-advanced" data-advanced-settings><summary>상세 설정<svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6 4 4 4-4"/></svg></summary>
         <div class="sdr-fields sdr-tuning-options">
-        <label>감도 <span>Gain dB</span><input data-gain type="number" min="-10" max="50" step="0.1" value="50" inputmode="decimal"><small data-gain-info>기본 최대 요청 · 튜너 지원값으로 적용</small></label>
-        <label>주파수 보정 <span>PPM</span><input data-ppm type="number" min="-100" max="100" step="1" value="0" inputmode="numeric"></label>
+        <label data-rtl-gain>감도 <span>Gain dB</span><input data-gain type="number" min="-10" max="50" step="0.1" value="50" inputmode="decimal"><small data-gain-info>기본 최대 요청 · 튜너 지원값으로 적용</small></label>
+        <label data-rtl-ppm>주파수 보정 <span>PPM</span><input data-ppm type="number" min="-100" max="100" step="1" value="0" inputmode="numeric"></label>
         <label data-threshold-field hidden>감지 기준 <span>주변 잡음 대비 dB</span><input data-threshold type="number" min="6" max="30" step="1" value="10" inputmode="numeric"></label>
         </div></details><input data-rate type="hidden" value="1024000"><input data-dwell type="hidden" value="5000"><p data-window class="sdr-note" hidden></p>
       </fieldset>
@@ -130,7 +130,7 @@
         <p class="sdr-note">CW 수신 중 수신음, 신호 세기, 원본 I/Q를 10초간 기록합니다.</p>
         <p data-diagnostic-status class="sdr-note" role="status">기록 대기</p>
         ${window.BearSdrDiagnosticTrace.markup("diagnostic")}
-        <details class="sdr-help"><summary>고급 진단</summary>
+        <details class="sdr-help" data-rtl-comparison><summary>고급 진단</summary>
           <p>RTL-SDR의 감도와 샘플레이트 등을 바꿔 약 2분간 비교합니다. 위치와 안테나 방향을 유지하세요.</p>
           <button type="button" data-diagnostic-compare disabled>수신 비교 진단</button>
         </details>
@@ -702,6 +702,8 @@
   function render(snapshot) {
     renderMapStatus(snapshot);
     const connected = snapshot.state === "connected";
+    const isAirspy = connected && snapshot.receiverType === "airspyhf";
+    if (isAirspy && task !== "fixed") setTask("fixed", false);
     const previousReception = current?.receptionState;
     const retuning = connected && usbRetuneAttempt === connectionAttempt;
     const receptionStarted = ["scanning", "receiving"].includes(snapshot.receptionState) &&
@@ -732,7 +734,7 @@
       dialog.querySelector("[data-frequency-range]").textContent = "MHz";
       const restoredHz = rf.listenFrequencyHz || rf.frequencyHz;
       frequency.value = selectedAnimalHz === restoredHz ? String(restoredHz / 1e6) : animalFormat(restoredHz);
-      if (rf.sampleRate) rate.value = String(rf.sampleRate);
+      if (rf.sampleRate && !isAirspy) rate.value = String(rf.sampleRate);
       if (Number.isFinite(rf.gainDb)) gain.value = String(rf.gainDb);
       if (Number.isFinite(rf.ppm)) ppm.value = String(rf.ppm);
       restoredFixed = true;
@@ -747,7 +749,7 @@
     const devices = (snapshot.devices || []).filter(device => device.candidate && (!connected || device.connected));
     if (!devices.length) {
       const empty = document.createElement("p");
-      empty.textContent = "RTL-SDR 없음 · USB 연결 확인";
+      empty.textContent = "USB 수신기 없음 · 연결 확인";
       list.appendChild(empty);
     }
     devices.forEach(function (device) {
@@ -792,7 +794,12 @@
     disconnectButton.disabled = disconnectingUsb || (!busy && !connected && snapshot.state !== "permissionPending");
     const receiving = ["starting", "receiving", "scanning", "stopping"].includes(snapshot.receptionState);
     settings.disabled = busy || receiving || snapshot.state === "unsupported";
-    scanButton.disabled = fixedButton.disabled = settings.disabled;
+    scanButton.disabled = settings.disabled || isAirspy;
+    fixedButton.disabled = settings.disabled;
+    scanButton.hidden = isAirspy;
+    dialog.querySelector("[data-rtl-gain]").hidden = isAirspy;
+    dialog.querySelector("[data-rtl-ppm]").hidden = isAirspy;
+    dialog.querySelector("[data-advanced-settings]").hidden = isAirspy;
     dialog.querySelector("[data-back]").disabled = busy || snapshot.state !== "connected" ||
       snapshot.receptionState === "stopping";
     updateFrequencyDigits();
@@ -878,6 +885,8 @@
     audioGain.disabled = busy || capturing || typeof plugin?.setAudio !== "function" || snapshot.receptionState === "stopping";
     dialog.querySelector(".sdr-listening-level").hidden = task !== "fixed";
     const compareButton = dialog.querySelector("[data-diagnostic-compare]");
+    compareButton.hidden = isAirspy;
+    dialog.querySelector("[data-rtl-comparison]").hidden = isAirspy;
     compareButton.textContent = comparing ? "비교 중단" : "수신 비교 진단";
     const canRecord = connected && snapshot.receptionState === "receiving" && rf.mode === "cw" && rf.hasSamples;
     compareButton.disabled = !connected || busy || (comparing ? ["restoring", "bundling"].includes(comparison.phase) : capturing || !canRecord || typeof plugin?.startComparisonDiagnostic !== "function");

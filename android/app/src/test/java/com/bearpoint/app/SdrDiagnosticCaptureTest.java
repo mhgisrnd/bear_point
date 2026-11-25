@@ -111,6 +111,26 @@ public class SdrDiagnosticCaptureTest {
             }
         } finally { capture.shutdown(111); }
     }
+    @Test public void airspyFloatCapturePreservesIqAndReportsCorrectDuration() throws Exception {
+        File root=temporary.newFolder("airspy");
+        SdrDiagnosticCapture capture=new SdrDiagnosticCapture(()->{},10000,100);
+        try {
+            capture.storage(root); capture.request(root);
+            double[] values=new double[]{16,0,0,0,1000,0,0};
+            byte[] original=new byte[]{0,0,(byte)128,63,0,0,0,0,0,0,0,0,0,0,(byte)128,(byte)191};
+            capture.observe(values,null,100,"{\"iqFormat\":\"cf32le\"}","{}",original,true);
+            capture.finish(110,"completed");
+            File archive=ready(capture);
+            try(ZipFile zip=new ZipFile(archive)) {
+                assertArrayEquals(original,entry(zip,"samples.cf32le"));
+                assertNull(zip.getEntry("samples.cu8"));
+                String metadata=new String(entry(zip,"metadata.json"),StandardCharsets.UTF_8);
+                assertTrue(metadata.contains("\"sample_duration_ms\":2.0"));
+                assertTrue(metadata.contains("driver output after libairspyhf DSP"));
+            }
+            capture.storage(root); assertEquals(1,capture.saved().length);
+        } finally {capture.shutdown(111);}
+    }
     @Test public void byteLimitAndStoppingProduceUsablePartialCapture() throws Exception {
         SdrDiagnosticCapture capture=new SdrDiagnosticCapture(()->{},10000,4);
         try {
