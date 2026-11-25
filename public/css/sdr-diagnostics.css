@@ -745,6 +745,30 @@
   margin: 0 0 0 auto;
 }
 
+/* Keep the context on its own line so long animal names cannot split the actions. */
+@media (orientation: portrait) {
+  .sdr-dialog[data-receiver-stage="monitor"]:not([data-transport="bluetooth"]):not([data-search-compact="true"]) .sdr-footer:not([hidden]) {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 8px;
+    align-items: stretch;
+  }
+  .sdr-dialog[data-receiver-stage="monitor"] .sdr-footer-context {
+    grid-column: 1 / -1;
+    min-width: 0;
+    margin: 0;
+  }
+  .sdr-dialog[data-receiver-stage="monitor"] .sdr-footer .sdr-run { min-width: 0; }
+  .sdr-dialog[data-receiver-stage="monitor"] .sdr-footer .sdr-stage-action {
+    width: 100%;
+    min-width: 0;
+    margin: 0;
+  }
+  .sdr-dialog[data-receiver-stage="monitor"] .sdr-footer:has(.sdr-stage-action[hidden]) .sdr-run {
+    grid-column: 1 / -1;
+  }
+}
+
 :root.sdr-ar-preview, :root.sdr-ar-preview body { background: transparent; }
 :root.sdr-ar-preview body > :not(.sdr-dialog) { visibility: hidden; }
 .sdr-dialog[data-direction-ar][open] {
