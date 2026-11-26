@@ -166,6 +166,7 @@ final class IcR30UsbAudio implements Runnable {
             if (revision != tuningRevision) {
                 revision = tuningRevision;
                 analysis = new IcR30AudioAnalysis();
+                filter.resetTone();
                 filled = 0;
                 updated = 0;
                 speaker.discontinuity();

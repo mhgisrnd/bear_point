@@ -23,14 +23,14 @@ public class IcR30AudioFilterTest {
         return 2 * Math.hypot(real, imag) / block.length;
     }
 
-    @Test public void strongerTrackingPreservesBeaconAndReducesOtherTones() {
+    @Test public void trackingBoostsTheBeaconAboveRawAndReducesOtherTones() {
         short[] pcm = input();
         double previousInterference = amplitude(pcm, 1400);
         for (int level = 1; level <= 3; level++) {
             IcR30AudioFilter filter = new IcR30AudioFilter();
             short[] filtered = pcm;
             for (int i = 0; i < 12; i++) filtered = filter.process(pcm, level, 700);
-            assertTrue(amplitude(filtered, 700) > .85 * amplitude(pcm, 700));
+            assertTrue(amplitude(filtered, 700) > 1.08 * amplitude(pcm, 700));
             double interference = amplitude(filtered, 1400);
             assertTrue(interference < previousInterference);
             previousInterference = interference;
@@ -51,7 +51,7 @@ public class IcR30AudioFilterTest {
         assertArrayEquals(pcm, filter.process(pcm, 0, 700));
     }
 
-    @Test public void tuningDoesNotBringBackInterferenceWhileTheDetectorReacquires() {
+    @Test public void retuningClearsTheOldToneWhileKeepingBroadNoiseSuppression() {
         short[] pcm = input();
         IcR30AudioFilter filter = new IcR30AudioFilter();
         short[] filtered = pcm;
@@ -61,8 +61,13 @@ public class IcR30AudioFilterTest {
             filtered = filter.process(pcm, 3, 0);
             assertEquals(trackedInterference, amplitude(filtered, 1400), 2);
         }
-        for (int i = 0; i < 12; i++) filtered = filter.process(pcm, 3, 1400);
+        filter.resetTone();
+        filtered = filter.process(pcm, 3, 0);
         assertTrue(amplitude(filtered, 1400) > .85 * amplitude(pcm, 1400));
+        assertTrue(amplitude(filtered, 4000) < .4 * amplitude(pcm, 4000));
+
+        for (int i = 0; i < 12; i++) filtered = filter.process(pcm, 3, 1400);
+        assertTrue(amplitude(filtered, 1400) > 1.15 * amplitude(pcm, 1400));
         assertTrue(amplitude(filtered, 700) < .15 * amplitude(pcm, 700));
     }
 }

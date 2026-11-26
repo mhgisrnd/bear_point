@@ -1,6 +1,8 @@
 (function () {
   "use strict";
 
+  const audioScales = new WeakMap();
+
   function geometry(width, height) {
     return { left: 48, right: width - 14, top: 24, bottom: height - 36 };
   }
@@ -22,6 +24,29 @@
       peakHz: centerHz + (peak - middle) * rateHz / bins.length, peakDbfs: bins[peak] };
   }
 
+  function audioRange(canvas, data) {
+    if (!data) {
+      audioScales.delete(canvas);
+      return 80;
+    }
+    const sorted = [...data.bins].sort((a, b) => a - b);
+    const backgroundDb = sorted[Math.floor(sorted.length * .75)];
+    const target = Math.max(80, Math.min(120, Math.ceil((20 - backgroundDb) / 20) * 20));
+    const now = performance.now();
+    let scale = audioScales.get(canvas);
+    if (!scale) {
+      scale = { range: 80, target, since: now };
+      audioScales.set(canvas, scale);
+    }
+    if (target !== scale.target) {
+      scale.target = target;
+      scale.since = now;
+    }
+    // Wait for a sustained background change before rescaling.
+    if (now - scale.since >= 1500) scale.range = target;
+    return scale.range;
+  }
+
   function draw(canvas, data, centerHz, rateHz, state, listenHz, candidateHz, { audio = false } = {}) {
     const ctx = typeof canvas.getContext === "function" ? canvas.getContext("2d") : null;
     if (!ctx) return;
@@ -34,9 +59,9 @@
     ctx.fillStyle = "#f8fafc"; ctx.fillRect(0, 0, width, height);
     const { left, right, top, bottom } = geometry(width, height);
     const narrow = audio || !!data?.narrow;
-    // Stable 10 dB scale steps keep weak local features readable without inventing gain.
-    const topDb = narrow ? Math.min(0, Math.max(-60, Math.ceil(((data?.peakDbfs ?? -120) + 10) / 10) * 10)) : 0;
-    const rangeDb = narrow ? 60 : 120, bottomDb = topDb - rangeDb;
+    // Audio keeps the full-scale ceiling and adjusts its floor from the background.
+    const topDb = narrow && !audio ? Math.min(0, Math.max(-60, Math.ceil(((data?.peakDbfs ?? -120) + 10) / 10) * 10)) : 0;
+    const rangeDb = audio ? audioRange(canvas, data) : narrow ? 60 : 120, bottomDb = topDb - rangeDb;
     const span = right - left, y = db => top + Math.max(0, Math.min(rangeDb, topDb - db)) / rangeDb * (bottom - top);
     ctx.font = "11px system-ui, sans-serif";
     ctx.fillStyle = "#526477"; ctx.textAlign = "left"; ctx.fillText("dBFS/bin", 6, 15);

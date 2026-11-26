@@ -4,9 +4,9 @@ const vm = require('node:vm');
 const fs = require('node:fs');
 const source = fs.readFileSync(require('node:path').join(__dirname, '../public/js/sdr/spectrum.js'), 'utf8');
 
-function setup() {
+function setup(now = () => 0) {
   const window = { devicePixelRatio: 2 };
-  vm.runInNewContext(source, { window });
+  vm.runInNewContext(source, { window, performance: { now } });
   return window.SdrSpectrumPlot;
 }
 
@@ -88,4 +88,50 @@ test('USB audio spectrum maps its peak and CW marker to the same Hz axis', () =>
   assert.ok(labels.some(([text, x]) => text === 'CW' && x === peaks[0]));
   assert.ok(labels.some(([text]) => text === 'Hz'));
   assert.ok(!labels.some(([text]) => text === 'MHz'));
+});
+
+test('USB audio scale ignores beep peaks and follows sustained background changes', () => {
+  let now = 0;
+  const plot = setup(() => now), ticks = [];
+  let path = [], trace, peakY;
+  const ctx = {
+    setTransform() {}, fillRect() {}, setLineDash() {}, closePath() {}, fill() {},
+    beginPath() { path = []; },
+    moveTo(x, y) { path.push(y); },
+    lineTo(x, y) { path.push(y); },
+    stroke() { if (path.length === 80) trace = path; },
+    fillText(text, x) { if (x === 41) ticks.push(text); },
+    arc(x, y) { peakY = y; }
+  };
+  const canvas = { clientWidth: 280, clientHeight: 160, getContext: () => ctx };
+  function drawFrame(backgroundDb, peakDb = backgroundDb) {
+    const bins = Array(80).fill(backgroundDb);
+    bins[19] = peakDb;
+    ticks.length = 0;
+    const data = plot.describe(bins, 1200, 1875, { audio: true });
+    plot.draw(canvas, data, 1200, 1875, 'active', null, null, { audio: true });
+    return { ticks: [...ticks], noiseY: trace[0], peakY };
+  }
+
+  const noise = drawFrame(-45);
+  now += 2000;
+  const beep = drawFrame(-45, -10);
+  assert.deepEqual(noise.ticks, ['0', '-20', '-40', '-60', '-80']);
+  assert.deepEqual(beep.ticks, noise.ticks);
+  assert.equal(beep.noiseY, noise.noiseY);
+  assert.ok(beep.peakY < noise.peakY);
+
+  // A lower R30 volume can push the whole background below the starting scale.
+  const quiet = drawFrame(-85);
+  assert.deepEqual(quiet.ticks, noise.ticks);
+  now += 750;
+  assert.deepEqual(drawFrame(-85).ticks, noise.ticks);
+  now += 1000;
+  const quietAdjusted = drawFrame(-85);
+  assert.deepEqual(quietAdjusted.ticks, [...noise.ticks, '-100', '-120']);
+  assert.ok(quietAdjusted.noiseY < quiet.noiseY);
+
+  drawFrame(-45);
+  now += 2000;
+  assert.deepEqual(drawFrame(-45).ticks, noise.ticks);
 });

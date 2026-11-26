@@ -3,10 +3,13 @@ package com.bearpoint.app;
 /** Playback-only filter. Capture samples and the CW detector stay independent of listening settings. */
 final class IcR30AudioFilter {
     private static final int RATE = IcR30AudioAnalysis.RATE;
+    private static final double TONE_BOOST = .26; // Up to +2 dB on the tracked tone.
+    private static final double PCM_FULL_SCALE = 32768.0;
     private static final double[] BAND_MIX = {0, .65, .88, .97};
     private static final double[] TONE_MIX = {0, .55, .80, .96};
     private static final double[] TONE_WIDTH = {0, 450, 250, 115};
     private final Biquad highPass = new Biquad(), lowPass = new Biquad(), tone = new Biquad();
+    private final Biquad toneBoost = new Biquad();
     private double bandMix, toneMix, toneHz;
     private int toneLevel;
 
@@ -15,18 +18,29 @@ final class IcR30AudioFilter {
         lowPass.configure(2250, .707, -1);
     }
 
+    void resetTone() {
+        toneHz = 0;
+        toneLevel = 0;
+        toneMix = 0;
+        tone.reset();
+        toneBoost.reset();
+    }
+
     short[] process(short[] input, int level, double candidateHz) {
         if (level == 0 && bandMix == 0) return input.clone();
-        // Keep suppressing hiss while the detector reacquires a tone after tuning.
+        // Keep tracking through gaps between beeps on the same channel.
         if (level > 0) {
             if (candidateHz >= 300 && candidateHz <= 2100 && Math.abs(candidateHz - toneHz) >= 45) {
                 toneHz = candidateHz;
                 tone.reset();
+                toneBoost.reset();
                 toneLevel = 0;
             }
             if (toneHz > 0 && toneLevel != level) {
                 toneLevel = level;
-                tone.configure(toneHz, toneHz / TONE_WIDTH[level], 0);
+                double q = toneHz / TONE_WIDTH[level];
+                tone.configure(toneHz, q, 0);
+                toneBoost.configure(toneHz, q, 0);
             }
         }
         double targetToneMix = toneHz > 0 ? TONE_MIX[level] : 0;
@@ -39,7 +53,14 @@ final class IcR30AudioFilter {
             double sample = input[i];
             double broad = lowPass.apply(highPass.apply(sample));
             double filtered = sample + bandMix * (broad - sample);
-            if (toneHz > 0) filtered += toneMix * (tone.apply(sample) - filtered);
+            if (toneHz > 0) {
+                double toneSample = tone.apply(sample);
+                // Taper the added gain as the tone approaches the PCM limit.
+                double headroom = Math.max(0, 1 - Math.abs(toneSample) / PCM_FULL_SCALE);
+                // Filter the boost again so it stays near the tone center.
+                double boostedTone = toneSample + TONE_BOOST * headroom * toneBoost.apply(toneSample);
+                filtered += toneMix * (boostedTone - filtered);
+            }
             output[i] = (short) Math.max(Short.MIN_VALUE, Math.min(Short.MAX_VALUE, Math.round(filtered)));
         }
         bandMix = BAND_MIX[level];
