@@ -82,7 +82,7 @@ form.addEventListener("submit", async (event) => {
       return;
     }
 
-    window.location.href = new URL("dashboard", window.location.href).href;
+    window.location.href = new URL("../", window.location.href).href;
   } catch (error) {
     console.error("[admin-login] login request failed", error);
     notice.textContent = "로그인 중 오류가 발생했습니다.";

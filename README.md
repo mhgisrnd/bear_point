@@ -217,7 +217,7 @@ PostgreSQL 실시간 목록 DB 연동
 - 공유 이력이 있는 관측점의 삭제는 POST /api/observations/:id/removal로 server_version을 확인한 뒤 서버에 삭제 표시를 남깁니다. 서버 확인 후 기기 목록에서 숨기며, 통신 실패 시 자료를 유지합니다. 다른 사용자의 변경이 있으면 삭제를 중단하고 최신 내용을 확인하도록 합니다. 미공유 자료는 기기에서만 삭제합니다.
 - 최초 등록 POST는 같은 ID를 덮어쓰지 않습니다. 이후 앱 수정은 POST /api/observations/:id/revisions에 수정 전 server_version과 mutation_id를 보내며, 버전이 맞을 때만 원자적으로 반영합니다. 응답 유실 후 동일 요청 재전송은 한 번만 반영합니다.
 - 오프라인 수정은 기존 서버 버전을 유지한 채 기기에 보관합니다. 서버 버전 충돌 시 로컬 값을 덮어쓰지 않고 충돌 확인 화면에 양쪽 값을 표시합니다. 사용자가 내 수정본 반영 또는 서버 값 사용을 선택하며, 삭제된 서버 자료는 복구하지 않습니다.
-- 관리자 화면: /admin/observations. 관리자 PATCH/DELETE API는 관리자 세션을 유지하며 server_version으로 동시 수정을 검사합니다. 앱의 버전 기반 수정 API는 기존 공개 등록 API와 같은 이용 범위이며, 사용자별 소유권 인증은 별도로 제공하지 않습니다.
+- 관리자 화면은 별도 bear-admin 프로젝트에서 제공합니다. 기존 관리자 PATCH/DELETE API는 관리자 세션을 유지하며 server_version으로 동시 수정을 검사합니다. 앱의 버전 기반 수정 API는 기존 공개 등록 API와 같은 이용 범위이며, 사용자별 소유권 인증은 별도로 제공하지 않습니다.
 - 공유 새로고침 시 관리자 변경/삭제를 로컬에 반영합니다. 미전송 로컬 수정은 서버 조회 결과로 덮어쓰지 않습니다.
 - 응답 유실 후 로컬 수정과 이미 등록된 서버 내용이 다르면 충돌 확인으로 보냅니다. 사용자가 서버 값을 선택할 경우 기존 수정본을 unshared_backup에도 보관합니다.
 - 서버 스키마 준비: node scripts/migrate-observation-server.cjs (.env 사용). API 최초 사용 시에도 동일한 비파괴 초기화를 수행합니다.
@@ -262,8 +262,4 @@ PostgreSQL 실시간 목록 DB 연동
 - 목록: GET /api/realtime/bear-estimates?limit=100
 
 
-비밀번호 해시타입으로 선언 시 확인 api
-http://localhost:3000/api/admin/auth/debug/hash?password=admin1234!
 
-로그인 암호화 시, bcrypt 기반 단방향 salt 암호화 사용
-admin/admin1234! > 관리자 세팅

@@ -816,7 +816,7 @@ test('web mode and unsupported devices cannot request USB access', async () => {
   const android = setup(); android.device.candidate = false; await android.trigger.click();
   const list = android.dialog.querySelector('[data-devices]');
   assert.equal(list.children.length, 1);
-  assert.match(list.children[0].textContent, /RTL-SDR 없음/);
+  assert.match(list.children[0].textContent, /USB 수신기 없음/);
   assert.equal(list.children[0].children.length, 0);
   assert.equal(android.counts().permissionCount, 0);
 });
@@ -1931,4 +1931,30 @@ test('frequency Done, final Tab and Android line-break actions exit editing with
   assert.equal(blurs,3);assert.equal(prevented,3);assert.equal(tuningFocus,0);
   await edit.click();draft.value='0';draft.events.keydown({key:'Enter',preventDefault(){}});
   assert.equal(edit.textContent,'\uC644\uB8CC');assert.equal(blurs,3,'invalid frequency should remain editable');
+});
+
+
+test('Airspy keeps CW controls while hiding RTL gain, PPM and unsupported comparisons',async()=>{
+  const ui=setup();ui.device.hasPermission=true;
+  await ui.trigger.click();await ui.button().click();await tick();
+  ui.state.receiverType='airspyhf';ui.emit();
+  assert.equal(ui.dialog.querySelector('[data-task-scan]').hidden,true);
+  assert.equal(ui.dialog.querySelector('[data-rtl-gain]').hidden,true);
+  assert.equal(ui.dialog.querySelector('[data-rtl-ppm]').hidden,true);
+  assert.equal(ui.dialog.querySelector('[data-diagnostic-compare]').hidden,true);
+  ui.state.receptionState='receiving';
+  ui.state.reception={mode:'cw',hasSamples:true,signalDbfs:-60,powerDbfs:-60};ui.emit();
+  assert.equal(ui.dialog.querySelector('[data-diagnostic-start]').disabled,false);
+});
+
+test('CW listening filter follows native status and sends live selections',async()=>{
+  const ui=setup(); ui.device.hasPermission=true;
+  ui.plugin.setCwFilter=async ({mode})=>{ui.state.cwFilterMode=mode;ui.emit();};
+  await ui.trigger.click();await ui.button().click();await tick();
+  ui.state.receiverType='airspyhf';ui.state.cwFilterMode=0;ui.emit();
+  const filter=ui.dialog.querySelector('[data-cw-filter]');
+  assert.equal(filter.disabled,false);assert.equal(filter.value,'0');
+  await filter.change('1');await tick();assert.equal(ui.state.cwFilterMode,1);
+  ui.state.diagnostic={state:'recording',records:[]};ui.emit();
+  assert.equal(filter.disabled,true);
 });

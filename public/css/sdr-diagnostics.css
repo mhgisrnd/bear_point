@@ -404,8 +404,9 @@
 .sdr-readout-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px; margin-bottom: 6px; }
 .sdr-frequency-readout { min-width: 0; margin: 0; padding: 0; border-radius: 0; background: transparent; font-size: clamp(13px, 3.7vw, 19px); white-space: normal; overflow-wrap: anywhere; }
 .sdr-readout-row [data-audio] { min-height: 44px; width: auto; padding: 4px 8px; font-size: 12px; white-space: nowrap; }
-.sdr-listening-level { display: flex; align-items: center; justify-content: flex-end; gap: 6px; margin: 0 0 6px; color: #526477; font-size: 11px; }
-.sdr-listening-level select { min-height: 32px; width: 90px; border: 1px solid #c7dce2; border-radius: 6px; padding: 3px 6px; background: #fff; color: #145d75; font: inherit; }
+.sdr-listening-level { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 6px 12px; margin: 0 0 6px; color: #526477; font-size: 11px; }
+.sdr-listening-level label { display: flex; align-items: center; gap: 6px; }
+.sdr-listening-level select { min-height: 32px; max-width: 100%; border: 1px solid #c7dce2; border-radius: 6px; padding: 3px 6px; background: #fff; color: #145d75; font: inherit; }
 .sdr-diagnostics-pane { display: grid; gap: 10px; }
 .sdr-reception-diagnostic { min-width: 0; margin: 0; padding: 12px; border: 1px solid #dce6eb; border-radius: 12px; background: #fff; font-size: 12px; color: #526477; }
 .sdr-reception-diagnostic h3 { margin: 0 0 8px; font-size: 14px; color: #345368; }
@@ -742,6 +743,30 @@
   height: 44px;
   min-height: 44px;
   margin: 0 0 0 auto;
+}
+
+/* Keep the context on its own line so long animal names cannot split the actions. */
+@media (orientation: portrait) {
+  .sdr-dialog[data-receiver-stage="monitor"]:not([data-transport="bluetooth"]):not([data-search-compact="true"]) .sdr-footer:not([hidden]) {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 8px;
+    align-items: stretch;
+  }
+  .sdr-dialog[data-receiver-stage="monitor"] .sdr-footer-context {
+    grid-column: 1 / -1;
+    min-width: 0;
+    margin: 0;
+  }
+  .sdr-dialog[data-receiver-stage="monitor"] .sdr-footer .sdr-run { min-width: 0; }
+  .sdr-dialog[data-receiver-stage="monitor"] .sdr-footer .sdr-stage-action {
+    width: 100%;
+    min-width: 0;
+    margin: 0;
+  }
+  .sdr-dialog[data-receiver-stage="monitor"] .sdr-footer:has(.sdr-stage-action[hidden]) .sdr-run {
+    grid-column: 1 / -1;
+  }
 }
 
 :root.sdr-ar-preview, :root.sdr-ar-preview body { background: transparent; }

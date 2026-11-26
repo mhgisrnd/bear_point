@@ -32,6 +32,9 @@ final class SdrReceiver {
     private File comparisonRoot;
     private UsbDeviceConnection comparisonConnection;
     String mode = "iq";
+    private volatile int cwFilterMode = 0;
+    int cwFilterMode() { return cwFilterMode; }
+    private boolean airspy;
     int tunedFrequencyHz;
     private SdrScanSession scanSession;
     private double[] tunerInfo = new double[0];
@@ -144,9 +147,10 @@ final class SdrReceiver {
     }
 
     void start(UsbDeviceConnection connection, int hz, int rate, int gain, int ppm, String mode, int listenHz,
-               int deemphasisUs, boolean listenAudio, double volume) {
+               int deemphasisUs, boolean listenAudio, double volume, boolean airspy) {
         if(comparison.active)throw new IllegalStateException("비교 진단을 먼저 중단하세요.");
         this.mode=mode;
+        this.airspy=airspy;
         startConfigured(connection, new SdrComparison.Settings(hz, rate, gain, ppm, listenHz, deemphasisUs, 12000), listenAudio, volume);
     }
     boolean retuneCw(int listenHz) {
@@ -182,14 +186,22 @@ final class SdrReceiver {
 
     private void receive(int token, UsbDeviceConnection connection, SdrComparison.Settings applied, String mode, boolean listenAudio, double volume) {
         long handle = 0, demodulator = 0;
+        int[] airspyInfo = new int[0];
         try {
             if (generation.get() != token) return;
             int hz = applied.hz, rate = applied.rate, gain = applied.gain, ppm = applied.ppm;
             int listenHz = applied.listen, deemphasisUs = applied.deemphasis, offsetHz = applied.offset;
-            int hardwareHz = "cw".equals(mode) ? hz - offsetHz : hz;
-            handle = SdrNative.open(connection.getFileDescriptor(), hardwareHz, rate, gain, ppm);
-            tunerInfo = SdrNative.describeTuner(handle);
-            SdrNative.startStreaming(handle);
+            int hardwareHz = airspy ? hz : ("cw".equals(mode) ? hz - offsetHz : hz);
+            if (airspy) {
+                handle = AirspyNative.open(connection.getFileDescriptor(), hardwareHz);
+                tunerInfo = new double[0];
+                airspyInfo = AirspyNative.describe(handle);
+                AirspyNative.startStreaming(handle);
+            } else {
+                handle = SdrNative.open(connection.getFileDescriptor(), hardwareHz, rate, gain, ppm);
+                tunerInfo = SdrNative.describeTuner(handle);
+                SdrNative.startStreaming(handle);
+            }
             long total = 0, bytes = 0, started = SystemClock.elapsedRealtime(), updated = started, lastData = started;
             double power = 0, clipped = 0;
             double signalPeak = -1;
@@ -205,6 +217,7 @@ final class SdrReceiver {
             long spectrumUpdated = started - 500;
             String[] tuners = {"Unknown", "E4000", "FC0012", "FC0013", "FC2580", "R820T", "R828D"};
             int appliedAudioGain = Integer.MIN_VALUE;
+            int appliedFilterMode = -1;
             int actualRate = rate, actualCenterHz = hardwareHz;
             JSObject registers = new JSObject();
             long previousLoopEnd = SystemClock.elapsedRealtimeNanos();
@@ -219,6 +232,7 @@ final class SdrReceiver {
                     demodulator = replacement;
                     appliedAudioGain = audio.gainDb();
                     SdrNative.setAudioGain(demodulator, appliedAudioGain);
+                    appliedFilterMode = -1;
                     audio.discontinuity();
                     cwSpectrum = new SdrCwSpectrum();
                     cwDetector = new SdrCwDetector(actualRate);
@@ -232,7 +246,7 @@ final class SdrReceiver {
                 long loopBegan=SystemClock.elapsedRealtimeNanos();
                 double cycleIntervalMs=(loopBegan-previousLoopBegan)/1e6;previousLoopBegan=loopBegan;
                 double controlReadMs=0;
-                if("waiting".equals(diagnostic.state())) {
+                if(!airspy && "waiting".equals(diagnostic.state())) {
                     long controlBegan=SystemClock.elapsedRealtimeNanos();
                     try {
                         int[] readback=SdrNative.diagnosticRegisters(handle);
@@ -249,10 +263,11 @@ final class SdrReceiver {
                 boolean recordingIq = "waiting".equals(diagnostic.state()) || "recording".equals(diagnostic.state());
                 boolean captureSpectrum = pulseSpectrum ? recordingIq : SystemClock.elapsedRealtime() - spectrumUpdated >= 500;
                 long readBegan=SystemClock.elapsedRealtimeNanos();
-                SdrBlock received = SdrNative.read(handle, captureSpectrum, demodulator, pulseSpectrum);
+                SdrBlock received = airspy ? AirspyNative.read(handle, captureSpectrum, demodulator) : SdrNative.read(handle, captureSpectrum, demodulator, pulseSpectrum);
                 long readEnded=SystemClock.elapsedRealtimeNanos();
                 double[] block = received.values;
                 actualRate = (int) block[4]; actualCenterHz = (int) block[6];
+                if (airspy && demodulator == 0) cwDetector = new SdrCwDetector(actualRate);
                 if (applied != currentSettings) continue;
                 if(received.diagnostic[18]>0){cwSpectrum=new SdrCwSpectrum();cwDetector=new SdrCwDetector((int)block[4]);strength=new SdrSignalStrength();signalPeak=-1;audio.discontinuity();}
                 // Configure from the actual hardware rate, before decoding subsequent blocks.
@@ -261,6 +276,10 @@ final class SdrReceiver {
                 if (demodulator != 0 && "cw".equals(mode) && appliedAudioGain != audio.gainDb()) {
                     appliedAudioGain = audio.gainDb();
                     SdrNative.setAudioGain(demodulator, appliedAudioGain);
+                }
+                if (demodulator != 0 && "cw".equals(mode) && appliedFilterMode != cwFilterMode) {
+                    appliedFilterMode = cwFilterMode;
+                    SdrNative.setCwFilter(demodulator, appliedFilterMode);
                 }
                 audio.offer(received.audio,(long)received.diagnostic[9],received.diagnostic[11]);
                 if(received.signalPower>signalPeak){
@@ -300,8 +319,9 @@ final class SdrReceiver {
                     details.put("receiveDroppedBytes",received.diagnostic[15]);details.put("usbDeliveredBytes",received.diagnostic[16]);
                     details.put("receiveQueueHighWater",received.diagnostic[17]);details.put("sourceDiscontinuity",received.diagnostic[18]>0);
                     details.put("sourceCallbackIntervalMs",received.diagnostic[19]);
+                    if (airspy) details.put("airspyDriverDroppedSamples", received.diagnostic[20]);
                     details.put("captureQueueDepth",captureWriter.pending());details.put("captureQueueHighWater",captureWriter.highWater());
-                    details.put("usbBytes",(long)block[0]);details.put("expectedBlockMs",block[4]>0?block[0]*500.0/block[4]:0);
+                    details.put("usbBytes",(long)block[0]);details.put("expectedBlockMs",block[4]>0?block[0]*1000.0/(block[4]*(airspy?8:2)):0);
                     details.put("audioSamples",received.audio==null?0:received.audio.length);
                     details.put("audio",audio.snapshot());details.put("signalPower",received.signalPower);details.put("noisePower",received.noisePower);
                     details.put("meterWindowPeakPower",signalPeak);
@@ -323,14 +343,29 @@ final class SdrReceiver {
                     if(captureActive) {
                         JSObject settings=new JSObject();settings.put("pipeline","cw-complex-channel-v1");settings.put("mode",mode);
                         settings.put("sampleRate",(int)block[4]);settings.put("centerFrequencyHz",(int)block[6]);
-                        settings.put("listenFrequencyHz",listenHz);settings.put("gainDb",block[5]/10);settings.put("requestedGainDb",gain/10.0);
-                        settings.put("ppm",ppm);settings.put("audioGainDb",appliedAudioGain);settings.put("registerReadback",registers);
-                        settings.put("rtlAgcRequested",false);settings.put("tunerManualGainRequested",true);
+                        settings.put("cwAudioFilter",appliedFilterMode == 1 ? "narrow" : appliedFilterMode == 2 ? "wide" : "default");
+                        settings.put("cwAudioFilterApprox3dBBandwidthHz",appliedFilterMode == 1 ? 1200 : appliedFilterMode == 2 ? 4000 : 2200);
+                        settings.put("cwAudioFilterCenterHz",listenHz);
+                        settings.put("listenFrequencyHz",listenHz);settings.put("audioGainDb",appliedAudioGain);
+                        settings.put("receiverType",airspy?"airspyhf":"rtl");
+                        settings.put("iqFormat",airspy?"cf32le":"cu8");
+                        if (airspy) {
+                            settings.put("driverDsp", "enabled; driver IQ correction, IF shift and fine tuning");
+                            settings.put("sampleRateSource", airspyInfo[1] != 0 ? "driver fallback after firmware query failure" : "firmware list");
+                            JSArray rates = new JSArray();
+                            for (int i=2;i<airspyInfo.length;i++) rates.put(airspyInfo[i]);
+                            settings.put("supportedSampleRates",rates);
+                        }
+                        else {
+                            settings.put("gainDb",block[5]/10);settings.put("requestedGainDb",gain/10.0);
+                            settings.put("ppm",ppm);settings.put("registerReadback",registers);
+                            settings.put("rtlAgcRequested",false);settings.put("tunerManualGainRequested",true);
+                        }
                         settings.put("meterRevision",SdrSignalStrength.REVISION);
                         if(pulseSpectrum){settings.put("cwDetectorRevision",SdrCwDetector.REVISION);settings.put("cwSearchHalfWidthHz",SdrCwDetector.SEARCH_HZ);}
                         settings.put("receivePipeline","async-usb-v1");settings.put("sourceClock","Android elapsedRealtime / CLOCK_BOOTTIME");
                         settings.put("device",diagnosticContext);putTunerInfo(settings);
-                        captureWriter.offer(block,received.audio,received.rawIq,now,settings.toString(),details.toString());
+                        captureWriter.offer(block,received.audio,received.rawIq,now,settings.toString(),details.toString(),airspy);
                     } else diagnostic.noteTelemetry(now,details.toString());
                 }
                 previousLoopEnd=SystemClock.elapsedRealtimeNanos();
@@ -340,9 +375,11 @@ final class SdrReceiver {
                 if (now - updated < 100) continue;
                 JSObject result = new JSObject();
                 int tuner = (int) block[3];
-                result.put("tuner", tuner >= 0 && tuner < tuners.length ? tuners[tuner] : "Unknown");
-                result.put("sampleRate", (int) block[4]); result.put("gainDb", block[5] / 10);
-                result.put("frequencyHz", (int) block[6]); result.put("ppm", ppm);
+                result.put("tuner", airspy ? "Airspy HF+" : (tuner >= 0 && tuner < tuners.length ? tuners[tuner] : "Unknown"));
+                result.put("receiverType",airspy?"airspyhf":"rtl");
+                result.put("sampleRate", (int) block[4]);
+                if (!airspy) { result.put("gainDb", block[5] / 10); result.put("ppm", ppm); }
+                result.put("frequencyHz", (int) block[6]);
                 putTunerInfo(result);
                 result.put("mode", mode); result.put("listenFrequencyHz", listenHz);
                 result.put("audioSampleRate", ("wfm".equals(mode) || "cw".equals(mode)) ? 48000 : 0);
@@ -350,7 +387,7 @@ final class SdrReceiver {
                 result.put("totalBytes", total); result.put("bytesPerSecond", bytes * 1000.0 / (now - updated));
                 result.put("elapsedSeconds", (now - started) / 1000.0);
                 result.put("powerDbfs", bytes > 0 ? 10 * Math.log10(Math.max(1e-12, power / bytes)) : -120);
-                result.put("clippingPercent", bytes > 0 ? clipped * 100 / bytes : 0);
+                if (!airspy) result.put("clippingPercent", bytes > 0 ? clipped * 100 / bytes : 0);
                 result.put("hasSamples", bytes > 0);
                 result.put("sourceSequence",(long)received.diagnostic[9]);result.put("sourceReceivedMs",received.diagnostic[11]);
                 result.put("receiveQueueAgeMs",received.diagnostic[12]);result.put("receiveDroppedBlocks",received.diagnostic[14]);
@@ -408,7 +445,7 @@ final class SdrReceiver {
         } finally {
             captureWriter.finish(SystemClock.elapsedRealtime(),"reception-ended");
             if (demodulator != 0) SdrNative.closeDemodulator(demodulator);
-            if (handle != 0) SdrNative.close(handle);
+            if (handle != 0) { if (airspy) AirspyNative.close(handle); else SdrNative.close(handle); }
         }
     }
 
@@ -583,6 +620,14 @@ final class SdrReceiver {
             throw new IllegalStateException("CW 또는 WFM 수신을 시작한 뒤 소리를 켜주세요.");
         if (gainDb != null) audio.setGainDb(gainDb);
         audio.set(enabled, volume);
+    }
+
+    void setCwFilter(int filter) {
+        if (filter < 0 || filter > 2) throw new IllegalArgumentException("Invalid CW filter");
+        if (comparison.active || java.util.Arrays.asList("waiting", "recording", "packaging").contains(diagnostic.state()))
+            throw new IllegalStateException("진단 기록을 마친 후 필터를 변경하세요.");
+        cwFilterMode = filter;
+        changed.run();
     }
 
     void shutdown() {

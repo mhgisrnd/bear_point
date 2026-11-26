@@ -21,9 +21,9 @@ final class SdrCaptureWriter {
     }
     private static final class Frame {
         final int generation;final double[] values;final short[] audio;final byte[] raw;
-        final long now;final String settings,details;
-        Frame(int generation,double[] values,short[] audio,byte[] raw,long now,String settings,String details){
-            this.generation=generation;this.values=values;this.audio=audio;this.raw=raw;this.now=now;this.settings=settings;this.details=details;
+        final long now;final String settings,details; final boolean floatIq;
+        Frame(int generation,double[] values,short[] audio,byte[] raw,long now,String settings,String details,boolean floatIq){
+            this.generation=generation;this.values=values;this.audio=audio;this.raw=raw;this.now=now;this.settings=settings;this.details=details;this.floatIq=floatIq;
         }
     }
     SdrCaptureWriter(SdrDiagnosticCapture capture){this(capture,16);}
@@ -37,9 +37,12 @@ final class SdrCaptureWriter {
         }
     }
     void offer(double[] values,short[] audio,byte[] raw,long now,String settings,String details){
+        offer(values,audio,raw,now,settings,details,false);
+    }
+    void offer(double[] values,short[] audio,byte[] raw,long now,String settings,String details,boolean floatIq){
         int token=generation;
         if(closed||finish!=null)return;
-        Frame frame=new Frame(token,values,audio,raw,now,settings,details);
+        Frame frame=new Frame(token,values,audio,raw,now,settings,details,floatIq);
         if(!queue.offer(frame)){
             capture.writerDrop((long)values[0]);
             finish=new Finish(token,now,"writer-overflow");
@@ -48,7 +51,7 @@ final class SdrCaptureWriter {
     int pending(){return queue.size();}
     int highWater(){return highWater;}
     void finish(long now,String reason){
-        if(finish==null){finish=new Finish(generation,now,reason);queue.offer(new Frame(generation,null,null,null,now,null,null));}
+        if(finish==null){finish=new Finish(generation,now,reason);queue.offer(new Frame(generation,null,null,null,now,null,null,false));}
     }
     void shutdown(long now){finish(now,"receiver-closed");closed=true;}
     boolean awaitStopped(long ms)throws InterruptedException{thread.join(ms);return !thread.isAlive();}
@@ -57,7 +60,7 @@ final class SdrCaptureWriter {
             while(true){
                 Frame frame=queue.poll(1,TimeUnit.SECONDS);
                 if(frame!=null&&frame.values!=null)synchronized(lifecycle){
-                    if(frame.generation==generation)capture.observe(frame.values,frame.audio,frame.now,frame.settings,frame.details,frame.raw);
+                    if(frame.generation==generation)capture.observe(frame.values,frame.audio,frame.now,frame.settings,frame.details,frame.raw,frame.floatIq);
                 }
                 Finish end=finish;
                 if(end!=null&&queue.isEmpty())synchronized(lifecycle){
