@@ -213,7 +213,7 @@
 #btn-sdr-diagnostics[data-status="scanning"], #btn-sdr-diagnostics[data-status="receiving"] { background: #145d75; color: #fff; border-color: #145d75; }
 #btn-sdr-diagnostics[data-status="scanning"]::before, #btn-sdr-diagnostics[data-status="receiving"]::before { content: ""; position: absolute; top: -5px; right: -5px; width: 11px; height: 11px; border: 2px solid #fff; border-radius: 50%; background: #ffca55; animation: sdr-active-pulse 1.8s ease-in-out infinite; }
 #btn-sdr-diagnostics[data-status="scanning"]::after, #btn-sdr-diagnostics[data-status="receiving"]::after { animation: sdr-badge-breathe 2.4s ease-in-out infinite; }
-#btn-sdr-diagnostics[data-status="paused"]::after { background: #a15b17; }
+#btn-sdr-diagnostics:is([data-status="paused"], [data-status="reconnecting"])::after { background: #a15b17; }
 #btn-sdr-diagnostics[data-status="error"]::after { background: #a43b32; }
 @keyframes sdr-scan-pulse { 0%, 100% { opacity: .65; box-shadow: 0 0 0 0 #40adbc55; } 50% { opacity: 1; box-shadow: 0 0 0 5px #40adbc00; } }
 @keyframes sdr-active-pulse { 0%, 100% { box-shadow: 0 0 0 0 #ffca5588; } 50% { box-shadow: 0 0 0 6px #ffca5500; } }

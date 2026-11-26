@@ -76,6 +76,7 @@ public final class IcR30Plugin extends Plugin {
     private int volumeLevel = -1;
     private String volumeNotice = "";
     private final IcR30TestRecording test = new IcR30TestRecording();
+    private final IcR30Reconnect reconnect = new IcR30Reconnect();
     private long metadataAt;
     private Runnable testDeadline;
     private boolean preparingTest;
@@ -148,6 +149,7 @@ public final class IcR30Plugin extends Plugin {
         result.put("deviceName", deviceName);
         result.put("error", lastError);
         result.put("connectionProgress", connectionProgress);
+        result.put("reconnecting", reconnect.active());
         result.put("measurement", measurement == null ? JSObject.NULL : measurement);
         result.put("volume", new JSObject().put("current", volumeLevel).put("default", CONNECTION_VOLUME).put("notice", volumeNotice));
         result.put("test", testSnapshot());
@@ -183,13 +185,22 @@ public final class IcR30Plugin extends Plugin {
             call.resolve(audio);
             return;
         }
+        if (usbAudio != null) {
+            // Capture died with the device still plugged in (sample stall, audio server restart):
+            // report it once, then restart on the next poll instead of staying in error forever.
+            // Keep the service's audio foreground type so the restart also works in the background.
+            JSObject failure = usbAudio.snapshot();
+            usbAudio.stop();
+            usbAudio = null;
+            call.resolve(failure);
+            return;
+        }
         AudioDeviceInfo input = IcR30UsbAudio.findInput(getContext());
         if (input == null) {
             closeUsbAudio();
             call.resolve(IcR30UsbAudio.state("waiting", "USB 오디오 연결 대기 중"));
             return;
         }
-        if (usbAudio != null && !usbAudio.usesInput(input)) closeUsbAudio();
         PermissionState permission = getPermissionState("usbAudio");
         if (permission != PermissionState.GRANTED) {
             if (audioPermissionCall != null) {
@@ -344,7 +355,7 @@ public final class IcR30Plugin extends Plugin {
     private void connectPermitted(PluginCall call) {
         main.post(() -> {
             if (stopped) { call.reject("앱 화면으로 돌아온 뒤 다시 연결하세요."); return; }
-            if (socket != null || connectingCall != null) { call.reject("기존 수신기 연결을 먼저 해제하세요."); return; }
+            if (socket != null || "connecting".equals(state)) { call.reject("기존 수신기 연결을 먼저 해제하세요."); return; }
             if (!permitted()) { call.reject("기기 목록에서 Bluetooth 권한을 먼저 허용하세요."); return; }
             if (!IcR30Service.notificationsAllowed(getContext())) { call.reject("앱 설정에서 IC-R30 연결 알림을 허용해주세요."); return; }
             try {
@@ -361,14 +372,9 @@ public final class IcR30Plugin extends Plugin {
                 connectingCall = call;
                 state = "connecting";
                 lastError = "";
-                measurement = null;
-                int token = ++generation;
-                IcR30Service.launch(getContext(), () -> fail("IC-R30 연결 유지가 종료되었습니다."));
-                connectionDeadline = () -> {
-                    if (token == generation && connectingCall != null) fail(connectionProgress + " · 연결 시간이 초과되었습니다.");
-                };
-                main.postDelayed(connectionDeadline, CONNECTION_TIMEOUT_MS);
-                connectSpp(selected, token, false);
+                // Notification "연결 해제" is the user's choice: never auto-reconnect from it.
+                IcR30Service.launch(getContext(), () -> { reconnect.cancel(); fail("IC-R30 연결 유지가 종료되었습니다."); });
+                startConnection(selected);
             } catch (RuntimeException error) {
                 lastError = error.getMessage();
                 if (connectingCall == call) fail(lastError);
@@ -377,15 +383,27 @@ public final class IcR30Plugin extends Plugin {
         });
     }
 
+    private void startConnection(BluetoothDevice device) {
+        state = "connecting";
+        measurement = null;
+        int token = ++generation;
+        if (connectionDeadline != null) main.removeCallbacks(connectionDeadline);
+        connectionDeadline = () -> {
+            if (token == generation && "connecting".equals(state)) fail(connectionProgress + " · 연결 시간이 초과되었습니다.");
+        };
+        main.postDelayed(connectionDeadline, CONNECTION_TIMEOUT_MS);
+        connectSpp(device, token, false);
+    }
+
     private void setConnectionProgress(int token, String progress) {
-        if (token != generation || connectingCall == null) return;
-        connectionProgress = progress;
+        if (token != generation || !"connecting".equals(state)) return;
+        connectionProgress = reconnect.active() ? "연결 끊김 · 재연결 중 · " + progress : progress;
         publish();
     }
 
     @android.annotation.SuppressLint("MissingPermission") // connectPermitted checks BLUETOOTH_CONNECT.
     private void connectSpp(BluetoothDevice device, int token, boolean retry) {
-        if (token != generation || connectingCall == null) return;
+        if (token != generation || !"connecting".equals(state)) return;
         setConnectionProgress(token, retry ? "Bluetooth 데이터 연결 재시도 중…" : "Bluetooth 데이터 연결 중…");
         BluetoothSocket opened;
         try {
@@ -416,7 +434,7 @@ public final class IcR30Plugin extends Plugin {
                 IcR30Civ civ = new IcR30Civ(opened.getInputStream(), opened.getOutputStream(), 3000,
                         message -> { if (debug) Log.d(TAG, message); },
                         error -> main.post(() -> {
-                            if (token == generation && connectingCall == null && !test.active()) fail(error.getMessage());
+                            if (token == generation && "connected".equals(state) && !test.active()) fail(error.getMessage(), true);
                         }));
                 pending = civ;
                 Thread.sleep(CIV_STARTUP_DELAY_MS);
@@ -490,13 +508,16 @@ public final class IcR30Plugin extends Plugin {
     }
 
     private void finishConnection(int token, IcR30Civ civ, JSObject reading, int initialVolume, String initialNotice) {
-        if (token != generation || connectingCall == null) {
+        if (token != generation || !"connecting".equals(state)) {
             closePendingClient(civ);
             return;
         }
         clearConnectionProgress();
+        reconnect.cancel();
+        reconnect.pollSucceeded();
         client = civ;
         state = "connected";
+        lastError = "";
         measurement = reading;
         volumeLevel = initialVolume;
         volumeNotice = initialNotice;
@@ -504,7 +525,7 @@ public final class IcR30Plugin extends Plugin {
         connectingCall = null;
         IcR30Service.keepAwakeForOperation(false);
         publish();
-        call.resolve(snapshot());
+        if (call != null) call.resolve(snapshot());
         schedulePoll(token, civ);
     }
 
@@ -554,6 +575,7 @@ public final class IcR30Plugin extends Plugin {
                 test.queryStarted(System.currentTimeMillis(),SystemClock.elapsedRealtime());
                 JSObject reading = read(civ, previous, recording ? TEST_METADATA_INTERVAL_MS : LIVE_METADATA_INTERVAL_MS);
                 if (token != generation) return;
+                reconnect.pollSucceeded();
                 test.sample(requiredLong(reading, "time"), requiredLong(reading, "elapsedMs"),
                     requiredLong(reading, "frequencyHz"), reading.getString("mode"), reading.getInteger("smeter"),
                     requiredLong(reading, "queryMs"), requiredLong(reading, "metadataAgeMs"));
@@ -561,7 +583,12 @@ public final class IcR30Plugin extends Plugin {
             } catch (IOException error) {
                 try { test.error(System.currentTimeMillis(),SystemClock.elapsedRealtime(),error.getMessage()); }
                 catch(IOException logError){ Log.w(TAG,"Failed to record Bluetooth poll error",logError); }
-                main.post(() -> { if (token == generation) fail(error.getMessage()); });
+                if (error instanceof IcR30Civ.ResponseTimeout && reconnect.toleratePollTimeout()) {
+                    Log.w(TAG, "CI-V poll timed out; polling again", error);
+                    main.post(() -> finishPoll(token, civ, null));
+                    return;
+                }
+                main.post(() -> { if (token == generation) fail(error.getMessage(), true); });
             }
         }, delayMs, TimeUnit.MILLISECONDS);
     }
@@ -679,7 +706,7 @@ public final class IcR30Plugin extends Plugin {
                     lastTestAudioPeaks = audio.peaks();
                 }
             }
-            if (settingCall == null && connectingCall == null) IcR30Service.keepAwakeForOperation(false);
+            if (settingCall == null && !"connecting".equals(state)) IcR30Service.keepAwakeForOperation(false);
             if (stopped) measurement = null;
         }
     }
@@ -816,7 +843,7 @@ public final class IcR30Plugin extends Plugin {
                         schedulePoll(token, civ);
                     });
                 } catch (IOException error) {
-                    main.post(() -> { if (token == generation) fail(error.getMessage()); });
+                    main.post(() -> { if (token == generation) fail(error.getMessage(), error instanceof IcR30Civ.ResponseTimeout); });
                 }
             });
         });
@@ -829,21 +856,31 @@ public final class IcR30Plugin extends Plugin {
         });
     }
     private IOException closeSession(String reason) {
+        reconnect.cancel();
         clearConnectionProgress();
         closeUsbAudio();
         IcR30Service.release();
+        state = "idle";
+        deviceId = deviceName = "";
+        if (connectingCall != null) { connectingCall.reject(reason); connectingCall = null; }
+        IOException closeError = closeLink(reason);
+        if (closeError != null) {
+            lastError = "Bluetooth 연결 정리 실패: " + closeError.getMessage();
+            Log.e(TAG, lastError, closeError);
+        }
+        return closeError;
+    }
+    /** Closes only the SPP/CI-V link. USB audio, the foreground service and the device stay. */
+    private IOException closeLink(String reason) {
         ++generation;
         if (poll != null) { poll.cancel(false); poll = null; }
         BluetoothSocket old = socket;
         IcR30Civ oldClient = client;
         socket = null;
         client = null;
-        state = "idle";
         measurement = null;
         volumeLevel = -1;
         volumeNotice = "";
-        deviceId = deviceName = "";
-        if (connectingCall != null) { connectingCall.reject(reason); connectingCall = null; }
         if (settingCall != null) { settingCall.reject(reason); settingCall = null; }
         preparingTest=false;
         IOException closeError = null;
@@ -866,17 +903,42 @@ public final class IcR30Plugin extends Plugin {
                 else closeError.addSuppressed(error);
             }
         }
-        if (closeError != null) {
-            lastError = "Bluetooth 연결 정리 실패: " + closeError.getMessage();
-            Log.e(TAG, lastError, closeError);
-        }
         return closeError;
     }
-    private void fail(String reason) {
+    private void fail(String reason) { fail(reason, false); }
+    /** linkLost: an established SPP link died (range, R30 power). Retries while USB audio keeps playing. */
+    private void fail(String reason, boolean linkLost) {
         lastError = reason == null ? "Bluetooth 통신 오류가 발생했습니다." : reason;
         Log.w(TAG, lastError);
+        boolean retrying = reconnect.active();
+        if (!deviceId.isEmpty() && reconnect.shouldRetry(linkLost, "connected".equals(state), SystemClock.elapsedRealtime())) {
+            scheduleReconnect();
+            return;
+        }
+        if (retrying) lastError = "IC-R30 재연결 실패 · 거리·전원·Bluetooth를 확인한 뒤 다시 연결하세요. (" + lastError + ")";
         closeSession(lastError);
         publish();
+    }
+    private void scheduleReconnect() {
+        String address = deviceId;
+        IOException closeError = closeLink(lastError);
+        if (closeError != null) Log.w(TAG, "SPP cleanup before reconnect failed", closeError);
+        clearConnectionProgress();
+        state = "connecting";
+        connectionProgress = "연결 끊김 · 재연결 대기 중… (" + lastError + ")";
+        lastError = "";
+        // Re-arms the timed wake lock on every attempt so screen-off retries keep running.
+        IcR30Service.keepAwakeForOperation(true);
+        publish();
+        int token = generation;
+        main.postDelayed(() -> {
+            if (token != generation) return;
+            try {
+                BluetoothAdapter adapter = adapter();
+                if (adapter == null || !adapter.isEnabled()) throw new IllegalStateException("Bluetooth가 꺼져 있습니다.");
+                startConnection(adapter.getRemoteDevice(address));
+            } catch (RuntimeException error) { fail(error.getMessage()); }
+        }, IcR30Reconnect.DELAY_MS);
     }
     @Override protected void handleOnStart() {
         main.post(() -> {

@@ -240,6 +240,29 @@ test('Bluetooth USB audio follows attachment and closing the dialog only stops U
   assert.equal(ui.controller.status().state, 'connected');
 });
 
+test('a dead IH389 audio chain (flat input) warns, while plain receiver noise does not', async () => {
+  const ui = setup();
+  // Field readings: card alone / IH389 off ≤ -100 dBFS/bin, IH389 linked noise ≈ -45, beep ≈ -10.
+  const level = db => Array(80).fill(db);
+  const audio = { state: 'active', message: 'USB Audio Device', peakSample: 0, spectrumDbfs: level(-105), ready: false, count: 0 };
+  ui.plugin.getUsbAudioStatus = async () => audio;
+  await ui.connect(); // connecting already delivers the first audio frame
+  const poll = async count => { for (let i = 0; i < count; i++) await ui.pollAudio(); };
+  await poll(38);
+  assert.equal(ui.node('audio-silent').hidden, true, 'a short gap is not a fault');
+  await poll(1);
+  assert.equal(ui.node('audio-silent').hidden, false);
+  assert.match(ui.panel.innerHTML, /data-bt-audio-silent[^>]*>[^<]*IH389/);
+  audio.spectrumDbfs = level(-45); // live chain, receiver noise only, no beep
+  await poll(1);
+  assert.equal(ui.node('audio-silent').hidden, true);
+  audio.spectrumDbfs = level(-Infinity); // digital zero is silent too
+  await poll(40);
+  assert.equal(ui.node('audio-silent').hidden, false);
+  audio.state = 'waiting'; // sound card unplugged: the USB status message covers it instead
+  await poll(1);
+  assert.equal(ui.node('audio-silent').hidden, true);
+});
 test('Bluetooth USB audio exposes a permission action only when Android needs it', async () => {
   const ui = setup();
   const permissionRequests = [];
@@ -443,6 +466,22 @@ test('out-of-range manual tuning, physical radio retuning and disconnect invalid
   ui.emit({ state: 'idle', measurement: null, error: 'CI-V timeout' });
   assert.equal(ui.node('register').disabled, true);
   assert.match(ui.node('error').textContent, /timeout/);
+});
+test('Bluetooth drop out of range auto-reconnects without losing the selected animal', async () => {
+  const ui = setup(); await ui.connect();
+  await ui.node('animals').children[0].children[1].children[0].click();
+  const tuned = ui.controller.status();
+  ui.emit({ ...tuned, state: 'connecting', reconnecting: true, measurement: null,
+    connectionProgress: '연결 끊김 · 재연결 대기 중… (Bluetooth 연결이 종료되었습니다.)' });
+  assert.match(ui.node('status').textContent, /재연결/);
+  assert.equal(ui.node('disconnect').hidden, false, 'user can cancel the retry');
+  assert.equal(ui.node('register').disabled, true);
+  ui.emit({ ...tuned, reconnecting: false });
+  assert.match(ui.node('target').textContent, /KF-110/);
+  assert.equal(ui.node('register').disabled, false);
+  // Giving up ends the session like a manual disconnect.
+  ui.emit({ state: 'idle', measurement: null, error: 'IC-R30 재연결 실패' });
+  assert.doesNotMatch(ui.node('target').textContent, /KF-110/);
 });
 test('write failure or mismatched frequency never enables registration', async () => {
   const ui = setup(); await ui.connect();

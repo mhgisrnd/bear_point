@@ -74,7 +74,6 @@ final class IcR30UsbAudio implements Runnable {
     void setDiagnosticAudio(IcR30TestAudio recording) { diagnosticAudio = recording; }
     boolean failed() { return "error".equals(status.getString("state")); }
     boolean ready() { return "active".equals(status.getString("state")); }
-    boolean usesInput(AudioDeviceInfo device) { return input.getId() == device.getId(); }
     JSObject snapshot() {
         JSObject capture = status;
         JSObject result = new JSObject();

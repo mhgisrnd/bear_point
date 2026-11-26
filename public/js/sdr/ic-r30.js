@@ -85,6 +85,7 @@
             <canvas data-bt-audio-spectrum role="img" aria-label="오디오 입력 대기"></canvas>
             <p data-bt-audio-peak class="sdr-note">USB 오디오가 연결되면 주파수별 피크가 표시됩니다.</p>
           </figure>
+          <p data-bt-audio-silent class="sdr-message sdr-workflow-error" role="alert" hidden>오디오 신호 없음 · 잡음도 들어오지 않습니다. IH389 전원·R30 연결, 3.5mm 잭, R30 스퀠치 열림을 확인하세요.</p>
           <p data-bt-audio-level class="sdr-note" hidden></p>
           <p data-bt-audio-tone class="sdr-note" role="status" hidden></p>
         </div>
@@ -135,6 +136,10 @@
     let requestedVolume = null, volumeError = "";
     let updating = false, lastReading = null, animalCards = [];
     let audioSession = 0, audioTimer, audioState = { state: "idle" }, audioWatching = false, playbackPending = false;
+    // Field-measured spectrum peaks (R30 vol 20): Nexi card alone or IH389 off ≤ −100 dBFS/bin,
+    // IH389 linked with only receiver noise ≈ −40s, beep up to −10. −70 splits them with 30 dB margin.
+    const SILENT_DBFS = -70, SILENT_FRAMES = 40; // below −70 dBFS/bin for ~5 s of 125 ms frames
+    let silentFrames = 0;
     const matchesFrequency = root.BearSdrFrequency.matchesAnimalFrequency;
     const frequencyControls = root.BearSdrFrequency.mount(panel, {
       prefix: "bt-", wholeDigits: 4, frequency: node("frequency"),
@@ -182,7 +187,8 @@
       snapshot = value;
       if (!connected() || snapshot.error) lastReading = null;
       else if (validReading()) lastReading = snapshot.measurement;
-      if (target && (!connected() || (validReading() && !matchesFrequency(target.hz, snapshot.measurement.frequencyHz)))) target = null;
+      // An auto-reconnect passes through "connecting"; only a real disconnect drops the selected animal.
+      if (target && (snapshot.state === "idle" || (validReading() && !matchesFrequency(target.hz, snapshot.measurement.frequencyHz)))) target = null;
       render();
       if (connected() && !wasConnected) renderAudioSpectrum();
       syncAudio();
@@ -486,7 +492,12 @@
       if (value.diagnosticTrace && testing()) renderTestTrace();
       if (changed) renderTestStart();
       renderAudioSpectrum();
-      if (value.state !== "active") return;
+      const active = value.state === "active";
+      const spectrum = Array.isArray(value.spectrumDbfs) ? value.spectrumDbfs : [];
+      // Digital zero shows as -Infinity bins, which also counts as silent.
+      silentFrames = active && spectrum.length && Math.max(...spectrum) < SILENT_DBFS ? silentFrames + 1 : 0;
+      node("audio-silent").hidden = silentFrames < SILENT_FRAMES;
+      if (!active) return;
       const peak = value.peakSample;
       node("audio-level").textContent = peak ? "입력 피크 " + (20 * Math.log10(peak / 32768)).toFixed(1) + " dBFS" : "입력 신호 없음";
       const tone = node("audio-tone");

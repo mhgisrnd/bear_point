@@ -497,14 +497,15 @@
     mapUsbConnected = usbConnected;
     if (bluetooth?.selected()) {
       const bt = bluetooth.status();
-      snapshot = { receptionState: bt.state === "connected" ? "receiving" : "idle", receptionError: bt.error };
+      snapshot = { receptionState: bt.state === "connected" ? "receiving" : bt.reconnecting ? "reconnecting" : "idle", receptionError: bt.error };
     }
     const reception = snapshot && snapshot.receptionState;
     const state = !bluetoothSelected && !usbConnected ? "" : snapshot && snapshot.receptionError ? "error" :
+      reception === "reconnecting" ? "reconnecting" :
       snapshot && snapshot.backgroundScanning && ["starting", "scanning"].includes(reception) ? "scanning" :
       reception === "receiving" ? "receiving" :
       snapshot && snapshot.scanResumeAvailable && snapshot.state === "connected" && reception === "idle" ? "paused" : "";
-    const labels = { scanning: "탐색 중", receiving: "수신 중", paused: "일시정지", error: "수신 오류" };
+    const labels = { scanning: "탐색 중", receiving: "수신 중", paused: "일시정지", error: "수신 오류", reconnecting: "재연결 중" };
     if (state) {
       trigger.dataset.status = state;
       trigger.dataset.statusLabel = labels[state];
