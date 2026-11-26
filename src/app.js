@@ -9,7 +9,6 @@ const { createPostgresRouter } = require("./routes/postgresRoutes");
 const { createRealtimeRouter } = require("./routes/realtimeRoutes");
 const { createAppRealtimeRouter } = require("./routes/appRealtimeRoutes");
 const { createAdminAuthRouter } = require("./routes/adminAuthRoutes");
-const { createAdminUserRouter } = require("./routes/adminUserRoutes");
 const { createAdminSessionStore } = require("./services/adminSessionStore");
 const { normalizeContextRoot, getRuntimeConfig } = require("./config/runtime-config");
 
@@ -72,7 +71,6 @@ function createApp(rootDir, options = {}) {
   rootRouter.use("/api/app-realtime", createAppRealtimeRouter({ apiBase: appApiConfig.realtimeApiBase, teamsApiUrl: appApiConfig.webTeamsApiUrl, movementApiUrl: appApiConfig.webMovementApiUrl }));
   rootRouter.use("/api/observations", createObservationRouter());
   rootRouter.use("/api/admin/auth", createAdminAuthRouter({ adminSessionStore }));
-  rootRouter.use("/api/admin/users", createAdminUserRouter());
 
   // 웹 배포에서는 단일 관리자 로그인 경로만 사용한다.
   rootRouter.get("/login", (req, res) => {
@@ -81,39 +79,10 @@ function createApp(rootDir, options = {}) {
 
   rootRouter.get("/admin/login", (req, res) => {
     if (req.adminSession) {
-      return res.redirect(withBase("/admin/dashboard"));
+      return res.redirect(withBase("/"));
     }
 
     res.sendFile(path.join(rootDir, "public", "pages", "admin-login.html"));
-  });
-
-  rootRouter.get("/admin/dashboard", (req, res) => {
-    if (!req.adminSession) {
-      return res.redirect(withBase("/admin/login"));
-    }
-
-    res.sendFile(path.join(rootDir, "public", "pages", "admin-dashboard.html"));
-  });
-
-  rootRouter.get("/admin/tracking", (req, res) => {
-    if (!req.adminSession) {
-      return res.redirect(withBase("/admin/login"));
-    }
-
-    res.sendFile(path.join(rootDir, "public", "pages", "admin-tracking.html"));
-  });
-
-  rootRouter.get("/admin/observations", (req, res) => {
-    if (!req.adminSession) return res.redirect(withBase("/admin/login"));
-    res.sendFile(path.join(rootDir, "public", "pages", "admin-observations.html"));
-  });
-
-  rootRouter.get("/admin/users", (req, res) => {
-    if (!req.adminSession) {
-      return res.redirect(withBase("/admin/login"));
-    }
-
-    res.sendFile(path.join(rootDir, "public", "pages", "admin-users.html"));
   });
 
   if (contextRoot === "/") {
