@@ -5,7 +5,7 @@ class CwAudioLevel {
     double previous = 0, dc = 0, envelope = 0, gain = 1;
     double dcPole = 0, attack = 0, release = 0, gainAttack = 0, gainRelease = 0;
     double manualGain = 1;
-    int setting = -1; // -1: bounded AGC; otherwise manual dB, 0..60.
+    int setting = -1; // -1: standard AGC, -2: weak-signal AGC, otherwise manual dB.
 public:
     void configure() {
         previous = dc = envelope = 0; gain = 1; setting = -1; manualGain = 1;
@@ -16,7 +16,7 @@ public:
         gainRelease = 1 - exp(-1.0 / (48000 * .25));
     }
     bool setGainDb(int db) {
-        if (db < -1 || db > 60) return false;
+        if (db < -2 || db > 60) return false;
         setting = db;
         // Avoid a pow() dependency in the small WASM verification harness.
         manualGain = exp(db * 0.1151292546497022842);
@@ -27,7 +27,10 @@ public:
         dc = input - previous + dcPole * dc; previous = input;
         double magnitude = dc < 0 ? -dc : dc;
         envelope += (magnitude > envelope ? attack : release) * (magnitude - envelope);
-        double target = envelope > .25 / 64 ? .25 / envelope : 64;
+        // Only the explicitly selected weak-signal mode raises the AGC ceiling.
+        // Keep the same envelope target and output limiter in both modes.
+        const double maxGain = setting == -2 ? 251.188643150958 : 64;
+        double target = envelope > .25 / maxGain ? .25 / envelope : maxGain;
         if (target < 1) target = 1;
         gain += (target < gain ? gainAttack : gainRelease) * (target - gain);
         double value = dc * appliedGain();

@@ -61,6 +61,38 @@ public class SdrCwDetectorTest {
         assertEquals(0,d.pulseCount());assertEquals(0,d.level());
     }
 
+    private SdrCwDetector irregularPulses(double... starts) {
+        SdrCwDetector detector = new SdrCwDetector(1024000);
+        Random noise = new Random(9317);
+        int chunk = 1536, samples = (int) ((starts[starts.length - 1] + .6) * 48000);
+        for (int start = 0; start < samples; start += chunk) {
+            int n = Math.min(chunk, samples - start);
+            double[] iq = new double[n * 2];
+            for (int i = 0; i < n; i++) {
+                double t = (start + i) / 48000.0;
+                boolean pulse = false;
+                for (double s : starts) if (t >= s && t < s + .035) { pulse = true; break; }
+                double phase = 2 * Math.PI * 600 * t;
+                iq[2 * i] = noise.nextGaussian() * .003 + (pulse ? .008 * Math.cos(phase) : 0);
+                iq[2 * i + 1] = noise.nextGaussian() * .003 + (pulse ? .008 * Math.sin(phase) : 0);
+            }
+            detector.observe(iq, start, (start + n) / 48.0);
+        }
+        return detector;
+    }
+
+    @Test public void correctsMissedPulseMultipleOnlyAfterTwoConsistentIntervals() {
+        SdrCwDetector before = irregularPulses(2, 6.56, 8.08);
+        assertEquals(3, before.pulseCount());
+        assertEquals(4560, before.repeatedPeriodMs(), 60);
+        SdrCwDetector after = irregularPulses(2, 6.56, 8.08, 9.6);
+        assertEquals(4, after.pulseCount());
+        assertEquals(1520, after.repeatedPeriodMs(), 60);
+        SdrCwDetector unrelated = irregularPulses(2, 6.56, 8.08, 8.95);
+        assertEquals(4, unrelated.pulseCount());
+        assertEquals(4560, unrelated.repeatedPeriodMs(), 60);
+    }
+
     @Test public void detectsRealAudioPulsesWithDigitallyMutedGaps() {
         for (int tone : new int[]{700, 1600}) {
             IcR30AudioAnalysis analysis = new IcR30AudioAnalysis();

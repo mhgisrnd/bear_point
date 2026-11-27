@@ -378,8 +378,12 @@ public class RtlSdrPlugin extends Plugin {
             if (isAirspy && (!"cw".equals(mode) || hz < 60000000 || hz > 260000000)) {
                 call.reject("Airspy HF+는 현재 60~260MHz의 개별 CW 수신만 지원합니다."); return;
             }
+            String animalCode=call.getString("trackingAnimalCode", "").trim();
+            int animalHz=call.getInt("trackingAnimalFrequencyHz", 0);
+            String candidateKey=animalCode.length()<=64 && !animalCode.isEmpty() && animalHz>0 && Math.abs((long)listen-animalHz)<=1500
+                ? (isAirspy?"airspy:":"rtl:")+animalCode+":"+animalHz : "";
             sdr.start(runtime.connection, hz, rate, gain, ppm, mode, listen, deemphasis,
-                call.getBoolean("audioEnabled", true), call.getDouble("audioVolume", 1d), isAirspy);
+                call.getBoolean("audioEnabled", true), call.getDouble("audioVolume", 1d), isAirspy, candidateKey);
             try { SdrScanService.launch(getContext(), "fixed"); }
             catch (RuntimeException failure) { sdr.stop(); throw failure; }
             call.resolve(snapshot()); publish();

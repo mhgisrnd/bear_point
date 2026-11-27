@@ -198,8 +198,31 @@ test('automatic audio gain limits sudden strong signals and manual settings upda
   r.decode(new Uint8Array(2048000).fill(128));
   const pcm=r.decode(keyed(1024000));
   assert.ok(Math.max(...pcm.map(Math.abs))<32767*.96);
-  assert.equal(r.api.setAudioGainDb(61),0);assert.equal(r.api.setAudioGainDb(-2),0);
+  assert.equal(r.api.setAudioGainDb(61),0);assert.equal(r.api.setAudioGainDb(-3),0);assert.equal(r.api.setAudioGainDb(-2),1);
   assert.equal(r.api.setAudioGainDb(12),1);assert.ok(Math.abs(r.api.audioGain()-3.981)<.01);
+});
+
+test('weak-signal automatic gain boosts weak IQ while limiting strong transients',()=>{
+  function render(mode, amplitude, seconds) {
+    const r=receiver(), rate=768000, pcm=[];r.api.configure(rate,0,mode);
+    for(let start=0;start<rate*seconds;start+=4096) {
+      const count=Math.min(4096,rate*seconds-start),iq=new Float32Array(r.api.memory.buffer,r.api.floatInputBuffer(),count*2);
+      for(let i=0;i<count;i++){const p=2*Math.PI*100*(start+i)/rate;iq[2*i]=amplitude*Math.cos(p);iq[2*i+1]=amplitude*Math.sin(p);}
+      const n=r.api.processFloat(count);pcm.push(...new Int16Array(r.api.memory.buffer,r.api.outputBuffer(),n));
+    }
+    return {r,pcm};
+  }
+  const normal=render(-1,.000001,2),weak=render(-2,.000001,2);
+  assert.ok(normal.r.api.audioGain()>63 && normal.r.api.audioGain()<=64);
+  assert.ok(weak.r.api.audioGain()>249 && weak.r.api.audioGain()<=251.19);
+  assert.ok(rms(weak.pcm,1.5,1.8)>rms(normal.pcm,1.5,1.8)*3.3);
+  const r=weak.r,rate=768000,pcm=[];
+  for(let start=0;start<rate/10;start+=4096){
+    const count=Math.min(4096,rate/10-start),iq=new Float32Array(r.api.memory.buffer,r.api.floatInputBuffer(),count*2);
+    for(let i=0;i<count;i++){const p=2*Math.PI*100*(start+i)/rate;iq[2*i]=.9*Math.cos(p);iq[2*i+1]=.9*Math.sin(p);}
+    const n=r.api.processFloat(count);pcm.push(...new Int16Array(r.api.memory.buffer,r.api.outputBuffer(),n));
+  }
+  assert.ok(Math.max(...pcm.map(Math.abs))<32767*.99, 'limiter bounds sudden strong output');
 });
 
 test('extended listening gain boosts weak float IQ while limiting strong output',()=>{
@@ -283,6 +306,8 @@ test('CW listening filter changes audio rejection without altering RF channel', 
   assert.deepEqual(wide.channel,normal.channel);
   const narrowOff=listen(1,1500), wideOff=listen(2,1500);
   assert.ok(rms(wideOff.pcm,.1,.2)>rms(narrowOff.pcm,.1,.2)*2.5, 'narrow filter reduces off-channel sound');
+  const fixed=listen(6,-375), fixedOff=listen(6,600);
+  assert.ok(rms(fixed.pcm,.1,.2)>rms(fixedOff.pcm,.1,.2)*5, '250 Hz fixed filter selects the captured RF candidate');
   const weak=listen(3,-375), weakOff=listen(3,600);
   assert.deepEqual(weak.channel,listen(0,-375).channel, 'weak audio processing does not alter RF samples');
   assert.ok(rms(weak.pcm,.1,.2)>rms(weakOff.pcm,.1,.2)*5, 'weak filter selects the tracked IQ candidate');
@@ -302,4 +327,19 @@ test('CW listening filter changes audio rejection without altering RF channel', 
     const energy=hz=>{let re=0,im=0;for(let i=4800;i<9600;i++) {re+=pcm[i]*Math.cos(2*Math.PI*hz*i/48000);im+=pcm[i]*Math.sin(2*Math.PI*hz*i/48000);}return re*re+im*im;};
     assert.ok(energy(700)>energy(400)*100, `tracked offset ${offset} renders at 700 Hz`);
   }
+});
+
+test('weak filter bandwidth can widen while tracking the same candidate',()=>{
+  const r=receiver(),rate=768000;r.api.configure(rate,0,0);r.api.setCwFilter(5);r.api.setWeakCwOffset(-375,1);
+  function tone() {
+    const pcm=[];
+    for(let start=0;start<rate/4;start+=4096){
+      const count=Math.min(4096,rate/4-start),iq=new Float32Array(r.api.memory.buffer,r.api.floatInputBuffer(),count*2);
+      for(let i=0;i<count;i++){let p=2*Math.PI*(-225)*(start+i)/rate;iq[2*i]=.001*Math.cos(p);iq[2*i+1]=.001*Math.sin(p);}
+      const n=r.api.processFloat(count);pcm.push(...new Int16Array(r.api.memory.buffer,r.api.outputBuffer(),n));
+    }
+    return rms(pcm,.1,.2);
+  }
+  const narrow=tone();r.api.setWeakCwBandwidth(500);const wider=tone();
+  assert.ok(wider>narrow*4,'widening restores an off-center tone without losing the tracked frequency');
 });

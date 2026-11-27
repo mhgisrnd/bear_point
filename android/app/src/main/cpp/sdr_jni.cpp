@@ -227,6 +227,11 @@ Java_com_bearpoint_app_SdrNative_setWeakCwOffset(JNIEnv *, jclass, jlong handle,
     if (processor && processor->cw) processor->beacon.setWeakOffset(hz, tracked);
 }
 extern "C" JNIEXPORT void JNICALL
+Java_com_bearpoint_app_SdrNative_setWeakCwBandwidth(JNIEnv *, jclass, jlong handle, jint width) {
+    auto *processor = reinterpret_cast<SdrDemod *>(handle);
+    if (processor && processor->cw) processor->beacon.setWeakBandwidth(width);
+}
+extern "C" JNIEXPORT void JNICALL
 Java_com_bearpoint_app_SdrNative_close(JNIEnv *, jclass, jlong handle) {
     if(handle){auto *receiver=reinterpret_cast<ReceiverHandle *>(handle);receiver->stop();rtlsdr_close(receiver->dev);delete receiver;}
 }

@@ -39,7 +39,8 @@ final class SdrCwDetector {
     private long runSequence;
     private double lastPulseTime = Double.NEGATIVE_INFINITY, lastOffset, lastSignal, lastNoise, lastBand, lastSnr;
     private double lastWidth, lastDuration, lastInterval;
-    private double periodMs, runDirectionSignal, runDirectionNoise, lastDirectionSignal, lastDirectionNoise;
+    private double periodMs, shorterPeriodMs, runDirectionSignal, runDirectionNoise, lastDirectionSignal, lastDirectionNoise;
+    private int shorterPeriodCount;
     private double broadbandFloor, broadbandRiseDb, runBroadbandRise;
     private long lastSequence;
     private int pulseCount, repeated;
@@ -214,12 +215,26 @@ final class SdrCwDetector {
     private void accept(double duration) {
         double interval = runPeakTime - lastPulseTime;
         repeated = interval >= 150 && interval <= 10000 && Math.abs(runOffset - lastOffset) <= 150 ? repeated + 1 : 1;
-        if (repeated == 1) periodMs = 0;
-        else if (periodMs <= 0) periodMs = interval;
+        if (repeated == 1) { periodMs = 0; clearShorterPeriod(); }
+        else if (periodMs <= 0) { periodMs = interval; clearShorterPeriod(); }
         else {
             double cycles = Math.max(1, Math.rint(interval / periodMs));
-            if (Math.abs(interval - cycles * periodMs) < periodMs * .25)
+            if (Math.abs(interval - cycles * periodMs) < periodMs * .25) {
                 periodMs += .2 * (interval / cycles - periodMs);
+                clearShorterPeriod();
+            } else {
+                // An initial pair may span missed pulses, e.g. 3 x the true cadence.
+                // Require two consecutive observed shorter intervals before replacing it;
+                // a single extra pulse at the same frequency must not rewrite memory.
+                double divisor = Math.rint(periodMs / interval);
+                boolean plausible = divisor >= 2 && divisor <= 6 &&
+                        Math.abs(periodMs - divisor * interval) <= periodMs * .12;
+                if (!plausible) clearShorterPeriod();
+                else if (shorterPeriodCount > 0 && Math.abs(interval - shorterPeriodMs) <= shorterPeriodMs * .12) {
+                    shorterPeriodMs = (shorterPeriodMs * shorterPeriodCount + interval) / (shorterPeriodCount + 1);
+                    if (++shorterPeriodCount >= 2) { periodMs = shorterPeriodMs; clearShorterPeriod(); }
+                } else { shorterPeriodMs = interval; shorterPeriodCount = 1; }
+            }
         }
         pulseCount++; lastPulseTime = runPeakTime; lastOffset = runOffset;
         lastSignal = runSignal; lastNoise = runNoise; lastBand = runBand; lastSnr = runPeakSnr;
@@ -228,6 +243,8 @@ final class SdrCwDetector {
         lastAssisted=runAssisted;
         lastDirectionSignal = runDirectionSignal; lastDirectionNoise = runDirectionNoise;
     }
+
+    private void clearShorterPeriod() { shorterPeriodMs = 0; shorterPeriodCount = 0; }
 
     boolean ready() { return floors[0] > 0; }
     double[] audioSpectrumDbfs() {
@@ -251,6 +268,8 @@ final class SdrCwDetector {
     long pulseSequence() { return lastSequence; }
     double pulseDurationMs() { return lastDuration; }
     double intervalMs() { return lastInterval; }
+    long repeatedPeriodMs() { return Math.round(periodMs); }
+    long pulseAgeMs() { return Math.max(0, Math.round(analyzedTime - lastPulseTime)); }
     double frameBestSnrDb() { return frameBestSnr; }
     double frameBestOffsetHz() { return frameBestOffset; }
     double broadbandRiseDb() { return broadbandRiseDb; }

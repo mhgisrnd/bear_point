@@ -432,6 +432,7 @@ test('live listening gain does not retune or alter measured RF strength; local c
   await gain.change('24');await tick();
   assert.equal(ui.state.audio.gainDb,24);assert.equal(ui.plugin.starts.length,1);
   await gain.change('60');await tick();assert.equal(ui.state.audio.gainDb,60);
+  await gain.change('-2');await tick();assert.equal(ui.state.audio.gainDb,-2);
   assert.equal(ui.state.reception.signalDbfs,-65);
   const record=ui.dialog.querySelector('[data-diagnostic-start]'),share=ui.dialog.querySelector('[data-diagnostic-share]');
   assert.equal(record.disabled,false);assert.equal(share.disabled,true);
@@ -568,6 +569,10 @@ test('USB preserves explicit selection within 900 Hz including both boundaries a
     assert.equal(button.hidden,false);
     assert.equal(button.disabled,true,'no samples yet');
     await ui.dialog.querySelector('[data-start]').click();
+    if (Math.abs(offset)<=900) {
+      assert.equal(ui.plugin.starts.at(-1).trackingAnimalCode,'KF-110');
+      assert.equal(ui.plugin.starts.at(-1).trackingAnimalFrequencyHz,148241000);
+    }
     ui.state.receptionState='receiving';
     ui.state.reception={mode:'cw',frequencyHz:hz-12000,listenFrequencyHz:hz,hasSamples:true,powerDbfs:-56};
     ui.emit();
@@ -1958,6 +1963,11 @@ test('CW listening filter follows native status and sends live selections',async
   await filter.change('1');await tick();assert.equal(ui.state.cwFilterMode,1);
   await filter.change('4');await tick();assert.equal(ui.state.cwFilterMode,4);
   await filter.change('5');await tick();assert.equal(ui.state.cwFilterMode,5);
+  await filter.change('6');await tick();assert.equal(ui.state.cwFilterMode,6);
+  ui.state.receptionState='receiving';ui.state.reception={mode:'cw',hasSamples:true,signalDbfs:-60,powerDbfs:-60,weakAudioTrackingActive:true,weakAudioFixedSource:'selected-frequency',weakAudioCandidateHz:148241000};ui.emit();
+  assert.match(ui.dialog.querySelector('[data-weak-tracking-status]').textContent,/선택 주파수로 청취/);
+  ui.state.reception.weakAudioFixedSource='repeated-candidate';ui.state.reception.weakAudioCandidateHz=148240600;ui.emit();
+  assert.match(ui.dialog.querySelector('[data-weak-tracking-status]').textContent,/반복 후보로 고정 청취/);
   ui.state.diagnostic={state:'recording',records:[]};ui.emit();
   assert.equal(filter.disabled,true);
 });

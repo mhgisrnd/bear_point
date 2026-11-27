@@ -1,6 +1,8 @@
 package com.bearpoint.app;
 
 import android.hardware.usb.UsbDeviceConnection;
+import android.content.Context;
+import android.content.SharedPreferences;
 import android.os.Handler;
 import android.os.SystemClock;
 import com.getcapacitor.JSObject;
@@ -15,6 +17,8 @@ final class SdrReceiver {
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
     private final AtomicInteger generation = new AtomicInteger();
     private final Handler main;
+    private final SharedPreferences weakMemory;
+    private volatile String weakMemoryKey = "";
     private final Runnable changed;
     String state = "idle", error = "";
     volatile JSObject metrics = new JSObject();
@@ -70,8 +74,9 @@ final class SdrReceiver {
         }
     }
     boolean hasScanSession() { return scanSession != null; }
-    SdrReceiver(Handler main, Runnable changed) {
+    SdrReceiver(Context context, Handler main, Runnable changed) {
         this.main = main; this.changed = changed;
+        weakMemory=context.getSharedPreferences("sdr_weak_candidates",Context.MODE_PRIVATE);
         diagnostic = new SdrDiagnosticCapture(() -> main.post(changed));
         captureWriter=new SdrCaptureWriter(diagnostic);
         comparison=new SdrComparison(new SdrComparison.Host(){
@@ -147,10 +152,11 @@ final class SdrReceiver {
     }
 
     void start(UsbDeviceConnection connection, int hz, int rate, int gain, int ppm, String mode, int listenHz,
-               int deemphasisUs, boolean listenAudio, double volume, boolean airspy) {
+               int deemphasisUs, boolean listenAudio, double volume, boolean airspy, String candidateKey) {
         if(comparison.active)throw new IllegalStateException("비교 진단을 먼저 중단하세요.");
         this.mode=mode;
         this.airspy=airspy;
+        this.weakMemoryKey=candidateKey==null ? "" : candidateKey;
         startConfigured(connection, new SdrComparison.Settings(hz, rate, gain, ppm, listenHz, deemphasisUs, 12000), listenAudio, volume);
     }
     boolean retuneCw(int listenHz) {
@@ -211,7 +217,20 @@ final class SdrReceiver {
             boolean pulseSpectrum = "cw".equals(mode);
             SdrCwSpectrum cwSpectrum = new SdrCwSpectrum();
             SdrCwDetector cwDetector = new SdrCwDetector(rate);
-            SdrFieldCwTracker fieldTracker = new SdrFieldCwTracker();
+            SdrWeakState weakState = new SdrWeakState();
+            SdrFixedCwState fixedState = new SdrFixedCwState();
+            String memoryKey=weakMemoryKey;
+            final int memoryReferenceHz=listenHz;
+            long savedAt=memoryKey.isEmpty() ? 0 : weakMemory.getLong(memoryKey+":time",0);
+            long elapsedSinceSave=System.currentTimeMillis()-savedAt;
+            if(savedAt>0 && elapsedSinceSave>=0 && elapsedSinceSave<=7L*24*60*60*1000) {
+                int rememberedHz=weakMemory.getInt(memoryKey+":frequency",0);
+                long rememberedPeriod=weakMemory.getLong(memoryKey+":period",0);
+                if(Math.abs((long)rememberedHz-listenHz)<=SdrCwDetector.SEARCH_HZ) {
+                    weakState.seed(rememberedHz,rememberedPeriod,SystemClock.elapsedRealtime());
+                }
+            }
+            long lastMemoryWrite=-10000;
             SdrSignalStrength strength = new SdrSignalStrength();
             double[] spectrum = new double[0];
             int spectrumFrames = 0;
@@ -228,6 +247,8 @@ final class SdrReceiver {
                 if (requested != applied) {
                     if (generation.get() != token) break;
                     listenHz = requested.listen;
+                    fixedState.reset();
+                    weakState = new SdrWeakState();
                     long replacement = SdrNative.createDemodulator(mode, actualRate, listenHz - actualCenterHz, deemphasisUs);
                     if (demodulator != 0) SdrNative.closeDemodulator(demodulator);
                     demodulator = replacement;
@@ -237,7 +258,6 @@ final class SdrReceiver {
                     audio.discontinuity();
                     cwSpectrum = new SdrCwSpectrum();
                     cwDetector = new SdrCwDetector(actualRate);
-                    fieldTracker = new SdrFieldCwTracker();
                     strength = new SdrSignalStrength();
                     spectrum = new double[0];
                     bytes = 0; power = 0; clipped = 0;
@@ -271,7 +291,7 @@ final class SdrReceiver {
                 actualRate = (int) block[4]; actualCenterHz = (int) block[6];
                 if (airspy && demodulator == 0) cwDetector = new SdrCwDetector(actualRate);
                 if (applied != currentSettings) continue;
-                if(received.diagnostic[18]>0){cwSpectrum=new SdrCwSpectrum();cwDetector=new SdrCwDetector((int)block[4]);fieldTracker=new SdrFieldCwTracker();strength=new SdrSignalStrength();signalPeak=-1;audio.discontinuity();}
+                if(received.diagnostic[18]>0){cwSpectrum=new SdrCwSpectrum();cwDetector=new SdrCwDetector((int)block[4]);strength=new SdrSignalStrength();signalPeak=-1;audio.discontinuity();}
                 // Configure from the actual hardware rate, before decoding subsequent blocks.
                 if (demodulator == 0 && ("wfm".equals(mode) || "cw".equals(mode)))
                     demodulator = SdrNative.createDemodulator(mode, (int) block[4], listenHz - (int) block[6], deemphasisUs);
@@ -281,6 +301,7 @@ final class SdrReceiver {
                 }
                 if (demodulator != 0 && "cw".equals(mode) && appliedFilterMode != cwFilterMode) {
                     appliedFilterMode = cwFilterMode;
+                    fixedState.reset();
                     SdrNative.setCwFilter(demodulator, appliedFilterMode);
                 }
                 audio.offer(received.audio,(long)received.diagnostic[9],received.diagnostic[11]);
@@ -293,9 +314,31 @@ final class SdrReceiver {
                 long detectorNanos=0;
                 if (pulseSpectrum) {
                     cwDetector.observe(received.channelIq,(long)received.diagnostic[9],received.diagnostic[11]);
-                    fieldTracker.observe(received.fieldIq);
-                    if (appliedFilterMode >= 3 && demodulator != 0)
-                        SdrNative.setWeakCwOffset(demodulator, fieldTracker.offsetHz(), fieldTracker.tracked());
+                    // Use exactly the repeated candidate shown on the receive screen.
+                    boolean repeatedCandidate = cwDetector.recent() && cwDetector.confidence() >= 2;
+                    int candidateHz = listenHz + (int)Math.round(cwDetector.offsetHz());
+                    long candidatePeriod = cwDetector.repeatedPeriodMs();
+                    long candidateAge = cwDetector.pulseAgeMs();
+                    weakState.update(repeatedCandidate,candidateHz,candidatePeriod,candidateAge,now);
+                    if(!memoryKey.isEmpty() && repeatedCandidate && candidatePeriod>=150 && candidatePeriod<=10000
+                            && now-lastMemoryWrite>=10000 && !comparison.active
+                            && Math.abs((long)candidateHz-memoryReferenceHz)<=SdrCwDetector.SEARCH_HZ) {
+                        weakMemory.edit().putInt(memoryKey+":frequency",candidateHz)
+                            .putLong(memoryKey+":period",candidatePeriod).putLong(memoryKey+":time",System.currentTimeMillis()).apply();
+                        lastMemoryWrite=now;
+                    }
+                    if (appliedFilterMode >= 3 && demodulator != 0) {
+                        int selectedWidth=appliedFilterMode==5?150:appliedFilterMode==4?500:200;
+                        if (appliedFilterMode == 6) {
+                            boolean candidateAvailable = weakState.width(now,250)>0 && Math.abs((long)weakState.offset(listenHz))<=SdrCwDetector.SEARCH_HZ;
+                            fixedState.choose(listenHz,candidateAvailable,weakState.frequencyHz(),weakState.remembered());
+                        }
+                        int currentWidth=appliedFilterMode==6?250:weakState.width(now,selectedWidth);
+                        int candidateOffset=appliedFilterMode==6?fixedState.frequencyHz()-listenHz:weakState.offset(listenHz);
+                        boolean active=currentWidth>0 && Math.abs((long)candidateOffset)<=SdrCwDetector.SEARCH_HZ;
+                        if(active)SdrNative.setWeakCwBandwidth(demodulator,currentWidth);
+                        SdrNative.setWeakCwOffset(demodulator,candidateOffset,active);
+                    }
                     detectorNanos=SystemClock.elapsedRealtimeNanos()-spectrumBegan;
                     double[] bins = cwSpectrum.observe(received.channelIq, now);
                     if (bins.length > 0) { spectrum = bins; spectrumUpdated = now; }
@@ -351,11 +394,22 @@ final class SdrReceiver {
                     details.put("meterPeakSourceSequence",signalPeakSequence);details.put("meterPeakSourceReceivedMs",signalPeakReceivedMs);
                     if(pulseSpectrum) putCwDetector(details,cwDetector,listenHz,received.diagnostic[11]);
                     if (pulseSpectrum && appliedFilterMode >= 3) {
-                        boolean active=fieldTracker.tracked();
+                        int selectedWidth=appliedFilterMode==5?150:appliedFilterMode==4?500:200;
+                        int width=appliedFilterMode==6?250:weakState.width(now,selectedWidth);
+                        int audioOffset=appliedFilterMode==6?fixedState.frequencyHz()-listenHz:weakState.offset(listenHz);
+                        boolean active=width>0 && Math.abs((long)audioOffset)<=SdrCwDetector.SEARCH_HZ;
                         details.put("weakAudioTrackingActive",active);
+                        details.put("weakAudioFixed",appliedFilterMode==6);
+                        details.put("weakAudioFixedSource",fixedState.source());
+                        details.put("weakAudioTrackingHeld",active && appliedFilterMode!=6 && (weakState.remembered() || weakState.age(now)>weakState.periodMs()*2));
+                        details.put("weakAudioRemembered",active && (appliedFilterMode==6 ? fixedState.source().equals("remembered") : weakState.remembered()));
+                        details.put("weakAudioConfirmed",cwDetector.recent() && cwDetector.confidence() >= 2);
+                        details.put("weakAudioLastMatchAgeMs",weakState.age(now));
+                        details.put("weakAudioExpectedIntervalMs",weakState.periodMs());
+                        details.put("weakAudioAppliedWidthHz",active ? width : 2200);
                         details.put("weakAudioCenterHz",active ? 700 : 0);
-                        details.put("weakAudioCandidateOffsetHz",active ? fieldTracker.offsetHz() : 0);
-                        details.put("weakAudioTrackerRevision","field-lab-v1-12k");
+                        details.put("weakAudioCandidateOffsetHz",active ? audioOffset : 0);
+                        details.put("weakAudioTrackerRevision","display-cw-candidate-v1");
                         details.put("weakAudioAdditionalGain",active ? 20 : 1);
                     }
                     if(received.noisePower>0 && signalPeak>=0) {
@@ -374,15 +428,20 @@ final class SdrReceiver {
                     if(captureActive) {
                         JSObject settings=new JSObject();settings.put("pipeline","cw-complex-channel-v1");settings.put("mode",mode);
                         settings.put("sampleRate",(int)block[4]);settings.put("centerFrequencyHz",(int)block[6]);
-                        settings.put("cwAudioFilter",appliedFilterMode >= 3 ? "weak-tracked" : appliedFilterMode == 1 ? "narrow" : appliedFilterMode == 2 ? "wide" : "default");
-                        settings.put("cwAudioFilterApprox3dBBandwidthHz",appliedFilterMode == 5 ? 128 : appliedFilterMode == 4 ? 435 : appliedFilterMode == 3 ? 153 : appliedFilterMode == 1 ? 1200 : appliedFilterMode == 2 ? 4000 : 2200);
+                        settings.put("cwAudioFilter",appliedFilterMode == 6 ? "weak-fixed" : appliedFilterMode >= 3 ? "weak-tracked" : appliedFilterMode == 1 ? "narrow" : appliedFilterMode == 2 ? "wide" : "default");
+                        settings.put("cwAudioFilterApprox3dBBandwidthHz",appliedFilterMode == 6 ? 191 : appliedFilterMode == 5 ? 128 : appliedFilterMode == 4 ? 435 : appliedFilterMode == 3 ? 153 : appliedFilterMode == 1 ? 1200 : appliedFilterMode == 2 ? 4000 : 2200);
                         settings.put("cwAudioFilterCenterHz",listenHz);
                         if (appliedFilterMode >= 3) {
-                            settings.put("cwAudioFilterNominalWidthHz",appliedFilterMode == 5 ? 150 : appliedFilterMode == 4 ? 500 : 200);
-                            boolean active=fieldTracker.tracked();
+                            settings.put("cwAudioFilterNominalWidthHz",appliedFilterMode == 6 ? 250 : appliedFilterMode == 5 ? 150 : appliedFilterMode == 4 ? 500 : 200);
+                            int selectedWidth=appliedFilterMode==5?150:appliedFilterMode==4?500:200;
+                            int width=appliedFilterMode==6?250:weakState.width(now,selectedWidth);
+                            int audioOffset=appliedFilterMode==6?fixedState.frequencyHz()-listenHz:weakState.offset(listenHz);
+                            boolean active=width>0 && Math.abs((long)audioOffset)<=SdrCwDetector.SEARCH_HZ;
+                            if(appliedFilterMode==6)settings.put("cwAudioFixedSource",fixedState.source());
                             settings.put("cwAudioFilterAudioCenterHz",active ? 700 : 0);
-                            settings.put("cwAudioFilterCandidateOffsetHz",active ? fieldTracker.offsetHz() : 0);
-                            settings.put("weakAudioTrackerRevision","field-lab-v1-12k");
+                            settings.put("cwAudioFilterCandidateOffsetHz",active ? audioOffset : 0);
+                            settings.put("cwAudioFilterAppliedWidthHz",active ? width : 2200);
+                            settings.put("weakAudioTrackerRevision","display-cw-candidate-v1");
                             settings.put("cwAudioFilterAdditionalGain",active ? 20 : 1);
                         }
                         settings.put("listenFrequencyHz",listenHz);settings.put("audioGainDb",appliedAudioGain);
@@ -441,8 +500,18 @@ final class SdrReceiver {
                 result.put("signalPeakSourceReceivedMs",signalPeakReceivedMs);
                 if (pulseSpectrum) {
                     putCwDetector(result,cwDetector,listenHz,received.diagnostic[11]);
-                    result.put("weakAudioTrackingActive",appliedFilterMode>=3 && fieldTracker.tracked());
-                    if(fieldTracker.tracked()) result.put("weakAudioCandidateHz",listenHz+fieldTracker.offsetHz());
+                    int selectedWidth=appliedFilterMode==5?150:appliedFilterMode==4?500:200;
+                    int width=appliedFilterMode==6 ? 250 : appliedFilterMode>=3 ? weakState.width(now,selectedWidth) : 0;
+                    int audioFrequency=appliedFilterMode==6?fixedState.frequencyHz():weakState.frequencyHz();
+                    boolean weakActive=width>0 && Math.abs((long)audioFrequency-listenHz)<=SdrCwDetector.SEARCH_HZ;
+                    result.put("weakAudioFixed",appliedFilterMode==6);
+                    result.put("weakAudioFixedSource",fixedState.source());
+                    result.put("weakAudioTrackingActive",weakActive);
+                    result.put("weakAudioTrackingHeld",weakActive && appliedFilterMode!=6 && (weakState.remembered() || weakState.age(now)>weakState.periodMs()*2));
+                    result.put("weakAudioRemembered",weakActive && (appliedFilterMode==6 ? fixedState.source().equals("remembered") : weakState.remembered()));
+                    result.put("weakAudioConfirmed",cwDetector.recent() && cwDetector.confidence() >= 2);
+                    result.put("weakAudioAppliedWidthHz",weakActive ? width : 2200);
+                    if(weakActive) result.put("weakAudioCandidateHz",audioFrequency);
                     result.put("signalLevel",strength.displayed());result.put("signalLevelHeld",strength.holding());
                     result.put("signalLevelExcessDb",strength.heldExcess());result.put("signalMeterRevision",SdrSignalStrength.REVISION);
                 }
@@ -666,7 +735,7 @@ final class SdrReceiver {
     }
 
     void setCwFilter(int filter) {
-        if (filter < 0 || filter > 5) throw new IllegalArgumentException("Invalid CW filter");
+        if (filter < 0 || filter > 6) throw new IllegalArgumentException("Invalid CW filter");
         if (comparison.active || java.util.Arrays.asList("waiting", "recording", "packaging").contains(diagnostic.state()))
             throw new IllegalStateException("진단 기록을 마친 후 필터를 변경하세요.");
         cwFilterMode = filter;

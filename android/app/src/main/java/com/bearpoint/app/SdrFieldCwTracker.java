@@ -30,6 +30,11 @@ final class SdrFieldCwTracker {
     }
     boolean tracked() { return tracker.locked; }
     int offsetHz() { return tracker.offset; }
+    void seedCandidate(int offsetHz,long periodMs) { tracker.seedCandidate(offsetHz,periodMs); }
+    boolean holding() { return tracker.locked && tracker.interval>0 && tracker.samples-tracker.lastMatch>2*tracker.interval; }
+    long ageMs() { return tracker.locked ? Math.max(0, (tracker.samples-tracker.lastMatch)*1000/RATE) : 0; }
+    long periodMs() { return tracker.interval*1000/RATE; }
+    long holdMs() { return tracker.holdSamples()*1000/RATE; }
     static final int RATE=12000;
     static final class Tracker {
         static final int N=256, HALF_BINS=32, BINS=2*HALF_BINS+1;
@@ -41,8 +46,17 @@ final class SdrFieldCwTracker {
         private double burstPeak;
         private long burstTime;
         private long samples, lastPulse, interval, lastMatch;
+        private boolean seeded;
+        private int seedBin;
+        private long seedPeriod, seedPulse;
         boolean locked;
         int offset;
+        void seedCandidate(int offsetHz,long periodMs) {
+            if(Math.abs((long)offsetHz)>1500 || periodMs<150 || periodMs>10000)return;
+            seedBin=HALF_BINS+(int)Math.round(offsetHz*N/(double)RATE);
+            seedPeriod=periodMs*RATE/1000;seedPulse=0;seeded=true;
+        }
+        long holdSamples() { return Math.max(5L*RATE, Math.min(10L*RATE, 6L*interval + RATE/5)); }
         Tracker() {
             for(int b=0;b<BINS;++b) for(int k=0;k<N;++k) {
                 double a=2*Math.PI*(b-HALF_BINS)*k/N, w=.5-.5*Math.cos(2*Math.PI*k/N);
@@ -55,7 +69,7 @@ final class SdrFieldCwTracker {
             if(samples>=N && samples%(N/2)==0) analyze();
         }
         private void analyze() {
-            if (locked && samples-lastMatch>5L*RATE) { locked=false; repeats=0; }
+            if (locked && samples-lastMatch>holdSamples()) { locked=false; repeats=0; }
             double total=0;
             for(int b=0;b<BINS;++b) {
                 float r=0,j=0;
@@ -66,17 +80,27 @@ final class SdrFieldCwTracker {
                 total+=(power[b]=(double)r*r+(double)j*j);
             }
             ++frames;
+            long seedElapsed=samples-seedPulse;
+            long seedCycles=seeded && seedPulse>0 ? Math.max(1,Math.round((double)seedElapsed/seedPeriod)) : 0;
+            boolean seedExpected=seeded && seedPulse>0 && seedCycles<=6 &&
+                    Math.abs(seedElapsed-seedCycles*seedPeriod)<=Math.max(RATE/10,seedPeriod/8);
             int best=0; double bestScore=0;
             for(int b=0;b<BINS;++b) {
                 double f=Math.max(1e-24,floor[b]);
                 double ratio=power[b]/f;
                 double score=Math.min(ratio, power[b]*BINS/Math.max(1e-24,total));
-                if(score>bestScore) {bestScore=score; best=b;}
+                // Once locked, an unrelated strong signal must not hide the
+                // previously confirmed candidate in a different frequency bin.
+                if ((!locked || Math.abs(b-runBin)<=2) && (!seedExpected || locked || Math.abs(b-seedBin)<=2) && score>bestScore) {bestScore=score; best=b;}
                 if(frames<=24) floor[b]+=(power[b]-floor[b])/frames;
                 else floor[b]+=.018*(Math.min(power[b],f*5)-f);
             }
             if(frames<25)return;
-            if(bestScore>=8) {
+            long elapsed=samples-lastPulse;
+            long cycles=locked && interval>0 ? Math.max(1,Math.round((double)elapsed/interval)) : 0;
+            boolean expected=locked && interval>0 && cycles<=6 &&
+                    Math.abs(elapsed-cycles*interval)<=Math.max(RATE/10,interval/8);
+            if(bestScore >= (expected || seedExpected ? 6 : 8)) {
                 ++burstFrames;
                 if(bestScore>burstPeak){burstPeak=bestScore;burstBin=best;burstTime=samples;}
                 return;
@@ -90,7 +114,7 @@ final class SdrFieldCwTracker {
             long gap=burstTime-lastPulse;
             if(locked) {
                 long periods=Math.max(1,Math.round((double)gap/interval));
-                if(Math.abs(best-runBin)>2 || periods>4 ||
+                if(Math.abs(best-runBin)>2 || periods>6 ||
                     Math.abs(gap-periods*interval)>Math.max(RATE/10,interval/10))return;
                 interval=(3*interval+gap/periods)/4;
                 lastPulse=lastMatch=burstTime;
@@ -98,6 +122,15 @@ final class SdrFieldCwTracker {
                 int measured=(int)Math.round((best-HALF_BINS)*(double)RATE/N);
                 offset=(int)Math.round(.75*offset+.25*measured);
                 return;
+            }
+            if(seeded && Math.abs(best-seedBin)<=2) {
+                long rememberedGap=burstTime-seedPulse;
+                long rememberedCycles=seedPulse>0 ? Math.max(1,Math.round((double)rememberedGap/seedPeriod)) : 0;
+                if(seedPulse>0 && rememberedCycles<=6 && Math.abs(rememberedGap-rememberedCycles*seedPeriod)<=Math.max(RATE/10,seedPeriod/8)) {
+                    locked=true;repeats=3;runBin=best;interval=(3*seedPeriod+rememberedGap/rememberedCycles)/4;
+                    lastPulse=lastMatch=burstTime;offset=(int)Math.round((best-HALF_BINS)*(double)RATE/N);seeded=false;return;
+                }
+                seedPulse=burstTime;
             }
             boolean same=repeats>0 && Math.abs(best-runBin)<=2 && gap<RATE*3L;
             if(same && repeats>=2 && Math.abs(gap-interval)>Math.max(RATE/10,interval/8)) same=false;

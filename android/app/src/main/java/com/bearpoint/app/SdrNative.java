@@ -14,5 +14,6 @@ final class SdrNative {
     static native void setAudioGain(long handle, int db);
     static native void setCwFilter(long handle, int mode);
     static native void setWeakCwOffset(long handle, int hz, boolean tracked);
+    static native void setWeakCwBandwidth(long handle, int width);
     static native void close(long handle);
 }

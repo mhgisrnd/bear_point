@@ -8,6 +8,7 @@ int configure(int rate, int offset, int audioGainDb) { return demod.configure(ra
 int setAudioGainDb(int db) { return demod.setAudioGainDb(db); }
 int setCwFilter(int mode) { return demod.setFilterMode(mode); }
 void setWeakCwOffset(int hz, int tracked) { demod.setWeakOffset(hz, tracked != 0); }
+void setWeakCwBandwidth(int hz) { demod.setWeakBandwidth(hz); }
 double audioGain() { return demod.audioGain(); }
 const double *channelBuffer() { return demod.spectrumSamples(); }
 int channelLength() { return demod.spectrumLength(); }

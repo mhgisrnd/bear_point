@@ -26,7 +26,7 @@ final class SdrRuntime {
 
     private SdrRuntime(Context context) {
         usb = (UsbManager) context.getSystemService(Context.USB_SERVICE);
-        sdr = new SdrReceiver(main, this::changed);
+        sdr = new SdrReceiver(context, main, this::changed);
         SdrAudioInterruption interruptions = new SdrAudioInterruption(
             () -> "starting".equals(sdr.state) || "receiving".equals(sdr.state) || "scanning".equals(sdr.state),
             reason -> {

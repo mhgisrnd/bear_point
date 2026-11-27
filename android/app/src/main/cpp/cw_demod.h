@@ -26,6 +26,7 @@ class CwDemod {
     double weakPrevI = 0, weakPrevQ = 0, weakNextI = 0, weakNextQ = 0;
     int weakHead = 0, weakInterp = 0, weakOscCount = 0;
     int weakOffsetHz = 0;
+    int weakBandwidth = 0;
     bool weakTracked = false;
     int beatCount = 0;
     int rate = 0, phase = 0, oscillatorCount = 0;
@@ -39,6 +40,16 @@ public:
     int fieldTrackerLength() const { return fieldLength; }
     bool setAudioGainDb(int db) { return audioLevel.setGainDb(db); }
     double audioGain() const { return audioLevel.appliedGain(); }
+    void setWeakBandwidth(int width) {
+        if(width!=150 && width!=200 && width!=250 && width!=500)return;
+        if(width==weakBandwidth)return;
+        weakBandwidth=width;double sum=0;
+        for(int k=0;k<193;k++) {
+            int t=k-96;double sinc=t==0 ? double(width)/12000 : sin(PI*width*t/12000)/(PI*t);
+            weakFir[k]=sinc*(.42-.5*cos(2*PI*k/192)+.08*cos(4*PI*k/192));sum+=weakFir[k];
+        }
+        for(double &tap:weakFir)tap/=sum;
+    }
     void setWeakOffset(int hz, bool tracked) {
         if (hz < -1500 || hz > 1500) tracked = false;
         if (tracked == weakTracked && (!tracked || hz == weakOffsetHz)) return;
@@ -60,7 +71,7 @@ public:
     double takeSignalPeak() { return meter.takePeak(); }
     double noisePower() const { return meter.noisePower(); }
     bool setFilterMode(int mode) {
-        if (mode < 0 || mode > 5 || !rate) return false;
+        if (mode < 0 || mode > 6 || !rate) return false;
         if (mode == filterMode && audioAlpha != 0) return true;
         filterMode = mode;
         const double cutoff = mode == 1 ? 1400 : mode == 2 ? 4600 : 2500;
@@ -72,15 +83,8 @@ public:
         weakOscI = 1; weakOscQ = 0;
         weakHead = weakInterp = weakOscCount = 0;
         weakPrevI = weakPrevQ = weakNextI = weakNextQ = 0;
-        const int width = mode == 4 ? 500 : mode == 5 ? 150 : 200;
-        double sum = 0;
-        for (int k=0;k<193;k++) {
-            int t=k-96;
-            double sinc=t==0 ? double(width)/12000 : sin(PI*width*t/12000)/(PI*t);
-            weakFir[k]=sinc*(.42-.5*cos(2*PI*k/192)+.08*cos(4*PI*k/192));
-            sum+=weakFir[k];
-        }
-        for (double &tap : weakFir) tap/=sum;
+        const int width = mode == 4 ? 500 : mode == 5 ? 150 : mode == 6 ? 250 : 200;
+        weakBandwidth=0;setWeakBandwidth(width);
         return true;
     }
     bool configure(int sampleRate, int offset) {

@@ -110,7 +110,7 @@
       <p data-animal-target class="sdr-animal-target" hidden></p>
       <div data-scan-results hidden><p data-scan-progress class="sdr-scan-progress">탐색 대기</p><div class="sdr-candidate-heading"><strong data-candidate-heading>신호 후보</strong><span data-candidate-count>0개</span></div><div data-candidates></div></div>
       <div data-fixed-results>
-      <div class="sdr-readout-row"><p class="sdr-frequency-readout" data-frequency-readout aria-live="polite">수신 주파수 —</p><div data-audio-panel><button type="button" data-audio disabled aria-pressed="false">소리 켜기</button></div></div><div class="sdr-listening-level"><label>청취 증폭<select data-audio-gain aria-label="CW 청취 증폭"><option value="-1">자동</option><option value="0">원음</option><option value="6">2배</option><option value="12">4배</option><option value="18">8배</option><option value="24">16배</option><option value="30">32배</option><option value="36">64배</option><option value="42">126배 · 42 dB</option><option value="48">251배 · 48 dB</option><option value="54">501배 · 54 dB</option><option value="60">1,000배 · 60 dB</option></select></label><label>청취 필터<select data-cw-filter aria-label="CW 청취 필터"><option value="0">기본 · 약 2.2 kHz</option><option value="1">좁게 · 약 1.2 kHz</option><option value="2">넓게 · 약 4.0 kHz</option><option value="3">약신호 추적 · 약 200 Hz</option><option value="4">약신호 추적 · 약 500 Hz</option><option value="5" selected>약신호 추적 · 약 150 Hz</option></select></label></div><p class="sdr-note" data-weak-tracking-status>반복 신호를 찾으면 주변을 집중해 듣습니다. 자동 추적이 잘못될 수 있으니 기본 필터와 비교하세요.</p><p data-audio-status class="sdr-note" hidden></p>
+      <div class="sdr-readout-row"><p class="sdr-frequency-readout" data-frequency-readout aria-live="polite">수신 주파수 —</p><div data-audio-panel><button type="button" data-audio disabled aria-pressed="false">소리 켜기</button></div></div><div class="sdr-listening-level"><label>청취 증폭<select data-audio-gain aria-label="CW 청취 증폭"><option value="-1">자동</option><option value="0">원음</option><option value="6">2배</option><option value="12">4배</option><option value="18">8배</option><option value="24">16배</option><option value="30">32배</option><option value="36">64배</option><option value="42">126배 · 42 dB</option><option value="48">251배 · 48 dB</option><option value="54">501배 · 54 dB</option><option value="60">1,000배 · 60 dB</option><option value="-2">자동 · 약신호 (최대 약 251배)</option></select></label><label>청취 필터<select data-cw-filter aria-label="CW 청취 필터"><option value="0">기본 · 약 2.2 kHz</option><option value="1">좁게 · 약 1.2 kHz</option><option value="2">넓게 · 약 4.0 kHz</option><option value="3">약신호 추적 · 약 200 Hz</option><option value="4">약신호 추적 · 약 500 Hz</option><option value="5" selected>약신호 추적 · 약 150 Hz</option><option value="6">후보 고정 · 약 250 Hz</option></select></label></div><p class="sdr-note" data-weak-tracking-status>반복 신호를 찾으면 주변을 집중해 듣습니다. 자동 추적이 잘못될 수 있으니 기본 필터와 비교하세요.</p><p data-audio-status class="sdr-note" hidden></p>
       <div class="sdr-signal-panels">
       <div class="sdr-strength"><div class="sdr-strength-heading"><strong>수신 신호 세기</strong><span data-strength-value>측정 대기</span></div><div class="sdr-strength-bars" data-strength-bars role="meter" aria-label="청취 주파수 상대 신호 세기" aria-valuemin="0" aria-valuemax="10" aria-valuenow="0">${Array.from({ length: 10 }, (_, i) => `<span data-strength-bar="${i}" style="height:${8 + i * 3}px"></span>`).join("")}</div><p class="sdr-note" data-strength-state>청취 주파수 주변의 상대 신호 세기</p>
       <div class="sdr-metrics"><div><span>수신 데이터</span><strong data-throughput>—</strong></div><div><span>대역 전력</span><strong data-power>—</strong></div></div>
@@ -889,8 +889,12 @@
     cwFilter.disabled = busy || capturing || typeof plugin?.setCwFilter !== "function" || snapshot.receptionState === "stopping";
     const weakStatus = dialog.querySelector("[data-weak-tracking-status]");
     if (snapshot.cwFilterMode >= 3 && snapshot.receptionState === "receiving") {
-      weakStatus.textContent = rf.weakAudioTrackingActive && Number.isFinite(rf.weakAudioCandidateHz)
-        ? `약신호 필터 추적 중 · ${(rf.weakAudioCandidateHz / 1e6).toFixed(6)} MHz`
+      if (snapshot.cwFilterMode === 6 && rf.weakAudioTrackingActive && Number.isFinite(rf.weakAudioCandidateHz)) {
+        const description = rf.weakAudioFixedSource === "selected-frequency" ? "선택 주파수로 청취 · 반복 후보 대기"
+          : rf.weakAudioFixedSource === "remembered" ? "저장된 후보로 고정 청취" : "반복 후보로 고정 청취";
+        weakStatus.textContent = `${description} · ${(rf.weakAudioCandidateHz / 1e6).toFixed(6)} MHz · 250 Hz`;
+      } else weakStatus.textContent = rf.weakAudioTrackingActive && Number.isFinite(rf.weakAudioCandidateHz)
+        ? `${rf.weakAudioRemembered ? "저장된 후보 확인 중" : rf.weakAudioTrackingHeld ? "약신호 후보 일시 유지" : "약신호 필터 추적 중"} · ${(rf.weakAudioCandidateHz / 1e6).toFixed(6)} MHz · ${rf.weakAudioAppliedWidthHz || 150} Hz`
         : "약신호 후보 탐색 중 · 넓은 필터로 청취";
     } else weakStatus.textContent = "반복 신호를 찾으면 주변을 집중해 듣습니다. 자동 추적이 잘못될 수 있으니 기본 필터와 비교하세요.";
     dialog.querySelector(".sdr-listening-level").hidden = task !== "fixed";
@@ -1112,6 +1116,10 @@
     const listenHz = hz;
     const options = { band: "wide", mode: RECEIVE_MODE, frequencyHz: Math.round(hz), listenFrequencyHz: Math.round(listenHz), sampleRate,
       gainTenthsDb: Math.round(gainDb * 10), ppm: correction, deemphasisUs: DEEMPHASIS_US };
+    if (selectedAnimal?.code && Number.isFinite(selectedAnimalHz)) {
+      options.trackingAnimalCode = selectedAnimal.code;
+      options.trackingAnimalFrequencyHz = Math.round(selectedAnimalHz);
+    }
     if (typeof audio?.enabled === "boolean") options.audioEnabled = audio.enabled;
     if (Number.isFinite(audio?.volume)) options.audioVolume = audio.volume;
     await plugin.startReception(options);
