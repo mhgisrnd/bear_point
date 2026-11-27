@@ -38,7 +38,7 @@ final class SdrAudioOutput {
     private static final int PREFILL_SAMPLES=3072;
     int gainDb() { return gainDb; }
     void setGainDb(int value) {
-        if (value < -1 || value > 36) throw new IllegalArgumentException("청취 증폭은 자동 또는 0–36dB로 설정하세요.");
+        if (value < -1 || value > 60) throw new IllegalArgumentException("청취 증폭은 자동 또는 0–60dB로 설정하세요.");
         gainDb = value;
     }
     private volatile String output = "Android 미디어 출력", notice = "";

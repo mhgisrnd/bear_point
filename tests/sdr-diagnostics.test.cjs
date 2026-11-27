@@ -431,6 +431,7 @@ test('live listening gain does not retune or alter measured RF strength; local c
   const gain=ui.dialog.querySelector('[data-audio-gain]');assert.equal(gain.value,'-1');
   await gain.change('24');await tick();
   assert.equal(ui.state.audio.gainDb,24);assert.equal(ui.plugin.starts.length,1);
+  await gain.change('60');await tick();assert.equal(ui.state.audio.gainDb,60);
   assert.equal(ui.state.reception.signalDbfs,-65);
   const record=ui.dialog.querySelector('[data-diagnostic-start]'),share=ui.dialog.querySelector('[data-diagnostic-share]');
   assert.equal(record.disabled,false);assert.equal(share.disabled,true);
@@ -1955,6 +1956,8 @@ test('CW listening filter follows native status and sends live selections',async
   const filter=ui.dialog.querySelector('[data-cw-filter]');
   assert.equal(filter.disabled,false);assert.equal(filter.value,'0');
   await filter.change('1');await tick();assert.equal(ui.state.cwFilterMode,1);
+  await filter.change('4');await tick();assert.equal(ui.state.cwFilterMode,4);
+  await filter.change('5');await tick();assert.equal(ui.state.cwFilterMode,5);
   ui.state.diagnostic={state:'recording',records:[]};ui.emit();
   assert.equal(filter.disabled,true);
 });

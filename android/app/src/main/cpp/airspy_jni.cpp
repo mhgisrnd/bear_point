@@ -76,8 +76,17 @@ extern "C" JNIEXPORT jobject JNICALL Java_com_bearpoint_app_AirspyNative_read(JN
     if(got){r->nextOffset=packet.offset+n;r->previousDriverDrops=r->driverDrops.load();}
     std::vector<float> iq(samples*2);
     if(n)memcpy(iq.data(),packet.bytes.data(),samples*sizeof(airspyhf_complex_float_t));
-    double sum=0,si=0,sq=0;
-    for(size_t i=0;i<samples;i++){double x=iq[i*2],y=iq[i*2+1];sum+=x*x+y*y;si+=x;sq+=y;}
+    double sum=0,si=0,sq=0,iqMin=0,iqMax=0,peakAbs=0;bool haveFinite=false;
+    uint64_t above90=0,above99=0,nonfinite=0;
+    for(size_t i=0;i<samples;i++) {
+        double x=iq[i*2],y=iq[i*2+1];
+        if(!std::isfinite(x) || !std::isfinite(y)){nonfinite++;continue;}
+        sum+=x*x+y*y;si+=x;sq+=y;
+        if(!haveFinite){iqMin=std::min(x,y);iqMax=std::max(x,y);haveFinite=true;}
+        else {iqMin=std::min(iqMin,std::min(x,y));iqMax=std::max(iqMax,std::max(x,y));}
+        double peak=std::max(std::abs(x),std::abs(y));peakAbs=std::max(peakAbs,peak);
+        if(peak>=0.9)above90++;if(peak>=0.99)above99++;
+    }
     // Match the existing power convention (mean over I and Q components).
     double vals[7]={double(n),sum*4,0,0,double(r->rate),0,double(r->frequency)};
     jdoubleArray values=env->NewDoubleArray(7);if(!values)return nullptr;env->SetDoubleArrayRegion(values,0,7,vals);
@@ -93,12 +102,13 @@ extern "C" JNIEXPORT jobject JNICALL Java_com_bearpoint_app_AirspyNative_read(JN
         signal=d->takeSignalPeak();noise=d->noisePower();
     }
     double demodEnd=nowMs();auto stats=r->queue.stats();
-    double details[21]={received-began,demodEnd-demodBegan,demodEnd-received,0,-1,-1,
+    double details[25]={received-began,demodEnd-demodBegan,demodEnd-received,0,iqMin,iqMax,
         samples?si/samples:0,samples?sq/samples:0,samples?sqrt(sum/(samples*2)):0,
         double(packet.sequence),double(packet.offset),packet.receivedMs,packet.receivedMs?received-packet.receivedMs:0,
         double(stats.depth),double(stats.droppedBlocks),double(stats.droppedBytes),double(stats.totalBytes),
-        double(stats.highWater),double(discontinuity),packet.intervalMs,double(r->driverDrops.load())};
-    jdoubleArray diagnostic=env->NewDoubleArray(21);if(!diagnostic)return nullptr;env->SetDoubleArrayRegion(diagnostic,0,21,details);
+        double(stats.highWater),double(discontinuity),packet.intervalMs,double(r->driverDrops.load()),
+        peakAbs,double(above90),double(above99),double(nonfinite)};
+    jdoubleArray diagnostic=env->NewDoubleArray(25);if(!diagnostic)return nullptr;env->SetDoubleArrayRegion(diagnostic,0,25,details);
     jbyteArray raw=nullptr;
     if(capture && n){raw=env->NewByteArray(n);if(!raw)return nullptr;env->SetByteArrayRegion(raw,0,n,reinterpret_cast<const jbyte *>(packet.bytes.data()));}
     jclass type=env->FindClass("com/bearpoint/app/SdrBlock");if(!type)return nullptr;

@@ -291,6 +291,8 @@ final class SdrReceiver {
                 long detectorNanos=0;
                 if (pulseSpectrum) {
                     cwDetector.observe(received.channelIq,(long)received.diagnostic[9],received.diagnostic[11]);
+                    if (appliedFilterMode >= 3 && demodulator != 0)
+                        SdrNative.setWeakCwCenter(demodulator, cwDetector.confidence() >= 2 ? (int)Math.round(Math.abs(700 + cwDetector.offsetHz())) : 0);
                     detectorNanos=SystemClock.elapsedRealtimeNanos()-spectrumBegan;
                     double[] bins = cwSpectrum.observe(received.channelIq, now);
                     if (bins.length > 0) { spectrum = bins; spectrumUpdated = now; }
@@ -319,14 +321,39 @@ final class SdrReceiver {
                     details.put("receiveDroppedBytes",received.diagnostic[15]);details.put("usbDeliveredBytes",received.diagnostic[16]);
                     details.put("receiveQueueHighWater",received.diagnostic[17]);details.put("sourceDiscontinuity",received.diagnostic[18]>0);
                     details.put("sourceCallbackIntervalMs",received.diagnostic[19]);
-                    if (airspy) details.put("airspyDriverDroppedSamples", received.diagnostic[20]);
+                    if (airspy) {
+                        details.put("airspyDriverDroppedSamples", received.diagnostic[20]);
+                        if (received.diagnostic.length >= 25) {
+                            details.put("airspyPostDspPeakAbs",received.diagnostic[21]);
+                            details.put("airspyPostDspComplexSamplesAbove090",(long)received.diagnostic[22]);
+                            details.put("airspyPostDspComplexSamplesAbove099",(long)received.diagnostic[23]);
+                            details.put("airspyPostDspNonfiniteComplexSamples",(long)received.diagnostic[24]);
+                            details.put("airspyPostDspComplexSamples",(long)block[0]/8);
+                        }
+                    }
                     details.put("captureQueueDepth",captureWriter.pending());details.put("captureQueueHighWater",captureWriter.highWater());
                     details.put("usbBytes",(long)block[0]);details.put("expectedBlockMs",block[4]>0?block[0]*1000.0/(block[4]*(airspy?8:2)):0);
                     details.put("audioSamples",received.audio==null?0:received.audio.length);
+                    if (captureActive && received.audio != null && received.audio.length > 0) {
+                        long sumSquares=0;int peak=0,nearLimit=0;
+                        for (short sample : received.audio) {
+                            int magnitude=Math.abs((int)sample);peak=Math.max(peak,magnitude);
+                            sumSquares+=(long)sample*sample;if(magnitude>=32000)nearLimit++;
+                        }
+                        details.put("audioPcmRms",Math.sqrt((double)sumSquares/received.audio.length));
+                        details.put("audioPcmPeak",peak);details.put("audioPcmSamplesNearLimit",nearLimit);
+                    }
                     details.put("audio",audio.snapshot());details.put("signalPower",received.signalPower);details.put("noisePower",received.noisePower);
                     details.put("meterWindowPeakPower",signalPeak);
                     details.put("meterPeakSourceSequence",signalPeakSequence);details.put("meterPeakSourceReceivedMs",signalPeakReceivedMs);
                     if(pulseSpectrum) putCwDetector(details,cwDetector,listenHz,received.diagnostic[11]);
+                    if (pulseSpectrum && appliedFilterMode >= 3) {
+                        double tone=Math.abs(700 + cwDetector.offsetHz());
+                        boolean active=cwDetector.confidence()>=2 && tone>=100 && tone<=1600;
+                        details.put("weakAudioTrackingActive",active);
+                        details.put("weakAudioCenterHz",active ? tone : 0);
+                        details.put("weakAudioAdditionalGain",active ? 20 : 1);
+                    }
                     if(received.noisePower>0 && signalPeak>=0) {
                         double excess=Math.max(0,10*Math.log10(Math.max(1e-12,signalPeak)/Math.max(1e-12,received.noisePower)));
                         details.put("meterWindowExcessDb",excess);details.put("meterWindowLevel",SdrSignalStrength.level(excess));
@@ -343,14 +370,22 @@ final class SdrReceiver {
                     if(captureActive) {
                         JSObject settings=new JSObject();settings.put("pipeline","cw-complex-channel-v1");settings.put("mode",mode);
                         settings.put("sampleRate",(int)block[4]);settings.put("centerFrequencyHz",(int)block[6]);
-                        settings.put("cwAudioFilter",appliedFilterMode == 1 ? "narrow" : appliedFilterMode == 2 ? "wide" : "default");
-                        settings.put("cwAudioFilterApprox3dBBandwidthHz",appliedFilterMode == 1 ? 1200 : appliedFilterMode == 2 ? 4000 : 2200);
+                        settings.put("cwAudioFilter",appliedFilterMode >= 3 ? "weak-tracked" : appliedFilterMode == 1 ? "narrow" : appliedFilterMode == 2 ? "wide" : "default");
+                        settings.put("cwAudioFilterApprox3dBBandwidthHz",appliedFilterMode == 5 ? 150 : appliedFilterMode == 4 ? 500 : appliedFilterMode == 3 ? 200 : appliedFilterMode == 1 ? 1200 : appliedFilterMode == 2 ? 4000 : 2200);
                         settings.put("cwAudioFilterCenterHz",listenHz);
+                        if (appliedFilterMode >= 3) {
+                            double tone=Math.abs(700 + cwDetector.offsetHz());
+                            boolean active=cwDetector.confidence()>=2 && tone>=100 && tone<=1600;
+                            settings.put("cwAudioFilterAudioCenterHz",active ? tone : 0);
+                            settings.put("cwAudioFilterAdditionalGain",active ? 20 : 1);
+                        }
                         settings.put("listenFrequencyHz",listenHz);settings.put("audioGainDb",appliedAudioGain);
                         settings.put("receiverType",airspy?"airspyhf":"rtl");
                         settings.put("iqFormat",airspy?"cf32le":"cu8");
                         if (airspy) {
                             settings.put("driverDsp", "enabled; driver IQ correction, IF shift and fine tuning");
+                            settings.put("airspyIqDiagnosticsConvention", "post-driver float IQ; thresholds are not ADC clipping or calibrated power");
+                            settings.put("airspyRfGainAndAdcClipping", "not measured by this diagnostic");
                             settings.put("sampleRateSource", airspyInfo[1] != 0 ? "driver fallback after firmware query failure" : "firmware list");
                             JSArray rates = new JSArray();
                             for (int i=2;i<airspyInfo.length;i++) rates.put(airspyInfo[i]);
@@ -623,7 +658,7 @@ final class SdrReceiver {
     }
 
     void setCwFilter(int filter) {
-        if (filter < 0 || filter > 2) throw new IllegalArgumentException("Invalid CW filter");
+        if (filter < 0 || filter > 5) throw new IllegalArgumentException("Invalid CW filter");
         if (comparison.active || java.util.Arrays.asList("waiting", "recording", "packaging").contains(diagnostic.state()))
             throw new IllegalStateException("진단 기록을 마친 후 필터를 변경하세요.");
         cwFilterMode = filter;

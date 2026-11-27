@@ -198,8 +198,23 @@ test('automatic audio gain limits sudden strong signals and manual settings upda
   r.decode(new Uint8Array(2048000).fill(128));
   const pcm=r.decode(keyed(1024000));
   assert.ok(Math.max(...pcm.map(Math.abs))<32767*.96);
-  assert.equal(r.api.setAudioGainDb(37),0);assert.equal(r.api.setAudioGainDb(-2),0);
+  assert.equal(r.api.setAudioGainDb(61),0);assert.equal(r.api.setAudioGainDb(-2),0);
   assert.equal(r.api.setAudioGainDb(12),1);assert.ok(Math.abs(r.api.audioGain()-3.981)<.01);
+});
+
+test('extended listening gain boosts weak float IQ while limiting strong output',()=>{
+  function render(gain,amplitude) {
+    const r=receiver(),rate=768000,pcm=[];r.api.configure(rate,0,gain);
+    for(let start=0;start<rate/4;start+=4096){
+      const count=Math.min(4096,rate/4-start),iq=new Float32Array(r.api.memory.buffer,r.api.floatInputBuffer(),count*2);
+      for(let i=0;i<count;i++){const phase=2*Math.PI*100*(start+i)/rate;iq[2*i]=amplitude*Math.cos(phase);iq[2*i+1]=amplitude*Math.sin(phase);}
+      const n=r.api.processFloat(count);pcm.push(...new Int16Array(r.api.memory.buffer,r.api.outputBuffer(),n));
+    }
+    return pcm;
+  }
+  const low=render(36,.00002), high=render(60,.00002), strong=render(60,.1);
+  assert.ok(rms(high,.1,.2)>rms(low,.1,.2)*12,'60 dB raises weak audio compared with 36 dB');
+  assert.ok(Math.max(...strong.map(Math.abs))<32767*.99,'strong output remains bounded');
 });
 
 test('zoom spectrum exports the target complex channel before listening gain and BFO',()=>{
@@ -246,15 +261,16 @@ test('Airspy float IQ preserves weak CW pulses without 8-bit quantization', () =
 });
 
 test('CW listening filter changes audio rejection without altering RF channel', () => {
-  function listen(mode, hz) {
+  function listen(mode, hz, center = 325, amplitude = .1) {
     const r = receiver(), rate = 768000, pcm = [];
     r.api.configure(rate, 0, 0); assert.equal(r.api.setCwFilter(mode), 1);
+    if (mode >= 3) r.api.setWeakCwCenter(center);
     for (let start=0; start<rate/4; start+=4096) {
       const count=Math.min(4096,rate/4-start);
       const iq=new Float32Array(r.api.memory.buffer,r.api.floatInputBuffer(),count*2);
       for (let i=0;i<count;i++) {
         const phase=2*Math.PI*hz*(start+i)/rate;
-        iq[2*i]=.1*Math.cos(phase); iq[2*i+1]=.1*Math.sin(phase);
+        iq[2*i]=amplitude*Math.cos(phase); iq[2*i+1]=amplitude*Math.sin(phase);
       }
       const n=r.api.processFloat(count);
       pcm.push(...new Int16Array(r.api.memory.buffer,r.api.outputBuffer(),n));
@@ -267,4 +283,14 @@ test('CW listening filter changes audio rejection without altering RF channel', 
   assert.deepEqual(wide.channel,normal.channel);
   const narrowOff=listen(1,1500), wideOff=listen(2,1500);
   assert.ok(rms(wideOff.pcm,.1,.2)>rms(narrowOff.pcm,.1,.2)*2.5, 'narrow filter reduces off-channel sound');
+  const weak=listen(3,-375), weakOff=listen(3,600);
+  assert.deepEqual(weak.channel,listen(0,-375).channel, 'weak audio processing does not alter RF samples');
+  assert.ok(rms(weak.pcm,.1,.2)>rms(weakOff.pcm,.1,.2)*5, 'weak filter selects the 325 Hz beat');
+  const narrowCenter=listen(5,-375,325,.001), narrowAway=listen(5,-225,325,.001);
+  const wideCenter=listen(4,-375,325,.001), wideAway=listen(4,-225,325,.001);
+  const ratioNarrow=rms(narrowAway.pcm,.1,.2)/rms(narrowCenter.pcm,.1,.2);
+  const ratioWide=rms(wideAway.pcm,.1,.2)/rms(wideCenter.pcm,.1,.2);
+  assert.ok(ratioNarrow < ratioWide * .6, '150 Hz rejects an adjacent signal more than 500 Hz');
+  const fallback=listen(5,-375,0,.001), base=listen(0,-375,0,.001);
+  assert.deepEqual(fallback.pcm,base.pcm, 'unconfirmed candidate keeps the standard listening path');
 });

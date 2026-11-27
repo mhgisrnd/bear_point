@@ -17,6 +17,9 @@ class CwDemod {
     double channelI[4] = {}, channelQ[4] = {};
     double inputDcI = 0, inputDcQ = 0, inputDcAlpha = 0;
     double beatI = 1, beatQ = 0, beatSi = 1, beatSq = 0;
+    double weakI[4] = {}, weakQ[4] = {}, weakOscI = 1, weakOscQ = 0;
+    double weakAlpha = 0, weakStepI = 1, weakStepQ = 0;
+    int weakCenterHz = 0;
     int beatCount = 0;
     int rate = 0, phase = 0, oscillatorCount = 0;
     bool odd = false; unsigned char saved = 0;
@@ -27,22 +30,38 @@ public:
     int spectrumLength() const { return channelLength; }
     bool setAudioGainDb(int db) { return audioLevel.setGainDb(db); }
     double audioGain() const { return audioLevel.appliedGain(); }
+    void setWeakCenter(int hz) {
+        if (hz < 100 || hz > 1600) hz = 0;
+        if (hz == weakCenterHz) return;
+        weakCenterHz = hz;
+        weakStepI = cos(2 * PI * hz / 48000); weakStepQ = sin(2 * PI * hz / 48000);
+        weakOscI = 1; weakOscQ = 0;
+        for (double &stage : weakI) stage = 0;
+        for (double &stage : weakQ) stage = 0;
+    }
     double takeSignalPeak() { return meter.takePeak(); }
     double noisePower() const { return meter.noisePower(); }
     bool setFilterMode(int mode) {
-        if (mode < 0 || mode > 2 || !rate) return false;
+        if (mode < 0 || mode > 5 || !rate) return false;
         if (mode == filterMode && audioAlpha != 0) return true;
         filterMode = mode;
         const double cutoff = mode == 1 ? 1400 : mode == 2 ? 4600 : 2500;
         audioAlpha = 1 - exp(-2 * PI * cutoff / rate);
         for (double &stage : audioI) stage = 0;
         for (double &stage : audioQ) stage = 0;
+        for (double &stage : weakI) stage = 0;
+        for (double &stage : weakQ) stage = 0;
+        weakOscI = 1; weakOscQ = 0;
+        // Four cascaded one-pole stages: approximate full -3 dB bandwidth.
+        const double weakCutoff = mode == 4 ? 575 : mode == 5 ? 172.5 : 230;
+        weakAlpha = 1 - exp(-2 * PI * weakCutoff / 48000);
         return true;
     }
     bool configure(int sampleRate, int offset) {
         if (sampleRate < 250000 || sampleRate > 2400000 ||
             (offset < 0 ? -double(offset) : double(offset)) + 5000 > sampleRate * .45) return false;
         rate = sampleRate; phase = oscillatorCount = 0; odd = false;
+        setWeakCenter(0);
         meter.configure(48000);
         audioLevel.configure();
         alpha = 1 - exp(-2 * PI * 2500 / rate);
@@ -89,6 +108,20 @@ public:
                 channelSamples[channelLength++] = cq;
             }
             double value = ai * beatI - aq * beatQ;
+            if (filterMode >= 3 && weakCenterHz) {
+                double wi = value * weakOscI, wq = -value * weakOscQ;
+                for (int stage = 0; stage < 4; stage++) {
+                    weakI[stage] += weakAlpha * (wi - weakI[stage]); wi = weakI[stage];
+                    weakQ[stage] += weakAlpha * (wq - weakQ[stage]); wq = weakQ[stage];
+                }
+                value = 2 * (wi * weakOscI - wq * weakOscQ) * 20;
+                double next = weakOscI * weakStepI - weakOscQ * weakStepQ;
+                weakOscQ = weakOscI * weakStepQ + weakOscQ * weakStepI; weakOscI = next;
+                if ((beatCount & 4095) == 0) {
+                    double norm = 1.5 - .5 * (weakOscI * weakOscI + weakOscQ * weakOscQ);
+                    weakOscI *= norm; weakOscQ *= norm;
+                }
+            }
             double beatNext = beatI * beatSi - beatQ * beatSq;
             beatQ = beatI * beatSq + beatQ * beatSi; beatI = beatNext;
             if (++beatCount == 4096) {

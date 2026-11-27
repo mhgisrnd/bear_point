@@ -219,6 +219,11 @@ Java_com_bearpoint_app_SdrNative_setCwFilter(JNIEnv *env, jclass, jlong handle, 
     if (!processor || !processor->cw || !processor->beacon.setFilterMode(mode)) error(env, "CW filter", -1);
 }
 extern "C" JNIEXPORT void JNICALL
+Java_com_bearpoint_app_SdrNative_setWeakCwCenter(JNIEnv *, jclass, jlong handle, jint hz) {
+    auto *processor = reinterpret_cast<SdrDemod *>(handle);
+    if (processor && processor->cw) processor->beacon.setWeakCenter(hz);
+}
+extern "C" JNIEXPORT void JNICALL
 Java_com_bearpoint_app_SdrNative_close(JNIEnv *, jclass, jlong handle) {
     if(handle){auto *receiver=reinterpret_cast<ReceiverHandle *>(handle);receiver->stop();rtlsdr_close(receiver->dev);delete receiver;}
 }
