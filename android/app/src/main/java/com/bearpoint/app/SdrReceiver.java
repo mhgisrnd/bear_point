@@ -32,7 +32,7 @@ final class SdrReceiver {
     private File comparisonRoot;
     private UsbDeviceConnection comparisonConnection;
     String mode = "iq";
-    private volatile int cwFilterMode = 0;
+    private volatile int cwFilterMode = 5;
     int cwFilterMode() { return cwFilterMode; }
     private boolean airspy;
     int tunedFrequencyHz;
