@@ -9,13 +9,13 @@ import java.util.Arrays;
 final class SdrCwDetector {
     static final String REVISION = "cw-pulse-v1";
     static final int RATE = 48000, SIZE = 2048, HOP = 256;
-    // Restrict search to the verified central part of the existing CW filter.
-    static final int SEARCH_HZ = 900;
+    static final int SEARCH_HZ = 1500;
     static final int[] WIDTH_BINS = {9, 17}; // 211 / 398 Hz; selected by evidence, not transmitter ID.
     static final double ENTER_DB = 6, LEAVE_DB = 2.5;
     static final double MIN_PULSE_MS = 8, MAX_PULSE_MS = 450;
     static final long HOLD_MS = 350, TRACK_MS = 5000;
-    private static final int CENTERS = 39, CANDIDATES = CENTERS * 2, HISTORY = 256;
+    private static final int CENTERS = 65, CANDIDATES = CENTERS * 2, HISTORY = 256;
+    private final int searchHz;
     private static final double AUDIO_NOISE_FLOOR = 1e-9;
     static final int AUDIO_SPECTRUM_BINS = 80;
     private static final double AUDIO_PEAK_DECAY = Math.pow(10, -3.0 * HOP / RATE);
@@ -51,6 +51,7 @@ final class SdrCwDetector {
     static SdrCwDetector forAudio() { return new SdrCwDetector(RATE, false); }
 
     private SdrCwDetector(int inputRate, boolean correctRfFilter) {
+        searchHz = correctRfFilter ? SEARCH_HZ : 900;
         double sum = 0;
         double alpha = 1 - Math.exp(-2 * Math.PI * 2500 / inputRate), pole = 1 - alpha;
         for (int i = 0; i < SIZE; i++) {
@@ -157,7 +158,7 @@ final class SdrCwDetector {
             int mid = center(c), half = WIDTH_BINS[c % 2] / 2, peak = mid;
             for (int j = mid - half; j <= mid + half; j++) if (powers[bin(j)] > powers[bin(peak)]) peak = j;
             // A band edge containing a different tone must not become its own CW candidate.
-            if (Math.abs(peak - mid) > 1 || Math.abs(peak * RATE / (double) SIZE) > SEARCH_HZ) continue;
+            if (Math.abs(peak - mid) > 1 || Math.abs(peak * RATE / (double) SIZE) > searchHz) continue;
             if(snr>strongestTestSnr){strongestTest=c;strongestTestSnr=snr;}
             double signal = bands[c] - noise(c);
             if (snr >= enter && signal > bestSignal) { best = c; bestSnr = snr; bestSignal = signal; }

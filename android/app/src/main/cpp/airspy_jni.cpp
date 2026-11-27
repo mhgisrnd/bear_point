@@ -90,7 +90,7 @@ extern "C" JNIEXPORT jobject JNICALL Java_com_bearpoint_app_AirspyNative_read(JN
     // Match the existing power convention (mean over I and Q components).
     double vals[7]={double(n),sum*4,0,0,double(r->rate),0,double(r->frequency)};
     jdoubleArray values=env->NewDoubleArray(7);if(!values)return nullptr;env->SetDoubleArrayRegion(values,0,7,vals);
-    jshortArray audio=nullptr;jdoubleArray channel=nullptr;double signal=-1,noise=-1;
+    jshortArray audio=nullptr;jdoubleArray channel=nullptr,field=nullptr;double signal=-1,noise=-1;
     double demodBegan=nowMs();
     if(demodulator && samples){
         auto *d=reinterpret_cast<SdrDemod *>(demodulator);
@@ -99,6 +99,8 @@ extern "C" JNIEXPORT jobject JNICALL Java_com_bearpoint_app_AirspyNative_read(JN
         audio=env->NewShortArray(count);if(!audio)return nullptr;env->SetShortArrayRegion(audio,0,count,pcm);
         channel=env->NewDoubleArray(d->beacon.spectrumLength());if(!channel)return nullptr;
         env->SetDoubleArrayRegion(channel,0,d->beacon.spectrumLength(),d->beacon.spectrumSamples());
+        field=env->NewDoubleArray(d->beacon.fieldTrackerLength());if(!field)return nullptr;
+        env->SetDoubleArrayRegion(field,0,d->beacon.fieldTrackerLength(),d->beacon.fieldTrackerSamples());
         signal=d->takeSignalPeak();noise=d->noisePower();
     }
     double demodEnd=nowMs();auto stats=r->queue.stats();
@@ -112,8 +114,8 @@ extern "C" JNIEXPORT jobject JNICALL Java_com_bearpoint_app_AirspyNative_read(JN
     jbyteArray raw=nullptr;
     if(capture && n){raw=env->NewByteArray(n);if(!raw)return nullptr;env->SetByteArrayRegion(raw,0,n,reinterpret_cast<const jbyte *>(packet.bytes.data()));}
     jclass type=env->FindClass("com/bearpoint/app/SdrBlock");if(!type)return nullptr;
-    auto ctor=env->GetMethodID(type,"<init>","([D[SDD[D[D[B)V");
-    return ctor?env->NewObject(type,ctor,values,audio,signal,noise,channel,diagnostic,raw):nullptr;
+    auto ctor=env->GetMethodID(type,"<init>","([D[SDD[D[D[D[B)V");
+    return ctor?env->NewObject(type,ctor,values,audio,signal,noise,channel,field,diagnostic,raw):nullptr;
 }
 extern "C" JNIEXPORT void JNICALL Java_com_bearpoint_app_AirspyNative_close(JNIEnv *,jclass,jlong handle) {
     if(handle){auto *r=reinterpret_cast<AirspyReceiver *>(handle);airspyhf_close(r->device);delete r;}

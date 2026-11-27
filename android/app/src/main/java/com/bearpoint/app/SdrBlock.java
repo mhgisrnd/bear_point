@@ -7,13 +7,15 @@ final class SdrBlock {
     final double[] values;
     final short[] audio;
     final double[] channelIq;
+    final double[] fieldIq;
     final double[] diagnostic;
     final byte[] rawIq;
     final double signalPower;
     final double noisePower;
-    SdrBlock(double[] values, short[] audio, double signalPower, double noisePower, double[] channelIq, double[] diagnostic, byte[] rawIq) {
+    SdrBlock(double[] values, short[] audio, double signalPower, double noisePower, double[] channelIq, double[] fieldIq, double[] diagnostic, byte[] rawIq) {
         this.values = values; this.audio = audio; this.signalPower = signalPower; this.noisePower = noisePower;
         this.channelIq = channelIq;
+        this.fieldIq = fieldIq;
         this.diagnostic = diagnostic;
         this.rawIq = rawIq;
     }

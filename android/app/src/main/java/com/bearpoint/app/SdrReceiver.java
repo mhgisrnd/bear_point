@@ -211,6 +211,7 @@ final class SdrReceiver {
             boolean pulseSpectrum = "cw".equals(mode);
             SdrCwSpectrum cwSpectrum = new SdrCwSpectrum();
             SdrCwDetector cwDetector = new SdrCwDetector(rate);
+            SdrFieldCwTracker fieldTracker = new SdrFieldCwTracker();
             SdrSignalStrength strength = new SdrSignalStrength();
             double[] spectrum = new double[0];
             int spectrumFrames = 0;
@@ -236,6 +237,7 @@ final class SdrReceiver {
                     audio.discontinuity();
                     cwSpectrum = new SdrCwSpectrum();
                     cwDetector = new SdrCwDetector(actualRate);
+                    fieldTracker = new SdrFieldCwTracker();
                     strength = new SdrSignalStrength();
                     spectrum = new double[0];
                     bytes = 0; power = 0; clipped = 0;
@@ -269,7 +271,7 @@ final class SdrReceiver {
                 actualRate = (int) block[4]; actualCenterHz = (int) block[6];
                 if (airspy && demodulator == 0) cwDetector = new SdrCwDetector(actualRate);
                 if (applied != currentSettings) continue;
-                if(received.diagnostic[18]>0){cwSpectrum=new SdrCwSpectrum();cwDetector=new SdrCwDetector((int)block[4]);strength=new SdrSignalStrength();signalPeak=-1;audio.discontinuity();}
+                if(received.diagnostic[18]>0){cwSpectrum=new SdrCwSpectrum();cwDetector=new SdrCwDetector((int)block[4]);fieldTracker=new SdrFieldCwTracker();strength=new SdrSignalStrength();signalPeak=-1;audio.discontinuity();}
                 // Configure from the actual hardware rate, before decoding subsequent blocks.
                 if (demodulator == 0 && ("wfm".equals(mode) || "cw".equals(mode)))
                     demodulator = SdrNative.createDemodulator(mode, (int) block[4], listenHz - (int) block[6], deemphasisUs);
@@ -291,8 +293,9 @@ final class SdrReceiver {
                 long detectorNanos=0;
                 if (pulseSpectrum) {
                     cwDetector.observe(received.channelIq,(long)received.diagnostic[9],received.diagnostic[11]);
+                    fieldTracker.observe(received.fieldIq);
                     if (appliedFilterMode >= 3 && demodulator != 0)
-                        SdrNative.setWeakCwCenter(demodulator, cwDetector.confidence() >= 2 ? (int)Math.round(Math.abs(700 + cwDetector.offsetHz())) : 0);
+                        SdrNative.setWeakCwOffset(demodulator, fieldTracker.offsetHz(), fieldTracker.tracked());
                     detectorNanos=SystemClock.elapsedRealtimeNanos()-spectrumBegan;
                     double[] bins = cwSpectrum.observe(received.channelIq, now);
                     if (bins.length > 0) { spectrum = bins; spectrumUpdated = now; }
@@ -348,10 +351,11 @@ final class SdrReceiver {
                     details.put("meterPeakSourceSequence",signalPeakSequence);details.put("meterPeakSourceReceivedMs",signalPeakReceivedMs);
                     if(pulseSpectrum) putCwDetector(details,cwDetector,listenHz,received.diagnostic[11]);
                     if (pulseSpectrum && appliedFilterMode >= 3) {
-                        double tone=Math.abs(700 + cwDetector.offsetHz());
-                        boolean active=cwDetector.confidence()>=2 && tone>=100 && tone<=1600;
+                        boolean active=fieldTracker.tracked();
                         details.put("weakAudioTrackingActive",active);
-                        details.put("weakAudioCenterHz",active ? tone : 0);
+                        details.put("weakAudioCenterHz",active ? 700 : 0);
+                        details.put("weakAudioCandidateOffsetHz",active ? fieldTracker.offsetHz() : 0);
+                        details.put("weakAudioTrackerRevision","field-lab-v1-12k");
                         details.put("weakAudioAdditionalGain",active ? 20 : 1);
                     }
                     if(received.noisePower>0 && signalPeak>=0) {
@@ -371,12 +375,14 @@ final class SdrReceiver {
                         JSObject settings=new JSObject();settings.put("pipeline","cw-complex-channel-v1");settings.put("mode",mode);
                         settings.put("sampleRate",(int)block[4]);settings.put("centerFrequencyHz",(int)block[6]);
                         settings.put("cwAudioFilter",appliedFilterMode >= 3 ? "weak-tracked" : appliedFilterMode == 1 ? "narrow" : appliedFilterMode == 2 ? "wide" : "default");
-                        settings.put("cwAudioFilterApprox3dBBandwidthHz",appliedFilterMode == 5 ? 150 : appliedFilterMode == 4 ? 500 : appliedFilterMode == 3 ? 200 : appliedFilterMode == 1 ? 1200 : appliedFilterMode == 2 ? 4000 : 2200);
+                        settings.put("cwAudioFilterApprox3dBBandwidthHz",appliedFilterMode == 5 ? 128 : appliedFilterMode == 4 ? 435 : appliedFilterMode == 3 ? 153 : appliedFilterMode == 1 ? 1200 : appliedFilterMode == 2 ? 4000 : 2200);
                         settings.put("cwAudioFilterCenterHz",listenHz);
                         if (appliedFilterMode >= 3) {
-                            double tone=Math.abs(700 + cwDetector.offsetHz());
-                            boolean active=cwDetector.confidence()>=2 && tone>=100 && tone<=1600;
-                            settings.put("cwAudioFilterAudioCenterHz",active ? tone : 0);
+                            settings.put("cwAudioFilterNominalWidthHz",appliedFilterMode == 5 ? 150 : appliedFilterMode == 4 ? 500 : 200);
+                            boolean active=fieldTracker.tracked();
+                            settings.put("cwAudioFilterAudioCenterHz",active ? 700 : 0);
+                            settings.put("cwAudioFilterCandidateOffsetHz",active ? fieldTracker.offsetHz() : 0);
+                            settings.put("weakAudioTrackerRevision","field-lab-v1-12k");
                             settings.put("cwAudioFilterAdditionalGain",active ? 20 : 1);
                         }
                         settings.put("listenFrequencyHz",listenHz);settings.put("audioGainDb",appliedAudioGain);
@@ -435,6 +441,8 @@ final class SdrReceiver {
                 result.put("signalPeakSourceReceivedMs",signalPeakReceivedMs);
                 if (pulseSpectrum) {
                     putCwDetector(result,cwDetector,listenHz,received.diagnostic[11]);
+                    result.put("weakAudioTrackingActive",appliedFilterMode>=3 && fieldTracker.tracked());
+                    if(fieldTracker.tracked()) result.put("weakAudioCandidateHz",listenHz+fieldTracker.offsetHz());
                     result.put("signalLevel",strength.displayed());result.put("signalLevelHeld",strength.holding());
                     result.put("signalLevelExcessDb",strength.heldExcess());result.put("signalMeterRevision",SdrSignalStrength.REVISION);
                 }

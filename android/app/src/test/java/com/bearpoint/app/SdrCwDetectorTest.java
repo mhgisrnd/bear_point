@@ -29,7 +29,7 @@ public class SdrCwDetectorTest {
         return d;
     }
     @Test public void detectsOffsetsAndUnknownCadenceAcrossArbitraryBlocks(){
-        for(double frequency:new double[]{-750,0,600,820}){
+        for(double frequency:new double[]{-1450,-1200,-750,0,600,820,1200,1450}){
             SdrCwDetector d=run(frequency,.003,997,false,10);
             assertTrue("pulses at "+frequency+": "+d.pulseCount(),d.pulseCount()>=7);
             assertEquals(frequency,d.offsetHz(),48);assertEquals(2,d.confidence());

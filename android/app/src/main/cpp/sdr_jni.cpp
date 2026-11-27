@@ -132,13 +132,16 @@ Java_com_bearpoint_app_SdrNative_read(JNIEnv *env, jclass, jlong handle, jboolea
     double demodEnded = monotonicMs();
     jclass block = env->FindClass("com/bearpoint/app/SdrBlock");
     if (!block) return nullptr;
-    jmethodID ctor = env->GetMethodID(block, "<init>", "([D[SDD[D[D[B)V");
-    jdoubleArray channel = nullptr;
+    jmethodID ctor = env->GetMethodID(block, "<init>", "([D[SDD[D[D[D[B)V");
+    jdoubleArray channel = nullptr, field = nullptr;
     if (demodulator && n > 0 && reinterpret_cast<SdrDemod *>(demodulator)->cw) {
         auto &cw = reinterpret_cast<SdrDemod *>(demodulator)->beacon;
         channel = env->NewDoubleArray(cw.spectrumLength());
         if (!channel) return nullptr;
         env->SetDoubleArrayRegion(channel, 0, cw.spectrumLength(), cw.spectrumSamples());
+        field = env->NewDoubleArray(cw.fieldTrackerLength());
+        if (!field) return nullptr;
+        env->SetDoubleArrayRegion(field, 0, cw.fieldTrackerLength(), cw.fieldTrackerSamples());
     }
     double signalPower = demodulator ? reinterpret_cast<SdrDemod *>(demodulator)->takeSignalPeak() : -1;
     double noisePower = demodulator ? reinterpret_cast<SdrDemod *>(demodulator)->noisePower() : -1;
@@ -155,7 +158,7 @@ Java_com_bearpoint_app_SdrNative_read(JNIEnv *env, jclass, jlong handle, jboolea
     env->SetDoubleArrayRegion(detail, 0, 20, diagnostic);
     jbyteArray raw=nullptr;
     if(captureSpectrum&&directCapture&&n>0){raw=env->NewByteArray(n);if(!raw)return nullptr;env->SetByteArrayRegion(raw,0,n,reinterpret_cast<jbyte *>(buffer));}
-    return ctor ? env->NewObject(block, ctor, result, audio, signalPower, noisePower, channel, detail,raw) : nullptr;
+    return ctor ? env->NewObject(block, ctor, result, audio, signalPower, noisePower, channel, field, detail,raw) : nullptr;
 }
 extern "C" JNIEXPORT void JNICALL
 Java_com_bearpoint_app_SdrNative_startStreaming(JNIEnv *env,jclass,jlong handle){
@@ -219,9 +222,9 @@ Java_com_bearpoint_app_SdrNative_setCwFilter(JNIEnv *env, jclass, jlong handle, 
     if (!processor || !processor->cw || !processor->beacon.setFilterMode(mode)) error(env, "CW filter", -1);
 }
 extern "C" JNIEXPORT void JNICALL
-Java_com_bearpoint_app_SdrNative_setWeakCwCenter(JNIEnv *, jclass, jlong handle, jint hz) {
+Java_com_bearpoint_app_SdrNative_setWeakCwOffset(JNIEnv *, jclass, jlong handle, jint hz, jboolean tracked) {
     auto *processor = reinterpret_cast<SdrDemod *>(handle);
-    if (processor && processor->cw) processor->beacon.setWeakCenter(hz);
+    if (processor && processor->cw) processor->beacon.setWeakOffset(hz, tracked);
 }
 extern "C" JNIEXPORT void JNICALL
 Java_com_bearpoint_app_SdrNative_close(JNIEnv *, jclass, jlong handle) {

@@ -264,7 +264,7 @@ test('CW listening filter changes audio rejection without altering RF channel', 
   function listen(mode, hz, center = 325, amplitude = .1) {
     const r = receiver(), rate = 768000, pcm = [];
     r.api.configure(rate, 0, 0); assert.equal(r.api.setCwFilter(mode), 1);
-    if (mode >= 3) r.api.setWeakCwCenter(center);
+    if (mode >= 3) r.api.setWeakCwOffset(center - 700, center !== 0);
     for (let start=0; start<rate/4; start+=4096) {
       const count=Math.min(4096,rate/4-start);
       const iq=new Float32Array(r.api.memory.buffer,r.api.floatInputBuffer(),count*2);
@@ -285,12 +285,21 @@ test('CW listening filter changes audio rejection without altering RF channel', 
   assert.ok(rms(wideOff.pcm,.1,.2)>rms(narrowOff.pcm,.1,.2)*2.5, 'narrow filter reduces off-channel sound');
   const weak=listen(3,-375), weakOff=listen(3,600);
   assert.deepEqual(weak.channel,listen(0,-375).channel, 'weak audio processing does not alter RF samples');
-  assert.ok(rms(weak.pcm,.1,.2)>rms(weakOff.pcm,.1,.2)*5, 'weak filter selects the 325 Hz beat');
+  assert.ok(rms(weak.pcm,.1,.2)>rms(weakOff.pcm,.1,.2)*5, 'weak filter selects the tracked IQ candidate');
   const narrowCenter=listen(5,-375,325,.001), narrowAway=listen(5,-225,325,.001);
   const wideCenter=listen(4,-375,325,.001), wideAway=listen(4,-225,325,.001);
   const ratioNarrow=rms(narrowAway.pcm,.1,.2)/rms(narrowCenter.pcm,.1,.2);
   const ratioWide=rms(wideAway.pcm,.1,.2)/rms(wideCenter.pcm,.1,.2);
   assert.ok(ratioNarrow < ratioWide * .6, '150 Hz rejects an adjacent signal more than 500 Hz');
+  const narrow75=listen(5,-300,325,.001);
+  const ratio75=rms(narrow75.pcm,.1,.2)/rms(narrowCenter.pcm,.1,.2);
+  assert.ok(ratio75>.53 && ratio75<.70, '150 Hz filter follows Field Lab FIR response at 75 Hz');
+  assert.ok(ratioNarrow>.06 && ratioNarrow<.18, '150 Hz filter follows Field Lab FIR response at 150 Hz');
   const fallback=listen(5,-375,0,.001), base=listen(0,-375,0,.001);
   assert.deepEqual(fallback.pcm,base.pcm, 'unconfirmed candidate keeps the standard listening path');
+  for (const offset of [-1450, -609.375, 0, 350, 1450]) {
+    const pcm=listen(5,offset,700+offset,.0001).pcm;
+    const energy=hz=>{let re=0,im=0;for(let i=4800;i<9600;i++) {re+=pcm[i]*Math.cos(2*Math.PI*hz*i/48000);im+=pcm[i]*Math.sin(2*Math.PI*hz*i/48000);}return re*re+im*im;};
+    assert.ok(energy(700)>energy(400)*100, `tracked offset ${offset} renders at 700 Hz`);
+  }
 });
